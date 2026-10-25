@@ -755,7 +755,7 @@ const ORDINAL = String.raw`(?:first|second|third|fourth|fifth|sixth|seventh|eigh
 const SELECTION_NOUN = String.raw`ways|tips|steps|things|ideas|moves|tactics|actions|fixes|options|reasons|levers|wins|rules|mistakes|pages|posts|articles|keywords|queries|prompts|questions|competitors|priorities|products|features|channels|sources|sites|customers|topics|categories|pieces|formats`;
 const COUNT_NOUN = String.raw`citations?|mentions?|backlinks?|referring\s+domains|visits?|visitors?|clicks?|impressions?|sessions?|page\s?views?`;
 const METRIC_NOUN = String.raw`visibility|traffic|authority|share\s+of\s+voice|${COUNT_NOUN}|rating|reach`;
-const METRIC_WORD = String.raw`visib(?:le|ility)|(?:out)?rank(?:s|ed|ing|ings)?|positions?|cit(?:e|es|ed|ing|ation|ations)|mention(?:s|ed|ing)?|backlinks?|traffic|visits?|visitors?|clicks?|impressions?|scor(?:e|es|ed|ing)|shares?|authority`;
+const METRIC_WORD = String.raw`visib(?:le|ility)|(?:out)?rank(?:s|ed|ing|ings)?|positions?|cit(?:e|es|ed|ing|ation|ations)|mention(?:s|ed|ing)?|backlinks?|traffic|visits?|visitors?|clicks?|impressions?|scor(?:e|es|ed|ing)|shares?|authority|ctr|click-through\s+rates?|domain\s+ratings?`;
 const HEDGE = String.raw`(?:(?:about|around|roughly|approximately|only|just|nearly|almost|over|under|above|below|at|up|down|to|now|currently|worth|close\s+to)\s+){0,3}`;
 
 const PERCENT_RE = new RegExp(
@@ -818,6 +818,10 @@ const SHAPE_RES: RegExp[] = [
   // "your site has 14 pages without schema", "there are 3 pages on your site"
   /\byour\s+(?:site|website|domain|homepage|home\s+page|pages?|blog|store|sitemap|schema|markup|content)\s+(?:currently\s+|now\s+|already\s+|only\s+|still\s+)?(?:has|have|had|shows?|lists?|contains?|includes?|is\s+missing|lacks?|uses?|loads?|returns?|gets?|receives?)\b[^.;!?]*\d/i,
   /\bthere\s+(?:are|is|were|was)\s+(?:[\w-]+\s+){0,2}?\d[^.;!?]*\b(?:on|in|across)\s+your\s+(?:site|website|domain|homepage|pages?|blog|store|sitemap)\b/i,
+  // "your brand appears in 12 AI answers", "you show up in 3 of them"
+  /\b(?:appear|appears|appeared|show\s+up|shows\s+up|showed\s+up|feature|features|featured)\s+in\s+(?:about\s+|around\s+|only\s+|just\s+)?\d[\d,.]*\+?\s+(?:[\w-]+\s+){0,2}?(?:answers?|results?|responses?|queries|prompts?|searches|overviews?|engines?)\b/i,
+  // "you are on page 2 for your main keyword"
+  /\b(?:you|we|they|it|your\s+[\w-]+)\s+(?:[\w'’-]+\s+){0,2}?(?:is|are|was|were|sit|sits|land|lands|show|shows|appear|appears)\s+(?:up\s+)?on\s+page\s+(?:\d+|one|two|three)\b/i,
 ];
 // A claim of having looked. Nothing in this chat fetches a site, so it is replaced wherever it stands.
 const LOOKED_RES: RegExp[] = [
@@ -840,6 +844,9 @@ const BARE_ANSWER_RE = new RegExp(
   'i',
 );
 const METRIC_WORD_RE = new RegExp(String.raw`\b(?:${METRIC_WORD})\b`, 'i');
+// The capitals only: "pa" and "Dr" are ordinary words.
+const METRIC_ABBREVIATION_RE = /\b(?:DA|DR|PA)\b/;
+const namesMetric = (text: string): boolean => METRIC_WORD_RE.test(text) || METRIC_ABBREVIATION_RE.test(text);
 const ASKS_FOR_ADVICE_RE = /\bshould\b|\bhow\s+(?:do|can|could|would)\s+(?:i|we)\b|\bhow\s+to\b|\bneed\s+to\b|\brecommend\b|\bsuggest\b/i;
 
 // ---------------------------------------------------------------------------------------
@@ -1174,7 +1181,7 @@ export function filterChatReply(reply: string, context: ChatFilterContext): Chat
     [PLAN_BLOCK_HEADING, ...Object.values(plans).map(planPriceLine), PLAN_BLOCK_FOOTER].flatMap(splitSentences).map((s) => s.trim()),
   );
   const noteSentences = new Set(splitSentences(MONEY_NOTE).map((s) => s.trim()));
-  const userAskedForMetric = METRIC_WORD_RE.test(lastUserText) && !ASKS_FOR_ADVICE_RE.test(lastUserText);
+  const userAskedForMetric = namesMetric(lastUserText) && !ASKS_FOR_ADVICE_RE.test(lastUserText);
   const userNumbers = numbersIn(userTexts);
   const userHosts = hostsIn(userTexts);
   const knownHosts = [...OWN_LINK_HOSTS, ...REFERENCE_LINK_HOSTS, ...(context.allowedHosts ?? [])].map((host) =>
@@ -1328,7 +1335,7 @@ const ABOUT_SOMEONE_RE = /\b(?:you|your|yours|we|our|ours|us)\b|\b(?:[a-z0-9-]+\
 export function withoutUnmeasuredClaims(reply: string, userTexts: string[]): { text: string; replaced: number } {
   const userNumbers = numbersIn(userTexts);
   const lastUserText = userTexts[userTexts.length - 1] ?? '';
-  const userAskedForMetric = METRIC_WORD_RE.test(lastUserText) && !ASKS_FOR_ADVICE_RE.test(lastUserText);
+  const userAskedForMetric = namesMetric(lastUserText) && !ASKS_FOR_ADVICE_RE.test(lastUserText);
   const out: string[] = [];
   let replaced = 0;
   let previousWasUnmeasured = false;

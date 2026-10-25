@@ -867,6 +867,11 @@ describe('filterChatReply: site numbers', () => {
     ['Add FAQ schema to double your citations.'],
     ['Add FAQ schema and your citations will double.'],
     ['Your traffic doubled last month.'],
+    // Metrics the review of the Oracle filter found missing: DA, CTR, AI answers, a results page.
+    ['About 45.', 'What is my DA?'],
+    ['Around 2%.', 'What is my CTR?'],
+    ['Your brand appears in 12 AI answers.'],
+    ['You are on page 2 for your main keyword.'],
     // A number that only looks like a status code or a version.
     ['That is a 200% rise in traffic.'],
     ['You get a steady 500 visits a month.'],
@@ -1815,6 +1820,9 @@ describe('withoutUnmeasuredClaims: the web Oracle chat', () => {
     ['You will get 50% more traffic.', 'How do I grow?'],
     ['I checked acme.com and found 12 broken links.', 'Any tips?'],
     ['acme.com has a domain authority of 45.', 'Any tips?'],
+    ['About 45.', 'What is my DA?'],
+    ['Your brand appears in 12 AI answers.', 'How visible am I?'],
+    ['You are on page 2 for your main keyword.', 'How visible am I?'],
   ])('replaces a number about the user or a named site that nobody measured: %s', (reply, userText) => {
     expect(oracle(reply, [userText])).toBe(NOT_MEASURED_SENTENCE);
   });
