@@ -361,4 +361,30 @@ describe('Atomic license redemption (D1 ledger)', () => {
     const retried = await activateLicenseKey(env, 'flaky_user', minted.key);
     expect(retried.ok).toBe(true);
   });
+
+  it.each([
+    ['a minted key', async (env: any) => (await generateLicenseKeys(env, { plan: 'growth', durationDays: 30, count: 1 }))[0].key],
+    // The retry must not be refused for the paid plan its own first attempt put in place.
+    ['a trial code', async () => 'LUM-GROWTH-3DAY'],
+  ])('%s whose first write reached only the account record is finished on retry, and its days are added once', async (_kind, keyFor) => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { env, kv, DB } = makeEnv();
+    DB!.sqlite
+      .prepare(`INSERT INTO users (id, source, created_at, last_seen_at, account_id) VALUES ('fb:linked', 'firebase', 1, 1, 'acct_linked')`)
+      .run();
+    const key = await keyFor(env);
+
+    kv.failPutsMatching = /^sub:fb:linked$/;
+    expect((await activateLicenseKey(env, 'fb:linked', key)).ok).toBe(false);
+    const landed = await kv.get('sub:acct_linked', 'json');
+    expect(landed.plan).toBe('growth');
+
+    kv.failPutsMatching = null;
+    const retried = await activateLicenseKey(env, 'fb:linked', key);
+    expect(retried).toMatchObject({ ok: true, plan: 'growth', expiresAt: landed.expiresAt });
+    expect(await kv.get('sub:acct_linked', 'json')).toEqual(landed);
+    expect(await kv.get('sub:fb:linked', 'json')).toEqual(landed);
+    expect(warn).toHaveBeenCalledWith(JSON.stringify({ event: 'order_already_applied' }));
+  });
 });

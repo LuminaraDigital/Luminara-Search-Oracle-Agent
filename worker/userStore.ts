@@ -297,6 +297,23 @@ export async function mirrorSubscriptionToAccount(
   }
 }
 
+/** How many TON orders and licence keys one subscription record remembers. */
+const MAX_APPLIED_ORDERS = 50;
+
+/**
+ * The TON orders and licence keys (`lic_<key>`) a subscription record was built from, so a retry
+ * whose first write landed only in part finds its order and adds nothing. Records written before
+ * the list existed name one `orderId`.
+ */
+export function appliedOrdersOf(sub: Record<string, unknown> | null | undefined): string[] {
+  if (!sub) return [];
+  const listed = Array.isArray(sub.appliedOrders)
+    ? sub.appliedOrders.filter((o): o is string => typeof o === 'string' && o !== '')
+    : [];
+  if (typeof sub.orderId === 'string' && sub.orderId && !listed.includes(sub.orderId)) listed.push(sub.orderId);
+  return listed;
+}
+
 /**
  * Persist a paid plan under the shared account id (and the login id for legacy readers).
  * Stars, TON, and future Stripe checkouts should all call this.
@@ -312,7 +329,7 @@ export async function writeSubscriptionRecord(
   const accountId = await resolveAccountId(env, String(loginUserId));
   if (!env.LUMINARA_KV) return { accountId };
   const existing = (await env.LUMINARA_KV.get(`sub:${accountId}`, 'json')) as
-    | { plan?: unknown; expiresAt?: number; appliedCharges?: unknown; chargeId?: unknown }
+    | { plan?: unknown; expiresAt?: number; appliedCharges?: unknown; chargeId?: unknown; appliedOrders?: unknown; orderId?: unknown }
     | null;
   // A purchase may never replace a plan that is still running with a lower one. The rule lives
   // here because every rail writes through here, so a rail added later inherits it.
@@ -333,6 +350,9 @@ export async function writeSubscriptionRecord(
       toWrite = { ...record, appliedCharges: earlier };
     }
   }
+  // The orders are carried from a record that has ended too, so a late retry still finds its own.
+  const appliedOrders = [...new Set([...appliedOrdersOf(existing), ...appliedOrdersOf(record)])].slice(-MAX_APPLIED_ORDERS);
+  if (appliedOrders.length > 0) toWrite = { ...toWrite, appliedOrders };
   const body = JSON.stringify(toWrite);
   await env.LUMINARA_KV.put(`sub:${accountId}`, body);
   if (accountId !== String(loginUserId)) {

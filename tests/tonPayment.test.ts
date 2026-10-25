@@ -10,6 +10,7 @@ import {
 import { normalizeTonTxHash, tonTxHashAliases } from '../worker/chainNetwork';
 import { claimTonTransaction } from '../worker/paymentLedger';
 import { PLANS } from '../worker/telegramBot';
+import { writeSubscriptionRecord } from '../worker/userStore';
 import { buildCommentBoc } from '../services/ton/tonService';
 import { createSqliteD1 } from './helpers/sqliteD1';
 
@@ -648,5 +649,63 @@ describe('Atomic TON crediting (D1 ledger)', () => {
     kv.failPutsMatching = null;
     expect((await verifyTonPayment(env, inv.order.orderId, { fetcher })).ok).toBe(true);
     expect(kv.store.has('sub:user_flaky')).toBe(true);
+  });
+});
+
+describe('an order whose first write reached only the account record', () => {
+  /** A web login linked to its account, and a Starter order the first check half writes. */
+  async function halfWritten() {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { env, kv } = makeEnv();
+    env.DB.sqlite
+      .prepare(`INSERT INTO users (id, source, created_at, last_seen_at, account_id) VALUES ('fb:buyer', 'firebase', 1, 1, 'acct_buyer')`)
+      .run();
+    const inv = await createTonInvoice(env, 'fb:buyer', 'starter');
+    if (!inv.ok) throw new Error(inv.error);
+    const fetcher = vi.fn(async () => toncenterResponse(inv.order.memo, TON_PRICING.starter.nanoTon, 'tx_half'));
+    const check = () => verifyTonPayment(env, inv.order.orderId, { fetcher });
+
+    kv.failPutsMatching = /^sub:fb:buyer$/;
+    expect((await check()).ok).toBe(false);
+    kv.failPutsMatching = null;
+    const landed = await kv.get('sub:acct_buyer', 'json');
+    expect(landed.plan).toBe('starter');
+    return { env, kv, warn, check, landed };
+  }
+
+  it('is finished by the next check, and its days are added once', async () => {
+    const { kv, warn, check, landed } = await halfWritten();
+
+    expect(await check()).toEqual({ ok: true, plan: 'starter', expiresAt: landed.expiresAt });
+    expect(await kv.get('sub:acct_buyer', 'json')).toEqual(landed);
+    expect(await kv.get('sub:fb:buyer', 'json')).toEqual(landed);
+    expect(warn).toHaveBeenCalledWith(JSON.stringify({ event: 'order_already_applied' }));
+  });
+
+  it('a higher Stars plan bought in between is kept, and the order is not held or added again', async () => {
+    const { env, kv, check, landed } = await halfWritten();
+    await writeSubscriptionRecord(env, 'fb:buyer', {
+      plan: 'growth',
+      paymentMethod: 'stars',
+      chargeId: 'ch_between',
+      appliedCharges: ['ch_between'],
+      startedAt: Date.now(),
+      expiresAt: landed.expiresAt + PLANS.growth.days * 86400_000,
+    });
+    const stars = await kv.get('sub:acct_buyer', 'json');
+
+    expect(await check()).toEqual({ ok: true, plan: 'starter', expiresAt: stars.expiresAt });
+    expect(await kv.get('sub:acct_buyer', 'json')).toEqual(stars);
+    expect(await kv.get('sub:fb:buyer', 'json')).toEqual(stars);
+    expect([...kv.store.keys()].filter((k) => k.startsWith('sub_pending:'))).toEqual([]);
+  });
+
+  it('the record keeps the orders it was built from through writes by other rails, after its plan has ended too', async () => {
+    const { env, kv } = makeEnv();
+    await kv.put('sub:user_orders', JSON.stringify({ plan: 'starter', paymentMethod: 'ton', orderId: 'ton_old', expiresAt: Date.now() - 1 }));
+    await writeSubscriptionRecord(env, 'user_orders', { plan: 'growth', paymentMethod: 'stars', expiresAt: Date.now() + 30 * 86400_000 });
+    await writeSubscriptionRecord(env, 'user_orders', { plan: 'growth', paymentMethod: 'ton', orderId: 'ton_new', expiresAt: Date.now() + 60 * 86400_000 });
+    expect((await kv.get('sub:user_orders', 'json')).appliedOrders).toEqual(['ton_old', 'ton_new']);
   });
 });

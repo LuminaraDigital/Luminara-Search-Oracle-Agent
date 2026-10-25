@@ -12,7 +12,7 @@ import type { Env } from './index';
 import { claimLicenseRedemption, releaseLicenseRedemption } from './paymentLedger';
 import { PlanDowngradeRefusedError, downgradeRefusalText, planRank, wouldDowngrade, type SubscriptionLike } from './planRank';
 import { normalizePlanId } from './telegramBot';
-import { resolveAccountId, writeSubscriptionRecord } from './userStore';
+import { appliedOrdersOf, resolveAccountId, writeSubscriptionRecord } from './userStore';
 import { licenseKeyFingerprint, recordAuditLogBestEffort } from './auditLog';
 
 export interface LicenseKeyRecord {
@@ -190,11 +190,16 @@ export async function activateLicenseKey(
 
   // A trial code on a running paid plan, and a key for a lower plan than the one still running,
   // are refused before the claim, so the key stays unused and can be redeemed later (Track SW, SW0a-4).
+  // A retry whose first write reached only the account record is not judged by the plan that
+  // write put in place.
+  const orderId = `lic_${key}`;
   const running = (await env.LUMINARA_KV.get(`sub:${accountId}`, 'json')) as { plan?: string; expiresAt?: number } | null;
-  const trialRefusal = refuseTrialOnPaidPlan(keyRecord, running, Date.now());
-  if (trialRefusal) return trialRefusal;
-  if (wouldDowngrade(running, keyRecord.plan)) {
-    return { ok: false, error: licenseDowngradeText(String(running?.plan), Number(running?.expiresAt), keyRecord.plan) };
+  if (!appliedOrdersOf(running).includes(orderId)) {
+    const trialRefusal = refuseTrialOnPaidPlan(keyRecord, running, Date.now());
+    if (trialRefusal) return trialRefusal;
+    if (wouldDowngrade(running, keyRecord.plan)) {
+      return { ok: false, error: licenseDowngradeText(String(running?.plan), Number(running?.expiresAt), keyRecord.plan) };
+    }
   }
 
   // 3. Atomic claim (single-use count, one redemption per account, one trial per account)
@@ -225,24 +230,32 @@ export async function activateLicenseKey(
   // 4. Extend subscription
   try {
     const existingSub = (await env.LUMINARA_KV.get(`sub:${accountId}`, 'json')) as { plan?: string; expiresAt?: number } | null;
-    // A paid plan can start between the check above and this read.
-    const lateTrialRefusal = refuseTrialOnPaidPlan(keyRecord, existingSub, now);
-    if (lateTrialRefusal) {
-      await releaseLicenseRedemption(env, { key, accountId, isTrial: keyRecord.isTrial });
-      return lateTrialRefusal;
-    }
-    const baseTime = existingSub?.expiresAt && existingSub.expiresAt > now ? existingSub.expiresAt : now;
-    expiresAt = baseTime + durationMs;
+    if (existingSub && appliedOrdersOf(existingSub).includes(orderId)) {
+      // An earlier attempt wrote the account record and failed before the login's copy. The same
+      // record is written again so that copy catches up; the days are not added twice.
+      console.warn(JSON.stringify({ event: 'order_already_applied' }));
+      await writeSubscriptionRecord(env, userId, existingSub);
+      expiresAt = Number(existingSub.expiresAt);
+    } else {
+      // A paid plan can start between the check above and this read.
+      const lateTrialRefusal = refuseTrialOnPaidPlan(keyRecord, existingSub, now);
+      if (lateTrialRefusal) {
+        await releaseLicenseRedemption(env, { key, accountId, isTrial: keyRecord.isTrial });
+        return lateTrialRefusal;
+      }
+      const baseTime = existingSub?.expiresAt && existingSub.expiresAt > now ? existingSub.expiresAt : now;
+      expiresAt = baseTime + durationMs;
 
-    await writeSubscriptionRecord(env, userId, {
-      plan: keyRecord.plan,
-      paymentMethod: 'license_key',
-      orderId: `lic_${key}`,
-      startedAt: now,
-      expiresAt,
-    });
+      await writeSubscriptionRecord(env, userId, {
+        plan: keyRecord.plan,
+        paymentMethod: 'license_key',
+        orderId,
+        startedAt: now,
+        expiresAt,
+      });
+    }
   } catch (err) {
-    // Release so the user can retry; if the write partly landed, a retry may extend twice, which beats burning a paid key.
+    // Release so the user can retry.
     await releaseLicenseRedemption(env, { key, accountId, isTrial: keyRecord.isTrial });
     if (err instanceof PlanDowngradeRefusedError) {
       // A higher plan started between the check above and this write. The claim is released, so the key is unused.

@@ -7,7 +7,7 @@ import type { Env } from './index';
 import { claimTonTransaction, isTonLedgerReady, releaseTonTransaction } from './paymentLedger';
 import { PlanDowngradeRefusedError, downgradeRefusalText, wouldDowngrade } from './planRank';
 import { PLANS, alertPaymentAdmins } from './telegramBot';
-import { resolveAccountId, writeSubscriptionRecord } from './userStore';
+import { appliedOrdersOf, resolveAccountId, writeSubscriptionRecord } from './userStore';
 import { recordAuditLogBestEffort } from './auditLog';
 import {
   TON_MAX_OPEN_ORDERS_PER_ACCOUNT,
@@ -987,7 +987,9 @@ export async function verifyTonPayment(
     console.error(`[TON] Verify could not read the current plan for order ${orderId}: ${err instanceof Error ? err.message : err}`);
     return { ok: false, error: TON_VERIFY_UNAVAILABLE_ERROR };
   }
-  if (wouldDowngrade(running, order.planId)) {
+  // A retry of an order whose first write reached only the account record is never held: its
+  // plan is already in place, and the write below adds nothing.
+  if (!appliedOrdersOf(running).includes(orderId) && wouldDowngrade(running, order.planId)) {
     const refusal = new PlanDowngradeRefusedError(String(running?.plan), Number(running?.expiresAt), order.planId);
     const message = await holdPaidTonOrder(env, kv, { order, accountId, planTitle: plan.title, refusal, txHash: match.txHash, network: match.network, now: Date.now() });
     if (message === null) return { ok: false, error: TON_VERIFY_UNAVAILABLE_ERROR };
@@ -1019,16 +1021,24 @@ export async function verifyTonPayment(
   let expiresAt: number;
   try {
     const existingSub = (await kv.get(`sub:${accountId}`, 'json')) as { expiresAt?: number } | null;
-    const baseTime = existingSub?.expiresAt && existingSub.expiresAt > now ? existingSub.expiresAt : now;
-    expiresAt = baseTime + plan.days * 86400_000;
+    if (existingSub && appliedOrdersOf(existingSub).includes(orderId)) {
+      // An earlier check wrote the account record and failed before the login's copy. The same
+      // record is written again so that copy catches up; the days are not added twice.
+      console.warn(JSON.stringify({ event: 'order_already_applied' }));
+      await writeSubscriptionRecord(env, order.userId, existingSub);
+      expiresAt = Number(existingSub.expiresAt);
+    } else {
+      const baseTime = existingSub?.expiresAt && existingSub.expiresAt > now ? existingSub.expiresAt : now;
+      expiresAt = baseTime + plan.days * 86400_000;
 
-    await writeSubscriptionRecord(env, order.userId, {
-      plan: order.planId,
-      paymentMethod: 'ton',
-      orderId,
-      startedAt: now,
-      expiresAt,
-    });
+      await writeSubscriptionRecord(env, order.userId, {
+        plan: order.planId,
+        paymentMethod: 'ton',
+        orderId,
+        startedAt: now,
+        expiresAt,
+      });
+    }
   } catch (err) {
     if (err instanceof PlanDowngradeRefusedError) {
       // A higher plan landed between the look above and this write. The transfer is real and the
