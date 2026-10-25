@@ -207,4 +207,14 @@ describe('account switch', () => {
     expect(api.getCurrentQuotaSync()?.plan).toBe('agency');
     expect((await accountBoot.takeAccountBoot())?.accountId).toBe('fb:agency');
   });
+
+  it('a Firebase sign-in on top of a Telegram session shows the new account once its boot answers', async () => {
+    fetchMock.mockImplementation(async (input) => (String(input).endsWith('/api/boot') ? bootAnswer('growth') : notFound()));
+    const { api, emit } = await load();
+    api.updateQuotaFromHeaders(LIMITED);
+
+    emit(user('B'));
+
+    await vi.waitFor(() => expect(api.getCurrentQuotaSync()).toMatchObject({ plan: 'growth', isUnlimited: true }));
+  });
 });

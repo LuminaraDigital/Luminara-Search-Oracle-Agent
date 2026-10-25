@@ -1,8 +1,10 @@
 /**
  * One signed-in boot request. Workspace pull and quota read the same promise
- * instead of each calling the Worker.
+ * instead of each calling the Worker. Its quota lands in the snapshot as soon as it answers, so a
+ * new account (a sign-in, a switch, a Firebase link inside Telegram) shows its own plan.
  */
 import { readCachedFirebaseIdToken } from './firebaseIdToken';
+import { quotaEpoch, writeQuotaSnapshot } from '../plans/quotaSnapshot';
 
 export type AccountBoot = {
   ok: true;
@@ -63,8 +65,22 @@ export function startAccountBoot(token: string): Promise<AccountBoot | null> {
   if (!token) return Promise.resolve(null);
   if (pending && pendingToken === token) return pending;
   pendingToken = token;
+  const since = quotaEpoch();
   const run = fetchBoot(token).then((body) => {
-    if (body) last = { token, at: Date.now(), body };
+    if (body) {
+      last = { token, at: Date.now(), body };
+      const { quota } = body;
+      writeQuotaSnapshot({
+        limit: quota.limit,
+        used: quota.used,
+        remaining: quota.remaining,
+        resetSec: quota.resetSec,
+        isUnlimited: quota.isUnlimited,
+        plan: quota.plan,
+        expiresAt: quota.expiresAt,
+        bonusRemaining: quota.bonusRemaining,
+      }, since);
+    }
     return body;
   });
   pending = run;

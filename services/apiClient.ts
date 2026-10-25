@@ -808,23 +808,11 @@ export function accountKnownSignedIn(): boolean {
 
 export async function fetchQuotaStatus(): Promise<QuotaInfo | null> {
   if (accountSignedIn !== true) return null;
-  const since = quotaEpoch();
-  const booted = await takeAccountBoot();
-  if (booted) {
-    writeQuotaSnapshot({
-      limit: booted.quota.limit,
-      used: booted.quota.used,
-      remaining: booted.quota.remaining,
-      resetSec: booted.quota.resetSec,
-      isUnlimited: booted.quota.isUnlimited,
-      plan: booted.quota.plan,
-      expiresAt: booted.quota.expiresAt,
-      bonusRemaining: booted.quota.bonusRemaining,
-    }, since);
-    return getCurrentQuotaSync();
-  }
+  // The boot wrote its quota into the snapshot when it answered.
+  if (await takeAccountBoot()) return getCurrentQuotaSync();
   const base = apiBase();
   if (!base) return null;
+  const since = quotaEpoch();
   try {
     const r = await workerFetchWithAuthRetry(`${base}/api/auth/quota`);
     if (!r.ok) return null;
