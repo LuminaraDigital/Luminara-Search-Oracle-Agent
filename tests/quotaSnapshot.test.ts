@@ -72,6 +72,23 @@ describe('hosted allowance gate', () => {
     expect(spentNow()).toBe(false);
   });
 
+  it('opens for a FreeLLM key, which writes the report', () => {
+    signedInBrowser({ luminara_freellm_key: 'freellm_own_key' });
+    updateQuotaFromHeaders(SPENT);
+    expect(spentNow()).toBe(false);
+  });
+
+  it('stays shut for search, crawl and Gemini keys, which do not write the report', () => {
+    signedInBrowser({
+      luminara_tavily_key: 'tvly_own_key',
+      luminara_exa_key: 'exa_own_key',
+      luminara_firecrawl_key: 'fc_own_key',
+      luminara_api_key: 'gemini_own_key',
+    });
+    updateQuotaFromHeaders(SPENT);
+    expect(spentNow()).toBe(true);
+  });
+
   it('opens again once the daily reset has passed', () => {
     vi.useFakeTimers({ now: new Date('2026-10-25T23:50:00Z'), toFake: ['Date'] });
     signedInBrowser();

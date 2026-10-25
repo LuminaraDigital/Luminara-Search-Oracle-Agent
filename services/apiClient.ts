@@ -593,6 +593,7 @@ const PROVIDER_BYOK_SLOTS: Record<string, { storageKey: string; viteKey: string 
   nim: { storageKey: 'luminara_nvidia_key', viteKey: 'VITE_NVIDIA_API_KEY' },
   ollama: { storageKey: 'luminara_ollama_key', viteKey: 'VITE_OLLAMA_API_KEY' },
   openrouter: { storageKey: 'luminara_openrouter_key', viteKey: 'VITE_OPENROUTER_API_KEY' },
+  freellm: { storageKey: 'luminara_freellm_key', viteKey: 'VITE_FREELLM_API_KEY' },
   gemini: { storageKey: 'luminara_api_key', viteKey: 'VITE_GEMINI_API_KEY' },
   tavily: { storageKey: 'luminara_tavily_key', viteKey: 'VITE_TAVILY_API_KEY' },
   exa: { storageKey: 'luminara_exa_key', viteKey: 'VITE_EXA_API_KEY' },
@@ -630,16 +631,20 @@ function hasByokProviderKey(providerId: string): boolean {
   return Boolean(readStoredKey(slot.storageKey) || readViteKey(slot.viteKey));
 }
 
+/** The engines ConfigService.getNativePriority writes with (configService imports this module, so it is listed here). */
+const WRITING_MODEL_IDS = ['groq', 'nim', 'openrouter', 'ollama', 'freellm'] as const;
+
 /**
  * The free daily hosted allowance is used up and still applies: limited, nothing left, no invite
- * bonus, the UTC reset not reached, and no key of the user's own (those calls are not metered).
+ * bonus, the UTC reset not reached, and no own key for a model that writes the answer (those
+ * calls are not metered; a search or crawl key alone still needs the hosted model).
  */
 export function hostedAllowanceSpent(q: QuotaInfo): boolean {
   return !q.isUnlimited
     && q.remaining <= 0
     && (!q.bonusRemaining || q.bonusRemaining <= 0)
     && Date.now() < q.resetAt
-    && !Object.keys(PROVIDER_BYOK_SLOTS).some(hasByokProviderKey);
+    && !WRITING_MODEL_IDS.some(hasByokProviderKey);
 }
 
 export function hostedProviderDecisionReason(providerId: string): HostedProviderDecisionReason {
