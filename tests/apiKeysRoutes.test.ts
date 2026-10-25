@@ -233,11 +233,23 @@ describe('/api-keys route (handler level)', () => {
     expect(bodyA.keys).toHaveLength(1);
   });
 
-  it('rejects callers without Growth+ mcpAccess with 403 MCP_ACCESS_REQUIRED', async () => {
+  it('lists for callers without Growth+ mcpAccess and refuses them a new key with 403 MCP_ACCESS_REQUIRED', async () => {
     const { env, store } = makeEnv();
     store.set('sub:77001', JSON.stringify({ plan: 'free', expiresAt: Date.now() + 86400_000 }));
-    const res = await worker.fetch(
+    const list = await worker.fetch(
       req('/api/api-keys', { headers: { 'x-telegram-init-data': signInitData(77001, 'Alpha') } }),
+      env,
+      ctx,
+    );
+    expect(list.status).toBe(200);
+    expect(((await list.json()) as { mcpAccess?: boolean }).mcpAccess).toBe(false);
+
+    const res = await worker.fetch(
+      req('/api/api-keys', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-telegram-init-data': signInitData(77001, 'Alpha') },
+        body: JSON.stringify({ name: 'MCP key' }),
+      }),
       env,
       ctx,
     );

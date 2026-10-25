@@ -4,6 +4,7 @@
 import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
 import { billingId, json } from './workerUtils';
+import { putCounterBestEffort } from './securityHardening';
 import { randomId } from '../services/projects/projectUtils';
 
 const DAILY_INSERT_CAP = 100;
@@ -63,7 +64,7 @@ export async function createMemoryFact(
         429,
       );
     }
-    await env.LUMINARA_KV.put(quotaKey, String(used + 1), { expirationTtl: 2 * 86400 });
+    await putCounterBestEffort(env, quotaKey, String(used + 1), 2 * 86400);
   }
 
   const id = randomId('mem', 10);

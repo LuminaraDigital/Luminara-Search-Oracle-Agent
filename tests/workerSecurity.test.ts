@@ -1,9 +1,11 @@
+import { createHmac } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import worker from '../worker/index';
 import type { Env } from '../worker/index';
 import { listPriceSummary } from '../components/paywall/planCopy';
 import { STAGING_ROBOTS_TXT } from '../worker/crawlDocuments';
 import { publicPlanCatalogue } from '../worker/telegramBot';
+import { mintOpaqueSession } from '../worker/opaqueSession';
 import {
   HTML_CSP,
   HOSTED_MAX_TOKENS,
@@ -329,11 +331,91 @@ describe('Telegram endpoints', () => {
 
   it('validates auth/invoice input shape without leaking internals', async () => {
     const env = makeEnv({ BOT_TOKEN: '1:a' });
-    expect((await worker.fetch(req('/api/telegram/auth', { method: 'POST', body: 'garbage' }), env, ctx)).status).toBe(400);
-    expect((await worker.fetch(req('/api/telegram/auth', { method: 'POST', body: JSON.stringify({ initData: 42 }) }), env, ctx)).status).toBe(400);
+    const origin = { origin: 'https://luminarasuite.com' };
+    expect((await worker.fetch(req('/api/telegram/auth', { method: 'POST', headers: origin, body: 'garbage' }), env, ctx)).status).toBe(400);
+    expect((await worker.fetch(req('/api/telegram/auth', { method: 'POST', headers: origin, body: JSON.stringify({ initData: 42 }) }), env, ctx)).status).toBe(400);
     expect((await worker.fetch(req('/api/telegram/auth', { method: 'GET' }), env, ctx)).status).toBe(405);
-    const bogus = await worker.fetch(req('/api/telegram/auth', { method: 'POST', body: JSON.stringify({ initData: 'hash=abc&auth_date=1' }) }), env, ctx);
+    const bogus = await worker.fetch(req('/api/telegram/auth', { method: 'POST', headers: origin, body: JSON.stringify({ initData: 'hash=abc&auth_date=1' }) }), env, ctx);
     expect(bogus.status).toBe(401);
+  });
+
+  const botToken = '123456:CSRF_TEST';
+  const signedInitData = (userId: number) => {
+    const fields: Record<string, string> = {
+      auth_date: String(Math.floor(Date.now() / 1000)),
+      user: JSON.stringify({ id: userId, first_name: 'Ada' }),
+    };
+    const dcs = Object.keys(fields).sort().map((k) => `${k}=${fields[k]}`).join('\n');
+    const secret = createHmac('sha256', 'WebAppData').update(botToken).digest();
+    const p = new URLSearchParams(fields);
+    p.set('hash', createHmac('sha256', secret).update(dcs).digest('hex'));
+    return p.toString();
+  };
+  const telegramAuth = (headers: Record<string, string>) =>
+    req('/api/telegram/auth', { method: 'POST', headers, body: JSON.stringify({ initData: signedInitData(66001) }) });
+
+  it('refuses signed initData from a foreign Origin and sets no cookie', async () => {
+    const env = makeEnv({ BOT_TOKEN: botToken });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const res = await worker.fetch(telegramAuth({ origin: 'https://evil.example' }), env, ctx);
+      expect(res.status).toBe(403);
+      expect(((await res.json()) as { code?: string }).code).toBe('CSRF_REJECTED');
+      expect(res.headers.get('set-cookie')).toBeNull();
+      expect(warn).toHaveBeenCalledWith(
+        JSON.stringify({ event: 'csrf_rejected', path: '/api/telegram/auth', reason: 'origin_rejected' }),
+      );
+
+      const crossSite = await worker.fetch(
+        telegramAuth({ origin: 'https://luminarasuite.com', 'sec-fetch-site': 'cross-site' }),
+        env,
+        ctx,
+      );
+      expect(crossSite.status).toBe(403);
+      expect(crossSite.headers.get('set-cookie')).toBeNull();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('sets the cookie for an allowlisted Origin, and for a missing one with a log line', async () => {
+    const env = makeEnv({ BOT_TOKEN: botToken });
+    const allowed = await worker.fetch(telegramAuth({ origin: 'https://luminarasuite.com' }), env, ctx);
+    expect(allowed.status).toBe(200);
+    expect(allowed.headers.get('set-cookie')).toMatch(/^__session=sid_/);
+
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const missing = await worker.fetch(telegramAuth({}), env, ctx);
+      expect(missing.status).toBe(200);
+      expect(missing.headers.get('set-cookie')).toMatch(/^__session=sid_/);
+      expect(warn).toHaveBeenCalledWith(JSON.stringify({ event: 'csrf_origin_missing', path: '/api/telegram/auth' }));
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('refuses a foreign Origin on the session exchange and on logout', async () => {
+    const env = makeEnv({ BOT_TOKEN: botToken });
+    const exchange = await worker.fetch(
+      req('/api/auth/session', {
+        method: 'POST',
+        headers: { origin: 'https://evil.example' },
+        body: JSON.stringify({ initData: signedInitData(66002) }),
+      }),
+      env,
+      ctx,
+    );
+    expect(exchange.status).toBe(403);
+    expect(exchange.headers.get('set-cookie')).toBeNull();
+
+    const logout = await worker.fetch(
+      req('/api/auth/logout', { method: 'POST', headers: { origin: 'https://evil.example' } }),
+      env,
+      ctx,
+    );
+    expect(logout.status).toBe(403);
+    expect(logout.headers.get('set-cookie')).toBeNull();
   });
 });
 
@@ -834,6 +916,22 @@ describe('proof-of-audit attest route', () => {
       ctx,
     );
     expect(res.status).toBe(401);
+  });
+
+  it('answers a signed-in JSON null body with 400, not a crash', async () => {
+    const env = makeEnv();
+    const sid = await mintOpaqueSession(env, { uid: 'attest-null' });
+    const res = await worker.fetch(
+      req('/api/agent/attest', {
+        method: 'POST',
+        headers: { cookie: `__session=${sid}`, origin: 'https://luminarasuite.com', 'content-type': 'application/json' },
+        body: 'null',
+      }),
+      env,
+      ctx,
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'Invalid digestHex' });
   });
 
   it('keeps public badge verification (GET) reachable without sign-in', async () => {

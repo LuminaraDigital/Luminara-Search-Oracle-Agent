@@ -31,7 +31,6 @@ Do not log secrets, tokens, or PII.
 - 2026-09-20: Marketing crawl files and path meta need a production deploy before live `/robots.txt` stops returning SPA HTML (seo)
 
 - 2026-09-23: `animate-premium-drift*` is defined in `index.html` (not Tailwind); earlier papercut was a false alarm if you only grep css/config (marketing craft)
-- `worker/authMiddleware.ts`: `isPublicRoute()` / `PUBLIC_API_ROUTES` have no callers. `guardApiRoute()` uses `PROTECTED_API_ROUTES` and lets everything else fall through, so the public allow-list is documentation only. Either wire it as a default-deny gate or delete it; a stale "public" list invites false confidence during auth review.
 - 2026-09-24: Oracle paid auto-tools need `invokeTool`+`confirmTool` (or `ORACLE_AUTO_TOOLS=true`). App prefers `streamOracleChat` when signed in; guests and Agency-denied soft-fail to BYOK geminiService (oracle)
 - 2026-09-25: Hosted Brand Memory dual-write (`services/memory/hostedMemoryStub.ts`) and PointerBench grounding remain eval/lab-only; not on Instant Audit / MCP measurement path (wiring)
 - 2026-09-25: Seed `oracle-chat` skill via `scripts/seed-agent-skills.mjs` (or admin `/admin/skills`) so D1 overrides the bundled Oracle system prompt; until then loader uses version-0 fallback (worker)

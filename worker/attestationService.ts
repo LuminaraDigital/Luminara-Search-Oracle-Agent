@@ -26,7 +26,7 @@ export async function handleAgentAttestation(request: Request, env: Env): Promis
 
     const read = await readBody(request, MAX_SMALL_BODY_BYTES);
     if (!read.ok) return json({ error: read.error }, read.status);
-    const body = read.value as Record<string, unknown>;
+    const body = (read.value || {}) as Record<string, unknown>;
     const digestHex = typeof body.digestHex === 'string' ? body.digestHex.trim().toLowerCase() : '';
     const domainRaw = typeof body.domain === 'string' ? body.domain : '';
     const findingsFingerprint = typeof body.findingsFingerprint === 'string' ? body.findingsFingerprint : '';

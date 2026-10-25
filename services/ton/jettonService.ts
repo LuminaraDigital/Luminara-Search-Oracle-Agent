@@ -8,7 +8,7 @@
 import { beginCell, toNano, Address, Cell } from '@ton/core';
 import { apiBase } from '../apiClient';
 import { getInitDataRaw } from '../telegram/tma';
-import { getFirebaseIdTokenSync } from '../auth/firebaseAuthService';
+import { readFreshCachedFirebaseIdToken } from '../auth/firebaseIdToken';
 import { verifyTonPayment, type TonInvoiceResponse } from './tonService';
 
 export const OP_JETTON_TRANSFER = 0x0f8a7ea5;
@@ -77,7 +77,7 @@ export async function createJettonInvoice(
   };
   const initData = getInitDataRaw();
   if (initData) headers['x-telegram-init-data'] = initData;
-  const idToken = getFirebaseIdTokenSync();
+  const idToken = readFreshCachedFirebaseIdToken();
   if (idToken) headers['authorization'] = `Bearer ${idToken}`;
 
   const res = await fetch(`${base}/api/ton/invoice`, {

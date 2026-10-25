@@ -1,6 +1,7 @@
 /**
  * Bounded fetch of /robots.txt, /llms.txt, and optional /ai.txt for an Instant Audit target.
- * Identity required. Private hosts are refused. A same-site 301/302/303/307/308 is followed
+ * Open to guests on purpose (the guest Instant Audit reads it); only a signed-in caller gets a
+ * scout receipt. Private hosts are refused. A same-site 301/302/303/307/308 is followed
  * after the next host is checked again. A redirect to another site is not followed.
  * Crawl files on this Worker's own Custom Domains are read in-process (same-zone fetch returns 522).
  */

@@ -149,6 +149,29 @@ describe('burst + outbound killswitch', () => {
     expect(blocked.ok).toBe(false);
     if (!blocked.ok) expect(blocked.response.status).toBe(503);
   });
+
+  it('answers a sent password reset when KV refuses the outbound counter write', async () => {
+    const store = new Map<string, string>();
+    const kv = mockKv(store);
+    const put = kv.put.bind(kv);
+    kv.put = (async (key: string, value: string) => {
+      if (key.startsWith('system_metrics:outbound_daily:')) throw new Error('KV PUT failed: 429 Too Many Requests');
+      return put(key, value);
+    }) as KVNamespace['put'];
+    const env = { LUMINARA_KV: kv, FIREBASE_WEB_API_KEY: 'test-key', OUTBOUND_EMAIL_DAILY_LIMIT: '50' } as Env;
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const res = await handlePasswordResetRequest(resetReq('sent@example.com'), env, '203.0.113.12', {
+        fetchImpl: vi.fn(async () => new Response(JSON.stringify({ email: 'sent@example.com' }), { status: 200 })) as unknown as typeof fetch,
+        minLatencyMs: 0,
+      });
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual(PASSWORD_RESET_SUCCESS_BODY);
+      expect(warn).toHaveBeenCalledWith(JSON.stringify({ event: 'kv_counter_write_failed', prefix: 'system_metrics' }));
+    } finally {
+      warn.mockRestore();
+    }
+  });
 });
 
 describe('password reset anti-enumeration', () => {

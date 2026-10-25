@@ -392,6 +392,19 @@ export function withRateLimitHeaders(response: Response, headers: Record<string,
   return out;
 }
 
+/**
+ * KV write for a soft counter or marker. KV refuses a second write to one key within a second;
+ * that must not turn a request whose work is already done into a 500 the client retries.
+ * The log carries the key prefix only, never the account id or email hash in the key.
+ */
+export async function putCounterBestEffort(env: Env, key: string, value: string, ttlSec: number): Promise<void> {
+  try {
+    await env.LUMINARA_KV?.put(key, value, { expirationTtl: ttlSec });
+  } catch {
+    console.warn(JSON.stringify({ event: 'kv_counter_write_failed', prefix: key.split(':')[0] }));
+  }
+}
+
 // ---- Sliding-window / burst / outbound budget (toll-fraud defense) ----------------------------
 
 type SlidingBucket = { timestamps: number[] };
@@ -608,10 +621,11 @@ export async function recordFailedSignIn(env: Env, emailHash: string): Promise<v
   const cutoff = now - windowMs;
   const prior = (await readSlidingBucket(env.LUMINARA_KV, key)).filter((t) => t > cutoff);
   const next = [...prior, now];
-  await env.LUMINARA_KV.put(
+  await putCounterBestEffort(
+    env,
     key,
     JSON.stringify({ timestamps: next } satisfies SlidingBucket),
-    { expirationTtl: SIGN_IN_LOCKOUT_WINDOW_SEC + 60 },
+    SIGN_IN_LOCKOUT_WINDOW_SEC + 60,
   );
 }
 
@@ -796,7 +810,7 @@ export async function incrementOutboundDaily(env: Env, by = 1): Promise<number> 
   if (!env.LUMINARA_KV || by <= 0) return 0;
   const key = `system_metrics:outbound_daily:${utcDayKey()}`;
   const next = Number((await env.LUMINARA_KV.get(key)) || 0) + by;
-  await env.LUMINARA_KV.put(key, String(next), { expirationTtl: 60 * 60 * 48 });
+  await putCounterBestEffort(env, key, String(next), 60 * 60 * 48);
   const limit =
     Number(env.OUTBOUND_EMAIL_DAILY_LIMIT || DEFAULT_OUTBOUND_DAILY_LIMIT) || DEFAULT_OUTBOUND_DAILY_LIMIT;
   if (next >= limit) {
