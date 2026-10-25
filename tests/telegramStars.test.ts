@@ -671,7 +671,8 @@ describe('Telegram Stars Bot Payments (core.telegram.org/bots/payments-stars)', 
       const sendCall = mockFetch.mock.calls.find(c => c[0].includes('sendMessage'));
       expect(sendCall).toBeTruthy();
       const body = JSON.parse(sendCall[1].body);
-      expect(body.text).toContain('Daily Free Limit Reached');
+      expect(body.text).toContain('Daily free limit reached');
+      expect(body.text).not.toContain('unlimited');
       expect(body.text).toContain('/plan');
     });
 

@@ -1020,11 +1020,20 @@ export async function telegramAuth(): Promise<TelegramAuthResult> {
 export async function createStarsInvoice(plan: string): Promise<string> {
   const initData = getInitDataRaw();
   if (!initData) throw new Error('Open the app inside Telegram to subscribe with Stars.');
-  const r = await fetch(`${apiBase()}/api/telegram/invoice`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ initData, plan }),
-  });
+  let r: Response;
+  try {
+    r = await fetch(`${apiBase()}/api/telegram/invoice`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ initData, plan }),
+      signal: AbortSignal.timeout(20_000),
+    });
+  } catch (e) {
+    if (e instanceof Error && e.name === 'TimeoutError') {
+      throw new Error('Could not create the Stars invoice. Try again.');
+    }
+    throw e;
+  }
   const data = await r.json();
   if (!r.ok || !data.ok) throw new Error(data.error || 'Could not create invoice');
   return data.url as string;

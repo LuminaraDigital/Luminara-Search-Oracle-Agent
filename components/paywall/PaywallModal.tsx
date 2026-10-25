@@ -189,7 +189,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
       } else if (status === 'failed') {
         setStatusMessage('Payment failed. No Stars were charged.');
       } else if (status === 'pending') {
-        setStatusMessage('Payment is being processed by Telegram. Your plan will activate momentarily.');
+        setStatusMessage('Stars checkout opened in Telegram. Your plan updates here after payment.');
       }
     } catch (err: any) {
       haptic('error');

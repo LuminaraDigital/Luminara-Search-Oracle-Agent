@@ -20,6 +20,9 @@ import {
   closingBehavior,
   shareURL,
 } from '@telegram-apps/sdk-react';
+import { initTelegramAnalytics } from './analytics';
+import { clipPlain } from '../../utils/clipPlain';
+import { normalizeStarsStatus, openStarsInvoice, type TelegramInvoiceHost } from './starsInvoice';
 
 /** Telegram sometimes parks launch params in the hash (`#tgWebAppData=...`). */
 function hasTelegramHashHints(): boolean {
@@ -100,6 +103,9 @@ function finishReady(inside: boolean): boolean {
   readyListeners.forEach((cb) => {
     try { cb(inside); } catch { /* ignore listener errors */ }
   });
+  if (inside) {
+    try { initTelegramAnalytics(); } catch { /* catalog analytics is optional */ }
+  }
   return inside;
 }
 
@@ -318,7 +324,7 @@ export function getTelegramUserUnsafe() {
  * Falls back to copying the text. Does not call shareMessage (that API needs a bot-prepared message id).
  */
 export async function shareExternalLink(url: string, text: string): Promise<'telegram' | 'copied' | 'failed'> {
-  const clippedText = text.replace(/\s+/g, ' ').trim().slice(0, 240);
+  const clippedText = clipPlain(text, 240);
   const payload = `${clippedText}\n${url}`.slice(0, 700);
   try {
     if (shareURL.isAvailable()) {
@@ -409,47 +415,36 @@ export function setTelegramMainButton(opts: { text: string; onClick: () => void;
   }
 }
 
+function telegramInvoiceHost(): TelegramInvoiceHost | null {
+  if (typeof window === 'undefined') return null;
+  const root = window as unknown as { Telegram?: { WebApp?: TelegramInvoiceHost } };
+  return root.Telegram?.WebApp ?? null;
+}
+
+function openInvoiceExternally(url: string): void {
+  if (typeof window !== 'undefined') window.open(url, '_blank', 'noopener');
+}
+
 export async function payWithStars(invoiceUrl: string): Promise<'paid' | 'cancelled' | 'failed' | 'pending'> {
-  if (!insideTelegram) {
-    if (typeof window !== 'undefined') {
-      window.open(invoiceUrl, '_blank', 'noopener');
-    }
-    return 'pending';
+  if (!insideTelegram) return openStarsInvoice(invoiceUrl, null, openInvoiceExternally);
+
+  const host = telegramInvoiceHost();
+  if (host?.openInvoice || host?.openTelegramLink) {
+    return openStarsInvoice(invoiceUrl, host, openInvoiceExternally);
   }
 
-  // 1. Primary: @telegram-apps/sdk openInvoice
+  // SDK path only when the native bridge is missing. Its promise waits on invoice_closed.
   try {
     if (openInvoice.isAvailable()) {
-      const status = await openInvoice(invoiceUrl, 'url');
-      return (status as 'paid' | 'cancelled' | 'failed' | 'pending') || 'pending';
+      const status = await raceTimeout(
+        Promise.resolve(openInvoice(invoiceUrl, 'url')),
+        20_000,
+        'openInvoice',
+      );
+      return normalizeStarsStatus(typeof status === 'string' ? status : undefined);
     }
   } catch (err) {
-    console.warn('[TMA] SDK openInvoice encountered an error, trying native bridge fallback', err);
+    console.warn('[TMA] SDK openInvoice failed, opening the invoice link', err);
   }
-
-  // 2. Secondary: native Telegram.WebApp.openInvoice callback bridge
-  if (typeof window !== 'undefined') {
-    const tgWebApp = (window as any).Telegram?.WebApp;
-    if (tgWebApp && typeof tgWebApp.openInvoice === 'function') {
-      return new Promise<'paid' | 'cancelled' | 'failed' | 'pending'>((resolve) => {
-        try {
-          tgWebApp.openInvoice(invoiceUrl, (status: string) => {
-            if (status === 'paid' || status === 'cancelled' || status === 'failed' || status === 'pending') {
-              resolve(status);
-            } else {
-              resolve('pending');
-            }
-          });
-        } catch {
-          resolve('failed');
-        }
-      });
-    }
-  }
-
-  // 3. Last resort fallback
-  if (typeof window !== 'undefined') {
-    window.open(invoiceUrl, '_blank', 'noopener');
-  }
-  return 'pending';
+  return openStarsInvoice(invoiceUrl, host, openInvoiceExternally);
 }

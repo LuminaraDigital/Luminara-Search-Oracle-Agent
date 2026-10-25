@@ -84,7 +84,7 @@ test.describe('header with the free daily quota badge', () => {
       const pill = page.getByTestId('add-business-pill');
       const search = page.getByTestId('header-search');
       await expect(quota).toBeVisible();
-      await expect(quota).toContainText('3 left of 3 Daily');
+      await expect(quota).toContainText('3 of 3 left today');
       await expect(quota).toContainText(/upgrade/i);
       expect(await quota.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
       await pillFullyVisible(pill);

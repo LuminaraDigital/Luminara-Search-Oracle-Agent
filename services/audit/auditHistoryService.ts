@@ -5,6 +5,7 @@
  */
 
 import { entitlementsFor, type PlanId } from '../plans/planEntitlements';
+import { clipPlain } from '../../utils/clipPlain';
 import { notifyAuditActivity } from './auditActivity';
 import { flushWorkspacePush, noteWorkspaceDirty, workspaceAccountId, workspaceHistoryReady } from '../sync/workspaceSyncService';
 import { accountKnownSignedIn, apiBase, workerFetchWithAuthRetry } from '../apiClient';
@@ -148,7 +149,7 @@ export function recordAudit(input: RecordAuditInput): AuditHistoryEntry {
     topCompetitor: input.topCompetitor ?? null,
     competitorsMentioned: extractCompetitors(text, input.dnaCompetitors),
     title: input.title || `${input.focus} audit · ${domain}`,
-    summary: summary.slice(0, 400),
+    summary: clipPlain(summary, 400),
     reportExcerpt: text.slice(0, 80_000),
     clientId: input.clientId ?? null,
     tags: [input.focus.toLowerCase(), domain],

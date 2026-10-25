@@ -15,6 +15,7 @@ import { ICONS } from '../../constants';
 import { downloadBlob } from '../../utils/download';
 import { toUserFacingText } from '../../utils/userFacingText';
 import { subscribeQuota, openPaywallModal, getCurrentQuotaSync, type QuotaInfo } from '../../services/apiClient';
+import { dailyCapPaywallLine, dailyCapStudioNote } from '../paywall/planCopy';
 import {
   NotebookSourcesPanel,
   NotebookChatPanel,
@@ -127,8 +128,8 @@ export const NotebookView: React.FC<NotebookViewProps> = ({ dna }) => {
   const handleSendMessage = async (userText: string) => {
     if (!userText.trim() || isQuerying) return;
     if (quota && !quota.isUnlimited && quota.remaining <= 0 && (!quota.bonusRemaining || quota.bonusRemaining <= 0)) {
-      openPaywallModal(`Daily limit reached (${quota.limit}/${quota.limit} used). Upgrade for unlimited Studio queries.`);
-      setQueryError(`Daily query limit reached (${quota.limit}/${quota.limit} used today). Upgrade your plan or add your own API key in Settings.`);
+      openPaywallModal(dailyCapPaywallLine(quota.limit));
+      setQueryError(dailyCapStudioNote(quota.limit));
       return;
     }
     setIsQuerying(true);
@@ -149,9 +150,9 @@ export const NotebookView: React.FC<NotebookViewProps> = ({ dna }) => {
   const handleGeneratePodcast = async () => {
     if (isGeneratingPodcast) return;
     if (quota && !quota.isUnlimited && quota.remaining <= 0 && (!quota.bonusRemaining || quota.bonusRemaining <= 0)) {
-      openPaywallModal(`Daily limit reached (${quota.limit}/${quota.limit} used). Upgrade for unlimited Studio queries.`);
+      openPaywallModal(dailyCapPaywallLine(quota.limit));
       setStudioNotice({
-        text: `Daily query limit reached (${quota.limit}/${quota.limit} used today). Upgrade your plan or add your own API key in Settings.`,
+        text: dailyCapStudioNote(quota.limit),
         type: 'error',
       });
       return;
@@ -174,9 +175,9 @@ export const NotebookView: React.FC<NotebookViewProps> = ({ dna }) => {
   const handleGenerateArtifact = async (type: StudioArtifactType) => {
     if (generatingArtifactType) return;
     if (quota && !quota.isUnlimited && quota.remaining <= 0 && (!quota.bonusRemaining || quota.bonusRemaining <= 0)) {
-      openPaywallModal(`Daily limit reached (${quota.limit}/${quota.limit} used). Upgrade for unlimited Studio queries.`);
+      openPaywallModal(dailyCapPaywallLine(quota.limit));
       setStudioNotice({
-        text: `Daily query limit reached (${quota.limit}/${quota.limit} used today). Upgrade your plan or add your own API key in Settings.`,
+        text: dailyCapStudioNote(quota.limit),
         type: 'error',
       });
       return;

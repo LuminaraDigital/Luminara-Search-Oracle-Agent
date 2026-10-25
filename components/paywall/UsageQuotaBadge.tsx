@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { subscribeQuota, fetchQuotaStatus, openPaywallModal, type QuotaInfo } from '../../services/apiClient';
+import { dailyCapPaywallLine } from './planCopy';
 import { useAppAuth } from '../../services/auth/useAppAuth';
 import { labsToggleVisible } from '../../services/ui/labsAccess';
 
@@ -65,7 +66,7 @@ export const UsageQuotaBadge: React.FC<Props> = ({ className = '', showIcon = tr
 
   return (
     <button
-      onClick={() => openPaywallModal(isOut ? 'Daily limit reached. Upgrade for unlimited queries.' : 'Upgrade to remove the daily limit.')}
+      onClick={() => openPaywallModal(isOut ? dailyCapPaywallLine() : 'A paid plan lifts the free daily cap.')}
       data-testid="quota-badge"
       data-header-item="quota"
       className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold tracking-wider whitespace-nowrap transition-all border ${
@@ -80,7 +81,7 @@ export const UsageQuotaBadge: React.FC<Props> = ({ className = '', showIcon = tr
       {showIcon && (
         <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isOut ? 'bg-danger-400' : isLow ? 'bg-warning-400' : 'bg-gold'}`} />
       )}
-      <span>{isOut ? `0 left of ${quota.limit} (Limit reached)` : `${quota.remaining} left of ${quota.limit} Daily`}{bonus > 0 ? ` + ${bonus} invite` : ''}</span>
+      <span>{isOut ? `0 of ${quota.limit} left today` : `${quota.remaining} of ${quota.limit} left today`}{bonus > 0 ? ` + ${bonus} invite` : ''}</span>
       <span className="text-[9px] font-black text-gold uppercase tracking-widest ml-0.5">Upgrade</span>
     </button>
   );
