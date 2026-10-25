@@ -301,6 +301,17 @@ describe('APS MCP + projects', () => {
     expect(after.keys).toEqual([]);
   });
 
+  it('answers a malformed percent-encoded project id with 400, not 500', async () => {
+    const env = makeEnv(new Map());
+    const res = await worker.fetch(
+      new Request('https://luminarasuite.com/api/projects/%E0%A4%A', { headers: tgHeaders(77102, '10.20.3.1') }),
+      env,
+      ctx,
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ ok: false, error: 'The URL has invalid percent-encoding.', code: 'BAD_ENCODING' });
+  });
+
   it('API key authenticates MCP for growth account', async () => {
     const store = new Map<string, string>([
       ['sub:acct_g', JSON.stringify({ plan: 'growth', expiresAt: Date.now() + 86400_000 })],

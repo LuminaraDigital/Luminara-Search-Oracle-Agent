@@ -534,6 +534,14 @@ describe('budget routes', () => {
     );
     expect(bad.status).toBe(400);
 
+    const nullBody = await worker.fetch(
+      new Request('https://luminarasuite.com/api/budgets/self', { method: 'PUT', headers, body: 'null' }),
+      env,
+      ctx,
+    );
+    expect(nullBody.status).toBe(400);
+    expect(((await nullBody.json()) as { error?: string }).error).toBe('monthlyBudgetCents must be a positive integer of cents');
+
     const good = await worker.fetch(
       new Request('https://luminarasuite.com/api/budgets/self', {
         method: 'PUT',

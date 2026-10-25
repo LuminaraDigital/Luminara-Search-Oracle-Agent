@@ -1759,7 +1759,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     if (path === '/budgets/self' && request.method === 'PUT') {
       const body = await readBody(request, MAX_SMALL_BODY_BYTES);
       if (!body.ok) return withCors(json({ error: body.error }, body.status));
-      const raw = JSON.parse(body.text || '{}') as { monthlyBudgetCents?: unknown };
+      const raw = (body.value || {}) as { monthlyBudgetCents?: unknown };
       const monthlyBudgetCents = Number(raw.monthlyBudgetCents);
       if (!Number.isFinite(monthlyBudgetCents) || Math.floor(monthlyBudgetCents) <= 0) {
         return withCors(json({ ok: false, error: 'monthlyBudgetCents must be a positive integer of cents' }, 400));
@@ -1883,7 +1883,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     if (path === '/projects' && request.method === 'POST') {
       const body = await readBody(request, MAX_SMALL_BODY_BYTES);
       if (!body.ok) return withCors(json({ error: body.error }, body.status));
-      const raw = JSON.parse(body.text || '{}') as Record<string, unknown>;
+      const raw = (body.value || {}) as Record<string, unknown>;
       const created = await createProject(env, accountId, {
         domain: String(raw.domain || ''),
         name: typeof raw.name === 'string' ? raw.name : undefined,
@@ -1913,7 +1913,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       if (isContext && request.method === 'PATCH') {
         const body = await readBody(request, MAX_SMALL_BODY_BYTES);
         if (!body.ok) return withCors(json({ error: body.error }, body.status));
-        const raw = JSON.parse(body.text || '{}') as { updates?: ProjectContextPatch[] };
+        const raw = (body.value || {}) as { updates?: ProjectContextPatch[] };
         const updated = await updateProjectContext(
           env,
           accountId,
@@ -1945,7 +1945,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     if (path === '/reports' && request.method === 'POST') {
       const body = await readBody(request, 600_000);
       if (!body.ok) return withCors(json({ error: body.error }, body.status));
-      const raw = JSON.parse(body.text || '{}') as Record<string, unknown>;
+      const raw = (body.value || {}) as Record<string, unknown>;
       const saved = await saveAgentReport(env, accountId, {
         projectId: String(raw.projectId || ''),
         title: String(raw.title || ''),
@@ -2021,7 +2021,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       if (!dual.ok) return withCors(dual.response);
       const body = await readBody(request, MAX_SMALL_BODY_BYTES);
       if (!body.ok) return withCors(json({ error: body.error }, body.status));
-      const raw = JSON.parse(body.text || '{}') as { name?: string };
+      const raw = (body.value || {}) as { name?: string };
       const created = await createApiKey(env, who.user, raw.name || 'MCP key');
       if (!created.ok) return withCors(json({ ok: false, error: created.error }, created.status));
       return withCors(withRateLimitHeaders(json({ ok: true, key: created.key, meta: created.meta }), dual.headers));
@@ -2221,6 +2221,10 @@ const handler = {
         if (unsub) return guard(unsub);
         return guard(await runWithWaitUntil(ctx, () => handleApi(request, env, ctx)));
       } catch (e) {
+        // A malformed %-escape in the path reaches decodeURIComponent in several routes.
+        if (e instanceof URIError) {
+          return guard(json({ ok: false, error: 'The URL has invalid percent-encoding.', code: 'BAD_ENCODING' }, 400));
+        }
         // Never echo internal error details (stack traces, upstream messages, env hints) to callers.
         console.error('[api] unhandled error', request.method, url.pathname, e);
         reportWorkerException(env, e, { path: url.pathname, method: request.method });
