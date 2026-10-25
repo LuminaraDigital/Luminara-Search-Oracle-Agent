@@ -629,8 +629,8 @@ function hasByokProviderKey(providerId: string): boolean {
   return Boolean(readStoredKey(slot.storageKey) || readViteKey(slot.viteKey));
 }
 
-/** The engines ConfigService.getNativePriority writes with (configService imports this module, so it is listed here). */
-const WRITING_MODEL_IDS = ['groq', 'nim', 'openrouter', 'ollama', 'freellm'] as const;
+/** The engines that write an answer. ConfigService.getNativePriority orders them. */
+export const NATIVE_ENGINE_IDS = ['groq', 'nim', 'openrouter', 'ollama', 'freellm'] as const;
 
 /**
  * The free daily hosted allowance is used up and still applies: limited, nothing left, no invite
@@ -642,7 +642,7 @@ export function hostedAllowanceSpent(q: QuotaInfo): boolean {
     && q.remaining <= 0
     && (!q.bonusRemaining || q.bonusRemaining <= 0)
     && Date.now() < q.resetAt
-    && !WRITING_MODEL_IDS.some(hasByokProviderKey);
+    && !NATIVE_ENGINE_IDS.some(hasByokProviderKey);
 }
 
 export function hostedProviderDecisionReason(providerId: string): HostedProviderDecisionReason {
