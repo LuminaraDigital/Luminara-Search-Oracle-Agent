@@ -52,7 +52,6 @@ import {
 } from './telegramBot';
 import { createTonInvoice, verifyTonPayment, sweepTonPendingOrders, isTonPaymentConfigured, isTonAddressConfirmed, isTonCheckoutOpen, TON_IN_TELEGRAM_ERROR, TON_PRICING, JETTON_PRICING, JETTON_CHECKOUT_LIVE } from './tonPayment';
 import { listSupportRequests } from './paymentSupport';
-import { getQ402SupportedCatalog, Q402_SETTLEMENT_LIVE } from './q402';
 import { resolveChainNetwork } from './chainNetwork';
 import { probeXdcRpcCached } from './chain/xdcRpc';
 import { activateLicenseKey, generateLicenseKeys, importLicenseKeys } from './licenseService';
@@ -393,7 +392,6 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       jettonPricing: JETTON_PRICING,
       jettonCheckout: JETTON_CHECKOUT_LIVE,
       stripeCheckout: isStripeCheckoutLive(env), lumens: env.LUMENS_ENABLED === 'true',
-      q402: Q402_SETTLEMENT_LIVE,
       chainNetwork,
       xdcRpcOk,
       proofAnchorEnabled: String(env.PROOF_ANCHOR_ENABLED || '').toLowerCase() === 'true',
@@ -1112,22 +1110,6 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
   if (path === '/stripe/webhook') {
     if (request.method !== 'POST') return withCors(json({ error: 'Method not allowed' }, 405));
     return withCors(handleStripeWebhook(request, env));
-  }
-
-  // Q402 (x402-style pay-per-call on TON) is off, and while it is off none of its routes answer.
-  // The discovery route used to publish the merchant address and TON, USDT and LORA prices to
-  // anyone, for a rail that cannot settle and a wallet the owner had not confirmed. Every
-  // /q402/* path is a 404 until Q402_SETTLEMENT_LIVE is true (worker/q402/facilitator.ts) and
-  // tests/moneyInvariants.test.ts is changed with it.
-  if (path.startsWith('/q402/')) {
-    if (!Q402_SETTLEMENT_LIVE) {
-      return withCors(json({ ok: false, error: 'Not found' }, 404));
-    }
-    if (path === '/q402/supported') {
-      if (request.method !== 'GET') return withCors(json({ error: 'Method not allowed' }, 405));
-      return withCors(json(getQ402SupportedCatalog(env)));
-    }
-    return withCors(json({ ok: false, error: 'Not found' }, 404));
   }
 
   // Temporary License Key Activation (growth trial passes & enterprise licenses)

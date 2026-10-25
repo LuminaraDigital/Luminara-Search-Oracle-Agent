@@ -269,7 +269,8 @@ no payment was taken. The staging webhook is subscribed to
 - **TON checkout is open only for an address the owner has confirmed.** `TON_CONFIRMED_ADDRESS`
   must equal `TON_RECEIVING_ADDRESS`. Until it does, no invoice is issued and public
   `/health` reports `ton: false`. Orders that already exist can still be verified.
-- **Q402 is off, and while it is off every `/q402/*` path is a 404**, including discovery.
+- **Q402 is removed.** `worker/q402/` and `Q402_LIVE` are gone; every `/q402/*` path is a 404 like
+  any unknown route, including discovery.
 - **The Stripe card rail is on for staging and production.** `env.STRIPE_CHECKOUT_LIVE === 'true'` plus a matching key mode is the only open state. `env.staging.vars` and `env.production.vars` are `"true"`. The default vars are `"false"`.
 - Public `/health` carries `ok`, the three rail booleans and `plans` (the public Stars
   catalogue: title, description, price in Stars, days). Nothing else.

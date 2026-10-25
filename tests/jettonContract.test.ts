@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { Address } from '@ton/core';
 import { buildJettonBurnPayload, buildJettonTransferPayload } from '../services/ton/jettonService';
-import { getQ402SupportedCatalog } from '../worker/q402';
 import { LORA_DECIMALS } from '../worker/tonPayment';
 import token from '../contracts/jetton/token.json';
 import fixture from '../contracts/jetton/tests/fixtures/app-payloads.json';
@@ -16,12 +15,7 @@ import fixture from '../contracts/jetton/tests/fixtures/app-payloads.json';
  * the same bytes to the real contract code.
  */
 describe('Luminara Jetton: the app and the contract agree', () => {
-  it('sells the token that contracts/jetton/token.json describes', () => {
-    const catalog = getQ402SupportedCatalog({ CHAIN_NETWORK: 'testnet' } as never);
-
-    expect(catalog.assets.LORA.symbol).toBe(token.metadata.symbol);
-    expect(catalog.assets.LORA.name).toBe(token.metadata.name);
-    expect(String(catalog.assets.LORA.decimals)).toBe(token.metadata.decimals);
+  it('counts LORA in the decimals contracts/jetton/token.json declares', () => {
     expect(String(LORA_DECIMALS)).toBe(token.metadata.decimals);
   });
 
