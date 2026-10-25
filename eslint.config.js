@@ -35,6 +35,7 @@ export default tseslint.config(
       'contracts/**',
       'pstack/**',
       'ponytail/**',
+      'apps/**',
     ],
   },
   js.configs.recommended,

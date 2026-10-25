@@ -1,0 +1,40 @@
+# Detekt overrides for the Luminara Suite Android app.
+#
+# `buildUponDefaultConfig = true` (app/build.gradle.kts) means every rule not
+# named here keeps detekt's own default, active. This file records only the
+# places where detekt's default and a Jetpack Compose codebase disagree, plus
+# thresholds capped above current usage so the rule fires when code grows.
+
+complexity:
+  CyclomaticComplexMethod:
+    # A screen's `when (event)` / `when { loading -> ... }` tree is layout
+    # structure rather than business branching logic.
+    allowedComplexity: 20
+    ignoreAnnotated: ['Composable']
+  LongMethod:
+    # 60 lines is right for business logic; Compose screen trees are ignored.
+    allowedLines: 60
+    ignoreAnnotated: ['Composable']
+  TooManyFunctions:
+    allowedFunctionsPerFile: 20
+    allowedFunctionsPerClass: 25
+    allowedFunctionsPerInterface: 20
+    allowedFunctionsPerObject: 20
+
+naming:
+  FunctionNaming:
+    # `@Composable` functions that emit UI are PascalCase by Compose convention.
+    ignoreAnnotated: ['Composable']
+  MatchingDeclarationName:
+    # Off because ktlint's `standard:filename` already enforces file naming.
+    active: false
+
+style:
+  MagicNumber:
+    # Off for HTTP status codes (200..299, 404), AES key sizes (128, 256),
+    # and Compose layout constants.
+    active: false
+  ReturnCount:
+    # Guard clauses at the top of suspend repository calls stay readable.
+    max: 4
+    excludeGuardClauses: true
