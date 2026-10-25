@@ -98,7 +98,7 @@ const OFFLINE_URL = pathToFileURL(path.join(__dirname, 'offline.html')).href;
 const shellPolicy = createShellPolicy({
   webappUrl: resolveWebappUrl(),
   isDev: IS_DEV,
-  // Set alongside LUMINARA_WEBAPP_URL when the app runs on a Firebase project other than production.
+  // Only for a self-hosted Firebase project; production and staging auth domains are built in.
   firebaseAuthDomain: process.env.VITE_FIREBASE_AUTH_DOMAIN,
   shellPageUrls: [SPLASH_URL, OFFLINE_URL],
 });

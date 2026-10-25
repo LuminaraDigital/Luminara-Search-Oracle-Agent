@@ -18,11 +18,11 @@ set LUMINARA_WEBAPP_URL=https://luminarasuite.com/
 npx electron .
 ```
 
-A web app on another Firebase project (staging) also needs its auth domain, or the Google sign-in popup opens in the system browser instead of the app:
+The production and staging Firebase auth domains are built into the shell. A web app on a self-hosted Firebase project also needs its auth domain, or the Google sign-in popup opens in the system browser instead of the app:
 
 ```bash
-set LUMINARA_WEBAPP_URL=https://staging.luminarasuite.com/
-set VITE_FIREBASE_AUTH_DOMAIN=luminara-suite-staging.firebaseapp.com
+set LUMINARA_WEBAPP_URL=https://suite.example.com/
+set VITE_FIREBASE_AUTH_DOMAIN=auth.example.com
 npx electron .
 ```
 

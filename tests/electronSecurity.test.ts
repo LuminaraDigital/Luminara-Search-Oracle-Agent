@@ -117,15 +117,20 @@ describe('desktop window.open', () => {
     expect(packaged.windowOpenAction(url)).toBe(action);
   });
 
-  it('opens the build\'s own Firebase auth domain as the sign-in popup', () => {
-    const staging = createShellPolicy({
-      webappUrl: 'https://staging.luminarasuite.com/',
+  it('opens the staging Firebase auth handler as the sign-in popup with no environment variable', () => {
+    expect(packaged.windowOpenAction('https://luminara-suite-staging.firebaseapp.com/__/auth/handler')).toBe('child');
+    expect(packaged.windowOpenAction('https://luminara-suite-staging.web.app/__/auth/handler')).toBe('child');
+  });
+
+  it('opens a self-hosted Firebase auth domain only when the shell is given it', () => {
+    const selfHosted = createShellPolicy({
+      webappUrl: 'https://suite.operator.example/',
       isDev: false,
-      firebaseAuthDomain: 'luminara-suite-staging.firebaseapp.com',
+      firebaseAuthDomain: 'auth.operator.example',
       shellPageUrls: [],
     });
-    expect(staging.windowOpenAction('https://luminara-suite-staging.firebaseapp.com/__/auth/handler')).toBe('child');
-    expect(packaged.windowOpenAction('https://luminara-suite-staging.firebaseapp.com/__/auth/handler')).toBe('external');
+    expect(selfHosted.windowOpenAction('https://auth.operator.example/__/auth/handler')).toBe('child');
+    expect(packaged.windowOpenAction('https://auth.operator.example/__/auth/handler')).toBe('external');
   });
 });
 

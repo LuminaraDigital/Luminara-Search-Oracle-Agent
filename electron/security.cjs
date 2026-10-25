@@ -8,8 +8,16 @@ const { fileURLToPath } = require('node:url');
  * links leave for the system browser.
  */
 
-/** Production Firebase auth handler origins. The Google sign-in popup opens on one of these. */
-const FIREBASE_AUTH_ORIGINS = ['https://luminara-suite.firebaseapp.com', 'https://luminara-suite.web.app'];
+/**
+ * Firebase auth handler origins of Luminara's production and staging projects (the auth domains
+ * services/auth/firebasePublicConfig.ts lists). The Google sign-in popup opens on one of these.
+ */
+const FIREBASE_AUTH_ORIGINS = [
+  'https://luminara-suite.firebaseapp.com',
+  'https://luminara-suite.web.app',
+  'https://luminara-suite-staging.firebaseapp.com',
+  'https://luminara-suite-staging.web.app',
+];
 /**
  * TON Connect wallet deep links (opened with window.open(link, '_self')): the generic tc: and the
  * Telegram tg:, plus the wallet schemes in @tonconnect/sdk's built-in wallet list.
