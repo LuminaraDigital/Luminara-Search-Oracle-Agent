@@ -786,6 +786,12 @@ export async function handleMcpRequest(
     return mcpJson(rpcError(null, -32600, `Batch too large: at most ${MAX_MCP_BATCH} messages per request`), 400);
   }
   const messages = Array.isArray(body) ? body : [body];
+  // Every rate limit counts HTTP requests, so one request may spend at most one tool call.
+  const toolCalls = messages.filter((msg) => (msg as { method?: unknown } | null)?.method === 'tools/call').length;
+  if (toolCalls > 1) {
+    console.warn(JSON.stringify({ event: 'mcp_batch_refused', toolCalls }));
+    return mcpJson(rpcError(null, -32600, 'Send one tools/call per request'), 400);
+  }
   const responses: unknown[] = [];
 
   for (const msg of messages) {

@@ -29,5 +29,7 @@
     }
   }
 }</pre>
+  <h2>Changes</h2>
+  <p>October 2026: send one <code>tools/call</code> per request. A JSON-RPC batch with more than one <code>tools/call</code> is refused with HTTP 400 and error <code>-32600</code>. A batch may still carry <code>initialize</code>, <code>tools/list</code> and <code>ping</code> next to its one call.</p>
 </body>
 </html>

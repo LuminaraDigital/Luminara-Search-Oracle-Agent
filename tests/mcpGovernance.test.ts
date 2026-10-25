@@ -2,7 +2,7 @@
  * MCP Tool Governance (spec 0010): policy decision branches, action-request
  * lifecycle, dedupe, expiry, and integration through the /api/mcp path.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import worker from '../worker/index';
 import type { Env } from '../worker/env';
 import {
@@ -340,6 +340,33 @@ describe('mcp integration', () => {
     );
     expect(ok.status).toBe(200);
     expect(((await ok.json()) as unknown[]).length).toBe(20);
+  });
+
+  it('refuses a batch with more than one tools/call and keeps a batch with one', async () => {
+    const env = makeEnv();
+    const call = (id: number) => ({ jsonrpc: '2.0', id, method: 'tools/call', params: { name: 'whoami', arguments: {} } });
+    const post = (body: unknown) =>
+      handleMcpRequest(new Request('https://luminarasuite.com/api/mcp', { method: 'POST', body: JSON.stringify(body) }), env, user);
+
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const refused = await post([call(1), call(2)]);
+      expect(refused.status).toBe(400);
+      expect(await refused.json()).toEqual({
+        jsonrpc: '2.0',
+        id: null,
+        error: { code: -32600, message: 'Send one tools/call per request' },
+      });
+      expect(warn).toHaveBeenCalledWith(JSON.stringify({ event: 'mcp_batch_refused', toolCalls: 2 }));
+    } finally {
+      warn.mockRestore();
+    }
+
+    const mixed = await post([{ jsonrpc: '2.0', id: 1, method: 'initialize' }, { jsonrpc: '2.0', id: 2, method: 'tools/list' }, call(3)]);
+    expect(mixed.status).toBe(200);
+    const results = (await mixed.json()) as Array<{ id: number; result?: { isError?: boolean } }>;
+    expect(results.map((r) => r.id)).toEqual([1, 2, 3]);
+    expect(results[2].result?.isError).toBe(false);
   });
 
   it('rejects an oversized request body with 413', async () => {
