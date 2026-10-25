@@ -881,8 +881,9 @@ export async function fetchWorkspace(): Promise<{
   };
 }
 
+/** `baseVersion` is the server `updatedAt` the copy was based on; an older one gets 409 and the stored copy. */
 export async function putWorkspaceRemote(input: {
-  updatedAt: number;
+  baseVersion: number;
   payload: WorkspacePayload;
   force?: boolean;
 }): Promise<{

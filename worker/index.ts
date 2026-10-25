@@ -772,24 +772,29 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
 
       const read = await readBody(request, MAX_BODY_BYTES);
       if (!read.ok) return withCors(json({ error: read.error }, read.status));
-      const body = (read.value || {}) as { updatedAt?: number; payload?: unknown; force?: boolean };
-      const clientUpdatedAt = Number(body.updatedAt || 0);
+      const body = (read.value || {}) as { baseVersion?: unknown; payload?: unknown; force?: boolean };
       const sanitized = sanitizeWorkspaceWrite(body.payload ?? {});
       if (!sanitized.ok) return withCors(json({ ok: false, error: sanitized.error, code: 'INVALID_PAYLOAD' }, 400));
       const payload = sanitized.payload;
+      const conflict = (stored: Awaited<ReturnType<typeof getWorkspace>>) => withCors(json({
+        ok: false,
+        conflict: true,
+        accountId,
+        updatedAt: stored?.updatedAt ?? 0,
+        payload: stored?.payload ?? {},
+      }, 409));
+      // The stored updatedAt is the version. A write names the version it was based on and is
+      // refused unless that is still the stored one, so a stale device takes the stored copy
+      // instead of replacing it. Bodies without baseVersion come from older bundles, which
+      // force-pushed stale copies on sign-in, so they cannot force.
+      const hasBase = typeof body.baseVersion === 'number' && Number.isFinite(body.baseVersion);
+      const force = body.force === true && hasBase;
       const existing = await getWorkspace(env, accountId);
-      // 409 Conflict: only trigger if existing record is newer by more than a 15-second clock skew tolerance
-      if (existing && !body.force && clientUpdatedAt > 0 && (existing.updatedAt - clientUpdatedAt) > 15_000) {
-        return withCors(json({
-          ok: false,
-          conflict: true,
-          accountId,
-          updatedAt: existing.updatedAt,
-          payload: existing.payload,
-        }, 409));
-      }
-      const updatedAt = Math.max(clientUpdatedAt, Date.now());
-      const saved = await putWorkspace(env, accountId, payload, updatedAt);
+      if (existing && !force && body.baseVersion !== existing.updatedAt) return conflict(existing);
+      const updatedAt = Math.max(Date.now(), (existing?.updatedAt ?? 0) + 1);
+      const saved = await putWorkspace(env, accountId, payload, updatedAt, force ? undefined : existing?.updatedAt ?? null);
+      // Another write landed between the read and this one.
+      if (!saved) return conflict(await getWorkspace(env, accountId));
 
       // Enterprise Audit Log: record sync event asynchronously
       try {
