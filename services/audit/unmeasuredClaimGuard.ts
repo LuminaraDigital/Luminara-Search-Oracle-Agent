@@ -6,6 +6,7 @@
 
 import { isUnmeasuredReviewRating, isUnmeasuredReviewUrl } from './citationIntegrityService';
 import { sourceMentionsAudit, type AuditTextScope } from './reportColumnGate';
+import { isWebUrl } from '../../utils/webUrl';
 
 export interface MeasuredClaimFacts {
   healthScore?: number | null;
@@ -140,7 +141,7 @@ export function visibleGroundingSources(
   const out: Array<{ uri: string; title: string }> = [];
   for (const source of sources || []) {
     const uri = source?.uri || '';
-    if (!/^https?:\/\//i.test(uri) || isUnmeasuredReviewUrl(uri)) continue;
+    if (!isWebUrl(uri) || isUnmeasuredReviewUrl(uri)) continue;
     const title = source.title?.trim() || uri;
     const shown = isUnmeasuredReviewRating(title) ? hostLabel(uri) : title;
     if (!sourceMentionsAudit(uri, shown, scope)) continue;

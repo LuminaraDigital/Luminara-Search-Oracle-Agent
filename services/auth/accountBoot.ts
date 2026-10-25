@@ -1,8 +1,10 @@
 /**
  * One signed-in boot request. Workspace pull and quota read the same promise
- * instead of each calling the Worker.
+ * instead of each calling the Worker. Its quota lands in the snapshot as soon as it answers, so a
+ * new account (a sign-in, a switch, a Firebase link inside Telegram) shows its own plan.
  */
 import { readCachedFirebaseIdToken } from './firebaseIdToken';
+import { quotaEpoch, writeQuotaSnapshot } from '../plans/quotaSnapshot';
 
 export type AccountBoot = {
   ok: true;
@@ -63,8 +65,22 @@ export function startAccountBoot(token: string): Promise<AccountBoot | null> {
   if (!token) return Promise.resolve(null);
   if (pending && pendingToken === token) return pending;
   pendingToken = token;
+  const since = quotaEpoch();
   const run = fetchBoot(token).then((body) => {
-    if (body) last = { token, at: Date.now(), body };
+    if (body) {
+      last = { token, at: Date.now(), body };
+      const { quota } = body;
+      writeQuotaSnapshot({
+        limit: quota.limit,
+        used: quota.used,
+        remaining: quota.remaining,
+        resetSec: quota.resetSec,
+        isUnlimited: quota.isUnlimited,
+        plan: quota.plan,
+        expiresAt: quota.expiresAt,
+        bonusRemaining: quota.bonusRemaining,
+      }, since);
+    }
     return body;
   });
   pending = run;
@@ -77,11 +93,12 @@ export function startAccountBoot(token: string): Promise<AccountBoot | null> {
   return run;
 }
 
-/** In-flight boot, or the one that finished in the last two seconds. */
+/** The current token's boot: in flight, or finished in the last two seconds. */
 export function takeAccountBoot(): Promise<AccountBoot | null> {
-  if (pending) return pending;
   const token = readCachedFirebaseIdToken();
-  if (last && token && last.token === token && Date.now() - last.at < BOOT_REUSE_MS) {
+  if (!token) return Promise.resolve(null);
+  if (pending && pendingToken === token) return pending;
+  if (last && last.token === token && Date.now() - last.at < BOOT_REUSE_MS) {
     return Promise.resolve(last.body);
   }
   return Promise.resolve(null);
