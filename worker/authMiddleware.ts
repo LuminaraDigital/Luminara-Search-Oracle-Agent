@@ -44,7 +44,8 @@ export function refuseCrossSiteSessionWrite(request: Request, env: Env): Respons
   if (!refusal) return null;
   const path = new URL(request.url).pathname;
   if (refusal === 'origin_missing') {
-    // shortcut: Telegram webviews are not proven to send Origin, so a missing one passes; refuse it once csrf_origin_missing stops showing in the logs.
+    // shortcut: a missing Origin passes because Telegram webviews are not proven to send one;
+    // refuse it once csrf_origin_missing stops showing in the logs.
     console.warn(JSON.stringify({ event: 'csrf_origin_missing', path }));
     return null;
   }
