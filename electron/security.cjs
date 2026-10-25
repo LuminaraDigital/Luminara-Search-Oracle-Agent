@@ -10,7 +10,17 @@ const { fileURLToPath } = require('node:url');
 
 /** Production Firebase auth handler origins. The Google sign-in popup opens on one of these. */
 const FIREBASE_AUTH_ORIGINS = ['https://luminara-suite.firebaseapp.com', 'https://luminara-suite.web.app'];
-const EXTERNAL_PROTOCOLS = new Set(['https:', 'http:', 'mailto:']);
+/**
+ * TON Connect wallet deep links (opened with window.open(link, '_self')): the generic tc: and the
+ * Telegram tg:, plus the wallet schemes in @tonconnect/sdk's built-in wallet list.
+ * shortcut: a wallet added to the remote TON wallets list later is refused until its scheme is listed here.
+ */
+const TON_WALLET_PROTOCOLS = [
+  'tc:', 'tg:',
+  'tonkeeper-tc:', 'tonkeeper-pro-tc:', 'mytonwallet-tc:', 'gramwallet-tc:', 'nicegram-tc:', 'safepal-tc:',
+  'bitkeep:', 'bnc:', 'bybitapp:', 'echooo:', 'imtokenv2:',
+];
+const EXTERNAL_PROTOCOLS = new Set(['https:', 'http:', 'mailto:', ...TON_WALLET_PROTOCOLS]);
 
 function parseUrl(rawUrl) {
   try {

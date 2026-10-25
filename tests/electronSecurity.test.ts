@@ -77,6 +77,21 @@ describe('desktop main window leaving the app', () => {
     expect(navigate('https://checkout.stripe.com/c/pay/cs_test_a1')).toEqual({ stopped: true, opened: ['https://checkout.stripe.com/c/pay/cs_test_a1'] });
   });
 
+  it.each([
+    'tc://?v=2&id=abc&r=%7B%7D',
+    'tonkeeper-tc://?v=2&id=abc',
+    'mytonwallet-tc://?v=2&id=abc',
+    'tg://resolve?domain=wallet&appname=start',
+  ])('opens the TON Connect wallet link %s (window.open with _self) in the wallet app', (deepLink) => {
+    expect(navigate(deepLink)).toEqual({ stopped: true, opened: [deepLink] });
+    expect(packaged.windowOpenAction(deepLink)).toBe('external');
+    expect(packaged.isPermissionGranted('openExternal', { externalURL: deepLink })).toBe(true);
+  });
+
+  it('still opens a wallet universal link in the system browser', () => {
+    expect(packaged.windowOpenAction('https://app.tonkeeper.com/ton-connect?v=2&id=abc')).toBe('external');
+  });
+
   it('lets the app navigate, stops other apps, and leaves frames alone', () => {
     expect(navigate('https://luminarasuite.com/app')).toEqual({ stopped: false, opened: [] });
     expect(navigate('search-ms:query=x')).toEqual({ stopped: true, opened: [] });
