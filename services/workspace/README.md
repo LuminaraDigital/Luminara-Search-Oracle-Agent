@@ -26,8 +26,12 @@ server side lives in `worker/userStore.ts` (D1 preferred, KV fallback). See
    `AuthPanel.tsx`; concurrent callers share one pull) applies the server copy
    and dispatches `luminara-workspace-restored`, unless this copy is dirty and
    its `baseVersion` is still the server's version, or the server has nothing
-   yet and the browser does. Only then does it push the local copy. No client
-   path sends `force`.
+   yet and the browser does. Only then does it push the local copy. The server
+   has no force override. A pull that started before `clearLocalWorkspace()`
+   (sign-out) does not apply its copy. Until this page's pull has succeeded, a
+   push runs the pull instead, so leftovers from another account are never sent.
+   `onWorkspaceRestored()` fires after every pull and after a refused push; App
+   re-reads DNA and chat from storage on it.
 4. **Account switching purges.** If the logged-in account id differs from the
    locally stored one, `clearLocalWorkspace()` wipes memory keys, key-bag
    keys, and the chat session before applying the new payload.
@@ -37,8 +41,10 @@ server side lives in `worker/userStore.ts` (D1 preferred, KV fallback). See
    when the stored value changes (App's DNA effect uses it). A push sends
    `baseVersion`. On a 409 the stored copy is applied locally and wins. No push
    starts while a pull or another push runs; edits made meanwhile are pushed
-   once it ends. A failed or offline push never throws: it keeps `dirty` and
-   backs off for 10 s.
+   once it ends. A failed or offline push never throws: it keeps `dirty`,
+   backs off for 10 s, and retries after 11 s and on the browser's `online`
+   event. A 4xx other than 429 is not retried, since the same body would fail
+   again.
 6. **Agency workspaces are plan-gated and bounded.** `createClient` enforces
    `entitlementsFor(planId).agencyClientLimit`; `canUseAgency` is false when
    the limit is 0. Names trimmed to 120 chars; domains normalized
@@ -71,5 +77,6 @@ env covered in `worker/README.md`.
 - `tests/accountLink.test.ts`: `identify()` with both credentials does not
   merge; `POST /api/auth/link` requires `{ confirm: true }`.
 - `tests/workspaceSyncVersion.test.ts`: mount/restore are not edits, a stale
-  browser takes the newer server copy, no push during a pull, offline push
-  backs off. `tests/workspaceVersionRoute.test.ts`: the Worker side.
+  browser takes the newer server copy, a 409 fires the restored event, no
+  push during a pull or before one succeeded, offline push backs off and
+  retries. `tests/workspaceVersionRoute.test.ts`: the Worker side.

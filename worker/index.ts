@@ -769,7 +769,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
 
       const read = await readBody(request, MAX_BODY_BYTES);
       if (!read.ok) return withCors(json({ error: read.error }, read.status));
-      const body = (read.value || {}) as { baseVersion?: unknown; payload?: unknown; force?: boolean };
+      const body = (read.value || {}) as { baseVersion?: unknown; payload?: unknown };
       const sanitized = sanitizeWorkspaceWrite(body.payload ?? {});
       if (!sanitized.ok) return withCors(json({ ok: false, error: sanitized.error, code: 'INVALID_PAYLOAD' }, 400));
       const payload = sanitized.payload;
@@ -782,14 +782,12 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       }, 409));
       // The stored updatedAt is the version. A write names the version it was based on and is
       // refused unless that is still the stored one, so a stale device takes the stored copy
-      // instead of replacing it. Bodies without baseVersion come from older bundles, which
-      // force-pushed stale copies on sign-in, so they cannot force.
-      const hasBase = typeof body.baseVersion === 'number' && Number.isFinite(body.baseVersion);
-      const force = body.force === true && hasBase;
+      // instead of replacing it. Older bundles send no baseVersion (and a `force` that is
+      // ignored), so once a row exists their writes are refused too.
       const existing = await getWorkspace(env, accountId);
-      if (existing && !force && body.baseVersion !== existing.updatedAt) return conflict(existing);
+      if (existing && body.baseVersion !== existing.updatedAt) return conflict(existing);
       const updatedAt = Math.max(Date.now(), (existing?.updatedAt ?? 0) + 1);
-      const saved = await putWorkspace(env, accountId, payload, updatedAt, force ? undefined : existing?.updatedAt ?? null);
+      const saved = await putWorkspace(env, accountId, payload, updatedAt, existing?.updatedAt ?? null);
       // Another write landed between the read and this one.
       if (!saved) return conflict(await getWorkspace(env, accountId));
 

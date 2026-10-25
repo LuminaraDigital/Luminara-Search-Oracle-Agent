@@ -180,6 +180,10 @@ async function applyPayload(payload: WorkspacePayload, accountId?: string): Prom
 
 type PullResult = { ok: boolean; accountId?: string; error?: string };
 
+const RESTORED_EVENT = 'luminara-workspace-restored';
+/** A failed push is tried again once the 10 s backoff has passed. */
+const PUSH_RETRY_MS = 11_000;
+
 let pushTimer: ReturnType<typeof setTimeout> | null = null;
 /** The running sign-in pull. No push starts while it runs, and a second caller shares it. */
 let pullInFlight: Promise<PullResult> | null = null;
@@ -188,6 +192,11 @@ let pushInFlight: Promise<void> | null = null;
 let editSeq = 0;
 /** True after this page's sign-in pull finishes or cannot run. Guests are ready without it. */
 let pullSettled = false;
+/** True once this page's pull succeeded. Until then storage may hold another account's leftovers. */
+let pullSucceeded = false;
+/** Bumped by clearLocalWorkspace, so a pull that started before a sign-out does not apply its copy. */
+let clearSeq = 0;
+let onlineHooked = false;
 
 /** Signed-in history is ready only after the workspace pull has settled. */
 export function workspaceHistoryReady(): boolean {
@@ -197,7 +206,16 @@ export function workspaceHistoryReady(): boolean {
 function settleWorkspacePull(accountId?: string): void {
   pullSettled = true;
   if (typeof window === 'undefined') return;
-  window.dispatchEvent(new CustomEvent('luminara-workspace-restored', { detail: { accountId } }));
+  window.dispatchEvent(new CustomEvent(RESTORED_EVENT, { detail: { accountId } }));
+}
+
+/**
+ * Runs `listener` after every pull settles and after a refused push applied the stored copy, so
+ * whatever shows synced state can re-read it from storage. Returns the unsubscribe.
+ */
+export function onWorkspaceRestored(listener: () => void): () => void {
+  window.addEventListener(RESTORED_EVENT, listener);
+  return () => window.removeEventListener(RESTORED_EVENT, listener);
 }
 
 /** The account this browser's workspace copy last synced with. Unset for a guest's copy. */
@@ -208,6 +226,8 @@ export function workspaceAccountId(): string | undefined {
 /** Clears all local workspace memory, keys, and chat session from the browser (e.g. on sign-out). */
 export function clearLocalWorkspace(): void {
   pullSettled = false;
+  pullSucceeded = false;
+  clearSeq += 1;
   if (typeof window === 'undefined') return;
   for (const key of MEMORY_KEYS) {
     try { localStorage.removeItem(key); } catch {}
@@ -249,6 +269,7 @@ async function runPull(): Promise<PullResult> {
     return { ok: false, error: 'No API' };
   }
   const seq = editSeq;
+  const cleared = clearSeq;
   let accountId: string | undefined;
   try {
     // A push already on the wire lands first, so the meta read below carries its version.
@@ -263,6 +284,8 @@ async function runPull(): Promise<PullResult> {
         }
       : await fetchWorkspace();
     if (!remote.ok) return { ok: false, error: remote.error || 'pull failed' };
+    // Signed out while this pull was on the wire: the copy belongs to the account that left.
+    if (clearSeq !== cleared) return { ok: false, error: 'signed out' };
 
     let local = readMeta();
     // If switching accounts on this browser, purge previous account's local storage first
@@ -284,6 +307,7 @@ async function runPull(): Promise<PullResult> {
       writeMeta({ ...readMeta(), accountId: remote.accountId });
       if (ownEdits) await pushNow();
     }
+    pullSucceeded = true;
     return { ok: true, accountId: remote.accountId };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'pull failed' };
@@ -308,19 +332,43 @@ let lastPushFailedAt = 0;
 /**
  * Pushes the local copy now. `force` only skips the failure backoff: the server still refuses a
  * copy based on an older version than it holds. Skipped while a pull or another push runs; each
- * of those reschedules when edits landed during it.
+ * of those reschedules when edits landed during it. Before this page's pull has succeeded it runs
+ * the pull instead, which pushes the local edits only when they belong on the server's version.
  */
 export async function flushWorkspacePush(force = false): Promise<void> {
   if (!apiBase() || typeof window === 'undefined') return;
   // Guests have no account workspace; local state stays local until they sign in.
   if (!accountKnownSignedIn()) return;
   if (pullInFlight || pushInFlight) return;
-  // If recently rate-limited (within 10s), back off
-  if (Date.now() - lastPushFailedAt < 10_000 && !force) return;
+  if (!pullSucceeded) {
+    void pullWorkspaceOnLogin();
+    return;
+  }
+  // If recently rate-limited (within 10s), back off and try again after it.
+  if (Date.now() - lastPushFailedAt < 10_000 && !force) {
+    scheduleWorkspacePush(PUSH_RETRY_MS);
+    return;
+  }
+  // This push covers a debounced one still waiting; edits after it reschedule on their own.
+  if (pushTimer) clearTimeout(pushTimer);
+  pushTimer = null;
   pushInFlight = pushNow().finally(() => {
     pushInFlight = null;
   });
   await pushInFlight;
+}
+
+/** Tries a failed push again after the backoff, or as soon as the browser is back online. */
+function retryPushLater(): void {
+  scheduleWorkspacePush(PUSH_RETRY_MS);
+  if (onlineHooked) return;
+  onlineHooked = true;
+  window.addEventListener('online', () => {
+    if (!readMeta().dirty) return;
+    if (pushTimer) clearTimeout(pushTimer);
+    pushTimer = null;
+    void flushWorkspacePush(true);
+  });
 }
 
 /** One push based on the server version in meta. Never throws: a failure starts the backoff. */
@@ -335,11 +383,13 @@ async function pushNow(): Promise<void> {
       // Another device saved first. Its copy wins, as it does on sign-in.
       await applyPayload(result.payload, accountId);
       writeMeta({ accountId, baseVersion: result.updatedAt || 0, dirty: false });
-      window.dispatchEvent(new CustomEvent('luminara-workspace-restored', { detail: { accountId } }));
+      window.dispatchEvent(new CustomEvent(RESTORED_EVENT, { detail: { accountId } }));
       return;
     }
     if (!result.ok) {
       lastPushFailedAt = Date.now();
+      // Worth another try when the server was busy or down. A body it refused would fail again.
+      if (!result.status || result.status === 429 || result.status >= 500) retryPushLater();
       return;
     }
     lastPushFailedAt = 0;
@@ -347,7 +397,9 @@ async function pushNow(): Promise<void> {
     writeMeta({ accountId, baseVersion: result.updatedAt || 0, dirty: editedSince });
     if (editedSince) scheduleWorkspacePush();
   } catch {
+    // Offline, or the request never completed.
     lastPushFailedAt = Date.now();
+    retryPushLater();
   }
 }
 

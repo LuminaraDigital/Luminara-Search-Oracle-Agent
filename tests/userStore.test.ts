@@ -216,7 +216,7 @@ describe('account linking', () => {
 describe('workspace blob', () => {
   it('stores and loads a workspace payload from KV', async () => {
     const { kv } = mockKv();
-    await putWorkspace({ LUMINARA_KV: kv }, 'acct-1', { storage: { luminara_business_dna: '{}' } }, 100);
+    await putWorkspace({ LUMINARA_KV: kv }, 'acct-1', { storage: { luminara_business_dna: '{}' } }, 100, null);
     const got = await getWorkspace({ LUMINARA_KV: kv }, 'acct-1');
     expect(got?.updatedAt).toBe(100);
     expect(got?.payload.storage?.luminara_business_dna).toBe('{}');
