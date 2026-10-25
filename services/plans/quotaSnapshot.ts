@@ -9,6 +9,8 @@ export interface QuotaInfo {
   used: number;
   remaining: number;
   resetSec: number;
+  /** Epoch ms of the daily reset (UTC midnight), from resetSec when the snapshot was written. */
+  resetAt: number;
   isUnlimited: boolean;
   plan?: string;
   expiresAt?: number;
@@ -34,8 +36,8 @@ export function getCurrentQuotaSync(): QuotaInfo | null {
   return current;
 }
 
-export function writeQuotaSnapshot(next: QuotaInfo): void {
-  publish(next);
+export function writeQuotaSnapshot(next: Omit<QuotaInfo, 'resetAt'>): void {
+  publish({ ...next, resetAt: Date.now() + next.resetSec * 1000 });
 }
 
 /** Sign-out or a different account: the previous account's plan must not leak into the next. */

@@ -14,7 +14,7 @@ import { CitationPopover } from './CitationPopover';
 import { ICONS } from '../../constants';
 import { downloadBlob } from '../../utils/download';
 import { toUserFacingText } from '../../utils/userFacingText';
-import { subscribeQuota, openPaywallModal, getCurrentQuotaSync, type QuotaInfo } from '../../services/apiClient';
+import { subscribeQuota, openPaywallModal, getCurrentQuotaSync, hostedAllowanceSpent, type QuotaInfo } from '../../services/apiClient';
 import {
   NotebookSourcesPanel,
   NotebookChatPanel,
@@ -126,7 +126,7 @@ export const NotebookView: React.FC<NotebookViewProps> = ({ dna }) => {
 
   const handleSendMessage = async (userText: string) => {
     if (!userText.trim() || isQuerying) return;
-    if (quota && !quota.isUnlimited && quota.remaining <= 0 && (!quota.bonusRemaining || quota.bonusRemaining <= 0)) {
+    if (quota && hostedAllowanceSpent(quota)) {
       openPaywallModal(`Daily limit reached (${quota.limit}/${quota.limit} used). Upgrade for unlimited Studio queries.`);
       setQueryError(`Daily query limit reached (${quota.limit}/${quota.limit} used today). Upgrade your plan or add your own API key in Settings.`);
       return;
@@ -148,7 +148,7 @@ export const NotebookView: React.FC<NotebookViewProps> = ({ dna }) => {
 
   const handleGeneratePodcast = async () => {
     if (isGeneratingPodcast) return;
-    if (quota && !quota.isUnlimited && quota.remaining <= 0 && (!quota.bonusRemaining || quota.bonusRemaining <= 0)) {
+    if (quota && hostedAllowanceSpent(quota)) {
       openPaywallModal(`Daily limit reached (${quota.limit}/${quota.limit} used). Upgrade for unlimited Studio queries.`);
       setStudioNotice({
         text: `Daily query limit reached (${quota.limit}/${quota.limit} used today). Upgrade your plan or add your own API key in Settings.`,
@@ -173,7 +173,7 @@ export const NotebookView: React.FC<NotebookViewProps> = ({ dna }) => {
 
   const handleGenerateArtifact = async (type: StudioArtifactType) => {
     if (generatingArtifactType) return;
-    if (quota && !quota.isUnlimited && quota.remaining <= 0 && (!quota.bonusRemaining || quota.bonusRemaining <= 0)) {
+    if (quota && hostedAllowanceSpent(quota)) {
       openPaywallModal(`Daily limit reached (${quota.limit}/${quota.limit} used). Upgrade for unlimited Studio queries.`);
       setStudioNotice({
         text: `Daily query limit reached (${quota.limit}/${quota.limit} used today). Upgrade your plan or add your own API key in Settings.`,

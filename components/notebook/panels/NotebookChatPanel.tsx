@@ -2,7 +2,7 @@ import React from 'react';
 import { Notebook, NotebookMessage, NotebookCitation } from '../../../types';
 import { ICONS } from '../../../constants';
 import { renderMarkdown } from '../../../utils/markdown';
-import { subscribeQuota, openPaywallModal, getCurrentQuotaSync, type QuotaInfo } from '../../../services/apiClient';
+import { subscribeQuota, openPaywallModal, getCurrentQuotaSync, hostedAllowanceSpent, type QuotaInfo } from '../../../services/apiClient';
 
 interface NotebookChatPanelProps {
   activeNotebook: Notebook;
@@ -218,7 +218,7 @@ export const NotebookChatPanel: React.FC<NotebookChatPanelProps> = ({
       </div>
 
       {/* Daily Quota Limit Banner */}
-      {quota && !quota.isUnlimited && quota.remaining <= 0 && (!quota.bonusRemaining || quota.bonusRemaining <= 0) && (
+      {quota && hostedAllowanceSpent(quota) && (
         <div className="px-4 py-2 bg-danger-500/10 border-t border-danger-500/20 flex items-center justify-between text-xs text-danger-200">
           <span>Daily free limit reached ({quota.limit}/{quota.limit} used). Upgrade for unlimited Studio queries or bring your own API key in Settings.</span>
           <button

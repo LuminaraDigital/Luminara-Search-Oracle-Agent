@@ -627,6 +627,18 @@ function hasByokProviderKey(providerId: string): boolean {
   return Boolean(readStoredKey(slot.storageKey) || readViteKey(slot.viteKey));
 }
 
+/**
+ * The free daily hosted allowance is used up and still applies: limited, nothing left, no invite
+ * bonus, the UTC reset not reached, and no key of the user's own (those calls are not metered).
+ */
+export function hostedAllowanceSpent(q: QuotaInfo): boolean {
+  return !q.isUnlimited
+    && q.remaining <= 0
+    && (!q.bonusRemaining || q.bonusRemaining <= 0)
+    && Date.now() < q.resetAt
+    && !Object.keys(PROVIDER_BYOK_SLOTS).some(hasByokProviderKey);
+}
+
 export function hostedProviderDecisionReason(providerId: string): HostedProviderDecisionReason {
   if (hasByokProviderKey(providerId)) return 'byok';
   if (!isProxyMode()) return 'no_health';
