@@ -1,6 +1,6 @@
 # Review batch 2: remaining verified bugs
 
-Status: CEO gate GO WITH CHANGES (changes applied below); citation and SQL verifier corrections applied. Branch `fix/review-batch-2` = `origin/staging` (6d1218e) + PR #267 + PR #268 (including its review fixes, 8a9438d), conflicts resolved: the #268 pull wins, #267's `collectPayload` stays, the README `/workspace` row carries both. Every item was re-verified on 6d1218e; line numbers drift, so implementers find the current ones.
+Status: implemented. All areas reviewed and merged into `fix/review-batch-2`; final CEO gate GO WITH CHANGES, applied. Branch = `origin/staging` + PR #267 + PR #268 (with its review fixes) + areas A-D + E, with conflicts resolved (the #268 pull wins, #267's `collectPayload` stays). Items were re-verified on 6d1218e; line numbers drift.
 
 ## Owner decisions (2026-10-25)
 
@@ -100,28 +100,41 @@ Migration `purge_plaintext_workspace_keys` (number taken at merge time): `UPDATE
 4. Integration: typecheck, lint, full suite, coverage, build; CEO gate on the whole diff.
 5. Release: push `fix/review-batch-2` as a draft PR into `staging`; after the CEO gate, with no release PR open, mark it ready and merge with a merge commit; close #267 and #268 with a pointer. Staging deploys through CI (migrations first); run `npm run smoke:staging`. Open the `staging` to `main` release PR with the release notes and the owner checklist below.
 
+## Outcome
+
+All four areas passed specialist review (two rounds each; C1 passed a bounded third attempt set by the CEO gate with a fixed probe bar) and merged as separate merge commits. E landed directly. The final CEO gate said GO WITH CHANGES for both the staging merge and the release PR; its changes are applied here. A4 stays deferred.
+
 ## Release notes (for the release PR)
 
 - Trial codes are for accounts without a paid plan; on a paid plan the code is refused and stays unused.
-- Free plans: "Run now" in Dreaming uses one free daily run.
-- MCP: one `tools/call` per request (batches with several are refused).
-- Lapsed plans: the API keys list shows an upgrade note and still allows revoke.
-- Telegram groups: the bot answers commands with a note to use a private chat.
-- Own API keys: re-enter them on a new device or after clearing the browser.
-- Desktop (next desktop release): links open in the system browser.
+- Payments: a TON payment or license key credits once even if a write half-fails; a Stars refund removes only the days not yet used, so time bought another way stays.
+- Sign-in: another site can no longer start or end your session. During a sign-in provider outage you are asked to try again, and it no longer counts as a wrong password.
+- Paid accounts keep paid features after an audit; signing out or switching accounts resets the plan badge; users with their own model key are not stopped by the free-allowance gate, and the gate clears after 00:00 UTC.
+- Oracle chat: a reply that states a site number nobody measured is followed by a "Not measured" note, and the saved conversation keeps the corrected text. Figures you gave are kept.
+- Telegram bot: removes made-up claims such as "you appear in N answers" or "you're on page N"; stickers, voice notes and photos get no reply; long replies are cut cleanly; a failed reply gives back your free daily request; in groups, commands get a note to use a private chat.
+- Dreaming: "Run now" on a free plan uses one of your free daily requests, and the app says when they are used up.
+- MCP: one `tools/call` per request; the OAuth token exchange works again.
+- Lapsed plans: the API keys list shows an upgrade note and revoke still works.
+- Workspace sync is versioned: a stale tab or device takes the stored copy instead of overwriting it. Tabs opened before the release need a reload to sync.
+- Your own API keys are never stored in plain text, and stored plain-text copies are deleted. Re-enter them on a new device or after clearing the browser.
+- Links in reports and AI answer sources that are not http(s) no longer open inside the app.
+- Removed: unused Q402 code.
+- Desktop (next `desktop-v*` release only): card checkout, links and email links open in the system browser; TON wallet links open the wallet app; after paying by card, reload the desktop app to see the plan; Google sign-in opens in a locked-down popup.
+
+Known residuals: a request with no Origin header on the three session routes is still allowed and logged `csrf_origin_missing`; a device clock running more than a minute slow can send an expired token (retrying calls refresh, one-shot calls get a 401 until the SDK refreshes); refunding two stacked Stars charges oldest-first can take days from a later payment (README); a used referral credit is not returned when a bot reply fails; desktop allows `tg:` and wallet links from any frame, and a popup can open an https link in the system browser without a click; Launchpad must stay off until A4 lands.
 
 ## Owner checklist for the release PR
 
-1. Cloudflare Workers Builds on both Workers: non-production branches version upload only; production deploy off or `--env production`; previews off; `luminara-search` disconnected from Git.
-2. `gh pr list --base main --head staging` shows no other release PR, and the diff holds only intended PRs.
-3. Production read-only: `wrangler d1 migrations list luminara-users --remote --env production` shows only the new migration; count rows with plain-text keys and invalid JSON.
-4. Staging web in a real browser: Google and email sign-in, sign-out, account switch (plan badge resets); a paid test account keeps paid features after an audit; a user with own keys passes the Instant Audit gate after the free quota.
-5. Mini App on Telegram iOS, Android and Desktop opens signed in; watch tail for `csrf_*`.
-6. Payments on staging: trial key on a paid account refused and unused; trial on a free account works; a minted license key and a TON testnet payment each credit once; a Stars refund removes only unused days; a Stripe test checkout credits.
-7. Bot: private reply arrives; long reply cut cleanly; sticker unanswered; in a group `/plan` gets the note and `/paysupport` works.
-8. Oracle: "my DA is 40" not redacted; a free account's forced dream run uses one unit, the second gets a readable 429.
+1. Workers Builds on both Workers: non-production branches version upload only; production deploy off or `--env production`; previews off; `luminara-search` disconnected from Git.
+2. `gh pr list --base main --head staging` shows no other release PR; the diff holds only #267, #268, batch areas A-E and migration 0042, and no dependency PR was merged into staging since.
+3. Production, read-only: `wrangler d1 migrations list luminara-users --remote --env production` shows only 0042; count rows where `json_valid(payload) AND json_type(payload,'$.keys') IS NOT NULL`, and rows with invalid JSON.
+4. Staging web in a real browser: Google and email sign-in, sign-out, account switch (badge resets); a paid account keeps paid features after an audit; a user with their own model key passes the Instant Audit gate after the free quota; a tab idle for over an hour still works.
+5. Mini App on Telegram iOS, Android, Desktop, macOS and web.telegram.org opens signed in; Stars Subscribe opens checkout; the tail shows no `csrf_rejected`.
+6. Payments on staging: a trial key on a paid account is refused and stays unused, and works on a free account; a minted license key, a TON testnet payment and a Mini App Stars purchase each credit once; a Stars refund removes only unused days; a Stripe test checkout credits.
+7. Bot: a private reply arrives; a long reply is cut cleanly; a sticker gets no reply; in a group `/plan` gets the note and `/paysupport` works.
+8. Oracle: "My DA is 40" is not redacted; a made-up site number shows the "Not measured" note; on a free account a forced dream run uses one unit and the next gets a readable 429.
 9. A real MCP client against staging `/mcp`: initialize, tools/list, whoami, one tool call.
 10. A lapsed account lists and revokes its API keys.
-11. Packaged desktop build against staging: Google popup and email sign-in, links in the system browser, mailto, offline retry, update check. Tag `desktop-v*` only after the production release.
-12. After production deploy: cache-busted `/api/health` and smoke green; 30 minutes of tail without a spike in the new events or 5xx; Stripe webhooks green; Telegram `getWebhookInfo` with no `last_error`; then merge `main` back into `staging`.
-13. Rollback: Worker version rollback in the dashboard (both schema states work with the previous Worker); the key purge is undone only by a D1 Time Travel restore within 30 days.
+11. Packaged desktop build against staging: Google popup, email sign-in, Stripe checkout in the system browser, a TON wallet link, links and mailto in the system, offline retry, update check. Tag `desktop-v*` only after the production release.
+12. After the production deploy: cache-busted `/api/health` and smoke green; repeat the item 3 count, and if it is not 0 run the same UPDATE once with `wrangler d1 execute` (the Worker serving between the migration and the deploy does not yet drop `keys`); 30 minutes of tail without a spike in `csrf_*`, `auth_unavailable`, `oracle_output_redacted`, `order_already_applied`, `stars_refund_partial` or 5xx; Stripe webhooks green; Telegram `getWebhookInfo` with no `last_error`; the production bot's menu button and BotFather Mini App URL point at `https://www.luminarasuite.com/`; then merge `main` back into `staging`.
+13. Rollback: Worker version rollback in the dashboard (the previous Worker works with both database states); the key purge is undone only by a D1 Time Travel restore within 30 days; reverting area A in git needs `git revert 516b332` first, then `git revert -m 1 ec2211d`.
