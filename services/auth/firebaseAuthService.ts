@@ -29,7 +29,8 @@ import {
   writeCachedFirebaseIdToken,
 } from './firebaseIdToken';
 import { ensureAppCheck, getAppCheckTokenForBackend, isAppCheckConfigured } from './firebaseAppCheck';
-import { startAccountBoot } from './accountBoot';
+import { resetAccountBoot, startAccountBoot } from './accountBoot';
+import { clearQuotaSnapshot } from '../plans/quotaSnapshot';
 
 export type { User };
 export { isAppCheckConfigured };
@@ -108,9 +109,18 @@ async function clearSessionCookie(): Promise<void> {
   if (inFlightClear === p) inFlightClear = null;
 }
 
+/** Every user change goes through here, so the previous account's boot and plan never reach the next. */
+function setCachedUser(user: User | null): void {
+  if (cachedUser?.uid !== user?.uid) {
+    resetAccountBoot();
+    clearQuotaSnapshot();
+  }
+  cachedUser = user;
+}
+
 async function refreshCachedToken(user: User | null): Promise<void> {
   const previous = cachedUser;
-  cachedUser = user;
+  setCachedUser(user);
   if (!user) {
     if (previous) clearPersistedAuthSession();
     const hadSession = readCachedFirebaseIdToken() !== null;
@@ -177,12 +187,12 @@ export async function getFirebaseIdToken(forceRefresh = false): Promise<string |
   const user = a.currentUser;
   if (!user) {
     writeCachedFirebaseIdToken(null);
-    cachedUser = null;
+    setCachedUser(null);
     return null;
   }
   const token = await user.getIdToken(forceRefresh);
   writeCachedFirebaseIdToken(token);
-  cachedUser = user;
+  setCachedUser(user);
   return token;
 }
 
