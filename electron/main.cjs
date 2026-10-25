@@ -190,8 +190,9 @@ function createWindow() {
     mainWindow = null;
   });
 
-  mainWindow.webContents.on('did-fail-load', (_event, errorCode, _errorDescription, validatedURL) => {
-    if (errorCode === -3) return; // ignore aborted/redirected loads
+  mainWindow.webContents.on('did-fail-load', (_event, errorCode, _errorDescription, validatedURL, isMainFrame) => {
+    // A failed frame (an embed, an iframe) must not swap the whole app for the offline page.
+    if (!isMainFrame || errorCode === -3) return; // -3: aborted/redirected loads
     if (validatedURL && validatedURL.startsWith('file:')) return;
     void mainWindow?.loadURL(OFFLINE_URL);
   });

@@ -105,6 +105,17 @@ describe('desktop bridge senders', () => {
     expect(packaged.isTrustedSender(frameUrl)).toBe(trusted);
   });
 
+  it('trusts the shell pages however Chromium and Node spell the drive letter and spaces', () => {
+    const lowercaseDirname = createShellPolicy({
+      webappUrl: 'https://luminarasuite.com/',
+      isDev: false,
+      shellPageUrls: ['file:///c:/Users/Ada/AppData/Local/Programs/Luminara%20Suite/resources/app.asar/electron/offline.html'],
+    });
+    expect(lowercaseDirname.isTrustedSender('file:///C:/Users/Ada/AppData/Local/Programs/Luminara%20Suite/resources/app.asar/electron/offline.html')).toBe(true);
+    expect(lowercaseDirname.isTrustedSender('file:///C:/Users/Ada/AppData/Local/Programs/Luminara Suite/resources/app.asar/electron/offline.html')).toBe(true);
+    expect(lowercaseDirname.isTrustedSender('file:///C:/Users/Ada/Downloads/offline.html')).toBe(false);
+  });
+
   it('a bridge channel answers the app and refuses any other sender', () => {
     const registered = new Map<string, IpcListener>();
     const handleTrusted = createTrustedIpc({ handle: (channel, listener) => { registered.set(channel, listener); } }, packaged);

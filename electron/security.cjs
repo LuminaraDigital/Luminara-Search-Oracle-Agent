@@ -1,5 +1,7 @@
 'use strict';
 
+const { fileURLToPath } = require('node:url');
+
 /**
  * Trust rules for the desktop shell, kept pure so they are tested without Electron.
  * The main window (which carries the preload bridge) only ever shows the app itself;
@@ -25,8 +27,20 @@ function originOf(rawUrl) {
 }
 
 /**
+ * A file: URL as a decoded, case-folded path. Node's pathToFileURL and Chromium's frame URL can
+ * spell the same Windows file differently (drive letter case, escapes). Null for anything else.
+ */
+function filePathKey(rawUrl) {
+  try {
+    return fileURLToPath(rawUrl).toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+/**
  * @param {{ webappUrl: string, isDev: boolean, firebaseAuthDomain?: string, shellPageUrls: string[] }} options
- * shellPageUrls: the exact file: URLs of the shell's own splash and offline pages.
+ * shellPageUrls: the file: URLs of the shell's own splash and offline pages.
  */
 function createShellPolicy({ webappUrl, isDev, firebaseAuthDomain, shellPageUrls }) {
   const appOrigins = new Set([
@@ -39,6 +53,7 @@ function createShellPolicy({ webappUrl, isDev, firebaseAuthDomain, shellPageUrls
     ...FIREBASE_AUTH_ORIGINS,
     firebaseAuthDomain ? originOf(`https://${firebaseAuthDomain}`) : null,
   ].filter(Boolean));
+  const shellPagePaths = new Set(shellPageUrls.map(filePathKey).filter(Boolean));
 
   function isAllowedNavigation(rawUrl) {
     return appOrigins.has(originOf(rawUrl));
@@ -59,7 +74,7 @@ function createShellPolicy({ webappUrl, isDev, firebaseAuthDomain, shellPageUrls
   }
 
   function isTrustedSender(frameUrl) {
-    return shellPageUrls.includes(frameUrl) || isAllowedNavigation(frameUrl);
+    return shellPagePaths.has(filePathKey(frameUrl)) || isAllowedNavigation(frameUrl);
   }
 
   return { isAllowedNavigation, windowOpenAction, isPermissionGranted, isTrustedSender };
