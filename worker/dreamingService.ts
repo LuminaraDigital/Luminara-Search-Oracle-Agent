@@ -26,7 +26,7 @@ import { hasHostedDreamModel, runDreamAgent } from './dreamAgent';
 import { checkHostedQuota, QUOTA_CAPACITY_ERROR, refundMeteredQuota } from './quotaMiddleware';
 
 const DREAM_RUN_LIMIT_ERROR =
-  "Run now uses one of your free daily requests on free plans, and today's are used up. Upgrade for unlimited runs, or try again after 00:00 UTC.";
+  "Run now uses one of your free daily requests on free plans, and today's are used up. A paid plan lifts that daily cap, or try again after 00:00 UTC.";
 
 export async function getActiveBusinessMemories(
   env: Env,

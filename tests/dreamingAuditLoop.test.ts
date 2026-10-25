@@ -113,7 +113,7 @@ describe('dreamingClient.runDream when the server refuses the run', () => {
   it('returns the refusal to show, and does not run the consolidation in the browser instead', async () => {
     const refusal = {
       ok: false,
-      error: "Run now uses one of your free daily requests on free plans, and today's are used up. Upgrade for unlimited runs, or try again after 00:00 UTC.",
+      error: "Run now uses one of your free daily requests on free plans, and today's are used up. A paid plan lifts that daily cap, or try again after 00:00 UTC.",
       code: 'QUOTA_EXHAUSTED',
     };
     const original = globalThis.fetch;

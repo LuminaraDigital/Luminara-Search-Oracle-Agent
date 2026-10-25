@@ -415,7 +415,7 @@ describe('a Dreaming run on a free plan', () => {
     expect(second?.status).toBe(429);
     expect(await second?.json()).toEqual({
       ok: false,
-      error: "Run now uses one of your free daily requests on free plans, and today's are used up. Upgrade for unlimited runs, or try again after 00:00 UTC.",
+      error: "Run now uses one of your free daily requests on free plans, and today's are used up. A paid plan lifts that daily cap, or try again after 00:00 UTC.",
       code: 'QUOTA_EXHAUSTED',
     });
     expect(modelCalls).toBe(1);
