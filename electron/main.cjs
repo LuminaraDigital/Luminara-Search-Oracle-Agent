@@ -10,7 +10,7 @@ const { app, BrowserWindow, shell, Menu, Tray, nativeImage, ipcMain, dialog, ses
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { applyWindowsHardening } = require('./windowsHardening.cjs');
-const { createShellPolicy, createTrustedIpc } = require('./security.cjs');
+const { createShellPolicy, createNavigationGuard, createTrustedIpc } = require('./security.cjs');
 const { setupAutoUpdater } = require('./updater.cjs');
 const { setupCrashReporting, installProcessErrorHandlers } = require('./crashReporting.cjs');
 
@@ -106,10 +106,12 @@ const shellPolicy = createShellPolicy({
 /** The Google sign-in popup and blank print windows: no preload, so no desktop bridge. */
 const POPUP_WINDOW_OPTIONS = { webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } };
 
+const openInSystem = (url) => shell.openExternal(url);
+
 function openWindow({ url }) {
   const action = shellPolicy.windowOpenAction(url);
   if (action === 'child') return { action: 'allow', overrideBrowserWindowOptions: POPUP_WINDOW_OPTIONS };
-  if (action === 'external') void shell.openExternal(url);
+  if (action === 'external') void openInSystem(url);
   return { action: 'deny' };
 }
 
@@ -117,9 +119,9 @@ function openWindow({ url }) {
 app.on('web-contents-created', (_event, contents) => {
   contents.setWindowOpenHandler(openWindow);
   contents.on('did-create-window', (child, { url }) => {
-    // A blank print window never navigates. The sign-in popup must (Workspace SSO redirects to
-    // any identity provider), so it gets no guard.
-    if (url === 'about:blank') child.webContents.on('will-navigate', (event) => event.preventDefault());
+    // A blank print window stays on its page; its links go to the system. The sign-in popup must
+    // navigate (Workspace SSO redirects to any identity provider), so it gets no guard.
+    if (url === 'about:blank') child.webContents.on('will-navigate', createNavigationGuard(shellPolicy, () => false, openInSystem));
   });
 });
 
@@ -168,10 +170,7 @@ function createWindow() {
     },
   });
 
-  // Subframe redirects stay allowed: frames get no preload, and the bridge checks its sender.
-  const guardNavigation = (event) => {
-    if (event.isMainFrame && !shellPolicy.isAllowedNavigation(event.url)) event.preventDefault();
-  };
+  const guardNavigation = createNavigationGuard(shellPolicy, shellPolicy.isAllowedNavigation, openInSystem);
   mainWindow.webContents.on('will-navigate', guardNavigation);
   mainWindow.webContents.on('will-redirect', guardNavigation);
 

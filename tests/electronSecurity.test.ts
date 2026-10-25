@@ -8,9 +8,15 @@ type ShellPolicy = {
   isTrustedSender: (frameUrl: string | undefined) => boolean;
 };
 type IpcListener = (event: { senderFrame: { url: string } | null }, ...args: unknown[]) => unknown;
+type NavigationEvent = { url: string; isMainFrame: boolean; preventDefault: () => void };
 
 const require = createRequire(import.meta.url);
-const { createShellPolicy, createTrustedIpc } = require('../electron/security.cjs') as {
+const { createShellPolicy, createTrustedIpc, createNavigationGuard } = require('../electron/security.cjs') as {
+  createNavigationGuard: (
+    policy: ShellPolicy,
+    mayStay: (url: string) => boolean,
+    openExternal: (url: string) => unknown,
+  ) => (event: NavigationEvent) => void;
   createShellPolicy: (options: {
     webappUrl: string;
     isDev: boolean;
@@ -56,6 +62,25 @@ describe('desktop main window navigation', () => {
     const staging = createShellPolicy({ webappUrl: 'https://staging.luminarasuite.com/', isDev: false, shellPageUrls: [] });
     expect(staging.isAllowedNavigation('https://staging.luminarasuite.com/app')).toBe(true);
     expect(staging.isAllowedNavigation('http://localhost:3000/')).toBe(false);
+  });
+});
+
+describe('desktop main window leaving the app', () => {
+  function navigate(url: string, isMainFrame = true) {
+    const openExternal = vi.fn();
+    const preventDefault = vi.fn();
+    createNavigationGuard(packaged, packaged.isAllowedNavigation, openExternal)({ url, isMainFrame, preventDefault });
+    return { stopped: preventDefault.mock.calls.length > 0, opened: openExternal.mock.calls.map(([target]) => target) };
+  }
+
+  it('sends Stripe checkout to the system browser instead of doing nothing', () => {
+    expect(navigate('https://checkout.stripe.com/c/pay/cs_test_a1')).toEqual({ stopped: true, opened: ['https://checkout.stripe.com/c/pay/cs_test_a1'] });
+  });
+
+  it('lets the app navigate, stops other apps, and leaves frames alone', () => {
+    expect(navigate('https://luminarasuite.com/app')).toEqual({ stopped: false, opened: [] });
+    expect(navigate('search-ms:query=x')).toEqual({ stopped: true, opened: [] });
+    expect(navigate('https://www.youtube.com/embed/x', false)).toEqual({ stopped: false, opened: [] });
   });
 });
 

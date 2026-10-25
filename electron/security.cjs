@@ -80,6 +80,20 @@ function createShellPolicy({ webappUrl, isDev, firebaseAuthDomain, shellPageUrls
   return { isAllowedNavigation, windowOpenAction, isPermissionGranted, isTrustedSender };
 }
 
+/**
+ * A will-navigate / will-redirect listener. A top-frame navigation the window may not make is
+ * stopped, and a link the system may open (a web page such as Stripe checkout, mail) goes there
+ * instead of doing nothing. Frames are left alone: they get no preload, and a frame's link to
+ * another app is decided by isPermissionGranted.
+ */
+function createNavigationGuard(policy, mayStay, openExternal) {
+  return (event) => {
+    if (!event.isMainFrame || mayStay(event.url)) return;
+    event.preventDefault();
+    if (policy.windowOpenAction(event.url) === 'external') void openExternal(event.url);
+  };
+}
+
 /** ipcMain.handle for bridge channels: a sender the policy does not trust gets an error, never the listener. */
 function createTrustedIpc(ipcMain, policy) {
   return function handleTrusted(channel, listener) {
@@ -90,4 +104,4 @@ function createTrustedIpc(ipcMain, policy) {
   };
 }
 
-module.exports = { createShellPolicy, createTrustedIpc };
+module.exports = { createShellPolicy, createNavigationGuard, createTrustedIpc };
