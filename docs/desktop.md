@@ -18,6 +18,14 @@ set LUMINARA_WEBAPP_URL=https://luminarasuite.com/
 npx electron .
 ```
 
+A web app on another Firebase project (staging) also needs its auth domain, or the Google sign-in popup opens in the system browser instead of the app:
+
+```bash
+set LUMINARA_WEBAPP_URL=https://staging.luminarasuite.com/
+set VITE_FIREBASE_AUTH_DOMAIN=luminara-suite-staging.firebaseapp.com
+npx electron .
+```
+
 ## One-click Windows installer
 
 ```bash
@@ -32,7 +40,7 @@ Output lands in `release/` (NSIS one-click setup). CI builds the same artifact o
 |-------|----------------|
 | `electron/main.cjs` | Window, tray, menu, single-instance lock; loads suite with `?client=desktop` |
 | `electron/preload.cjs` | Narrow `window.luminaraDesktop` bridge |
-| `electron/security.cjs` | Navigation allowlist |
+| `electron/security.cjs` | Trust policy: the main window loads only the app's exact origins (`localhost:3000` only in dev); `window.open` gives the Firebase auth handler and `about:blank` a sandboxed popup with no preload, sends http(s) and mailto links to the system browser and opens nothing else; every bridge call is refused unless it comes from the app or the shell's own splash and offline pages |
 | `services/desktop/desktopShell.ts` | Detect shell; App skips marketing landing (same as Telegram) |
 | Cloudflare Worker | API, auth, TON, static web app |
 | GitHub Releases | Shell installer + `electron-updater` feed |

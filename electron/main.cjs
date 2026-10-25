@@ -10,7 +10,7 @@ const { app, BrowserWindow, shell, Menu, Tray, nativeImage, ipcMain, dialog, ses
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { applyWindowsHardening } = require('./windowsHardening.cjs');
-const { createNavigationGuard } = require('./security.cjs');
+const { createShellPolicy } = require('./security.cjs');
 const { setupAutoUpdater } = require('./updater.cjs');
 const { setupCrashReporting, installProcessErrorHandlers } = require('./crashReporting.cjs');
 
@@ -92,6 +92,23 @@ function applyEnterpriseNetworkConfig(app) {
   }
 }
 
+const SPLASH_URL = pathToFileURL(path.join(__dirname, 'splash.html')).href;
+const OFFLINE_URL = pathToFileURL(path.join(__dirname, 'offline.html')).href;
+
+const shellPolicy = createShellPolicy({
+  webappUrl: resolveWebappUrl(),
+  isDev: IS_DEV,
+  // Set alongside LUMINARA_WEBAPP_URL when the app runs on a Firebase project other than production.
+  firebaseAuthDomain: process.env.VITE_FIREBASE_AUTH_DOMAIN,
+  shellPageUrls: [SPLASH_URL, OFFLINE_URL],
+});
+
+/**
+ * The Google sign-in popup and blank print windows: no preload, so no desktop bridge. No
+ * navigation guard inside, because Workspace SSO redirects to any identity provider.
+ */
+const POPUP_WINDOW_OPTIONS = { webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } };
+
 applyEnterpriseNetworkConfig(app);
 applyWindowsHardening(app);
 
@@ -116,14 +133,6 @@ function iconPath(name) {
 
 function createWindow() {
   const webappUrl = resolveWebappUrl();
-  const guard = createNavigationGuard({
-    allowedOrigins: [
-      'https://luminarasuite.com',
-      'https://www.luminarasuite.com',
-      'http://localhost:3000',
-      'http://127.0.0.1:3000',
-    ],
-  });
 
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -145,13 +154,17 @@ function createWindow() {
     },
   });
 
-  guard.attach(mainWindow);
+  // Subframe redirects stay allowed: frames get no preload, and the bridge checks its sender.
+  const guardNavigation = (event) => {
+    if (event.isMainFrame && !shellPolicy.isAllowedNavigation(event.url)) event.preventDefault();
+  };
+  mainWindow.webContents.on('will-navigate', guardNavigation);
+  mainWindow.webContents.on('will-redirect', guardNavigation);
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (guard.isAllowed(url)) {
-      return { action: 'allow' };
-    }
-    void shell.openExternal(url);
+    const action = shellPolicy.windowOpenAction(url);
+    if (action === 'child') return { action: 'allow', overrideBrowserWindowOptions: POPUP_WINDOW_OPTIONS };
+    if (action === 'external') void shell.openExternal(url);
     return { action: 'deny' };
   });
 
@@ -173,12 +186,10 @@ function createWindow() {
   mainWindow.webContents.on('did-fail-load', (_event, errorCode, _errorDescription, validatedURL) => {
     if (errorCode === -3) return; // ignore aborted/redirected loads
     if (validatedURL && validatedURL.startsWith('file:')) return;
-    const offline = path.join(__dirname, 'offline.html');
-    void mainWindow?.loadURL(pathToFileURL(offline).href);
+    void mainWindow?.loadURL(OFFLINE_URL);
   });
 
-  const splash = path.join(__dirname, 'splash.html');
-  void mainWindow.loadURL(pathToFileURL(splash).href).then(() => {
+  void mainWindow.loadURL(SPLASH_URL).then(() => {
     const bootDelayMs = IS_DEV ? 200 : 600;
     setTimeout(() => {
       void mainWindow?.loadURL(webappUrl);
@@ -292,13 +303,21 @@ function createTray() {
   });
 }
 
+/** Bridge calls answer only the app and the shell's own splash and offline pages. */
+function handleTrusted(channel, listener) {
+  ipcMain.handle(channel, (event, ...args) => {
+    if (!shellPolicy.isTrustedSender(event.senderFrame?.url)) throw new Error(`Refused ${channel} from an untrusted page`);
+    return listener(event, ...args);
+  });
+}
+
 function registerIpc() {
   const updaterApi = setupAutoUpdater({
     mainWindow,
     getMainWindow: () => mainWindow,
   });
 
-  ipcMain.handle('desktop:get-info', () => ({
+  handleTrusted('desktop:get-info', () => ({
     shellVersion: app.getVersion(),
     webappUrl: resolveWebappUrl(),
     platform: process.platform,
@@ -306,24 +325,24 @@ function registerIpc() {
     autoUpdateEnabled: updaterApi.getAutoUpdateEnabled(),
   }));
 
-  ipcMain.handle('desktop:open-external', (_event, url) => {
+  handleTrusted('desktop:open-external', (_event, url) => {
     if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) {
       throw new Error('Only http(s) URLs can be opened externally');
     }
     return shell.openExternal(url);
   });
 
-  ipcMain.handle('desktop:get-update-prefs', () => updaterApi.getUpdatePrefs());
+  handleTrusted('desktop:get-update-prefs', () => updaterApi.getUpdatePrefs());
 
-  ipcMain.handle('desktop:set-auto-update', (_event, enabled) => {
+  handleTrusted('desktop:set-auto-update', (_event, enabled) => {
     return updaterApi.setAutoUpdateEnabled(Boolean(enabled));
   });
 
-  ipcMain.handle('desktop:check-updates', () => updaterApi.checkForUpdatesManual());
+  handleTrusted('desktop:check-updates', () => updaterApi.checkForUpdatesManual());
 
-  ipcMain.handle('desktop:install-update', () => updaterApi.quitAndInstall());
+  handleTrusted('desktop:install-update', () => updaterApi.quitAndInstall());
 
-  ipcMain.handle('desktop:retry-connection', () => {
+  handleTrusted('desktop:retry-connection', () => {
     if (mainWindow) {
       void mainWindow.loadURL(resolveWebappUrl());
     }
