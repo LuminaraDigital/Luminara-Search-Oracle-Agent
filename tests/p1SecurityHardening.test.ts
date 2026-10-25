@@ -137,6 +137,26 @@ describe('P1 ADMIN_SECRET separation', () => {
     expect(body.code).toBe('ADMIN_SECRET_REQUIRED');
   });
 
+  it('throttles wrong secrets per IP on the skill and prompt catalogs before checking them', async () => {
+    const env = makeEnv({ ADMIN_SECRET: 'real-admin-secret' });
+    const routes = [
+      { path: '/api/admin/skills/oracle-chat', method: 'GET', ip: '10.7.250.1' },
+      { path: '/api/rsi/prompts/publish', method: 'POST', ip: '10.7.250.2' },
+    ];
+    for (const route of routes) {
+      const statuses: number[] = [];
+      for (let n = 0; n < 21; n++) {
+        const res = await worker.fetch(
+          req(route.path, { method: route.method, headers: { 'x-admin-secret': 'wrong' } }, route.ip),
+          env,
+          ctx,
+        );
+        statuses.push(res.status);
+      }
+      expect(statuses, route.path).toEqual([...Array<number>(20).fill(401), 429]);
+    }
+  });
+
   it('accepts the correct ADMIN_SECRET', () => {
     const env = makeEnv({ ADMIN_SECRET: 'real-admin-secret' });
     expect(isAdminAuthorized(env, new Request('https://x/', { headers: { 'x-admin-secret': 'real-admin-secret' } })).ok).toBe(true);

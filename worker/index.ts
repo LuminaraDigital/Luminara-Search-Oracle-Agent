@@ -1316,6 +1316,9 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
 
   // Admin: runtime agent skill catalog (versioned methodology prompts in D1)
   if (path.startsWith('/admin/skills/')) {
+    // The per-IP limit runs before the secret check so the secret cannot be guessed at full speed.
+    const hit = limited('auth', RATE_AUTH_PER_MIN);
+    if (hit) return hit;
     const adminSkills = isAdminAuthorized(env, request);
     if (!adminSkills.ok) return withCors(adminSkills.response);
 
@@ -1331,8 +1334,6 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
 
     if (sub === '/versions') {
       if (request.method !== 'POST') return withCors(json({ error: 'Method not allowed' }, 405));
-      const hit = limited('auth', RATE_AUTH_PER_MIN);
-      if (hit) return hit;
       const read = await readBody(request, MAX_SMALL_BODY_BYTES);
       if (!read.ok) return withCors(json({ error: read.error }, read.status));
       const body = (read.value || {}) as { promptBody?: string; modelHint?: string; notes?: string };
@@ -1355,8 +1356,6 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
 
     if (sub === '/enable') {
       if (request.method !== 'POST') return withCors(json({ error: 'Method not allowed' }, 405));
-      const hit = limited('auth', RATE_AUTH_PER_MIN);
-      if (hit) return hit;
       const read = await readBody(request, MAX_SMALL_BODY_BYTES);
       if (!read.ok) return withCors(json({ error: read.error }, read.status));
       const body = (read.value || {}) as { version?: number; enabled?: boolean };
@@ -1377,8 +1376,6 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
 
     // GET /admin/skills/:slug -> latest prompt + version metadata
     if (request.method !== 'GET') return withCors(json({ error: 'Method not allowed' }, 405));
-    const hit = limited('auth', RATE_AUTH_PER_MIN);
-    if (hit) return hit;
     if (!env.DB) {
       return withCors(json({ ok: false, error: 'agent_skills requires a D1 database (env.DB). Check your wrangler.toml d1_databases binding.' }, 503));
     }
@@ -1642,10 +1639,10 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
   // Global Oracle prompt catalog. Same gate as POST /admin/skills/:slug/versions.
   // A signed-in session must not publish or roll back agent_skills.
   if (path === '/rsi/prompts/publish' || path === '/rsi/prompts/rollback') {
-    const promptAdmin = isAdminAuthorized(env, request);
-    if (!promptAdmin.ok) return withCors(promptAdmin.response);
     const promptLimit = limited('auth', RATE_AUTH_PER_MIN);
     if (promptLimit) return promptLimit;
+    const promptAdmin = isAdminAuthorized(env, request);
+    if (!promptAdmin.ok) return withCors(promptAdmin.response);
     const promptActor: HostedIdentity = { id: 'admin', source: 'firebase', accountId: 'admin' };
     const promptRoute = await handleRsiRoute(request, env, promptActor, path);
     if (promptRoute) return withCors(promptRoute);
