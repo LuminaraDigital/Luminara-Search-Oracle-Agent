@@ -725,6 +725,10 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
     // put in a prompt and not kept in the chat history. This has to stay above the chat.
     if (await receiveSupportMessage(env, msg, text || String(msg.caption || ''))) return;
 
+    // A sticker, a voice note, a photo with no caption or a service message has no words to
+    // answer. Their capture for support, just above, still runs.
+    if (!text.trim()) return;
+
     // Interactive conversational session with Oracle Agent (Hermes-like agentic loop)
     // 1. Send typing action so user gets immediate visual feedback
     await api(env, 'sendChatAction', { chat_id: chatId, action: 'typing' });

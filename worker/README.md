@@ -465,7 +465,9 @@ message and the reply went to the model chat.
   markers carry a one-time code, with each field capped at 300 characters. The
   reply is sent with no `parse_mode` and with link previews off. A turn whose answer
   does not reach the user (no provider answered, or Telegram refused the reply) gives
-  back the free unit it spent. Gemini gets its key in the `x-goog-api-key` header,
+  back the free unit it spent. A message with no words (a sticker, a voice note, a photo
+  with no caption, a service message) gets no answer and spends nothing; inside a payment
+  support window it is still captured. Gemini gets its key in the `x-goog-api-key` header,
   never in the URL. The filter is a
   backstop, pattern based and mostly English; the prompt rules and the plan-question
   rule are the main controls. Live.

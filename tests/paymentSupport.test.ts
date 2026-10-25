@@ -21,6 +21,7 @@ import { createPrivacyJob } from '../worker/privacyService';
 import type { HostedIdentity } from '../worker/userTypes';
 import { createSqliteD1, type SqliteD1 } from './helpers/sqliteD1';
 import { memoryDailyQuotaNamespace } from './helpers/memoryDailyQuota';
+import { readFreeUsed } from '../worker/quotaMiddleware';
 /**
  * Track SW, SW0a-16: payment support reaches a person.
  * /paysupport used to send one canned message, and the buyer's reply went to the model chat.
@@ -655,6 +656,25 @@ describe('what a buyer can send', () => {
     expect(rows(db)).toMatchObject([{ status: 'open', message: '[attachment, no text]' }]);
     expect(net.of('copyMessage')).toHaveLength(2);
     expect(net.model).toHaveLength(0);
+  });
+
+  it('outside a window, a sticker or a service message with no words reaches no model, gets no answer and spends no free unit', async () => {
+    const { env } = makeEnv();
+    await handleTelegramUpdate({ message: { message_id: 4260, chat: { id: BUYER }, from: { id: BUYER }, sticker: { file_id: 'stk' } } }, env);
+    await handleTelegramUpdate(
+      { message: { message_id: 4261, chat: { id: -1004242, type: 'supergroup' }, from: { id: BUYER }, new_chat_members: [{ id: STRANGER }] } },
+      env,
+    );
+
+    expect(net.model).toHaveLength(0);
+    expect(net.telegram).toEqual([]);
+    expect(await readFreeUsed(env, String(BUYER), 3)).toBe(0);
+
+    // Words in the same chat are answered, and spend one.
+    await say(env, 'How do I get cited by Perplexity?');
+    expect(net.model).toHaveLength(1);
+    expect(net.textsTo(BUYER)).toEqual(['MODEL ANSWER']);
+    expect(await readFreeUsed(env, String(BUYER), 3)).toBe(1);
   });
 
   it('when the attachment cannot be copied to anyone, both sides are told; the words still count', async () => {
