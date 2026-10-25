@@ -10,9 +10,9 @@
  */
 import type { Env } from './index';
 import { claimLicenseRedemption, releaseLicenseRedemption } from './paymentLedger';
-import { PlanDowngradeRefusedError, downgradeRefusalText, wouldDowngrade } from './planRank';
+import { PlanDowngradeRefusedError, downgradeRefusalText, planRank, wouldDowngrade, type SubscriptionLike } from './planRank';
 import { normalizePlanId } from './telegramBot';
-import { resolveAccountId, writeSubscriptionRecord } from './userStore';
+import { appliedOrderExpiry, appliedOrdersOf, resolveAccountId, writeSubscriptionRecord } from './userStore';
 import { licenseKeyFingerprint, recordAuditLogBestEffort } from './auditLog';
 
 export interface LicenseKeyRecord {
@@ -50,6 +50,7 @@ const LICENSE_REVOKED_ERROR =
   'This license key has been revoked and can no longer be redeemed. Contact support if you think this is a mistake.';
 const TRIAL_CLAIMED_ERROR =
   'A temporary promotional trial has already been redeemed on this account. Upgrade with Telegram Stars for continued access.';
+const TRIAL_PAID_PLAN_ERROR = 'The code was not used; trial codes are for accounts without a paid plan.';
 
 /**
  * Built-in Promotional Trial Keys:
@@ -116,6 +117,14 @@ function licenseDowngradeText(currentPlan: string, currentExpiresAt: number, key
   });
 }
 
+/** A trial code is refused, and stays unused, while the account has a paid plan running (owner decision, 2026-10-25). */
+function refuseTrialOnPaidPlan(keyRecord: LicenseKeyRecord, sub: SubscriptionLike, now: number): LicenseActivationResult | null {
+  const paidPlanRunning = planRank(sub?.plan) > 0 && Number(sub?.expiresAt) > now;
+  if (!keyRecord.isTrial || !paidPlanRunning) return null;
+  console.warn(JSON.stringify({ event: 'license_trial_refused' }));
+  return { ok: false, error: TRIAL_PAID_PLAN_ERROR };
+}
+
 export async function activateLicenseKey(
   env: Env,
   userId: string,
@@ -179,11 +188,18 @@ export async function activateLicenseKey(
     return { ok: false, error: LICENSE_REDEEMED_ERROR };
   }
 
-  // A key for a lower plan than the one still running is refused before it is claimed, so it
-  // stays unused and can be redeemed later (Track SW, SW0a-4).
+  // A trial code on a running paid plan, and a key for a lower plan than the one still running,
+  // are refused before the claim, so the key stays unused and can be redeemed later (Track SW, SW0a-4).
+  // A retry whose first write reached only the account record is not judged by the plan that
+  // write put in place.
+  const orderId = `lic_${key}`;
   const running = (await env.LUMINARA_KV.get(`sub:${accountId}`, 'json')) as { plan?: string; expiresAt?: number } | null;
-  if (wouldDowngrade(running, keyRecord.plan)) {
-    return { ok: false, error: licenseDowngradeText(String(running?.plan), Number(running?.expiresAt), keyRecord.plan) };
+  if (!appliedOrdersOf(running).includes(orderId)) {
+    const trialRefusal = refuseTrialOnPaidPlan(keyRecord, running, Date.now());
+    if (trialRefusal) return trialRefusal;
+    if (wouldDowngrade(running, keyRecord.plan)) {
+      return { ok: false, error: licenseDowngradeText(String(running?.plan), Number(running?.expiresAt), keyRecord.plan) };
+    }
   }
 
   // 3. Atomic claim (single-use count, one redemption per account, one trial per account)
@@ -214,25 +230,39 @@ export async function activateLicenseKey(
   // 4. Extend subscription
   try {
     const existingSub = (await env.LUMINARA_KV.get(`sub:${accountId}`, 'json')) as { plan?: string; expiresAt?: number } | null;
+    // A paid plan can start between the check above and this read. This key's own earlier write is not one.
+    const lateTrialRefusal = appliedOrdersOf(existingSub).includes(orderId) ? null : refuseTrialOnPaidPlan(keyRecord, existingSub, now);
+    if (lateTrialRefusal) {
+      await releaseLicenseRedemption(env, { key, accountId, isTrial: keyRecord.isTrial });
+      return lateTrialRefusal;
+    }
     const baseTime = existingSub?.expiresAt && existingSub.expiresAt > now ? existingSub.expiresAt : now;
-    expiresAt = baseTime + durationMs;
 
-    await writeSubscriptionRecord(env, userId, {
+    const written = await writeSubscriptionRecord(env, userId, {
       plan: keyRecord.plan,
       paymentMethod: 'license_key',
-      orderId: `lic_${key}`,
+      orderId,
       startedAt: now,
-      expiresAt,
-    });
+      expiresAt: baseTime + durationMs,
+    }, { orderId });
+    // A key the record already names keeps that record's expiry.
+    expiresAt = Number(written.record.expiresAt);
   } catch (err) {
-    // Release so the user can retry; if the write partly landed, a retry may extend twice, which beats burning a paid key.
-    await releaseLicenseRedemption(env, { key, accountId, isTrial: keyRecord.isTrial });
-    if (err instanceof PlanDowngradeRefusedError) {
-      // A higher plan started between the check above and this write. The claim is released, so the key is unused.
-      return { ok: false, error: licenseDowngradeText(err.currentPlan, err.currentExpiresAt, keyRecord.plan) };
+    const landed = await appliedOrderExpiry(env, accountId, orderId);
+    if (landed === null) {
+      // Nothing was granted. Release so the user can retry.
+      await releaseLicenseRedemption(env, { key, accountId, isTrial: keyRecord.isTrial });
+      if (err instanceof PlanDowngradeRefusedError) {
+        // A higher plan started between the check above and this write. The claim is released, so the key is unused.
+        return { ok: false, error: licenseDowngradeText(err.currentPlan, err.currentExpiresAt, keyRecord.plan) };
+      }
+      console.error(`[License] Subscription write failed after claim; claim released: ${err instanceof Error ? err.message : err}`);
+      return { ok: false, error: LICENSE_UNAVAILABLE_ERROR };
     }
-    console.error(`[License] Subscription write failed after claim; claim released: ${err instanceof Error ? err.message : err}`);
-    return { ok: false, error: LICENSE_UNAVAILABLE_ERROR };
+    // The account record took the days before the write threw (the login's copy failed). The claim
+    // stays, so no other account can redeem a single-use key on top of them.
+    console.error(`[License] Subscription write failed after the account record was written; claim kept: ${err instanceof Error ? err.message : err}`);
+    expiresAt = landed;
   }
 
   // 5. Refresh KV cache. The D1 claim is authoritative, so a failure here must not undo the grant.

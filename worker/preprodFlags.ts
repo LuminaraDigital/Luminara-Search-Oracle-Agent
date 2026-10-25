@@ -18,7 +18,6 @@ export const PREPROD_GATED_FLAGS = [
   'LAUNCHPAD_ENABLED',
   'LAUNCHPAD_MAINNET_ENABLED',
   'LAUNCHPAD_SKIP_CHAIN_VERIFY',
-  'Q402_LIVE',
   'OTP_SMS_ENABLED',
   'REQUEST_SIGNING_REQUIRED',
 ] as const satisfies readonly (keyof Env)[];

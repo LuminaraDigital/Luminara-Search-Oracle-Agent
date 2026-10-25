@@ -52,7 +52,7 @@ Sentry (`@sentry/cloudflare` on the Worker, `@sentry/browser` in the client) sta
 | `GET /idea-scout/feed`, `POST /idea-scout/vote`, `POST /idea-scout/share` | worker/ideaScout.ts | session | Community idea feed. 404 unless `COMMUNITY_FEED_ENABLED=true`, which stays off until the chat rules and a named moderator exist. Cards and votes live in D1 `0033_community_feed.sql`, not KV. Share takes the id of an idea card the caller owns and publishes a copy under a new `cf_` id; another account's id is 404 and adds nothing. No response carries an account id or an idea id. The public card is the idea card's problem, prompts and hypotheses, field by field; the competitor snapshots (URLs, scraped titles and headings) are left out, though model-written prompts and hypotheses may still name a competitor. A share whose idea card is deleted mid-request is 404. One vote per account per card (primary key); the count is `COUNT(*)` over votes, never seeded. A `hidden` or `removed` card leaves the feed and takes no votes, and its row stays. 5 shares per account per UTC day; ownership and the cap are checked inside the insert. 60 reads per minute per IP, 30 votes and 10 shares per minute per account and per IP. Exported and deleted with the account, moved on account link (if that move fails it is logged and the link stands, as for the payment tables). Owner step: the KV value `idea_scout:community_feed` from before 0033 is read by nothing and holds sharers' account ids; delete it in each environment with `npx wrangler kv key delete idea_scout:community_feed --binding LUMINARA_KV --remote --env staging`, then `--env production` |
 | `GET /visibility/crawler-files` | worker/llmCrawlerRoute.ts | session | `/robots.txt`, `/llms.txt`, and optional `/ai.txt`. SSRF guarded. A same-site redirect is followed after the next host is checked again. A redirect to another site is not. When the request host is a suite Custom Domain (`luminarasuite.com`, `www`, or `staging`), crawl files for the hostnames that Worker serves are read in-process, because a fetch of its own Custom Domain returns Cloudflare 522. `ai.txt` on those hosts is 404 until a route serves it. A non-empty file mints `X-Scout-Receipt` for that host |
 | `GET /visibility/probe-crawl` | worker/probeCrawlRoute.ts | none | Anonymous landing crawl of the same three files. No scout receipt. Measured only when robots and llms each settle (200 with a body, or missing/404). A 522 stays Not measured |
-| `POST /launchpad/scan-compliance`, `GET,POST /launchpad/campaigns`, `GET /launchpad/campaigns/:id`, `PUT /launchpad/campaigns/:id/contract`, `GET /launchpad/campaigns/:id/onchain`, `GET /launchpad/config`, `POST /launchpad/vouchers`, `GET /launchpad/vouchers/:code`, `POST /launchpad/vouchers/redeem` | worker/launchpadService.ts | none (scan, public list/detail) / session (rest) | SMB Launchpad, spec 0015. 404 unless `LAUNCHPAD_ENABLED=true` (local dev with no `ENVIRONMENT` is on). Non-custodial: stores copy, the merchant-registered contract address and voucher records only, never keys or balances, and has no "raised" column. Campaign copy must pass the rule-based screen in `services/launchpad/compliance.ts` (422 otherwise). Drafts are private; a campaign is public only after its owner registers a contract (one address per campaign, unique per chain+network). Registration requires the deployment `txHash` and is verified over JSON-RPC: the tx must be a successful call to OUR factory (`services/launchpad/contracts.ts`, or `LAUNCHPAD_FACTORY_<CHAIN>_TESTNET` on testnet only) that emitted the matching deployment event for that address; with no factory configured, registration returns 409. `LAUNCHPAD_SKIP_CHAIN_VERIFY=true` skips the check on testnet only. `/onchain` reads live escrow figures over `LAUNCHPAD_RPC_<CHAIN>_<NETWORK>` (public RPC fallback) and returns `not_measured` if the RPC fails; nothing is stored. Mainnet needs `LAUNCHPAD_MAINNET_ENABLED=true`. Voucher issue, lookup and redeem are owner-only with no cross-merchant enumeration; redeem is a compare-and-swap on `status='issued'` and unexpired. Voucher expiry is null or at least 36 months. Needs unapplied D1 `0018_smb_launchpad_loyalty.sql` |
+| `POST /launchpad/scan-compliance`, `GET,POST /launchpad/campaigns`, `GET /launchpad/campaigns/:id`, `PUT /launchpad/campaigns/:id/contract`, `GET /launchpad/campaigns/:id/onchain`, `GET /launchpad/config`, `POST /launchpad/vouchers`, `GET /launchpad/vouchers/:code`, `POST /launchpad/vouchers/redeem` | worker/launchpadService.ts | none (scan, public list/detail) / session (rest) | SMB Launchpad, spec 0015. 404 unless `LAUNCHPAD_ENABLED=true` (local dev with no `ENVIRONMENT` is on). `LAUNCHPAD_ENABLED` must stay off until A4 (milestone alerts, `docs/plans/review-batch-2-fixes.md`) lands: the webhook channel posts to any https URL and the email channel sends nothing. Non-custodial: stores copy, the merchant-registered contract address and voucher records only, never keys or balances, and has no "raised" column. Campaign copy must pass the rule-based screen in `services/launchpad/compliance.ts` (422 otherwise). Drafts are private; a campaign is public only after its owner registers a contract (one address per campaign, unique per chain+network). Registration requires the deployment `txHash` and is verified over JSON-RPC: the tx must be a successful call to OUR factory (`services/launchpad/contracts.ts`, or `LAUNCHPAD_FACTORY_<CHAIN>_TESTNET` on testnet only) that emitted the matching deployment event for that address; with no factory configured, registration returns 409. `LAUNCHPAD_SKIP_CHAIN_VERIFY=true` skips the check on testnet only. `/onchain` reads live escrow figures over `LAUNCHPAD_RPC_<CHAIN>_<NETWORK>` (public RPC fallback) and returns `not_measured` if the RPC fails; nothing is stored. Mainnet needs `LAUNCHPAD_MAINNET_ENABLED=true`. Voucher issue, lookup and redeem are owner-only with no cross-merchant enumeration; redeem is a compare-and-swap on `status='issued'` and unexpired. Voucher expiry is null or at least 36 months. Needs unapplied D1 `0018_smb_launchpad_loyalty.sql` |
 | `POST /enrichment/entity` | worker/enrichmentService | session | Entity enrichment |
 | `GET /trust/audit-chain/verify` | worker/index.ts + auditLog | session + role | Walks the org's hash chain from genesis by `prev_hash` links. Reports `hash_mismatch`, `fork`, or `orphan` with `brokenAtId`. Legacy raw-accountId rows are a separate chain, verified separately. Over 5000 rows returns `truncated: true` and `ok: false` |
 | `GET /trust/keys` | worker/trustReceipts.ts | none | Ed25519 public key set for offline receipt verification. 404 unless `TRUST_RECEIPTS_ENABLED` |
@@ -269,7 +269,8 @@ no payment was taken. The staging webhook is subscribed to
 - **TON checkout is open only for an address the owner has confirmed.** `TON_CONFIRMED_ADDRESS`
   must equal `TON_RECEIVING_ADDRESS`. Until it does, no invoice is issued and public
   `/health` reports `ton: false`. Orders that already exist can still be verified.
-- **Q402 is off, and while it is off every `/q402/*` path is a 404**, including discovery.
+- **Q402 is removed.** `worker/q402/` and `Q402_LIVE` are gone; every `/q402/*` path is a 404 like
+  any unknown route, including discovery.
 - **The Stripe card rail is on for staging and production.** `env.STRIPE_CHECKOUT_LIVE === 'true'` plus a matching key mode is the only open state. `env.staging.vars` and `env.production.vars` are `"true"`. The default vars are `"false"`.
 - Public `/health` carries `ok`, the three rail booleans and `plans` (the public Stars
   catalogue: title, description, price in Stars, days). Nothing else.
@@ -286,6 +287,19 @@ no payment was taken. The staging webhook is subscribed to
   the owner to return by hand, and the buyer is told.
 - The same plan again extends it. A higher plan replaces it and keeps the days already there.
 - A caller that takes a plan away on purpose (a reversed card payment) passes `allowLowerPlan`.
+- A trial code is for an account without a paid plan. While any paid plan is running it is refused
+  before the claim and again after it (the claim is given back), so the code stays unused.
+- **A TON order or licence key is applied once.** `writeSubscriptionRecord` keeps `appliedOrders`
+  (the last 50 TON order ids and `lic_<key>` ids) through every write it makes, ended records too.
+  Two paths outside it drop the list: a Stars refund that leaves no time deletes the record, and
+  linking two sign-ins can replace an ended account record with a login's copy.
+  When the write throws after the account record took the days (the login copy failed), the rail
+  reads that record back: the order is credited and its D1 claim kept, so a single-use key cannot
+  be redeemed by another account on top of them. A retry whose order is listed while its claim was
+  given back is not held or refused for the plan it put in place; the rail passes the order id to
+  `writeSubscriptionRecord` (`opts.orderId`, never read from the record, which a rewrite carries),
+  which then writes the account record again as it stands at its own read, adds nothing, and logs
+  `order_already_applied` (pinned in `tests/tonPayment.test.ts` and `tests/licenseKey.test.ts`).
 
 ## Stars charges (pinned in `tests/starsCharges.test.ts`)
 
@@ -306,10 +320,12 @@ Telegram does not send a paid update again once the webhook has answered 200, so
 - **A refund is finished only when the plan has gone back too.** `stars_returned` records that
   the Stars are with the payer. If taking back what the charge gave fails, the row stays
   `refund_due` and the sweep retries that part alone; Telegram is not asked to refund twice.
-- **A refund takes back what that charge gave, no more.** Its days come off; if it was the last
-  thing applied, the plan returns to what the record said before it. The subscription record keeps
-  `appliedCharges` and `chargeLinks` (the plan before each charge, and the charge before it) for
-  this.
+- **A refund takes back what that charge gave, no more.** Only the part of its days still ahead
+  comes off (the card rail's rule; the receipt's `expiresAt` is where its days end), so days it has
+  used up never shorten time bought after it on another rail; a refund that takes less than the
+  full days logs `stars_refund_partial`. If it was the last thing applied, the plan returns to what
+  the record said before it. The subscription record keeps `appliedCharges` and `chargeLinks` (the
+  plan before each charge, and the charge before it) for this.
 - **The daily sweep** (`stars_charge_sweep`) settles rows a webhook left undecided, retries
   refunds (5 attempts, then `refund_failed` and an alert to `TELEGRAM_ADMIN_ID`), and compares
   Telegram's own transaction list with the ledger. It never grants.
@@ -319,6 +335,10 @@ Telegram does not send a paid update again once the webhook has answered 200, so
   account in the same instant can lose one of them (KV has no compare-and-set); and a record
   written before the ledger that stacked an upgrade names only its last charge, so refunding that
   charge keeps the upgraded plan name for the days the earlier charge paid for.
+- Known limit: each receipt keeps the expiry it was written with, so refunding two stacked charges
+  oldest first can take days from a later rail (A t0 to t0+30, B to t0+60, TON to t0+90; refund A
+  at t0+10, then B at t0+35: the record ends at t0+45, not t0+65); it never takes more than the old
+  full-days rule did, and the card rail's `granted_until` behaves the same.
 
 ## TON orders (pinned in `tests/tonPendingOrders.test.ts`)
 
