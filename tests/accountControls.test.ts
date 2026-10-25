@@ -5,6 +5,7 @@ import { createSqliteD1 } from './helpers/sqliteD1';
 import { checksLeftLine, planDetailLine, planTitle } from '../services/account/accountSummary';
 import { handleSignIn } from '../worker/authCredentialGateway';
 import { upsertAppUser } from '../worker/userStore';
+import { sha256Hex } from '../worker/workerUtils';
 
 const verifyFirebaseIdToken = vi.fn();
 
@@ -297,5 +298,33 @@ describe('account deletion', () => {
     await upsertAppUser(env, user);
     const users = await env.DB!.prepare(`SELECT COUNT(*) AS n FROM users`).first<{ n: number }>();
     expect(users).toEqual({ n: 0 });
+  });
+});
+
+describe('sign-in when the provider is down', () => {
+  it('answers 503 and records no failed attempt, so an outage cannot lock the account', async () => {
+    const env = envOf();
+    const outages: Array<() => Promise<Response>> = [
+      async () => { throw new TypeError('fetch failed'); },
+      async () => new Response('upstream error', { status: 502 }),
+      async () => new Response(JSON.stringify({ error: { message: 'PASSWORD_LOGIN_DISABLED' } }), { status: 400 }),
+    ];
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      for (let i = 0; i < 6; i++) {
+        const res = await handleSignIn(signInRequest('ada@example.com'), env, `203.0.113.${60 + i}`, {
+          fetchImpl: vi.fn(outages[i % outages.length]) as unknown as typeof fetch,
+          minLatencyMs: 0,
+        });
+        expect(res.status, `attempt ${i + 1}`).toBe(503);
+        expect(((await res.json()) as { code?: string }).code).toBe('AUTH_UNAVAILABLE');
+      }
+      expect(warn).toHaveBeenCalledWith(JSON.stringify({ event: 'auth_unavailable', reason: 'provider_error' }));
+      expect(warn).toHaveBeenCalledWith(JSON.stringify({ event: 'auth_unavailable', reason: 'misconfigured' }));
+    } finally {
+      warn.mockRestore();
+    }
+    const failures = await env.LUMINARA_KV!.get(`rl:signin_fail:${await sha256Hex('account:ada@example.com')}`);
+    expect(failures).toBeNull();
   });
 });

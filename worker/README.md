@@ -21,7 +21,7 @@ Sentry (`@sentry/cloudflare` on the Worker, `@sentry/browser` in the client) sta
 | `POST /auth/session` | worker/index.ts + firebaseAuth | none | Firebase or initData session exchange. A foreign `Origin` or `sec-fetch-site: cross-site` gets 403 `CSRF_REJECTED` (log `csrf_rejected`). A missing `Origin` passes and logs `csrf_origin_missing` until the logs show Telegram webviews send one |
 | `POST /auth/logout` | worker/index.ts | none | Session clear. Revokes the first `__session` cookie; a malformed cookie is ignored. Same Origin rule as `POST /auth/session` |
 | `POST /auth/reset-password` | worker/index.ts | none | Email reset |
-| `POST /auth/sign-up`, `/auth/sign-in` | worker/index.ts | none | Password auth |
+| `POST /auth/sign-up`, `/auth/sign-in` | worker/authCredentialGateway.ts | none | Password auth. Only a wrong password or unknown email counts toward the sign-in lockout (5 in 15 minutes). A network error, a provider 5xx, `PASSWORD_LOGIN_DISABLED` or a key/config fault is 503 `AUTH_UNAVAILABLE` (log `auth_unavailable` with a `reason`) and records nothing; the browser then falls back to the Firebase SDK |
 | `GET,POST /email/unsubscribe` | worker/welcomeEmail.ts | none | One-click opt-out for welcome mail. `RESEND_API_KEY` is a Worker secret. A new account is mailed once from `hello@luminarasuite.com`; migration 0036 stamps older rows so they are not mailed. The send runs in `waitUntil` and a Resend error does not fail sign-in |
 | `POST /auth/request-otp`, `/auth/verify-otp` | worker/authOtpSms.ts | none | SMS OTP |
 | `POST /auth/send-verification` | worker/index.ts | none | Email verification |

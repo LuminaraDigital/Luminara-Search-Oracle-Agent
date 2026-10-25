@@ -147,7 +147,7 @@ async function callIdentityAuth(
   if (code.includes('INVALID_EMAIL')) {
     return { ok: false, kind: 'invalid_email', providerCode: code.slice(0, 80) };
   }
-  if (code.includes('WEAK_PASSWORD') || code.includes('PASSWORD_LOGIN_DISABLED')) {
+  if (code.includes('WEAK_PASSWORD')) {
     return { ok: false, kind: 'weak_password', providerCode: code.slice(0, 80) };
   }
   if (
@@ -155,7 +155,8 @@ async function callIdentityAuth(
     code.includes('REFERRER') ||
     code.includes('REFERER') ||
     code.includes('API_KEY_') ||
-    code.includes('OPERATION_NOT_ALLOWED')
+    code.includes('OPERATION_NOT_ALLOWED') ||
+    code.includes('PASSWORD_LOGIN_DISABLED')
   ) {
     console.warn(
       JSON.stringify({
@@ -166,6 +167,7 @@ async function callIdentityAuth(
     );
     return { ok: false, kind: 'misconfigured', providerCode: code.slice(0, 80) };
   }
+  if (res.status >= 500) return { ok: false, kind: 'provider_error', providerCode: code.slice(0, 80) };
   // EMAIL_EXISTS, EMAIL_NOT_FOUND, INVALID_PASSWORD, INVALID_LOGIN_CREDENTIALS, etc.
   // Collapse to auth_failed so callers can apply constant anti-enumeration copy.
   console.warn(
@@ -329,6 +331,9 @@ export async function handleSignIn(
   }
 
   // Account-level lockout and backoff protection (anti-brute-force)
+  // shortcut: parallel guesses all pass this check before any of them records a failure (KV read
+  // then write, and the check runs before the provider call, so an atomic counter alone would not
+  // bound them); reserve an attempt slot before the provider call if lockout bypass shows up.
   const emailNorm = normalizeResetEmail(parsed.email);
   const emailHash = await sha256Hex(`account:${emailNorm}`);
   const accountGate = await checkAccountLockout(env, emailHash);
@@ -371,23 +376,25 @@ export async function handleSignIn(
     );
   }
 
-  if (result.kind === 'misconfigured') {
-    return json(
-      { ok: false, error: 'Sign-in is temporarily unavailable. Try again later.', code: 'AUTH_UNAVAILABLE' },
-      503,
-    );
-  }
   if (result.kind === 'too_many') {
     return json({ ok: false, error: 'Too many attempts. Wait a minute and try again.', code: 'RATE_LIMITED' }, 429);
   }
   if (result.kind === 'invalid_email') {
     return json({ ok: false, error: 'Enter a valid email address.', code: 'INVALID_EMAIL' }, 400);
   }
+  // Only a wrong password counts toward the lockout. A provider outage or a config fault must not lock accounts.
+  if (result.kind !== 'auth_failed') {
+    console.warn(JSON.stringify({ event: 'auth_unavailable', reason: result.kind }));
+    return json(
+      { ok: false, error: 'Sign-in is temporarily unavailable. Try again later.', code: 'AUTH_UNAVAILABLE' },
+      503,
+    );
+  }
 
   // Record failed sign-in attempt to trigger progressive account lockout
   await recordFailedSignIn(env, emailHash);
 
-  // Constant failure for missing user / wrong password / provider blips (no enumeration).
+  // Constant failure for missing user / wrong password (no enumeration).
   return withRateLimitHeaders(
     json({ ok: false, error: SIGN_IN_FAILURE_MESSAGE, code: 'SIGN_IN_FAILED' }, 401),
     gate.headers,
