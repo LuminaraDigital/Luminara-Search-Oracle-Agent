@@ -12,7 +12,7 @@ import type { Env } from './index';
 import { claimLicenseRedemption, releaseLicenseRedemption } from './paymentLedger';
 import { PlanDowngradeRefusedError, downgradeRefusalText, planRank, wouldDowngrade, type SubscriptionLike } from './planRank';
 import { normalizePlanId } from './telegramBot';
-import { appliedOrdersOf, resolveAccountId, writeSubscriptionRecord } from './userStore';
+import { appliedOrderExpiry, appliedOrdersOf, resolveAccountId, writeSubscriptionRecord } from './userStore';
 import { licenseKeyFingerprint, recordAuditLogBestEffort } from './auditLog';
 
 export interface LicenseKeyRecord {
@@ -255,14 +255,21 @@ export async function activateLicenseKey(
       });
     }
   } catch (err) {
-    // Release so the user can retry.
-    await releaseLicenseRedemption(env, { key, accountId, isTrial: keyRecord.isTrial });
-    if (err instanceof PlanDowngradeRefusedError) {
-      // A higher plan started between the check above and this write. The claim is released, so the key is unused.
-      return { ok: false, error: licenseDowngradeText(err.currentPlan, err.currentExpiresAt, keyRecord.plan) };
+    const landed = await appliedOrderExpiry(env, accountId, orderId);
+    if (landed === null) {
+      // Nothing was granted. Release so the user can retry.
+      await releaseLicenseRedemption(env, { key, accountId, isTrial: keyRecord.isTrial });
+      if (err instanceof PlanDowngradeRefusedError) {
+        // A higher plan started between the check above and this write. The claim is released, so the key is unused.
+        return { ok: false, error: licenseDowngradeText(err.currentPlan, err.currentExpiresAt, keyRecord.plan) };
+      }
+      console.error(`[License] Subscription write failed after claim; claim released: ${err instanceof Error ? err.message : err}`);
+      return { ok: false, error: LICENSE_UNAVAILABLE_ERROR };
     }
-    console.error(`[License] Subscription write failed after claim; claim released: ${err instanceof Error ? err.message : err}`);
-    return { ok: false, error: LICENSE_UNAVAILABLE_ERROR };
+    // The account record took the days before the write threw (the login's copy failed). The claim
+    // stays, so no other account can redeem a single-use key on top of them.
+    console.error(`[License] Subscription write failed after the account record was written; claim kept: ${err instanceof Error ? err.message : err}`);
+    expiresAt = landed;
   }
 
   // 5. Refresh KV cache. The D1 claim is authoritative, so a failure here must not undo the grant.

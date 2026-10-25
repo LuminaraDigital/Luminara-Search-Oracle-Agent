@@ -291,9 +291,12 @@ no payment was taken. The staging webhook is subscribed to
   before the claim and again after it (the claim is given back), so the code stays unused.
 - **A TON order or licence key is applied once.** `writeSubscriptionRecord` keeps `appliedOrders`
   (the last 50 TON order ids and `lic_<key>` ids) through every rail's write, ended records too.
-  A retry whose order is already listed (the account record landed, the login copy did not) writes
-  the same record again and adds nothing, is not held or refused for the plan it put in place, and
-  logs `order_already_applied` (pinned in `tests/tonPayment.test.ts` and `tests/licenseKey.test.ts`).
+  When the write throws after the account record took the days (the login copy failed), the rail
+  reads that record back: the order is credited and its D1 claim kept, so a single-use key cannot
+  be redeemed by another account on top of them. A retry whose order is listed while its claim was
+  given back writes the same record again and adds nothing, is not held or refused for the plan it
+  put in place, and logs `order_already_applied` (pinned in `tests/tonPayment.test.ts` and
+  `tests/licenseKey.test.ts`).
 
 ## Stars charges (pinned in `tests/starsCharges.test.ts`)
 

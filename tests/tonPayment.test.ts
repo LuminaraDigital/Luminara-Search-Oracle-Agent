@@ -653,8 +653,10 @@ describe('Atomic TON crediting (D1 ledger)', () => {
 });
 
 describe('an order whose first write reached only the account record', () => {
-  /** A web login linked to its account, and a Starter order the first check half writes. */
-  async function halfWritten() {
+  const DAY = 86400_000;
+
+  /** A web login linked to its account, and a Starter order paid on chain. */
+  async function linkedOrder() {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const { env, kv } = makeEnv();
@@ -663,35 +665,50 @@ describe('an order whose first write reached only the account record', () => {
       .run();
     const inv = await createTonInvoice(env, 'fb:buyer', 'starter');
     if (!inv.ok) throw new Error(inv.error);
+    const orderId = inv.order.orderId;
     const fetcher = vi.fn(async () => toncenterResponse(inv.order.memo, TON_PRICING.starter.nanoTon, 'tx_half'));
-    const check = () => verifyTonPayment(env, inv.order.orderId, { fetcher });
-
-    kv.failPutsMatching = /^sub:fb:buyer$/;
-    expect((await check()).ok).toBe(false);
-    kv.failPutsMatching = null;
-    const landed = await kv.get('sub:acct_buyer', 'json');
-    expect(landed.plan).toBe('starter');
-    return { env, kv, warn, check, landed };
+    const check = () => verifyTonPayment(env, orderId, { fetcher });
+    // What such a write left behind before its claim was kept: the account record names the
+    // order and the transfer is unclaimed.
+    const halfWritten = { plan: 'starter', paymentMethod: 'ton', orderId, startedAt: Date.now(), expiresAt: Date.now() + PLANS.starter.days * DAY };
+    return { env, kv, warn, check, orderId, halfWritten };
   }
 
-  it('is finished by the next check, and its days are added once', async () => {
-    const { kv, warn, check, landed } = await halfWritten();
+  it('is reported paid and keeps its claim on the transfer, and a second check adds nothing', async () => {
+    const { env, kv, check, orderId } = await linkedOrder();
+
+    kv.failPutsMatching = /^sub:fb:buyer$/;
+    const first = await check();
+    kv.failPutsMatching = null;
+    const landed = await kv.get('sub:acct_buyer', 'json');
+    expect(first).toEqual({ ok: true, plan: 'starter', expiresAt: landed.expiresAt });
+    expect(env.DB.sqlite.prepare('SELECT order_id FROM ton_credited_tx WHERE tx_hash = ?').get('tx_half')).toEqual({ order_id: orderId });
 
     expect(await check()).toEqual({ ok: true, plan: 'starter', expiresAt: landed.expiresAt });
     expect(await kv.get('sub:acct_buyer', 'json')).toEqual(landed);
-    expect(await kv.get('sub:fb:buyer', 'json')).toEqual(landed);
+  });
+
+  it('with its transfer unclaimed, the next check finishes it without adding its days, and the login copy catches up', async () => {
+    const { kv, warn, check, halfWritten } = await linkedOrder();
+    await kv.put('sub:acct_buyer', JSON.stringify(halfWritten));
+
+    expect(await check()).toEqual({ ok: true, plan: 'starter', expiresAt: halfWritten.expiresAt });
+    const account = await kv.get('sub:acct_buyer', 'json');
+    expect(account).toEqual({ ...halfWritten, appliedOrders: [halfWritten.orderId] });
+    expect(await kv.get('sub:fb:buyer', 'json')).toEqual(account);
     expect(warn).toHaveBeenCalledWith(JSON.stringify({ event: 'order_already_applied' }));
   });
 
-  it('a higher Stars plan bought in between is kept, and the order is not held or added again', async () => {
-    const { env, kv, check, landed } = await halfWritten();
+  it('a higher Stars plan bought since is kept, and the order is not held or added again', async () => {
+    const { env, kv, check, halfWritten } = await linkedOrder();
+    await kv.put('sub:acct_buyer', JSON.stringify(halfWritten));
     await writeSubscriptionRecord(env, 'fb:buyer', {
       plan: 'growth',
       paymentMethod: 'stars',
       chargeId: 'ch_between',
       appliedCharges: ['ch_between'],
       startedAt: Date.now(),
-      expiresAt: landed.expiresAt + PLANS.growth.days * 86400_000,
+      expiresAt: halfWritten.expiresAt + PLANS.growth.days * DAY,
     });
     const stars = await kv.get('sub:acct_buyer', 'json');
 

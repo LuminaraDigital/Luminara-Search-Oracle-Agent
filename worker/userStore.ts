@@ -315,6 +315,19 @@ export function appliedOrdersOf(sub: Record<string, unknown> | null | undefined)
 }
 
 /**
+ * The expiry on the account's record when it names `orderId`, else null (also when it cannot be
+ * read). A rail asks after writeSubscriptionRecord threw, because its first put can have landed.
+ */
+export async function appliedOrderExpiry(env: UserStoreEnv, accountId: string, orderId: string): Promise<number | null> {
+  try {
+    const sub = (await env.LUMINARA_KV?.get(`sub:${accountId}`, 'json')) as Record<string, unknown> | null | undefined;
+    return appliedOrdersOf(sub).includes(orderId) ? Number(sub?.expiresAt) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Persist a paid plan under the shared account id (and the login id for legacy readers).
  * Stars, TON, and future Stripe checkouts should all call this.
  */

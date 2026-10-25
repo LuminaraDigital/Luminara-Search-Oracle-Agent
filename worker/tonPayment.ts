@@ -7,7 +7,7 @@ import type { Env } from './index';
 import { claimTonTransaction, isTonLedgerReady, releaseTonTransaction } from './paymentLedger';
 import { PlanDowngradeRefusedError, downgradeRefusalText, wouldDowngrade } from './planRank';
 import { PLANS, alertPaymentAdmins } from './telegramBot';
-import { appliedOrdersOf, resolveAccountId, writeSubscriptionRecord } from './userStore';
+import { appliedOrderExpiry, appliedOrdersOf, resolveAccountId, writeSubscriptionRecord } from './userStore';
 import { recordAuditLogBestEffort } from './auditLog';
 import {
   TON_MAX_OPEN_ORDERS_PER_ACCOUNT,
@@ -1053,9 +1053,16 @@ export async function verifyTonPayment(
       }
       return { ok: false, error: message };
     }
-    await releaseTonTransaction(env, match.txHash, orderId);
-    console.error(`[TON] Subscription write failed after claim for order ${orderId}; claim released: ${err instanceof Error ? err.message : err}`);
-    return { ok: false, error: TON_VERIFY_UNAVAILABLE_ERROR };
+    const landed = await appliedOrderExpiry(env, accountId, orderId);
+    if (landed === null) {
+      await releaseTonTransaction(env, match.txHash, orderId);
+      console.error(`[TON] Subscription write failed after claim for order ${orderId}; claim released: ${err instanceof Error ? err.message : err}`);
+      return { ok: false, error: TON_VERIFY_UNAVAILABLE_ERROR };
+    }
+    // The account record took the days before the write threw (the login's copy failed), so the
+    // order is credited and its claim stays.
+    console.error(`[TON] Subscription write failed after the account record was written for order ${orderId}; claim kept: ${err instanceof Error ? err.message : err}`);
+    expiresAt = landed;
   }
 
   await markTonPendingOrderCredited(env, orderId);
