@@ -373,6 +373,10 @@ const GROUP_COMMAND_RE = /^\/(?:paysupport|support|admin|refund|reply|close|requ
 const PRIVATE_CHAT_ONLY_TEXT = 'Luminara works in a private chat. Open a chat with this bot and send /start.';
 
 export async function handleTelegramUpdate(update: any, env: Env): Promise<void> {
+  const limit = Number(env.FREE_DAILY_LIMIT || 3);
+  // Set while this turn holds a free unit that no delivered answer has used. Given back below,
+  // on every path out, so a failure after the spend does not keep it.
+  let meterKey = '';
   try {
     if (isTelegramPaymentUpdate(update)) {
       // The webhook route awaits payment updates itself; this keeps direct callers working.
@@ -820,9 +824,6 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
         (await env.LUMINARA_KV.get(`sub:${loginId}`, 'json'))) as { plan: string; expiresAt: number; chargeId?: string } | null;
     }
     const hasActiveSub = Boolean(sub && sub.expiresAt > Date.now());
-    const limit = Number(env.FREE_DAILY_LIMIT || 3);
-    // Set when this turn spent a free unit, so it can go back if no answer reaches the user.
-    let meterKey = '';
 
     if (!hasActiveSub) {
       if (env.REQUIRE_SUBSCRIPTION === 'true') {
@@ -941,10 +942,12 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
         reply_markup: replyKeyboard,
       });
     }
-    // No answer reached the user, so the free unit this turn spent goes back.
-    if (!delivered && meterKey) await invokeDailyQuota(env, meterKey, 'refund', limit);
+    // The unit paid for an answer that reached the user.
+    if (delivered) meterKey = '';
   } catch (e) {
     console.error('telegram update failed', e);
+  } finally {
+    if (meterKey) await invokeDailyQuota(env, meterKey, 'refund', limit);
   }
 }
 

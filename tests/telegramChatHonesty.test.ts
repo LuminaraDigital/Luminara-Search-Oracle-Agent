@@ -1688,6 +1688,21 @@ describe('Telegram bot (handleTelegramUpdate)', () => {
     expect(history).toBeNull();
   });
 
+  it('gives the free unit back, once, when the turn fails after spending it', async () => {
+    chat.env.FREE_DAILY_LIMIT = '3';
+    await chat.chatTurn('Any quick tip?', 'Add FAQ schema.');
+    expect(await readFreeUsed(chat.env, '100', 3)).toBe(1);
+
+    // Any failure after the spend: here the log line for a filtered reply throws.
+    vi.mocked(console.warn).mockImplementation(() => {
+      throw new Error('log sink down');
+    });
+    const { sends } = await chat.chatTurn('Any other tip?', FIXTURE_METRIC_REPLY);
+
+    expect(sends).toEqual([]);
+    expect(await readFreeUsed(chat.env, '100', 3)).toBe(1);
+  });
+
   it('gives the free unit back when Telegram refuses the reply', async () => {
     chat.env.FREE_DAILY_LIMIT = '3';
 
