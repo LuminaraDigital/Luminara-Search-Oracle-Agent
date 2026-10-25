@@ -11,6 +11,7 @@ Do not log secrets, tokens, or PII.
 
 ## Log
 
+- 2026-10-25: Apps Center analytics stays off until VITE_TG_ANALYTICS_TOKEN and VITE_TG_ANALYTICS_APP_NAME are both set at build time. DataChief is silent, builders.ton.org is dead, and the analytics backend was sunset 2026-06-24, so do not block a store path on a Connected analytics check (telegram)
 - 2026-10-09: Pentest remediations: /api/auth/sign-in per-IP and account-lockout backoff rate limiting, App Check production enforcement, /api/health trimmed to {ok:true} (anti-recon), CSP tightened (removed unsafe-inline, eliminated connect-src *) (security)
 - 2026-10-07: TMA open hang: `await viewport.mount()` never settles on macOS/WebK; ready now finishes without awaiting viewport + failsafe timer (telegram)
 - 2026-10-01: Landing Instant Audit funnel + constellation Map restored; deployed staging+prod from local tree. Branch `feat/mcp-governance-hardening` still has large uncommitted/unpushed delta vs origin. Prod health `xdcRpcOk:false` (XinFin RPC flaky; proof XDC still off) (ops/marketing)

@@ -33,6 +33,8 @@ function vendorChunk(id: string): string | undefined {
 }
 // Firebase web config (VITE_FIREBASE_API_KEY etc.) is public by design and must reach the browser.
 const PUBLIC_NAME_RE = /^VITE_FIREBASE_/;
+// Apps Center catalog token. Public in the Mini App bundle, like a measurement id. Blank when unset.
+const PUBLIC_CLIENT_IDS = new Set(['VITE_TG_ANALYTICS_TOKEN']);
 // Gemini keys are blanked by name above; an AIza-shaped value left in the bundle is Firebase's public key.
 const SECRET_VALUE_PATTERNS: Array<{ label: string; re: RegExp }> = [
   { label: 'GitHub token', re: /\b(gho_|ghp_|ghu_|ghs_|ghr_|github_pat_)[A-Za-z0-9_]{20,}/ },
@@ -81,7 +83,7 @@ export default defineConfig(({ mode }) => {
   const define: Record<string, string> = {};
   if (isProduction) {
     for (const name of Object.keys(env)) {
-      if (name.startsWith('VITE_') && !PUBLIC_NAME_RE.test(name) && SECRET_NAME_RE.test(name) && env[name]) {
+      if (name.startsWith('VITE_') && !PUBLIC_NAME_RE.test(name) && !PUBLIC_CLIENT_IDS.has(name) && SECRET_NAME_RE.test(name) && env[name]) {
         define[`import.meta.env.${name}`] = '""';
       }
     }

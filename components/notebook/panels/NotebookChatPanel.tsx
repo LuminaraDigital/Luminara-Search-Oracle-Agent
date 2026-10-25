@@ -3,6 +3,7 @@ import { Notebook, NotebookMessage, NotebookCitation } from '../../../types';
 import { ICONS } from '../../../constants';
 import { renderMarkdown } from '../../../utils/markdown';
 import { subscribeQuota, openPaywallModal, getCurrentQuotaSync, hostedAllowanceSpent, type QuotaInfo } from '../../../services/apiClient';
+import { dailyCapPaywallLine, dailyCapStudioNote } from '../../paywall/planCopy';
 
 interface NotebookChatPanelProps {
   activeNotebook: Notebook;
@@ -220,10 +221,10 @@ export const NotebookChatPanel: React.FC<NotebookChatPanelProps> = ({
       {/* Daily Quota Limit Banner */}
       {quota && hostedAllowanceSpent(quota) && (
         <div className="px-4 py-2 bg-danger-500/10 border-t border-danger-500/20 flex items-center justify-between text-xs text-danger-200">
-          <span>Daily free limit reached ({quota.limit}/{quota.limit} used). Upgrade for unlimited Studio queries or bring your own API key in Settings.</span>
+          <span>{dailyCapStudioNote(quota.limit)}</span>
           <button
             type="button"
-            onClick={() => openPaywallModal(`Daily limit reached (${quota.limit}/${quota.limit} used). Upgrade for unlimited Studio queries.`)}
+            onClick={() => openPaywallModal(dailyCapPaywallLine(quota.limit))}
             className="px-2.5 py-1 rounded bg-gold text-black font-semibold text-[11px] hover:bg-gold-light transition-colors whitespace-nowrap cursor-pointer"
           >
             Upgrade

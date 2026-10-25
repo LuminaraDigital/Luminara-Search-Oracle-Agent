@@ -99,7 +99,7 @@
   // TON_API_KEY must be network-specific: `wrangler secret put TON_API_KEY --env staging|production`
   "vars": {
     "ENVIRONMENT": "production",
-    "WEBAPP_URL": "https://luminarasuite.com/",
+    "WEBAPP_URL": "https://www.luminarasuite.com/",
     "ALLOWED_ORIGINS": "https://luminarasuite.com,https://www.luminarasuite.com",
     // Hosted keys are gated: Groq Cloud LPU is free (subject to daily limit).
     // NVIDIA NIM, Sovereign Ollama, and OpenRouter require an active paid subscription.
@@ -367,7 +367,7 @@
       },
       "vars": {
         "ENVIRONMENT": "production",
-        "WEBAPP_URL": "https://luminarasuite.com/",
+        "WEBAPP_URL": "https://www.luminarasuite.com/",
         "ALLOWED_ORIGINS": "https://luminarasuite.com,https://www.luminarasuite.com",
         "REQUIRE_TG_AUTH": "true",
         "REQUIRE_SUBSCRIPTION": "false",

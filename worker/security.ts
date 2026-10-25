@@ -13,14 +13,14 @@ export { safePublicHostname };
  * CSP for the SPA shell. The app loads the Telegram Web App bridge from telegram.org and fonts
  * from Google Fonts; index.html carries an inline <style>, and React components set inline styles.
  * 'wasm-unsafe-eval' is required for Forme PDF (WebAssembly) without opening full 'unsafe-eval'.
- * Script execution is locked to 'self', trusted Telegram, and Google/Firebase CDN endpoints (no unsafe-inline).
+ * Script execution is locked to 'self', trusted Telegram, the optional Apps Center analytics host, and Google/Firebase CDN endpoints (no unsafe-inline).
  * reCAPTCHA Enterprise loads https://www.google.com/recaptcha/enterprise.js and scripts from www.gstatic.com.
  * Frames may come from www.google.com, recaptcha.google.com, or www.recaptcha.net.
  * connect-src is constrained to 'self', HTTPS, secure WebSockets, local dev/Ollama ports, and data/blob.
  */
 export const HTML_CSP = [
   "default-src 'self'",
-  "script-src 'self' 'wasm-unsafe-eval' https://telegram.org https://www.gstatic.com https://www.google.com https://www.recaptcha.net https://recaptcha.google.com https://apis.google.com https://static.cloudflareinsights.com",
+  "script-src 'self' 'wasm-unsafe-eval' https://telegram.org https://tganalytics.xyz https://www.gstatic.com https://www.google.com https://www.recaptcha.net https://recaptcha.google.com https://apis.google.com https://static.cloudflareinsights.com",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' data: https://fonts.gstatic.com",
   "img-src 'self' data: blob: https:",

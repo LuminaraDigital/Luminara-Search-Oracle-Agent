@@ -123,3 +123,15 @@ export const TELEGRAM_STARS_HANDOFF =
 export function starsPayLabel(starsLabel: string, inTelegram: boolean): string {
   return inTelegram ? `Pay ${starsLabel} · 30 days` : `Pay ${starsLabel} in Telegram`;
 }
+
+/** Paid plans lift the free daily cap. They are not a promise of unlimited queries. */
+export function dailyCapPaywallLine(limit?: number): string {
+  const lead = typeof limit === 'number'
+    ? `Daily limit reached (${limit}/${limit} used).`
+    : 'Daily limit reached.';
+  return `${lead} A paid plan lifts the free daily cap.`;
+}
+
+export function dailyCapStudioNote(limit: number): string {
+  return `Daily limit reached (${limit}/${limit} used today). A paid plan lifts the free daily cap, or add your own API key in Settings.`;
+}

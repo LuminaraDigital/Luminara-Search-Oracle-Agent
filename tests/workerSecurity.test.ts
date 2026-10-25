@@ -66,6 +66,7 @@ describe('security headers', () => {
     expect(res.headers.get('content-security-policy')).toBe(HTML_CSP);
     expect(res.headers.get('cache-control')).toBe('no-cache');
     expect(HTML_CSP).toContain('https://telegram.org');
+    expect(HTML_CSP).toContain('https://tganalytics.xyz');
     expect(HTML_CSP).toContain('https://fonts.googleapis.com');
     expect(HTML_CSP).toContain('https://fonts.gstatic.com');
     expect(HTML_CSP).toContain('https://www.google.com');

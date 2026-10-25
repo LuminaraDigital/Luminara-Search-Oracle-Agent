@@ -608,7 +608,8 @@ describe('the Telegram setup script', () => {
     expect(script.slice(0, getMeAt)).toContain('const origin = new URL(WEBAPP_URL).origin;');
     expect(afterNameCheck).toContain("const PRODUCTION_BOT = 'luminarasuitebot';");
     expect(afterNameCheck).toContain("const PRODUCTION_HOST = 'luminarasuite.com';");
-    expect(afterNameCheck).toContain("const PRODUCTION_ORIGIN = 'https://luminarasuite.com';");
+    expect(afterNameCheck).toContain("const PRODUCTION_ORIGIN = 'https://www.luminarasuite.com';");
+    expect(script).toContain("WEBAPP_URL = 'https://www.luminarasuite.com/'");
     expect(afterNameCheck).toContain('const productionBot = botUsername.toLowerCase() === PRODUCTION_BOT;');
     expect(script).not.toMatch(/startsWith|endsWith|\.includes\(|\.indexOf\(|\.match\(/);
 
@@ -709,7 +710,7 @@ describe('the staging runbook', () => {
   });
 
   it('says how the setup script is kept away from the production bot', () => {
-    expect(runbook).toContain('The production bot goes only with `https://luminarasuite.com`.');
+    expect(runbook).toContain('The production bot goes only with `https://www.luminarasuite.com`.');
     expect(runbook).toContain('It changes the production bot only when `ALLOW_PRODUCTION_WEBHOOK=yes` is also set');
     expect(runbook).toContain('the staging steps never need that variable');
     // No command in the runbook sets it.

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { OracleMode, Message, AppView, BusinessDNA, LAB_VIEWS } from './types';
-import { setAnswerDepth } from './services/audit/answerDepth';
+import { getAnswerDepth, setAnswerDepth } from './services/audit/answerDepth';
 import { toChatHistory } from './services/chat/messages';
 import { addStreamChunk, completeReply, newStreamedReply, showReplyProgress, type ReplyEffects } from './services/chat/streamedReply';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -357,7 +357,9 @@ const App: React.FC = () => {
       }
     }
   }, [inTelegram]);
-  const [mode, setMode] = useState<OracleMode>(OracleMode.FLASH);
+  const [mode, setMode] = useState<OracleMode>(() =>
+    getAnswerDepth() === 'thorough' ? OracleMode.DEEP_THINK : OracleMode.FLASH,
+  );
   const [isThinking, setIsThinking] = useState(false);
   const [isVoiceActive, setIsVoiceActive] = useState(false);
   const [_isSearching, setIsSearching] = useState(false);

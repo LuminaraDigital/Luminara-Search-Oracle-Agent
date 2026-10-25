@@ -10,6 +10,7 @@ import { auditHistoryService, type AuditHistoryEntry } from '../audit/auditHisto
 import { injectCompetitorWikiLinks, extractWikiLinks } from '../audit/wikiLinkService';
 import { noteWorkspaceDirty } from '../sync/workspaceSyncService';
 import { getActiveClientId } from '../workspace/agencyWorkspaceService';
+import { clipPlain } from '../../utils/clipPlain';
 import type { PostAuditExperience } from '../audit/postAuditReflectionService';
 
 const EVENT_KEY = 'luminara_brand_memory_events_v1';
@@ -187,7 +188,7 @@ export function ingestChatInsight(opts: {
   return pushEvent({
     type: 'chat_insight',
     title,
-    summary: opts.answerExcerpt.slice(0, 240),
+    summary: clipPlain(opts.answerExcerpt, 240),
     domain: opts.domain,
     clientId,
     tags: ['chat'],
@@ -204,7 +205,7 @@ export function syncDna(dna: BusinessDNA): BrandMemoryEvent {
   return pushEvent({
     type: 'dna_sync',
     title: `DNA synced: ${dna.name}`,
-    summary: dna.rawContext?.slice(0, 240) || dna.mission?.slice(0, 240) || dna.name,
+    summary: clipPlain(dna.rawContext || '', 240) || clipPlain(dna.mission || '', 240) || dna.name,
     clientId: getActiveClientId(),
     tags: ['dna', ...(dna.competitors || []).slice(0, 5)],
   });
@@ -220,7 +221,7 @@ export function ingestAuditExperience(exp: PostAuditExperience): BrandMemoryEven
   return pushEvent({
     type: 'experience_heuristic',
     title: `What we learned: ${exp.domain} (${exp.focus})`,
-    summary: summaryText.slice(0, 300) || `Saved what we learned about ${exp.domain}`,
+    summary: clipPlain(summaryText, 300) || `Saved what we learned about ${exp.domain}`,
     domain: exp.domain,
     clientId,
     auditId: exp.auditId,
@@ -230,7 +231,7 @@ export function ingestAuditExperience(exp: PostAuditExperience): BrandMemoryEven
 
 export function saveBrandFact(opts: { title: string; summary: string; domain?: string }): BrandMemoryEvent {
   const title = opts.title.trim().slice(0, 160) || 'Brand fact';
-  const summary = opts.summary.trim().slice(0, 500);
+  const summary = clipPlain(opts.summary, 500);
   try {
     vfsMemoryService.addMemoryItem('events', title, summary, ['brand-fact'], 'STRATEGY');
   } catch {
