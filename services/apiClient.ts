@@ -881,11 +881,10 @@ export async function fetchWorkspace(): Promise<{
   };
 }
 
-/** `baseVersion` is the server `updatedAt` the copy was based on; an older one gets 409 and the stored copy. */
+/** `baseVersion` is the server `updatedAt` the copy was based on; any other gets 409 and the stored copy. */
 export async function putWorkspaceRemote(input: {
   baseVersion: number;
   payload: WorkspacePayload;
-  force?: boolean;
 }): Promise<{
   ok: boolean;
   conflict?: boolean;
@@ -893,6 +892,7 @@ export async function putWorkspaceRemote(input: {
   updatedAt?: number;
   payload?: WorkspacePayload;
   error?: string;
+  status?: number;
 }> {
   const base = apiBase();
   if (!base) return { ok: false, error: 'No API' };
@@ -911,7 +911,7 @@ export async function putWorkspaceRemote(input: {
       payload: data.payload,
     };
   }
-  if (!r.ok) return { ok: false, error: data.error || `HTTP ${r.status}` };
+  if (!r.ok) return { ok: false, error: data.error || `HTTP ${r.status}`, status: r.status };
   return { ok: true, accountId: data.accountId, updatedAt: data.updatedAt };
 }
 

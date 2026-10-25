@@ -43,11 +43,18 @@ function serverCopy(updatedAt: number, dna?: string) {
   return { ok: true, accountId: 'acct_1', updatedAt, payload: { storage: dna ? { [DNA]: dna } : {} } };
 }
 
+/** This page's sign-in pull of server version `updatedAt`, then a local DNA edit on top of it. */
+async function pulledThenEdited(updatedAt: number, dna: string): Promise<void> {
+  fetchWorkspace.mockResolvedValue(serverCopy(updatedAt));
+  await sync.pullWorkspaceOnLogin();
+  sync.saveWorkspaceItem(DNA, dna);
+}
+
 beforeEach(async () => {
   vi.useFakeTimers();
   vi.stubGlobal('localStorage', memoryStorage());
   vi.stubGlobal('sessionStorage', memoryStorage());
-  vi.stubGlobal('window', { dispatchEvent: () => true });
+  vi.stubGlobal('window', new EventTarget());
   // Fresh module state (backoff, in-flight pull) for every test.
   vi.resetModules();
   sync = await import('../services/sync/workspaceSyncService');
@@ -129,16 +136,47 @@ describe('workspace sync by server version', () => {
     expect(meta()).toMatchObject({ baseVersion: 500, dirty: false });
   });
 
-  it('a push refused as stale applies the stored copy', async () => {
-    localStorage.setItem(DNA, '{"name":"mine"}');
-    localStorage.setItem(META, JSON.stringify({ accountId: 'acct_1', baseVersion: 400, dirty: true }));
+  it('a push refused as stale applies the stored copy and tells the app to show it', async () => {
+    await pulledThenEdited(400, '{"name":"mine"}');
     putWorkspaceRemote.mockResolvedValue({ ok: false, conflict: true, ...serverCopy(500, '{"name":"theirs"}') });
+    // What App's listener re-reads into React state when the event fires.
+    const shown: Array<string | null> = [];
+    sync.onWorkspaceRestored(() => shown.push(localStorage.getItem(DNA)));
 
     await sync.flushWorkspacePush();
 
     expect(sent().baseVersion).toBe(400);
     expect(localStorage.getItem(DNA)).toBe('{"name":"theirs"}');
     expect(meta()).toMatchObject({ baseVersion: 500, dirty: false });
+    expect(shown).toEqual(['{"name":"theirs"}']);
+  });
+
+  it('a pull that started before a sign-out does not restore the account that left', async () => {
+    let release!: (value: unknown) => void;
+    fetchWorkspace.mockReturnValue(new Promise((resolve) => { release = resolve; }));
+
+    const pull = sync.pullWorkspaceOnLogin();
+    sync.clearLocalWorkspace();
+    release(serverCopy(500, '{"name":"leaving account"}'));
+
+    expect(await pull).toMatchObject({ ok: false });
+    expect(localStorage.getItem(DNA)).toBeNull();
+  });
+
+  it('until this page has pulled, a push runs the pull instead of sending leftovers', async () => {
+    localStorage.setItem(DNA, '{"name":"previous account"}');
+    localStorage.setItem(META, JSON.stringify({ accountId: 'acct_old', baseVersion: 7 }));
+    fetchWorkspace.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    expect(await sync.pullWorkspaceOnLogin()).toMatchObject({ ok: false });
+
+    sync.noteWorkspaceDirty();
+    fetchWorkspace.mockResolvedValue({ ...serverCopy(0), accountId: 'acct_new' });
+    await sync.flushWorkspacePush();
+    await sync.pullWorkspaceOnLogin();
+
+    expect(fetchWorkspace).toHaveBeenCalledTimes(2);
+    expect(putWorkspaceRemote).not.toHaveBeenCalled();
+    expect(localStorage.getItem(DNA)).toBeNull();
   });
 
   it('no push runs during the sign-in pull; an edit made meanwhile goes out after it', async () => {
@@ -172,8 +210,8 @@ describe('workspace sync by server version', () => {
     expect(fetchWorkspace).toHaveBeenCalledTimes(1);
   });
 
-  it('a push that fails offline backs off without throwing', async () => {
-    localStorage.setItem(META, JSON.stringify({ accountId: 'acct_1', baseVersion: 500, dirty: true }));
+  it('a push that fails offline backs off without throwing, then retries on its own', async () => {
+    await pulledThenEdited(500, '{"name":"offline edit"}');
     putWorkspaceRemote.mockRejectedValue(new TypeError('Failed to fetch'));
 
     await expect(sync.flushWorkspacePush()).resolves.toBeUndefined();
@@ -181,10 +219,33 @@ describe('workspace sync by server version', () => {
     expect(putWorkspaceRemote).toHaveBeenCalledTimes(1);
     expect(meta().dirty).toBe(true);
 
-    vi.advanceTimersByTime(10_001);
     putWorkspaceRemote.mockResolvedValue({ ok: true, accountId: 'acct_1', updatedAt: 501 });
-    await sync.flushWorkspacePush();
+    await vi.advanceTimersByTimeAsync(11_000);
     expect(putWorkspaceRemote).toHaveBeenCalledTimes(2);
+    expect(sent(1).payload.storage?.[DNA]).toBe('{"name":"offline edit"}');
     expect(meta()).toMatchObject({ baseVersion: 501, dirty: false });
+  });
+
+  it('coming back online pushes a failed edit at once', async () => {
+    await pulledThenEdited(500, '{"name":"offline edit"}');
+    putWorkspaceRemote.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    await sync.flushWorkspacePush();
+
+    putWorkspaceRemote.mockResolvedValue({ ok: true, accountId: 'acct_1', updatedAt: 501 });
+    window.dispatchEvent(new Event('online'));
+    await vi.waitFor(() => expect(meta()).toMatchObject({ baseVersion: 501, dirty: false }));
+
+    expect(putWorkspaceRemote).toHaveBeenCalledTimes(2);
+  });
+
+  it('a body the server refused is not retried', async () => {
+    await pulledThenEdited(500, '{"name":"too big"}');
+    putWorkspaceRemote.mockResolvedValue({ ok: false, error: 'Payload too large', status: 413 });
+
+    await sync.flushWorkspacePush();
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(putWorkspaceRemote).toHaveBeenCalledTimes(1);
+    expect(meta().dirty).toBe(true);
   });
 });
