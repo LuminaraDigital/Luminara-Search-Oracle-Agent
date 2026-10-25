@@ -127,7 +127,8 @@ export function billingId(user: HostedIdentity): string {
  * Identifies the caller:
  * 1) Authorization Bearer (Firebase ID token or tg_sess_ token). When one is sent the cookie is
  *    not read: a cookie planted by a cross-site login cannot replace it, and a Bearer that fails
- *    verification is an error, never a fallback to the cookie. Otherwise
+ *    verification never falls back to the cookie. It is an error unless valid initData on the
+ *    same request identifies the Telegram user. Otherwise
  * 2) HttpOnly __session cookie token (Cookie: __session=…), and
  * 3) Telegram Mini App initData (x-telegram-init-data).
  * Each side is stored on its own account_id. This function never links them.

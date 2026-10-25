@@ -209,6 +209,22 @@ describe('an explicit Bearer outranks the session cookie', () => {
     expect(who.user?.accountId).toBe('acct-fb-own');
   });
 
+  it('resolves valid initData plus an invalid Bearer to the Telegram user, never to the cookie', async () => {
+    const { env } = await seedPair({ tgId: '88053', tgAccount: 'acct-tg-mini', fbAccount: 'acct-fb-cookie' });
+    const session = await mintOpaqueSession(env, { uid: firebaseGate.uid, email: firebaseGate.email });
+    const who = await identify(new Request('https://luminarasuite.com/api/workspace', {
+      headers: {
+        'x-telegram-init-data': signInitData(88053, 'Ada'),
+        cookie: `__session=${session}`,
+        authorization: 'Bearer expired-firebase-token',
+      },
+    }), env);
+
+    expect(who.error).toBeUndefined();
+    expect(who.user?.id).toBe('88053');
+    expect(who.user?.accountId).toBe('acct-tg-mini');
+  });
+
   it('returns 401 for an expired Bearer even when the cookie session is valid', async () => {
     const { env } = await seedPair({ tgId: '88052', tgAccount: 'acct-tg', fbAccount: 'acct-fb' });
     const session = await mintOpaqueSession(env, { uid: firebaseGate.uid, email: firebaseGate.email });
