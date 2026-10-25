@@ -337,22 +337,31 @@ export async function writeSubscriptionRecord(
   record: Record<string, unknown>,
   // `allowLowerPlan` is for a caller that takes a plan away on purpose (a reversed or disputed
   // payment falling back to the plan still paid for). A purchase never sets it.
-  opts: { allowLowerPlan?: boolean } = {},
-): Promise<{ accountId: string }> {
+  // `orderId` is the TON order or licence key (`lic_<key>`) a purchase applies. It is passed apart
+  // from the record because a caller that rewrites a record it read (a card reversal) carries that
+  // record's own `orderId`.
+  opts: { allowLowerPlan?: boolean; orderId?: string } = {},
+): Promise<{ accountId: string; record: Record<string, unknown> }> {
   const accountId = await resolveAccountId(env, String(loginUserId));
-  if (!env.LUMINARA_KV) return { accountId };
+  if (!env.LUMINARA_KV) return { accountId, record };
   const existing = (await env.LUMINARA_KV.get(`sub:${accountId}`, 'json')) as
     | { plan?: unknown; expiresAt?: number; appliedCharges?: unknown; chargeId?: unknown; appliedOrders?: unknown; orderId?: unknown }
     | null;
+  // An order the account record already names was applied by an earlier write that failed before
+  // the login's copy. The record is written again as it stands, so that copy catches up, nothing
+  // is added, and nothing the caller read earlier overwrites what has landed since.
+  const replay = existing !== null && opts.orderId !== undefined && appliedOrdersOf(existing).includes(opts.orderId);
+  if (replay) console.warn(JSON.stringify({ event: 'order_already_applied' }));
+  const incoming: Record<string, unknown> = replay ? existing : record;
   // A purchase may never replace a plan that is still running with a lower one. The rule lives
   // here because every rail writes through here, so a rail added later inherits it.
-  if (!opts.allowLowerPlan && wouldDowngrade(existing, record.plan)) {
+  if (!replay && !opts.allowLowerPlan && wouldDowngrade(existing, record.plan)) {
     throw new PlanDowngradeRefusedError(String(existing?.plan), Number(existing?.expiresAt), String(record.plan));
   }
   // A purchase on another rail must not erase which Stars charges an active record was built
   // from: the charge sweep and refunds read that list to tell a granted charge from a lost one.
-  let toWrite = record;
-  if (!Array.isArray(record.appliedCharges)) {
+  let toWrite = incoming;
+  if (!Array.isArray(incoming.appliedCharges)) {
     // Records written before the list existed name one charge.
     const earlier = Array.isArray(existing?.appliedCharges)
       ? existing.appliedCharges
@@ -360,18 +369,18 @@ export async function writeSubscriptionRecord(
         ? [existing.chargeId]
         : [];
     if (existing?.expiresAt && existing.expiresAt > Date.now() && earlier.length > 0) {
-      toWrite = { ...record, appliedCharges: earlier };
+      toWrite = { ...incoming, appliedCharges: earlier };
     }
   }
   // The orders are carried from a record that has ended too, so a late retry still finds its own.
-  const appliedOrders = [...new Set([...appliedOrdersOf(existing), ...appliedOrdersOf(record)])].slice(-MAX_APPLIED_ORDERS);
+  const appliedOrders = [...new Set([...appliedOrdersOf(existing), ...appliedOrdersOf(incoming)])].slice(-MAX_APPLIED_ORDERS);
   if (appliedOrders.length > 0) toWrite = { ...toWrite, appliedOrders };
   const body = JSON.stringify(toWrite);
   await env.LUMINARA_KV.put(`sub:${accountId}`, body);
   if (accountId !== String(loginUserId)) {
     await env.LUMINARA_KV.put(`sub:${loginUserId}`, body);
   }
-  return { accountId };
+  return { accountId, record: toWrite };
 }
 
 /**

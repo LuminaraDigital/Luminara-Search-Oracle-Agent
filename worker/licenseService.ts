@@ -230,30 +230,23 @@ export async function activateLicenseKey(
   // 4. Extend subscription
   try {
     const existingSub = (await env.LUMINARA_KV.get(`sub:${accountId}`, 'json')) as { plan?: string; expiresAt?: number } | null;
-    if (existingSub && appliedOrdersOf(existingSub).includes(orderId)) {
-      // An earlier attempt wrote the account record and failed before the login's copy. The same
-      // record is written again so that copy catches up; the days are not added twice.
-      console.warn(JSON.stringify({ event: 'order_already_applied' }));
-      await writeSubscriptionRecord(env, userId, existingSub);
-      expiresAt = Number(existingSub.expiresAt);
-    } else {
-      // A paid plan can start between the check above and this read.
-      const lateTrialRefusal = refuseTrialOnPaidPlan(keyRecord, existingSub, now);
-      if (lateTrialRefusal) {
-        await releaseLicenseRedemption(env, { key, accountId, isTrial: keyRecord.isTrial });
-        return lateTrialRefusal;
-      }
-      const baseTime = existingSub?.expiresAt && existingSub.expiresAt > now ? existingSub.expiresAt : now;
-      expiresAt = baseTime + durationMs;
-
-      await writeSubscriptionRecord(env, userId, {
-        plan: keyRecord.plan,
-        paymentMethod: 'license_key',
-        orderId,
-        startedAt: now,
-        expiresAt,
-      });
+    // A paid plan can start between the check above and this read. This key's own earlier write is not one.
+    const lateTrialRefusal = appliedOrdersOf(existingSub).includes(orderId) ? null : refuseTrialOnPaidPlan(keyRecord, existingSub, now);
+    if (lateTrialRefusal) {
+      await releaseLicenseRedemption(env, { key, accountId, isTrial: keyRecord.isTrial });
+      return lateTrialRefusal;
     }
+    const baseTime = existingSub?.expiresAt && existingSub.expiresAt > now ? existingSub.expiresAt : now;
+
+    const written = await writeSubscriptionRecord(env, userId, {
+      plan: keyRecord.plan,
+      paymentMethod: 'license_key',
+      orderId,
+      startedAt: now,
+      expiresAt: baseTime + durationMs,
+    }, { orderId });
+    // A key the record already names keeps that record's expiry.
+    expiresAt = Number(written.record.expiresAt);
   } catch (err) {
     const landed = await appliedOrderExpiry(env, accountId, orderId);
     if (landed === null) {

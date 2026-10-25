@@ -1021,24 +1021,17 @@ export async function verifyTonPayment(
   let expiresAt: number;
   try {
     const existingSub = (await kv.get(`sub:${accountId}`, 'json')) as { expiresAt?: number } | null;
-    if (existingSub && appliedOrdersOf(existingSub).includes(orderId)) {
-      // An earlier check wrote the account record and failed before the login's copy. The same
-      // record is written again so that copy catches up; the days are not added twice.
-      console.warn(JSON.stringify({ event: 'order_already_applied' }));
-      await writeSubscriptionRecord(env, order.userId, existingSub);
-      expiresAt = Number(existingSub.expiresAt);
-    } else {
-      const baseTime = existingSub?.expiresAt && existingSub.expiresAt > now ? existingSub.expiresAt : now;
-      expiresAt = baseTime + plan.days * 86400_000;
+    const baseTime = existingSub?.expiresAt && existingSub.expiresAt > now ? existingSub.expiresAt : now;
 
-      await writeSubscriptionRecord(env, order.userId, {
-        plan: order.planId,
-        paymentMethod: 'ton',
-        orderId,
-        startedAt: now,
-        expiresAt,
-      });
-    }
+    const written = await writeSubscriptionRecord(env, order.userId, {
+      plan: order.planId,
+      paymentMethod: 'ton',
+      orderId,
+      startedAt: now,
+      expiresAt: baseTime + plan.days * 86400_000,
+    }, { orderId });
+    // An order the record already names keeps that record's expiry.
+    expiresAt = Number(written.record.expiresAt);
   } catch (err) {
     if (err instanceof PlanDowngradeRefusedError) {
       // A higher plan landed between the look above and this write. The transfer is real and the

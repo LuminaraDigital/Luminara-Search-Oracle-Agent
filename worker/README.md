@@ -294,9 +294,10 @@ no payment was taken. The staging webhook is subscribed to
   When the write throws after the account record took the days (the login copy failed), the rail
   reads that record back: the order is credited and its D1 claim kept, so a single-use key cannot
   be redeemed by another account on top of them. A retry whose order is listed while its claim was
-  given back writes the same record again and adds nothing, is not held or refused for the plan it
-  put in place, and logs `order_already_applied` (pinned in `tests/tonPayment.test.ts` and
-  `tests/licenseKey.test.ts`).
+  given back is not held or refused for the plan it put in place; the rail passes the order id to
+  `writeSubscriptionRecord` (`opts.orderId`, never read from the record, which a rewrite carries),
+  which then writes the account record again as it stands at its own read, adds nothing, and logs
+  `order_already_applied` (pinned in `tests/tonPayment.test.ts` and `tests/licenseKey.test.ts`).
 
 ## Stars charges (pinned in `tests/starsCharges.test.ts`)
 

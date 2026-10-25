@@ -34,7 +34,10 @@ function createMockKv() {
   return {
     store,
     failPutsMatching: null as RegExp | null,
+    /** Runs before a read is answered, so a test can change the store between two reads. */
+    beforeGet: null as ((key: string) => void) | null,
     async get(key: string, type?: string) {
+      this.beforeGet?.(key);
       const val = store.get(key);
       if (val === undefined) return null;
       if (type === 'json') return JSON.parse(val);
@@ -716,6 +719,31 @@ describe('an order whose first write reached only the account record', () => {
     expect(await kv.get('sub:acct_buyer', 'json')).toEqual(stars);
     expect(await kv.get('sub:fb:buyer', 'json')).toEqual(stars);
     expect([...kv.store.keys()].filter((k) => k.startsWith('sub_pending:'))).toEqual([]);
+  });
+
+  it('a Stars charge that lands while it is being finished keeps its days and its place on the record', async () => {
+    const { kv, check, halfWritten } = await linkedOrder();
+    await kv.put('sub:acct_buyer', JSON.stringify({ ...halfWritten, appliedCharges: ['ch_before'] }));
+    const withStars = { ...halfWritten, appliedOrders: [halfWritten.orderId], appliedCharges: ['ch_before', 'ch_landed'], expiresAt: halfWritten.expiresAt + PLANS.starter.days * DAY };
+    // The Stars Starter charge lands after the rail's own look at the record and before the write.
+    let reads = 0;
+    kv.beforeGet = (key) => {
+      if (key === 'sub:acct_buyer' && ++reads === 3) kv.store.set(key, JSON.stringify(withStars));
+    };
+
+    expect(await check()).toEqual({ ok: true, plan: 'starter', expiresAt: withStars.expiresAt });
+    expect(reads).toBeGreaterThanOrEqual(3);
+    expect(await kv.get('sub:acct_buyer', 'json')).toEqual(withStars);
+    expect(await kv.get('sub:fb:buyer', 'json')).toEqual(withStars);
+  });
+
+  it('a caller that rewrites a record it read, orderId and all, still writes its change (a card reversal after a TON purchase)', async () => {
+    const { env, kv } = makeEnv();
+    const now = Date.now();
+    const ton = { plan: 'growth', paymentMethod: 'ton', orderId: 'ton_last', expiresAt: now + 60 * DAY };
+    await kv.put('sub:user_reversed', JSON.stringify(ton));
+    await writeSubscriptionRecord(env, 'user_reversed', { ...ton, expiresAt: now + 30 * DAY }, { allowLowerPlan: true });
+    expect(await kv.get('sub:user_reversed', 'json')).toEqual({ ...ton, expiresAt: now + 30 * DAY, appliedOrders: ['ton_last'] });
   });
 
   it('the record keeps the orders it was built from through writes by other rails, after its plan has ended too', async () => {
