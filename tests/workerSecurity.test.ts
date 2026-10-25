@@ -5,6 +5,7 @@ import type { Env } from '../worker/index';
 import { listPriceSummary } from '../components/paywall/planCopy';
 import { STAGING_ROBOTS_TXT } from '../worker/crawlDocuments';
 import { publicPlanCatalogue } from '../worker/telegramBot';
+import { mintOpaqueSession } from '../worker/opaqueSession';
 import {
   HTML_CSP,
   HOSTED_MAX_TOKENS,
@@ -915,6 +916,22 @@ describe('proof-of-audit attest route', () => {
       ctx,
     );
     expect(res.status).toBe(401);
+  });
+
+  it('answers a signed-in JSON null body with 400, not a crash', async () => {
+    const env = makeEnv();
+    const sid = await mintOpaqueSession(env, { uid: 'attest-null' });
+    const res = await worker.fetch(
+      req('/api/agent/attest', {
+        method: 'POST',
+        headers: { cookie: `__session=${sid}`, origin: 'https://luminarasuite.com', 'content-type': 'application/json' },
+        body: 'null',
+      }),
+      env,
+      ctx,
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'Invalid digestHex' });
   });
 
   it('keeps public badge verification (GET) reachable without sign-in', async () => {

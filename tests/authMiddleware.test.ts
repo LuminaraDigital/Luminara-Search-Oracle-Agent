@@ -205,6 +205,22 @@ describe('Signed Webhook Verification (/api/webhooks/auth)', () => {
     expect(data.processed).toBe('user.created');
   });
 
+  it('answers a signed JSON null payload as an unknown event, not a crash', async () => {
+    const secret = 'test-secret-123';
+    const env = makeEnv({ AUTH_WEBHOOK_SECRET: secret });
+    const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+    const signed = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode('null'));
+    const signature = Array.from(new Uint8Array(signed)).map((b) => b.toString(16).padStart(2, '0')).join('');
+
+    const res = await worker.fetch(
+      req('/api/webhooks/auth', { method: 'POST', body: 'null', headers: { 'x-auth-signature': signature } }),
+      env,
+      ctx,
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, processed: 'unknown' });
+  });
+
   it('user.deleted revokes the sessions the user already holds', async () => {
     const secret = 'test-secret-123';
     const env = makeEnv({ AUTH_WEBHOOK_SECRET: secret });

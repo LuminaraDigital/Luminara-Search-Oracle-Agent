@@ -632,7 +632,8 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     }
     let payload: any = {};
     try {
-      payload = JSON.parse(read.text);
+      // The signature covers the raw text, so this route parses it itself.
+      payload = JSON.parse(read.text) || {};
     } catch {
       return withCors(json({ ok: false, error: 'Malformed JSON payload' }, 400));
     }
