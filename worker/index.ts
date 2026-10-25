@@ -1991,20 +1991,26 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     if (who.error || !who.user) {
       return withCors(json({ ok: false, error: who.error || 'Unauthorized', code: 'AUTH_REQUIRED' }, 401));
     }
+    // Only minting needs Growth or Agency: a lapsed plan still lists and revokes its keys.
     const sub = await getActiveSubscription(env, who.user);
     const caps = planCapsFor(sub?.plan);
-    if (!caps.mcpAccess) {
-      return withCors(
-        json(
-          { ok: false, error: 'API keys require Growth or Agency', code: 'MCP_ACCESS_REQUIRED' },
-          403,
-        ),
-      );
-    }
     if (path === '/api-keys' && request.method === 'GET') {
-      return withCors(json({ ok: true, keys: await listApiKeys(env, who.user), tools: listMcpToolCatalogue() }));
+      return withCors(json({
+        ok: true,
+        mcpAccess: caps.mcpAccess,
+        keys: await listApiKeys(env, who.user),
+        tools: listMcpToolCatalogue(),
+      }));
     }
     if (path === '/api-keys' && request.method === 'POST') {
+      if (!caps.mcpAccess) {
+        return withCors(
+          json(
+            { ok: false, error: 'API keys require Growth or Agency', code: 'MCP_ACCESS_REQUIRED' },
+            403,
+          ),
+        );
+      }
       const dual = await enforceDualKeySlidingLimit(env, {
         action: 'api_key_create',
         uid: billingId(who.user),

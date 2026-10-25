@@ -272,6 +272,35 @@ describe('APS MCP + projects', () => {
     expect(paidBody.result?.structuredContent?.code).toBe('PAID_TOOL_FORBIDDEN');
   });
 
+  it('a lapsed plan still lists and revokes its API keys but cannot mint one', async () => {
+    const store = new Map<string, string>([
+      ['sub:77101', JSON.stringify({ plan: 'growth', expiresAt: Date.now() + 86400_000 })],
+    ]);
+    const env = makeEnv(store);
+    const call = (path: string, init: RequestInit, ip: string) =>
+      worker.fetch(new Request(`https://luminarasuite.com${path}`, { ...init, headers: tgHeaders(77101, ip) }), env, ctx);
+
+    const minted = await call('/api/api-keys', { method: 'POST', body: JSON.stringify({ name: 'Cursor' }) }, '10.20.2.1');
+    expect(minted.status).toBe(200);
+    const keyId = ((await minted.json()) as { meta: { id: string } }).meta.id;
+
+    store.set('sub:77101', JSON.stringify({ plan: 'free', expiresAt: Date.now() + 86400_000 }));
+    const listed = await call('/api/api-keys', { method: 'GET' }, '10.20.2.2');
+    expect(listed.status).toBe(200);
+    const list = (await listed.json()) as { mcpAccess: boolean; keys: Array<{ id: string }> };
+    expect(list.mcpAccess).toBe(false);
+    expect(list.keys.map((k) => k.id)).toEqual([keyId]);
+
+    const refused = await call('/api/api-keys', { method: 'POST', body: JSON.stringify({ name: 'Again' }) }, '10.20.2.3');
+    expect(refused.status).toBe(403);
+    expect(((await refused.json()) as { code?: string }).code).toBe('MCP_ACCESS_REQUIRED');
+
+    const revoked = await call(`/api/api-keys/${keyId}`, { method: 'DELETE' }, '10.20.2.4');
+    expect(revoked.status).toBe(200);
+    const after = (await (await call('/api/api-keys', { method: 'GET' }, '10.20.2.5')).json()) as { keys: unknown[] };
+    expect(after.keys).toEqual([]);
+  });
+
   it('API key authenticates MCP for growth account', async () => {
     const store = new Map<string, string>([
       ['sub:acct_g', JSON.stringify({ plan: 'growth', expiresAt: Date.now() + 86400_000 })],
