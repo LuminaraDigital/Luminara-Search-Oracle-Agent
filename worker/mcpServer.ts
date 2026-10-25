@@ -28,6 +28,7 @@ import {
   governanceFor,
 } from './mcpGovernance';
 import { MAX_BODY_BYTES, readBody } from './security';
+import { putCounterBestEffort } from './securityHardening';
 import {
   BYOK_PAID_CALL_COST_CENTS,
   HOSTED_PAID_CALL_COST_CENTS,
@@ -139,9 +140,7 @@ export async function markProjectContextLoaded(
   projectId: string,
 ): Promise<void> {
   if (!env.LUMINARA_KV) return;
-  await env.LUMINARA_KV.put(contextLoadedKey(accountId, projectId), String(Date.now()), {
-    expirationTtl: CONTEXT_LOADED_TTL_SEC,
-  });
+  await putCounterBestEffort(env, contextLoadedKey(accountId, projectId), String(Date.now()), CONTEXT_LOADED_TTL_SEC);
 }
 
 /**
