@@ -40,7 +40,26 @@ vi.mock('firebase/auth', () => ({
 }));
 
 const LIMITED = new Headers({ 'x-quota-limit': '3', 'x-quota-remaining': '1', 'x-quota-reset': '600' });
-const fetchMock = vi.fn(async () => new Response('{}', { status: 404 }));
+const notFound = async () => new Response('{}', { status: 404 });
+const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(notFound);
+
+function bootAnswer(plan: string): Response {
+  return new Response(JSON.stringify({
+    ok: true,
+    accountId: `fb:${plan}`,
+    workspace: { updatedAt: 1, payload: {} },
+    quota: { limit: -1, used: 0, remaining: -1, resetSec: 3600, isUnlimited: true, plan, expiresAt: Date.now() + 86_400_000 },
+  }), { status: 200, headers: { 'content-type': 'application/json' } });
+}
+
+/** Holds every request to a URL ending in `suffix` until the test answers it. */
+function holdRequests(suffix: string): { answer: (res: Response) => void; started: () => boolean } {
+  let release: ((res: Response) => void) | null = null;
+  fetchMock.mockImplementation((input) => (String(input).endsWith(suffix)
+    ? new Promise<Response>((done) => { release = done; })
+    : notFound()));
+  return { answer: (res) => release?.(res), started: () => release !== null };
+}
 
 function user(uid: string): FakeUser {
   return { uid, getIdToken: async () => `token-${uid}` };
@@ -58,7 +77,6 @@ function flush(): Promise<void> {
 
 function bootRequests(): string[] {
   return fetchMock.mock.calls
-    .map((call) => call as unknown as [RequestInfo | URL, RequestInit | undefined])
     .filter(([url]) => String(url).endsWith('/api/boot'))
     .map(([, init]) => new Headers(init?.headers).get('authorization') || '');
 }
@@ -75,7 +93,8 @@ beforeEach(() => {
   vi.resetModules();
   firebase.onIdToken = null;
   firebase.currentUser = null;
-  fetchMock.mockClear();
+  fetchMock.mockReset();
+  fetchMock.mockImplementation(notFound);
   vi.stubGlobal('window', { location: { origin: 'https://luminarasuite.com' } });
   vi.stubGlobal('fetch', fetchMock);
 });
@@ -137,5 +156,55 @@ describe('account switch', () => {
 
     await expect(pending).resolves.toBeNull();
     expect(auth.getFirebaseIdTokenSync()).toBe('token-B');
+  });
+
+  it('a boot that answers after sign-out does not refill the quota snapshot', async () => {
+    const boot = holdRequests('/api/boot');
+    const { api, emit } = await load();
+    emit(user('A'));
+    await vi.waitFor(() => expect(boot.started()).toBe(true));
+    api.setAccountSignedIn(true);
+    const quota = api.fetchQuotaStatus();
+
+    emit(null);
+    boot.answer(bootAnswer('agency'));
+    await quota;
+
+    expect(api.getCurrentQuotaSync()).toBeNull();
+    expect(api.hasActivePaidPlanSync()).toBe(false);
+  });
+
+  it('quota headers from a request sent before the account changed are dropped', async () => {
+    const request = holdRequests('/api/providers/groq/chat');
+    const { api, emit } = await load();
+    emit(user('A'));
+    await flush();
+    const pending = api.workerFetchWithAuthRetry('https://luminarasuite.com/api/providers/groq/chat');
+    await vi.waitFor(() => expect(request.started()).toBe(true));
+
+    emit(null);
+    request.answer(new Response('{}', { status: 200, headers: { 'x-quota-limit': 'unlimited', 'x-quota-remaining': 'unlimited' } }));
+    await pending;
+
+    expect(api.getCurrentQuotaSync()).toBeNull();
+    expect(api.hasActivePaidPlanSync()).toBe(false);
+    api.updateQuotaFromHeaders(LIMITED);
+    expect(api.getCurrentQuotaSync()?.remaining).toBe(1);
+  });
+
+  it('an hourly token refresh for the same user keeps the snapshot and the boot', async () => {
+    fetchMock.mockImplementation(async (input) => (String(input).endsWith('/api/boot') ? bootAnswer('agency') : notFound()));
+    const { api, emit } = await load();
+    const accountBoot = await import('../services/auth/accountBoot');
+    emit(user('A'));
+    await flush();
+    api.setAccountSignedIn(true);
+    await api.fetchQuotaStatus();
+    expect(api.getCurrentQuotaSync()?.plan).toBe('agency');
+
+    emit({ uid: 'A', getIdToken: () => new Promise<string>(() => {}) });
+
+    expect(api.getCurrentQuotaSync()?.plan).toBe('agency');
+    expect((await accountBoot.takeAccountBoot())?.accountId).toBe('fb:agency');
   });
 });

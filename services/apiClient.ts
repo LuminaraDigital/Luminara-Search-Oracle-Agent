@@ -11,7 +11,7 @@ import { toUserFacingText } from '../utils/userFacingText';
 import { hostedAuthBlocked, hostedAuthCircuitResponse, isAuditSiteMismatch, noteHostedAuthFailure } from './resilience/hostedAuthCircuit';
 import { noteScoutReceipt } from './referrals/scoutReceiptCapture';
 import { entitlementsFor, normalizePlanId } from './plans/planEntitlements';
-import { getCurrentQuotaSync, subscribeQuota, writeQuotaSnapshot, type QuotaInfo } from './plans/quotaSnapshot';
+import { getCurrentQuotaSync, quotaEpoch, subscribeQuota, writeQuotaSnapshot, type QuotaInfo } from './plans/quotaSnapshot';
 import { auditRunHeaders } from './audit/auditRunSlot';
 
 export interface ServerHealth {
@@ -316,11 +316,12 @@ function applyAuthHeaders(target: Headers, source: Record<string, string>): void
  * Telegram initData is already present (Telegram identity takes precedence).
  */
 export async function workerFetchWithAuthRetry(url: string, init: RequestInit = {}): Promise<Response> {
+  const since = quotaEpoch();
   const headers = new Headers(init.headers || {});
   applyAuthHeaders(headers, await authHeadersAsync(false));
   const options: RequestInit = { credentials: 'same-origin', ...init, headers };
   let res = await fetch(url, options);
-  notifyRateLimitIfNeeded(res);
+  notifyRateLimitIfNeeded(res, since);
 
   // Hard ban: never auto-retry client/auth/rate-limit errors.
   if (res.status === 400 || res.status === 401 || res.status === 402 || res.status === 403 || res.status === 404 || res.status === 429) {
@@ -328,15 +329,15 @@ export async function workerFetchWithAuthRetry(url: string, init: RequestInit = 
     if (getInitDataRaw()) return res;
     applyAuthHeaders(headers, await authHeadersAsync(true));
     res = await fetch(url, { ...options, headers });
-    notifyRateLimitIfNeeded(res);
+    notifyRateLimitIfNeeded(res, since);
     return res;
   }
 
   return res;
 }
 
-function notifyRateLimitIfNeeded(res: Response): void {
-  updateQuotaFromHeaders(res.headers);
+function notifyRateLimitIfNeeded(res: Response, since: number): void {
+  updateQuotaFromHeaders(res.headers, since);
   if (res.status !== 429 || typeof window === 'undefined') return;
   const retryAfter = Number(res.headers.get('retry-after') || res.headers.get('Retry-After') || 0);
   const limit = res.headers.get('x-ratelimit-limit');
@@ -364,11 +365,12 @@ export async function fetchWithTransientRetry(
   opts?: { maxAttempts?: number },
 ): Promise<Response> {
   const maxAttempts = Math.min(2, Math.max(1, opts?.maxAttempts ?? 2));
+  const since = quotaEpoch();
   let lastError: unknown;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       const res = await fetch(input, init);
-      notifyRateLimitIfNeeded(res);
+      notifyRateLimitIfNeeded(res, since);
       if (res.status >= 400 && res.status < 500) return res;
       if (res.ok || attempt === maxAttempts) return res;
       const jitter = Math.floor(Math.random() * 200);
@@ -445,6 +447,7 @@ export async function providerFetch(providerId: string, path: string, directUrl:
     return hostedAuthCircuitResponse(clientHasHostedIdentity());
   }
 
+  const since = quotaEpoch();
   const headers = new Headers(init.headers || {});
   headers.delete('authorization');
   headers.delete('x-api-key');
@@ -459,7 +462,7 @@ export async function providerFetch(providerId: string, path: string, directUrl:
     if (opts.acceptFallback) headers.set(ACCEPT_FALLBACK_HEADER, '1');
     res = await workerFetchWithAuthRetry(`${apiBase()}/api/providers/${providerId}${path}`, { ...init, headers });
   }
-  updateQuotaFromHeaders(res.headers);
+  updateQuotaFromHeaders(res.headers, since);
   noteScoutReceipt(res.headers.get('x-scout-receipt'));
   if ((res.status === 401 || res.status === 403) && !(await isAuditSiteMismatch(res))) {
     noteHostedAuthFailure(res.status, providerId);
@@ -759,7 +762,8 @@ export async function ensureHostedProviderReady(): Promise<HostedProviderReady> 
   return readHostedProviderReady();
 }
 
-export function updateQuotaFromHeaders(headers: Headers): void {
+/** `since`: quotaEpoch() read before the request was sent. */
+export function updateQuotaFromHeaders(headers: Headers, since = quotaEpoch()): void {
   const rem = headers.get('x-quota-remaining');
   const lim = headers.get('x-quota-limit');
   const rst = headers.get('x-quota-reset');
@@ -783,7 +787,7 @@ export function updateQuotaFromHeaders(headers: Headers): void {
       plan: paid?.plan ?? (isUnlimited ? 'active' : 'free'),
       expiresAt: paid?.expiresAt,
       bonusRemaining: Number.isFinite(bonusRemaining) ? bonusRemaining : undefined,
-    });
+    }, since);
   }
 }
 
@@ -804,6 +808,7 @@ export function accountKnownSignedIn(): boolean {
 
 export async function fetchQuotaStatus(): Promise<QuotaInfo | null> {
   if (accountSignedIn !== true) return null;
+  const since = quotaEpoch();
   const booted = await takeAccountBoot();
   if (booted) {
     writeQuotaSnapshot({
@@ -815,7 +820,7 @@ export async function fetchQuotaStatus(): Promise<QuotaInfo | null> {
       plan: booted.quota.plan,
       expiresAt: booted.quota.expiresAt,
       bonusRemaining: booted.quota.bonusRemaining,
-    });
+    }, since);
     return getCurrentQuotaSync();
   }
   const base = apiBase();
@@ -834,7 +839,7 @@ export async function fetchQuotaStatus(): Promise<QuotaInfo | null> {
         plan: data.plan,
         expiresAt: data.expiresAt,
         bonusRemaining: typeof data.bonusRemaining === 'number' ? data.bonusRemaining : undefined,
-      });
+      }, since);
       return getCurrentQuotaSync();
     }
   } catch {}

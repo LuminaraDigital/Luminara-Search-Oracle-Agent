@@ -19,6 +19,7 @@ export interface QuotaInfo {
 }
 
 let current: QuotaInfo | null = null;
+let epoch = 0;
 const listeners = new Set<(q: QuotaInfo | null) => void>();
 
 function publish(next: QuotaInfo | null): void {
@@ -36,11 +37,19 @@ export function getCurrentQuotaSync(): QuotaInfo | null {
   return current;
 }
 
-export function writeQuotaSnapshot(next: Omit<QuotaInfo, 'resetAt'>): void {
+/** Read before a quota request starts; pass it to writeQuotaSnapshot when the answer arrives. */
+export function quotaEpoch(): number {
+  return epoch;
+}
+
+/** Drops the write when the account changed after `since` was read: the answer belongs to the account that left. */
+export function writeQuotaSnapshot(next: Omit<QuotaInfo, 'resetAt'>, since: number): void {
+  if (since !== epoch) return;
   publish({ ...next, resetAt: Date.now() + next.resetSec * 1000 });
 }
 
 /** Sign-out or a different account: the previous account's plan must not leak into the next. */
 export function clearQuotaSnapshot(): void {
+  epoch += 1;
   publish(null);
 }
