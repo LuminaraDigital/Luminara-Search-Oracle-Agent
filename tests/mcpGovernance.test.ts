@@ -14,6 +14,7 @@ import {
   approveActionRequest,
   denyActionRequest,
   consumeApprovedRequest,
+  getActionRequestById,
 } from '../worker/mcpGovernance';
 import { redactSensitive } from '../worker/logRedaction';
 import { handleMcpRequest } from '../worker/mcpServer';
@@ -266,7 +267,7 @@ describe('mcp integration', () => {
 
   it('destructive tool returns requiresApproval without executing', async () => {
     const env = makeEnv();
-    const res = await handleMcpRequest(mcpCall('browse_goal', { url: 'https://x.test' }), env, user);
+    const res = await handleMcpRequest(mcpCall('browse_close', { sessionId: 's0' }), env, user);
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       result?: { structuredContent?: { requiresApproval?: boolean; actionRequestId?: string }; isError?: boolean };
@@ -274,6 +275,19 @@ describe('mcp integration', () => {
     expect(body.result?.isError).toBeFalsy();
     expect(body.result?.structuredContent?.requiresApproval).toBe(true);
     expect(body.result?.structuredContent?.actionRequestId).toBeTruthy();
+  });
+
+  it('a paid tool refused for the plan leaves its approval unspent', async () => {
+    const env = makeEnv();
+    const args = { goal: 'Find the pricing page', checks: { textIncludes: 'Pricing' } };
+    const { id } = await createActionRequest(env, { userId: 'acct_gov', toolName: 'browse_goal', args });
+    expect(await approveActionRequest(env, id, 'acct_gov')).toBe(true);
+
+    const res = await handleMcpRequest(mcpCall('browse_goal', args), env, user);
+    const body = (await res.json()) as { result?: { isError?: boolean; structuredContent?: { code?: string } } };
+    expect(body.result?.isError).toBe(true);
+    expect(body.result?.structuredContent?.code).toBe('PAID_TOOL_FORBIDDEN');
+    expect((await getActionRequestById(env, id))?.status).toBe('approved');
   });
 
   it('write tool without subscription returns governance block', async () => {

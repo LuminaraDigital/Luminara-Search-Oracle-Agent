@@ -100,6 +100,8 @@ and a Bearer that fails verification is a 401 with no cookie fallback);
   (`SCOPE_INSUFFICIENT` otherwise). BYOK calls pass with `mcp:free`. OAuth tokens
   minted before enforcement lack `scopeEnforced` and stay unrestricted until their
   30-day TTL drains. Authorize without `scope` requests both; plan caps decide.
+  The paid gates (scope, plan, project context) run before a destructive tool's
+  approval is spent, so a refused paid call leaves the approval `approved`.
 - **Every paid call is metered.** MCP, Oracle chat `confirmTool` and queued audits
   (`processAuditJob`) all check `isBudgetHalted` first and write `cost_events`. MCP and
   chat set `credential_kind` / `credential_id` (`oracle` for chat); a queued audit has
