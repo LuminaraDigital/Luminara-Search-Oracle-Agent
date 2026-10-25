@@ -1330,15 +1330,20 @@ const ABOUT_SOMEONE_RE = /\b(?:you|your|yours|we|our|ours|us)\b|\b(?:[a-z0-9-]+\
  * user or a named site, claims a look at a site, or answers the user's question for a metric.
  * `userTexts` is what the user supplied (their messages and their account memory), the current
  * message last. A number from a sentence of theirs that states a figure is the user's own
- * wherever the reply repeats it, so a figure or a benchmark the user gave comes back whole.
- * JSON-LD and head tags are not read.
+ * wherever the reply repeats it, so a figure or a benchmark the user gave comes back whole. So
+ * is every number in `measuredTexts`, the text of a measured tool result. JSON-LD and head tags
+ * are not read.
  */
-export function withoutUnmeasuredClaims(reply: string, userTexts: string[]): { text: string; replaced: number } {
+export function withoutUnmeasuredClaims(
+  reply: string,
+  userTexts: string[],
+  measuredTexts: string[] = [],
+): { text: string; replaced: number } {
   // Only a sentence of the user's that states a figure makes its numbers theirs: "give me 3
   // tips" does not make a 3 in the reply the user's.
   const none = new Set<string>();
   const statesFigure = (sentence: string): boolean => namesMetric(sentence) || statesMeasurement(sentence, none, false);
-  const userNumbers = numbersIn(userTexts.flatMap(splitSentences).filter(statesFigure));
+  const userNumbers = numbersIn([...userTexts.flatMap(splitSentences).filter(statesFigure), ...measuredTexts]);
   const lastUserText = userTexts[userTexts.length - 1] ?? '';
   const userAskedForMetric = namesMetric(lastUserText) && !ASKS_FOR_ADVICE_RE.test(lastUserText);
   const out: string[] = [];

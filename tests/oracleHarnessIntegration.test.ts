@@ -406,19 +406,29 @@ describe('Oracle SSE: a measurement nobody made', () => {
     } as unknown as Env & { DB: ReturnType<typeof createSqliteD1> };
   }
 
-  /** One turn where the model says `reply`. Returns the streamed text and the stored assistant turns. */
-  async function turn(env: Env, reply: string, body: Record<string, unknown>) {
-    globalThis.fetch = vi.fn(async () =>
-      new Response(`data: ${JSON.stringify({ choices: [{ delta: { content: reply } }] })}\n\ndata: [DONE]\n\n`, {
-        status: 200,
-        headers: { 'content-type': 'text/event-stream' },
-      }),
+  /**
+   * One turn where the model says `reply` (and DataForSEO answers `dataForSeo`). Returns the
+   * streamed text and the stored assistant turns.
+   */
+  async function turn(
+    env: Env,
+    reply: string,
+    body: Record<string, unknown>,
+    opts: { headers?: Record<string, string>; dataForSeo?: unknown } = {},
+  ) {
+    globalThis.fetch = vi.fn(async (url: unknown) =>
+      String(url).startsWith('https://api.dataforseo.com/')
+        ? Response.json(opts.dataForSeo ?? {})
+        : new Response(`data: ${JSON.stringify({ choices: [{ delta: { content: reply } }] })}\n\ndata: [DONE]\n\n`, {
+            status: 200,
+            headers: { 'content-type': 'text/event-stream' },
+          }),
     ) as unknown as typeof fetch;
     const sessionId = 'sess_honesty';
     const res = await handleOracleChatSse(
       new Request('https://luminarasuite.com/api/oracle/chat', {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', ...opts.headers },
         body: JSON.stringify({ sessionId, ...body }),
       }),
       env,
@@ -465,6 +475,32 @@ describe('Oracle SSE: a measurement nobody made', () => {
     expect(sse).toContain('"measurement_status":"not_measured"');
     expect(streamed).toBe(`${reply}\n\n${WARNING}`);
     expect(stored).toEqual([NOT_MEASURED]);
+  });
+
+  it('beside a measured tool result, keeps the numbers it gave and still replaces an invented one', async () => {
+    const kv = new Map([
+      ['sub:acct_1', JSON.stringify({ plan: 'agency', expiresAt: Date.now() + 86400_000 })],
+      ['mcp:context_loaded:acct_1:proj_1', '1'],
+    ]);
+    const env = makeEnv(kv);
+    await env.DB.prepare('INSERT INTO projects (id, account_id, client_id, domain, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .bind('proj_1', 'acct_1', '', 'acme.example', 'Acme', Date.now(), Date.now())
+      .run();
+    const reply = 'Your top keyword brings 1,200 visits a month. Your DA is 72.';
+
+    const { sse, streamed, stored } = await turn(
+      env,
+      reply,
+      { projectId: 'proj_1', message: 'keywords for enterprise aeo', invokeTool: 'research_keywords', confirmTool: true },
+      {
+        headers: { 'x-provider-key': 'dfs_login:dfs_password' },
+        dataForSeo: { tasks: [{ status_code: 20000, result: [{ keyword_data: { keyword: 'enterprise aeo', keyword_info: { search_volume: 1200 } } }] }] },
+      },
+    );
+
+    expect(sse).toContain('"measurement_status":"measured"');
+    expect(streamed).toBe(`${reply}\n\n${WARNING}`);
+    expect(stored).toEqual([`Your top keyword brings 1,200 visits a month. ${NOT_MEASURED}`]);
   });
 
   it('keeps a figure the user gave, echoed back', async () => {
