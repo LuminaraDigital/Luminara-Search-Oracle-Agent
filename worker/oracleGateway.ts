@@ -162,7 +162,6 @@ export async function executeOracleGatewayTask(
         ok: false,
         error: lifecycleResult.error,
         code: lifecycleResult.code,
-        refunded: lifecycleResult.refunded,
         diagnostics: lifecycleResult.diagnostics,
       },
       500,

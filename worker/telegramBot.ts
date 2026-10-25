@@ -4,8 +4,7 @@
  */
 import type { Env } from './index';
 import { resolveAccountId, writeSubscriptionRecord, listAllUsers, getWorkspace } from './userStore';
-import { QUOTA_CAPACITY_ERROR, spendDailyQuota } from './quotaMiddleware';
-import { invokeDailyQuota } from './dailyQuota';
+import { QUOTA_CAPACITY_ERROR, refundDailyQuota, spendDailyQuota } from './quotaMiddleware';
 import { readRetentionSnapshot } from './referrals';
 import { nichePulseReply } from './ideaScout';
 import { guardPasteReadyCopy } from '../services/audit/healthClaimGuard';
@@ -962,7 +961,7 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
   } catch (e) {
     console.error('telegram update failed', e);
   } finally {
-    if (meterKey) await invokeDailyQuota(env, meterKey, 'refund', limit);
+    if (meterKey) await refundDailyQuota(env, meterKey, limit);
   }
 }
 
