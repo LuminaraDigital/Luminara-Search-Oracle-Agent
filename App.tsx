@@ -27,7 +27,7 @@ import { UsageQuotaBadge } from './components/paywall/UsageQuotaBadge';
 import { PaywallSlot } from './components/paywall/PaywallSlot';
 import { TelegramBottomNav } from './components/telegram/TelegramBottomNav';
 import { ReplayTourButton } from './components/onboarding/FirstRunTour';
-import { pullWorkspaceOnLogin, noteWorkspaceDirty, clearLocalWorkspace } from './services/sync/workspaceSyncService';
+import { pullWorkspaceOnLogin, noteWorkspaceDirty, clearLocalWorkspace, saveWorkspaceItem } from './services/sync/workspaceSyncService';
 import { brandMemoryVaultService } from './services/memory/brandMemoryVaultService';
 import { PremiumAtmosphere } from './components/ui/PremiumAtmosphere';
 import { lazyWithReload } from './utils/lazyWithReload';
@@ -573,12 +573,8 @@ const App: React.FC = () => {
 
   useEffect(() => {
     try {
-      if (dna) {
-        localStorage.setItem('luminara_business_dna', JSON.stringify(dna));
-      } else {
-        localStorage.removeItem('luminara_business_dna');
-      }
-      noteWorkspaceDirty();
+      // Mount and workspace restores hand back what storage already holds, so they are not edits.
+      saveWorkspaceItem('luminara_business_dna', dna ? JSON.stringify(dna) : null);
     } catch (e) {
       console.warn('Could not persist Business DNA', e);
     }

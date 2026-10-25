@@ -531,25 +531,35 @@ export async function getWorkspace(env: UserStoreEnv, accountId: string): Promis
   return raw;
 }
 
+/**
+ * Replaces the account's workspace. With `expectedVersion` (the stored `updatedAt` the write was
+ * based on, or null when there was no row) the D1 write lands only if the row still holds that
+ * version, and null comes back when another write got there first. KV has no compare-and-swap,
+ * so there the caller's read-and-compare is the only check.
+ */
 export async function putWorkspace(
   env: UserStoreEnv,
   accountId: string,
   payload: WorkspacePayload,
   updatedAt: number,
-): Promise<WorkspaceRecord> {
+  expectedVersion?: number | null,
+): Promise<WorkspaceRecord | null> {
   const record: WorkspaceRecord = { accountId, payload, updatedAt };
   const body = JSON.stringify(payload);
 
   if (env.DB) {
-    await env.DB.prepare(
+    const checked = expectedVersion !== undefined;
+    const result = await env.DB.prepare(
       `INSERT INTO user_workspace (account_id, payload, updated_at)
        VALUES (?, ?, ?)
        ON CONFLICT(account_id) DO UPDATE SET
          payload = excluded.payload,
-         updated_at = excluded.updated_at`,
+         updated_at = excluded.updated_at${checked ? `
+       WHERE user_workspace.updated_at IS ?` : ''}`,
     )
-      .bind(accountId, body, updatedAt)
+      .bind(accountId, body, updatedAt, ...(checked ? [expectedVersion] : []))
       .run();
+    if (checked && !result.meta?.changes) return null;
     return record;
   }
 

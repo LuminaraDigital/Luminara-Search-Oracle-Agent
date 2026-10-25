@@ -27,7 +27,7 @@ Sentry (`@sentry/cloudflare` on the Worker, `@sentry/browser` in the client) sta
 | `POST /auth/send-verification` | worker/index.ts | none | Email verification |
 | `POST /webhooks/auth` | worker/index.ts | webhook secret | Firebase webhook. `REQUEST_SIGNING_REQUIRED=true` switches this route to HMAC request signing (`x-luminara-key-id`, timestamp, nonce, signature) with keys from `REQUEST_SIGNING_KEYS`. The flag is off in production, and the old `x-auth-signature` check stays |
 | `POST /auth/link` | worker/index.ts | Telegram initData + Firebase Bearer | Explicit account link. Body must be `{ confirm: true }` or the route returns 400 and writes nothing. Two distinct accounts that each have an active paid plan return 409 with no merge. `identify()` never links. Success and dual-paid refusal write an audit event |
-| `GET,PUT /workspace` | worker/userStore.ts | session | Account workspace blob (zero-knowledge key bag) |
+| `GET,PUT /workspace` | worker/userStore.ts | session | Account workspace blob (zero-knowledge key bag). The stored `updatedAt` is the version. A PUT sends `{ baseVersion, payload }`, where `baseVersion` is the `updatedAt` the client last pulled or saved (0 when it has none). If a stored copy exists and its version is not `baseVersion`, the route returns 409 with the stored `updatedAt` and `payload` and writes nothing. On D1 the write is compare-and-swap, so of two writes based on one version only one lands. `force: true` skips the check only alongside a `baseVersion`; a body without one (an older bundle) is always checked. A saved write gets a version above the previous one |
 | `GET /enterprise/audit-logs` | worker/enterpriseStore.ts + auditLog | session + role | Admin/Auditor role required |
 | `GET /auth/quota` | worker/index.ts | session | Free daily meter on `DAILY_QUOTA` (one SQLite object per account per UTC day). Spend and refund are single statements on that object. 503 `HOSTED_CAPACITY` when it is unavailable. Not a KV key |
 | `POST /telegram/webhook` | worker/index.ts | webhook secret | Telegram updates |
@@ -502,6 +502,7 @@ URLs, TON pricing vars, D1 `DB`, KV `LUMINARA_KV`. Secrets stay server-side.
 ## Key tests
 
 - `tests/userStore.test.ts`: user/profile + workspace blob round trip.
+- `tests/workspaceVersionRoute.test.ts`: workspace PUT refuses stale and older-bundle writes; D1 compare-and-swap.
 - `tests/agentOutputValidators.test.ts`: unmeasured-output rejection.
 - `tests/browserAction.test.ts`, `tests/browserActionMcp.test.ts`: MCP + DOM action surface.
 - `tests/evalsRunner.test.ts`, `tests/honestyGates.test.ts`: honesty gates.

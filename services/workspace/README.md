@@ -19,18 +19,26 @@ server side lives in `worker/userStore.ts` (D1 preferred, KV fallback). See
 2. **Workspace blob shape.** `WorkspacePayload = { storage?: Record<string, string>, keys?: Record<string, string>, encryptedKeys?: EncryptedKeyBag }`
    (`worker/userStore.ts`). Storage entries are localStorage-style key/value
    strings; nothing else may be added without updating both readers.
-3. **Sync-on-login is server-wins.** `pullWorkspaceOnLogin()` (called from
-   `App.tsx` and `AuthPanel.tsx` after sign-in) fetches the remote workspace;
-   when `remote.updatedAt >= local.updatedAt` it applies the payload and
-   dispatches `luminara-workspace-restored`. When local is newer and
-   non-empty, it force-pushes local instead.
+3. **Sync is versioned and server-wins.** The server's `updatedAt` is the
+   version. Local meta (`luminara_workspace_meta`) keeps `baseVersion` (the
+   version this copy was last pulled or saved as) and `dirty` (edits not yet
+   pushed). `pullWorkspaceOnLogin()` (called from `App.tsx` and
+   `AuthPanel.tsx`; concurrent callers share one pull) applies the server copy
+   and dispatches `luminara-workspace-restored`, unless this copy is dirty and
+   its `baseVersion` is still the server's version, or the server has nothing
+   yet and the browser does. Only then does it push the local copy. No client
+   path sends `force`.
 4. **Account switching purges.** If the logged-in account id differs from the
    locally stored one, `clearLocalWorkspace()` wipes memory keys, key-bag
    keys, and the chat session before applying the new payload.
-5. **Push is debounced.** Mutations call `noteWorkspaceDirty()`, which writes
-   a local meta timestamp and schedules a push after 2.5s
-   (`scheduleWorkspacePush(2500)`); pushes are conflict-aware (server 409
-   payload is applied locally).
+5. **Only real edits push, debounced.** Mutations call `noteWorkspaceDirty()`,
+   which sets `dirty` and schedules a push after 3 s. Mount and restore must not
+   call it: `saveWorkspaceItem()` writes an item and marks it dirty only
+   when the stored value changes (App's DNA effect uses it). A push sends
+   `baseVersion`. On a 409 the stored copy is applied locally and wins. No push
+   starts while a pull or another push runs; edits made meanwhile are pushed
+   once it ends. A failed or offline push never throws: it keeps `dirty` and
+   backs off for 10 s.
 6. **Agency workspaces are plan-gated and bounded.** `createClient` enforces
    `entitlementsFor(planId).agencyClientLimit`; `canUseAgency` is false when
    the limit is 0. Names trimmed to 120 chars; domains normalized
@@ -62,3 +70,6 @@ env covered in `worker/README.md`.
   no write), subscription dual-write, workspace payload round trip from KV.
 - `tests/accountLink.test.ts`: `identify()` with both credentials does not
   merge; `POST /api/auth/link` requires `{ confirm: true }`.
+- `tests/workspaceSyncVersion.test.ts`: mount/restore are not edits, a stale
+  browser takes the newer server copy, no push during a pull, offline push
+  backs off. `tests/workspaceVersionRoute.test.ts`: the Worker side.
