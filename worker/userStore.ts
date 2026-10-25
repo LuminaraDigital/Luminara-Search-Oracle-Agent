@@ -303,13 +303,18 @@ const MAX_APPLIED_ORDERS = 50;
  * whose first write landed only in part finds its order and adds nothing. Records written before
  * the list existed name one `orderId`.
  */
-export function appliedOrdersOf(sub: Record<string, unknown> | null | undefined): string[] {
+function appliedOrdersOf(sub: Record<string, unknown> | null | undefined): string[] {
   if (!sub) return [];
   const listed = Array.isArray(sub.appliedOrders)
     ? sub.appliedOrders.filter((o): o is string => typeof o === 'string' && o !== '')
     : [];
   if (typeof sub.orderId === 'string' && sub.orderId && !listed.includes(sub.orderId)) listed.push(sub.orderId);
   return listed;
+}
+
+/** True when the subscription record was built from `orderId` (a TON order or `lic_<key>`). */
+export function hasAppliedOrder(sub: Record<string, unknown> | null | undefined, orderId: string): boolean {
+  return appliedOrdersOf(sub).includes(orderId);
 }
 
 /**
@@ -320,7 +325,7 @@ export function appliedOrdersOf(sub: Record<string, unknown> | null | undefined)
 export async function appliedOrderExpiry(env: UserStoreEnv, accountId: string, orderId: string): Promise<number | null> {
   try {
     const sub = (await env.LUMINARA_KV?.get(`sub:${accountId}`, 'json')) as Record<string, unknown> | null | undefined;
-    if (!appliedOrdersOf(sub).includes(orderId)) return null;
+    if (!hasAppliedOrder(sub, orderId)) return null;
     const expiresAt = Number(sub?.expiresAt);
     return Number.isFinite(expiresAt) ? expiresAt : null;
   } catch {
@@ -351,7 +356,7 @@ export async function writeSubscriptionRecord(
   // An order the account record already names was applied by an earlier write that failed before
   // the login's copy. The record is written again as it stands, so that copy catches up, nothing
   // is added, and nothing the caller read earlier overwrites what has landed since.
-  const replay = existing !== null && opts.orderId !== undefined && appliedOrdersOf(existing).includes(opts.orderId);
+  const replay = existing !== null && opts.orderId !== undefined && hasAppliedOrder(existing, opts.orderId);
   if (replay) console.warn(JSON.stringify({ event: 'order_already_applied' }));
   const incoming: Record<string, unknown> = replay ? existing : record;
   // A purchase may never replace a plan that is still running with a lower one. The rule lives

@@ -12,7 +12,7 @@ import type { Env } from './index';
 import { claimLicenseRedemption, releaseLicenseRedemption } from './paymentLedger';
 import { PlanDowngradeRefusedError, downgradeRefusalText, planRank, wouldDowngrade, type SubscriptionLike } from './planRank';
 import { normalizePlanId } from './telegramBot';
-import { appliedOrderExpiry, appliedOrdersOf, resolveAccountId, writeSubscriptionRecord } from './userStore';
+import { appliedOrderExpiry, hasAppliedOrder, resolveAccountId, writeSubscriptionRecord } from './userStore';
 import { licenseKeyFingerprint, recordAuditLogBestEffort } from './auditLog';
 
 export interface LicenseKeyRecord {
@@ -194,7 +194,7 @@ export async function activateLicenseKey(
   // write put in place.
   const orderId = `lic_${key}`;
   const running = (await env.LUMINARA_KV.get(`sub:${accountId}`, 'json')) as { plan?: string; expiresAt?: number } | null;
-  if (!appliedOrdersOf(running).includes(orderId)) {
+  if (!hasAppliedOrder(running, orderId)) {
     const trialRefusal = refuseTrialOnPaidPlan(keyRecord, running, Date.now());
     if (trialRefusal) return trialRefusal;
     if (wouldDowngrade(running, keyRecord.plan)) {
@@ -231,7 +231,7 @@ export async function activateLicenseKey(
   try {
     const existingSub = (await env.LUMINARA_KV.get(`sub:${accountId}`, 'json')) as { plan?: string; expiresAt?: number } | null;
     // A paid plan can start between the check above and this read. This key's own earlier write is not one.
-    const lateTrialRefusal = appliedOrdersOf(existingSub).includes(orderId) ? null : refuseTrialOnPaidPlan(keyRecord, existingSub, now);
+    const lateTrialRefusal = hasAppliedOrder(existingSub, orderId) ? null : refuseTrialOnPaidPlan(keyRecord, existingSub, now);
     if (lateTrialRefusal) {
       await releaseLicenseRedemption(env, { key, accountId, isTrial: keyRecord.isTrial });
       return lateTrialRefusal;

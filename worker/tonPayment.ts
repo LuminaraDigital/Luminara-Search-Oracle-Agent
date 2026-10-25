@@ -7,7 +7,7 @@ import type { Env } from './index';
 import { claimTonTransaction, isTonLedgerReady, releaseTonTransaction } from './paymentLedger';
 import { PlanDowngradeRefusedError, downgradeRefusalText, wouldDowngrade } from './planRank';
 import { PLANS, alertPaymentAdmins } from './telegramBot';
-import { appliedOrderExpiry, appliedOrdersOf, resolveAccountId, writeSubscriptionRecord } from './userStore';
+import { appliedOrderExpiry, hasAppliedOrder, resolveAccountId, writeSubscriptionRecord } from './userStore';
 import { recordAuditLogBestEffort } from './auditLog';
 import {
   TON_MAX_OPEN_ORDERS_PER_ACCOUNT,
@@ -989,7 +989,7 @@ export async function verifyTonPayment(
   }
   // A retry of an order whose first write reached only the account record is never held: its
   // plan is already in place, and the write below adds nothing.
-  if (!appliedOrdersOf(running).includes(orderId) && wouldDowngrade(running, order.planId)) {
+  if (!hasAppliedOrder(running, orderId) && wouldDowngrade(running, order.planId)) {
     const refusal = new PlanDowngradeRefusedError(String(running?.plan), Number(running?.expiresAt), order.planId);
     const message = await holdPaidTonOrder(env, kv, { order, accountId, planTitle: plan.title, refusal, txHash: match.txHash, network: match.network, now: Date.now() });
     if (message === null) return { ok: false, error: TON_VERIFY_UNAVAILABLE_ERROR };
