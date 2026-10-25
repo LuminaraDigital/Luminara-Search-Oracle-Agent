@@ -10,7 +10,7 @@
  */
 import type { Env } from './index';
 import { claimLicenseRedemption, releaseLicenseRedemption } from './paymentLedger';
-import { PlanDowngradeRefusedError, downgradeRefusalText, wouldDowngrade } from './planRank';
+import { PlanDowngradeRefusedError, downgradeRefusalText, planRank, wouldDowngrade, type SubscriptionLike } from './planRank';
 import { normalizePlanId } from './telegramBot';
 import { resolveAccountId, writeSubscriptionRecord } from './userStore';
 import { licenseKeyFingerprint, recordAuditLogBestEffort } from './auditLog';
@@ -50,6 +50,7 @@ const LICENSE_REVOKED_ERROR =
   'This license key has been revoked and can no longer be redeemed. Contact support if you think this is a mistake.';
 const TRIAL_CLAIMED_ERROR =
   'A temporary promotional trial has already been redeemed on this account. Upgrade with Telegram Stars for continued access.';
+const TRIAL_PAID_PLAN_ERROR = 'The code was not used; trial codes are for accounts without a paid plan.';
 
 /**
  * Built-in Promotional Trial Keys:
@@ -116,6 +117,14 @@ function licenseDowngradeText(currentPlan: string, currentExpiresAt: number, key
   });
 }
 
+/** A trial code is refused, and stays unused, while the account has a paid plan running (owner decision, 2026-10-25). */
+function refuseTrialOnPaidPlan(keyRecord: LicenseKeyRecord, sub: SubscriptionLike, now: number): LicenseActivationResult | null {
+  const paidPlanRunning = planRank(sub?.plan) > 0 && Number(sub?.expiresAt) > now;
+  if (!keyRecord.isTrial || !paidPlanRunning) return null;
+  console.warn(JSON.stringify({ event: 'license_trial_refused' }));
+  return { ok: false, error: TRIAL_PAID_PLAN_ERROR };
+}
+
 export async function activateLicenseKey(
   env: Env,
   userId: string,
@@ -179,9 +188,11 @@ export async function activateLicenseKey(
     return { ok: false, error: LICENSE_REDEEMED_ERROR };
   }
 
-  // A key for a lower plan than the one still running is refused before it is claimed, so it
-  // stays unused and can be redeemed later (Track SW, SW0a-4).
+  // A trial code on a running paid plan, and a key for a lower plan than the one still running,
+  // are refused before the claim, so the key stays unused and can be redeemed later (Track SW, SW0a-4).
   const running = (await env.LUMINARA_KV.get(`sub:${accountId}`, 'json')) as { plan?: string; expiresAt?: number } | null;
+  const trialRefusal = refuseTrialOnPaidPlan(keyRecord, running, Date.now());
+  if (trialRefusal) return trialRefusal;
   if (wouldDowngrade(running, keyRecord.plan)) {
     return { ok: false, error: licenseDowngradeText(String(running?.plan), Number(running?.expiresAt), keyRecord.plan) };
   }
@@ -214,6 +225,12 @@ export async function activateLicenseKey(
   // 4. Extend subscription
   try {
     const existingSub = (await env.LUMINARA_KV.get(`sub:${accountId}`, 'json')) as { plan?: string; expiresAt?: number } | null;
+    // A paid plan can start between the check above and this read.
+    const lateTrialRefusal = refuseTrialOnPaidPlan(keyRecord, existingSub, now);
+    if (lateTrialRefusal) {
+      await releaseLicenseRedemption(env, { key, accountId, isTrial: keyRecord.isTrial });
+      return lateTrialRefusal;
+    }
     const baseTime = existingSub?.expiresAt && existingSub.expiresAt > now ? existingSub.expiresAt : now;
     expiresAt = baseTime + durationMs;
 

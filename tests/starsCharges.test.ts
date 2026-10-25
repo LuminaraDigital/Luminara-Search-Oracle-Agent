@@ -25,7 +25,7 @@ import {
 } from '../worker/starsCharges';
 import { linkTelegramAndFirebase, writeSubscriptionRecord } from '../worker/userStore';
 import { claimStarsCharge } from '../worker/paymentLedger';
-import { activateLicenseKey } from '../worker/licenseService';
+import { activateLicenseKey, generateLicenseKeys } from '../worker/licenseService';
 import { createPrivacyJob } from '../worker/privacyService';
 import type { HostedIdentity } from '../worker/userTypes';
 import { createSqliteD1, type SqliteD1 } from './helpers/sqliteD1';
@@ -475,7 +475,8 @@ describe('the sweep', () => {
     expect(kv.json('stars:charge:ch_overwritten')).toBeNull();
 
     // A licence key is redeemed and replaces the record. That code knows nothing about Stars charges.
-    const redeemed = await activateLicenseKey(env, String(PAYER), 'LUM-GROWTH-3DAY');
+    const [licence] = await generateLicenseKeys(env, { plan: 'growth', durationDays: 30, isTrial: false });
+    const redeemed = await activateLicenseKey(env, String(PAYER), licence.key);
     expect(redeemed.ok).toBe(true);
     expect(kv.json(`sub:${PAYER}`)).toMatchObject({ plan: 'growth', paymentMethod: 'license_key', appliedCharges: ['ch_overwritten'] });
 

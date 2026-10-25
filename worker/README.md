@@ -286,6 +286,8 @@ no payment was taken. The staging webhook is subscribed to
   the owner to return by hand, and the buyer is told.
 - The same plan again extends it. A higher plan replaces it and keeps the days already there.
 - A caller that takes a plan away on purpose (a reversed card payment) passes `allowLowerPlan`.
+- A trial code is for an account without a paid plan. While any paid plan is running it is refused
+  before the claim and again after it (the claim is given back), so the code stays unused.
 
 ## Stars charges (pinned in `tests/starsCharges.test.ts`)
 
