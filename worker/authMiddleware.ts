@@ -2,7 +2,7 @@
  * Centralized Edge Auth Middleware & Route Guard for Cloudflare Workers.
  *
  * Implements:
- * 1. Public vs. Protected Route Whitelisting (defense-in-depth edge guard).
+ * 1. Protected route guard (PROTECTED_API_ROUTES); every other route owns its auth.
  * 2. HttpOnly, Secure, SameSite=Lax Session Cookie creation (__session) and its login CSRF guard.
  * 3. Standardized 401 Unauthorized JSON responses for API guarding.
  * 4. Cryptographic HMAC-SHA256 webhook signature verification.
@@ -34,41 +34,6 @@ export {
   revokeSessionsForDeletedUser,
 } from './opaqueSession';
 export type { OpaqueSessionRecord } from './opaqueSession';
-
-/**
- * Explicit array of public API routes that bypass compulsory edge authentication.
- * All other /api/* routes default to protected and immediately reject unauthenticated callers.
- */
-export const PUBLIC_API_ROUTES: Array<{ method?: string; pattern: RegExp }> = [
-  { method: 'GET', pattern: /^\/health$/ },
-  { method: 'GET', pattern: /^\/gcp-oidc\/\.well-known\/openid-configuration$/ },
-  { method: 'GET', pattern: /^\/gcp-oidc\/jwks$/ },
-  { method: 'GET', pattern: /^\/desktop\/latest$/ },
-  { method: 'HEAD', pattern: /^\/desktop\/latest$/ },
-  { method: 'POST', pattern: /^\/telegram\/webhook$/ },
-  { method: 'POST', pattern: /^\/telegram\/auth$/ },
-  { method: 'POST', pattern: /^\/telegram\/invoice$/ },
-  // Signature-checked by handleStripeWebhook. Creating a checkout session is protected, below.
-  { method: 'POST', pattern: /^\/stripe\/webhook$/ },
-  { method: 'GET', pattern: /^\/auth\/session$/ },
-  { method: 'POST', pattern: /^\/auth\/session$/ },
-  { method: 'POST', pattern: /^\/auth\/logout$/ },
-  // Public by design: anti-enumeration reset, IP-throttled in handlePasswordResetRequest.
-  { method: 'POST', pattern: /^\/auth\/reset-password$/ },
-  { method: 'POST', pattern: /^\/auth\/sign-up$/ },
-  { method: 'POST', pattern: /^\/auth\/sign-in$/ },
-  { method: 'GET', pattern: /^\/email\/unsubscribe$/ },
-  { method: 'POST', pattern: /^\/email\/unsubscribe$/ },
-  // Public OTP: IP-throttled; Twilio only when OTP_SMS_ENABLED + secrets are set.
-  { method: 'POST', pattern: /^\/auth\/request-otp$/ },
-  { method: 'POST', pattern: /^\/auth\/verify-otp$/ },
-  { method: 'POST', pattern: /^\/webhooks\/auth$/ },
-  { method: 'GET', pattern: /^\/share\/reports\/[a-f0-9]{64}$/i },
-  { method: 'GET', pattern: /^\/share\/teasers\/[a-f0-9]{64}$/i },
-  // MCP OAuth: token exchange + discovery (authorize uses session via identify inside handler)
-  { method: 'POST', pattern: /^\/oauth\/mcp\/token$/ },
-  { method: 'GET', pattern: /^\/oauth\/mcp\/\.well-known\/oauth-authorization-server$/ },
-];
 
 /**
  * Login CSRF guard for the routes that set or clear __session (POST /auth/session,
@@ -120,36 +85,6 @@ export async function verifyWebhookSignature(payload: string, signature: string 
   } catch {
     return false;
   }
-}
-
-/** Determines whether an incoming API path and method is publicly accessible without credentials */
-export function isPublicRoute(path: string, method: string, env?: Env, request?: Request): boolean {
-  // CORS Preflight
-  if (method === 'OPTIONS') return true;
-
-  // Match against explicit whitelist
-  for (const route of PUBLIC_API_ROUTES) {
-    if ((!route.method || route.method === method) && route.pattern.test(path)) {
-      return true;
-    }
-  }
-
-  // Provider and sidecar relays handle their own routing (404 provider check, 403 path check, 405 method check, BYOK vs hosted auth)
-  if (path.startsWith('/providers/') || path.startsWith('/sidecars/')) {
-    return true;
-  }
-
-  // Admin secret / bot secret endpoints handle their own token authorization
-  if (path.startsWith('/admin/') || path === '/telegram/refund') {
-    return true;
-  }
-
-  // Enrichment probe when explicit REQUIRE_TG_AUTH is disabled
-  if (env && env.REQUIRE_TG_AUTH === 'false' && path.startsWith('/enrichment/entity')) {
-    return true;
-  }
-
-  return false;
 }
 
 export type ProtectedRouteSpec = {
