@@ -130,7 +130,9 @@ Auth legend: `session` = Firebase/Telegram cookie or Bearer;
   `dns:TXT:<domain>` for `dns_txt`, and for the other two an http(s) URL on the domain
   or its www twin, as the domain check reports it. The guard checks the result's shape
   and that it matches; it cannot prove who built it, so only a verifier may build one. `POST /gateway/execute` checks nothing about a domain, so it issues
-  no receipt and says so (`receiptIssued: false`). `tests/receiptsNeedVerifier.test.ts`
+  no receipt and says so (`receiptIssued: false`). Its answer is always `not_measured`, so
+  it spends no free unit; with `REQUIRE_TG_AUTH=true` an anonymous caller gets 401
+  `AUTH_REQUIRED`. `tests/receiptsNeedVerifier.test.ts`
   lists the only files allowed to write the level.
 - **The Worker holds no chain signing key and sends nothing to a chain.**
   `anchorAuditCitation` makes no outbound request and answers `ok: false`, also with
