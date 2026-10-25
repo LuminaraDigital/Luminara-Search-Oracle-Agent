@@ -290,7 +290,9 @@ no payment was taken. The staging webhook is subscribed to
 - A trial code is for an account without a paid plan. While any paid plan is running it is refused
   before the claim and again after it (the claim is given back), so the code stays unused.
 - **A TON order or licence key is applied once.** `writeSubscriptionRecord` keeps `appliedOrders`
-  (the last 50 TON order ids and `lic_<key>` ids) through every rail's write, ended records too.
+  (the last 50 TON order ids and `lic_<key>` ids) through every write it makes, ended records too.
+  Two paths outside it drop the list: a Stars refund that leaves no time deletes the record, and
+  linking two sign-ins can replace an ended account record with a login's copy.
   When the write throws after the account record took the days (the login copy failed), the rail
   reads that record back: the order is credited and its D1 claim kept, so a single-use key cannot
   be redeemed by another account on top of them. A retry whose order is listed while its claim was
