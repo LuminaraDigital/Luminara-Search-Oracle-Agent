@@ -415,10 +415,25 @@ describe('a Dreaming run on a free plan', () => {
     expect(second?.status).toBe(429);
     expect(await second?.json()).toEqual({
       ok: false,
-      error: "Run now uses one free daily run on free plans, and today's free runs are used up. Upgrade for unlimited runs, or try again after 00:00 UTC.",
+      error: "Run now uses one of your free daily requests on free plans, and today's are used up. Upgrade for unlimited runs, or try again after 00:00 UTC.",
       code: 'QUOTA_EXHAUSTED',
     });
     expect(modelCalls).toBe(1);
+  });
+
+  it('passes any other refusal through as it is', async () => {
+    const env = freePlanEnv();
+    env.REQUIRE_SUBSCRIPTION = 'true';
+
+    const res = await post(env, '/dreaming/run', { domain: 'paid-only.example', force: true });
+
+    expect(res?.status).toBe(429);
+    expect(await res?.json()).toEqual({
+      ok: false,
+      error: 'This feature needs an active plan. Add your own API key in Settings, activate a license key, or subscribe in the Telegram app.',
+      code: 'QUOTA_EXHAUSTED',
+    });
+    expect(modelCalls).toBe(0);
   });
 
   it('gives the run back when the run fails after the unit was spent', async () => {
