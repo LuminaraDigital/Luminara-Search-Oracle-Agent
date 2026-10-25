@@ -108,3 +108,30 @@ describe('Luminara Dreaming Closed-Loop Prompt & Audit Integration', () => {
     expect(memories.length).toBeGreaterThan(0);
   });
 });
+
+describe('dreamingClient.runDream when the server refuses the run', () => {
+  it('returns the refusal to show, and does not run the consolidation in the browser instead', async () => {
+    const refusal = {
+      ok: false,
+      error: "Run now uses one of your free daily requests on free plans, and today's are used up. Upgrade for unlimited runs, or try again after 00:00 UTC.",
+      code: 'QUOTA_EXHAUSTED',
+    };
+    const original = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify(refusal), { status: 429, headers: { 'content-type': 'application/json' } })) as typeof fetch;
+    try {
+      mockLocalStorage.clear();
+      mockLocalStorage.setItem(
+        'luminara_dream_events_v1',
+        JSON.stringify([{ id: 'devt_local', domain: 'refused.example', eventType: 'audit_completed', payload: { healthScore: 70 }, signalWeight: 1, createdAt: 1 }]),
+      );
+
+      const res = await dreamingClient.runDream('refused.example', true);
+
+      expect(res).toEqual({ ok: false, error: refusal.error });
+      expect(mockLocalStorage.getItem('luminara_dream_runs_v1')).toBeNull();
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+});

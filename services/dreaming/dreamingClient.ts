@@ -180,6 +180,11 @@ export class DreamingClient {
           proposals?: DreamProposal[];
         };
       }
+      // A run the server refused (the free daily run is used) is said, not run here instead.
+      if (res.status === 429) {
+        const refused = (await res.json().catch(() => ({}))) as { error?: string };
+        return { ok: false, error: refused.error || 'Too many dream runs. Try again later.' };
+      }
     } catch {
       /* fallback */
     }
@@ -276,7 +281,7 @@ export class DreamingClient {
       pendingReviewCount: createdProposals.filter((p) => p.status === 'pending').length,
       rejectedCount: 0,
       summary: agentOutput.summary,
-      modelId: 'gemini-2.5-flash',
+      modelId: agentOutput.modelId,
       durationMs: 50,
       createdAt: now,
     };

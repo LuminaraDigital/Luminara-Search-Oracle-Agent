@@ -32,7 +32,7 @@ Sentry (`@sentry/cloudflare` on the Worker, `@sentry/browser` in the client) sta
 | `GET,PUT /workspace` | worker/userStore.ts | session | Account workspace blob (zero-knowledge key bag). BYOK keys are stored only as the client-encrypted `encryptedKeys`; a plain-text `keys` map from an older client is accepted and dropped. Migration 0042 removed the maps stored before that. The key bag only decrypts on the device that encrypted it, so a new device needs the keys entered again. The stored `updatedAt` is the version. A PUT sends `{ baseVersion, payload }`, where `baseVersion` is the `updatedAt` the client last pulled or saved (0 when it has none). If a stored copy exists and its version is not `baseVersion`, the route returns 409 with the stored `updatedAt` and `payload` and writes nothing. On D1 the write is compare-and-swap, so of two writes based on one version only one lands. There is no force override (a `force` field from an older bundle is ignored). An older cached client sends no `baseVersion`, so once a row exists every push it makes gets 409 and it reverts its local edits to the stored copy until the tab reloads; there is no service worker, so a reload picks up the current bundle. A saved write gets a version above the previous one |
 | `GET /enterprise/audit-logs` | worker/enterpriseStore.ts + auditLog | session + role | Admin/Auditor role required |
 | `GET /auth/quota` | worker/index.ts | session | Free daily meter on `DAILY_QUOTA` (one SQLite object per account per UTC day). Spend and refund are single statements on that object. 503 `HOSTED_CAPACITY` when it is unavailable. Not a KV key |
-| `POST /telegram/webhook` | worker/index.ts | webhook secret | Telegram updates |
+| `POST /telegram/webhook` | worker/index.ts | webhook secret | Telegram updates. A body over 64 KB is not read: it is logged `telegram_body_too_large` and answered 200, because Telegram sends a refused update again |
 | `POST /telegram/auth`, `/telegram/invoice`, `/telegram/refund` | worker/index.ts | none/secret | Telegram auth + Stars. `/telegram/auth` sets `__session` and has the same Origin rule as `POST /auth/session` |
 | `GET /admin/users` | worker/index.ts | admin | Requires `ADMIN_SECRET` |
 | `GET /admin/payment-support` | worker/index.ts + paymentSupport | admin | Requires `ADMIN_SECRET`. Lists payment support requests by `status` (open, answered, closed). The read is audited by count |
@@ -79,6 +79,7 @@ Sentry (`@sentry/cloudflare` on the Worker, `@sentry/browser` in the client) sta
 | `GET,POST /api-keys`, `DELETE /api-keys/:id` | worker/apiKeyService.ts | session + plan gate on POST | lm_live_* API keys. Only POST needs Growth/Agency (403 `MCP_ACCESS_REQUIRED`). GET and DELETE work on any plan, so a lapsed account lists and revokes its keys; GET returns `mcpAccess` for the plan |
 | `POST /oracle/chat` | worker/oracleChat.ts | session + apiAccess | Agency Oracle SSE. Also emits `harness_event` frames (offset-addressed `AgentEventEnvelope`) next to the legacy `status`/`tool`/`token`/`done`/`provenance` events |
 | `GET /oracle/session/:id/(events?after=N\|state\|history)`, `POST /oracle/session/:id/(approval\|callback\|state/patch)` | worker/oracleChat.ts -> worker/oracleSession.ts | session + apiAccess | Owner-level control plane for one session. Allowlist only: other actions 404, POST bodies over 64 KB get 413. Admit, settle, truncate and event publishing are server-internal and never reachable from a client, so a caller cannot forge `tool_end` or approval events. DO key is `accountId:sessionId` (no cross-account access). `approval` with `remember:true` allow-lists the tool for that session only; it never bypasses `isBudgetHalted` or the context-before-paid gate. Control-plane names (`tool_approval`, `provide_callback_result`, ...) are rejected as `invokeTool` on `/oracle/chat` |
+| `GET /dreaming/(status\|memories\|proposals)`, `POST /dreaming/(events\|run)`, `POST /dreaming/proposals/:id/review`, `POST /dreaming/runs/:id/rollback` | worker/dreamingService.ts | session | Dreaming memory consolidation. The model's proposals are checked before anything is stored: one with an action other than create, update or deprecate, a memory type the store does not take, a confidence that is missing or outside 0.5 to 1, or an update or deprecate that names no active memory is dropped. A run writes its memory changes, proposals, run row (`model_id` is the hosted model's id or `deterministic`) and the consumed events in one batch, so a failed run changes nothing and its events stay pending. A create's memory and its proposal share one timestamp, which rollback matches. `POST /dreaming/run` is a high-cost path. With a hosted model key set, a run on a free plan spends one of the free daily requests it shares with chat and audits, through `checkHostedQuota` (429 `QUOTA_EXHAUSTED`: "Run now uses one of your free daily requests on free plans..." when they are used up, otherwise the refusal's own message; 503 `HOSTED_CAPACITY`), given back when the run does not wake or throws; a spent referral credit is not given back. The browser shows that 429 and does not run the consolidation locally instead. A `signalWeight` sent to `/dreaming/events` can lower an event's weight, never raise it above the server's weight for that event type |
 | `POST /audit/run`, `GET /audit/runs/:id` | worker/auditQueue.ts | session + apiAccess | Audit queue |
 | `POST /audit/scout-run` | worker/auditScoutRun.ts | session | One Instant Audit check. `www` and a subdomain of the minted site match that site on a dot boundary. A lookalike such as `evilmovida.com.au` does not. A foreign host is 403 `AUDIT_RUN_REJECTED`. A refund with health score and citation rate both null returns the check even after a covered 200, still under the daily refund cap |
 | `* /providers/:id/*` | worker/providerRelay.ts | byok/session | LLM/search/scrape proxy. Hosted `dataforseo` also needs Agency apiAccess (APS invariant 2); BYOK skips the plan gate. Hosted Groq chat (`POST /providers/groq/chat/completions`, not BYOK) falls through Groq, `GROQ_API_KEY_FALLBACK` when it differs, NVIDIA (`NVIDIA_API_KEY`, model `nvidia/llama-3.1-nemotron-70b-instruct`, worker/nvidiaChatFallback.ts), then Workers AI. That chain runs when no Groq key is set, the connection fails, or Groq returns 400, 404, 408, 429, 5xx, or a 413 whose body is a token cap. Workers AI cuts a longer prompt to its 8000-byte budget and still answers. Groq 401 and 402 stay hosted-key errors. Direct `nim` stays paid-tier. Free accounts share a KV daily cap (`NVIDIA_FALLBACK_DAILY_CAP`, default 200) and a per-account cap (`NVIDIA_FALLBACK_USER_DAILY_CAP`, default 5). A hit, a missing key, or no KV skips NVIDIA. The KV cap is approximate: KV has no atomic add, so overlapping calls can pass together, and a failed NVIDIA call gives its slot back. Paid plans are not counted on those caps. The `x-accept-fallback` header is unused. Workers AI (worker/workersAiFallback.ts) still refuses typed, tool, or over-long prompts. It refuses `response_format`, `tools`, `tool_choice`, non-string content, a bare `prompt`, any field it would have to ignore (`stop`, `logprobs`, the penalties and anything it does not know), an invalid value (it never substitutes a default for one), and a prompt over its budget, counted in UTF-8 bytes; the caller then gets the upstream's own error. When Workers AI is attempted and returns nothing or throws, the response is 503 "The backup model did not answer." and the check is refunded. The failure log includes a short error. An empty or broken fallback is not sent as an answer. A fallback reply carries `X-Provider-Fallback`, `X-Provider-Fallback-Model`, `X-Provider-Fallback-Reason` and a body `x_fallback` field, and only the chat accepts one and shows the model (`allowFallback` on the client). `finish_reason` is `length` only when the binding's reported completion tokens reached the cap; with no usage reported it is `stop` and the answer line says `usage: none`. Usage is the binding's or absent, never zeros. One log line per outcome, with no prompt text: `workers_ai_fallback_answer`, `workers_ai_fallback_refused`, `workers_ai_fallback_failed`. Hosted-key upstream errors the relay renames, each a 503: 402 is `HOSTED_PROVIDER_DEPLETED`, 401 is `HOSTED_PROVIDER_KEY_REFUSED` (the provider refused the server's key), 403 is `HOSTED_PROVIDER_REQUEST_REFUSED` (it refused this request; the cause is not known), so the client does not read either as the caller's sign-in failing. For 401 and 403 the upstream's status and its own error code or type, never its message, go to a `hosted_provider_refused` log line. A BYOK 401 or 403 is the caller's key and passes through; a BYOK 402 stays a 402 (`BYOK_PAYMENT_REQUIRED`) |
@@ -137,7 +138,9 @@ web client drops a cached ID token under a minute from expiry, so the cookie ans
   `dns:TXT:<domain>` for `dns_txt`, and for the other two an http(s) URL on the domain
   or its www twin, as the domain check reports it. The guard checks the result's shape
   and that it matches; it cannot prove who built it, so only a verifier may build one. `POST /gateway/execute` checks nothing about a domain, so it issues
-  no receipt and says so (`receiptIssued: false`). `tests/receiptsNeedVerifier.test.ts`
+  no receipt and says so (`receiptIssued: false`). Its answer is always `not_measured`, so
+  it spends no free unit; with `REQUIRE_TG_AUTH=true` an anonymous caller gets 401
+  `AUTH_REQUIRED`. `tests/receiptsNeedVerifier.test.ts`
   lists the only files allowed to write the level.
 - **The Worker holds no chain signing key and sends nothing to a chain.**
   `anchorAuditCitation` makes no outbound request and answers `ok: false`, also with
@@ -403,7 +406,7 @@ message and the reply went to the model chat.
   `handleTelegramUpdate`; a captured message is not put in a prompt and not kept in
   `tg:chat:<id>`. When the window cannot be checked (the database does not answer), the message
   is not read at all and the sender is asked to send it again.
-- **Private chats only.** In a group, `/paysupport` points to the private chat.
+- **Private chats only.** In a group, `/paysupport` points to the private chat, and nothing said there reaches a support window or the chat.
 - **If no admin can be told** (no id configured, or Telegram refuses), the request is still
   saved, the buyer is told to write to the support address as well, and `[Support] ALERT` is logged.
 - `GET /api/admin/payment-support?status=open|answered|closed` lists requests (`ADMIN_SECRET`).
@@ -431,8 +434,23 @@ message and the reply went to the model chat.
   missing citations / vendor names. Wired into Oracle SSE provenance events
   (v1 flags only; does not block streams).
 - `worker/oracleInteractionGuard.ts`: instructs Oracle to respond
-  `not_measured` or "not verified" when data is missing; numeric claims
-  without tool evidence are rejected. Live.
+  `not_measured` or "not verified" when data is missing. Its monitor only flags
+  numeric claims without tool evidence (a `monitor` event). Live.
+- Oracle chat (`worker/oracleChat.ts`) runs every reply through `withoutUnmeasuredClaims`
+  (`worker/chatHonesty.ts`, the bot filter's site-number step). A sentence that states a
+  measurement nobody made is replaced with the "not measured" sentence in the session
+  history, a "Not measured" warning token follows the tokens already streamed, and
+  `oracle_output_redacted` is logged. Unlike the bot, a general figure or a target stays
+  ("Aim for a CTR above 3%", "A good LCP is under 2.5 seconds"): a sentence counts only
+  when it is about the user, us, the site under discussion ("the site", "its"), a named
+  site or a "Label: 45" reading that is not a bar ("LCP: under 2.5 s"), claims a look at a
+  site, or answers the user's question for a metric (CTR, domain rating, DA, DR and PA
+  count as metrics there), and a percentage after above, below, under, at least or at most
+  is a bar to clear, not a promise. A number from a user sentence that states a figure (in
+  a message or in the retrieved account memory) is the user's own wherever the reply
+  repeats it, and so is every number of a tool result that did not error and is
+  `measured`. One general figure that says "it" ("it gets about 27% of clicks") is still
+  replaced. Live.
 - `worker/chatHonesty.ts`: the Telegram bot's free-text chat fetches and measures
   nothing, and the model has no say over prices or payments.
   - **Two kinds of message never reach the model.** `chatRoute` reads the user's
@@ -466,12 +484,13 @@ message and the reply went to the model chat.
     prices are, where billing help is, and that this chat cannot quote prices or
     take payments.
   - A sentence that states a measurement nobody made (a percentage, a rank, a score,
-    a count of citations or visits, a claim of having looked at the site) becomes
-    one "not measured" sentence. Links, dates, phone and version numbers and HTTP
-    status codes are set aside first. A number the user wrote is kept only where the
-    sentence hands it back ("you said"). An instruction keeps its count ("Add 3 FAQ
-    questions") and loses a promised outcome. Status comes from the claim ledger
-    (`services/evidenceBound`).
+    a count of citations or visits, a count of AI answers or a results page with the
+    user as subject ("your brand appears in 12 AI answers", "you are on page 2"), a claim
+    of having looked at the site) becomes one "not measured" sentence. Links, dates,
+    phone and version numbers and HTTP status codes are set aside first. A number the
+    user wrote is kept only where the sentence hands it back ("you said"). An
+    instruction keeps its count ("Add 3 FAQ questions") and loses a promised outcome.
+    Status comes from the claim ledger (`services/evidenceBound`).
   - Inline code is read as prose. Only JSON-LD (an object with `@context`) and head
     tags (`meta`, `link`, `title`, a JSON-LD `script`) are set aside as something
     to paste, fenced or not. Any other JSON, markup or fenced text, and everything
@@ -480,11 +499,24 @@ message and the reply went to the model chat.
     luminarasuite.com, the `WEBAPP_URL` host, one the user wrote, or a reference
     host (`REFERENCE_LINK_HOSTS`). Links inside JSON-LD and head tags are checked
     too. A sentence that asks for a code, password, seed phrase or key is removed.
-  Business DNA enters the prompt only inside an untrusted-content fence whose
-  markers carry a one-time code, with each field capped at 300 characters. The
-  reply is sent with no `parse_mode` and with link previews off. The filter is a
-  backstop, pattern based and mostly English; the prompt rules and the plan-question
-  rule are the main controls. Live.
+  Business DNA enters the prompt only inside an untrusted-content fence whose markers carry
+  a one-time code, with each field capped at 300 characters. The reply is sent with no
+  `parse_mode` and with link previews off. A reply longer than one Telegram message is cut
+  at its last whole word, with the ellipsis inside 4,096 characters and no emoji split in
+  half; plain support messages are cut the same way. History keeps what was sent, and only
+  once Telegram accepted it. A turn that spent a free unit and delivered no answer (no
+  provider answered, Telegram refused the reply, or the turn failed) gives the unit back,
+  once. A message with no text (a sticker, a voice note, a photo with or without a caption,
+  a service message) gets no answer and spends nothing; inside a payment support window it
+  is still captured. Every feature of the bot is for a private chat. In a group, the
+  billing and admin commands (`/paysupport`, `/support`, `/admin`, `/refund <user>
+  <charge>`, `/reply`, `/close`, `/requests`) say to use a private chat, any other command
+  gets one plain note ("Luminara works in a private chat..."), a command addressed to
+  another bot (`/plan@OtherBot`, checked against `getMe` once per isolate) gets nothing,
+  and anything else is ignored. Payment updates are handled before this, wherever they
+  come from. Gemini gets its key in the `x-goog-api-key` header, never in the URL. The
+  filter is a backstop, pattern based and mostly English; the prompt rules and the
+  plan-question rule are the main controls. Live.
 - DataForSEO / Umami sidecars: live when env-bound; the front-end traffic
   path returns `not_configured` when unreachable. See `services/competitors/README.md`.
 - Telegram webhook, license service, sentinel scan: live when bindings exist.

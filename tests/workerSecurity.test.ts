@@ -288,6 +288,21 @@ describe('Telegram endpoints', () => {
     expect(malformed.status).toBe(400);
   });
 
+  it('answers an update too large to read with 200, so Telegram does not send it again, and handles nothing', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    let handled = 0;
+    const countingCtx = { waitUntil: () => { handled++; }, passThroughOnException: () => {} } as unknown as ExecutionContext;
+    const env = makeEnv({ BOT_TOKEN: '1:a', TELEGRAM_WEBHOOK_SECRET: 's3cret' });
+    const body = JSON.stringify({ message: { chat: { id: 1 }, from: { id: 1 }, text: 'x'.repeat(70 * 1024) } });
+
+    const res = await worker.fetch(req('/api/telegram/webhook', { method: 'POST', body, headers: { 'x-telegram-bot-api-secret-token': 's3cret' } }), env, countingCtx);
+
+    expect(res.status).toBe(200);
+    expect(handled).toBe(0);
+    expect(warn).toHaveBeenCalledWith(JSON.stringify({ event: 'telegram_body_too_large' }));
+    warn.mockRestore();
+  });
+
   it('soft-throttles a flooding chat but never throttles payment updates', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('{"ok":true}', { headers: { 'content-type': 'application/json' } })));
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -501,6 +516,29 @@ describe('rate limiter', () => {
     for (let i = 0; i < 130; i++) last = await worker.fetch(req('/api/health', {}, '203.0.113.77'), env, ctx);
     expect(last!.status).toBe(429);
     expect(last!.headers.get('retry-after')).toBeTruthy();
+  });
+
+  it('puts a Dreaming run, which can call a hosted model, behind the high-cost edge limiter', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const keys: string[] = [];
+    const env = makeEnv({
+      HIGH_COST_RATE_LIMITER: {
+        limit: async ({ key }: { key: string }) => {
+          keys.push(key);
+          return { success: false };
+        },
+      },
+    });
+
+    const run = await worker.fetch(req('/api/dreaming/run', { method: 'POST', body: '{}' }, '198.51.100.21'), env, ctx);
+    const status = await worker.fetch(req('/api/dreaming/status?domain=a.com', {}, '198.51.100.22'), env, ctx);
+
+    expect(run.status).toBe(429);
+    expect(((await run.json()) as { code: string }).code).toBe('EDGE_RATE_LIMITED');
+    expect(keys).toEqual(['hc:198.51.100.21:dreaming']);
+    // Reading the status calls no model, so it is not limited here and reaches the sign-in check.
+    expect(status.status).toBe(401);
+    vi.restoreAllMocks();
   });
 });
 
