@@ -126,6 +126,16 @@ describe('security headers', () => {
     expect(js.headers.get('content-security-policy')).toBeNull();
   });
 
+  it('withSecurityHeaders keeps a CSP the route already set', () => {
+    const sandboxed = "default-src 'none'; sandbox";
+    const res = withSecurityHeaders(
+      new Response('<p>report</p>', {
+        headers: { 'content-type': 'text/html', 'content-security-policy': sandboxed },
+      }),
+    );
+    expect(res.headers.get('content-security-policy')).toBe(sandboxed);
+  });
+
   it('caches a hashed asset for a year and leaves other files alone', async () => {
     expect(immutableAssetCache('/assets/index-Ab12cd34.js')).toBe('public, max-age=31536000, immutable');
     expect(immutableAssetCache('/favicon.ico')).toBeNull();
@@ -183,8 +193,10 @@ describe('CORS', () => {
       'set-cookie': 'a=b',
       'content-encoding': 'br',
       'content-type': 'application/json',
+      'content-security-policy': "default-src *",
     });
     stripUpstreamHeaders(h);
+    expect(h.get('content-security-policy')).toBeNull();
     expect(h.get('access-control-allow-origin')).toBeNull();
     expect(h.get('access-control-allow-credentials')).toBeNull();
     expect(h.get('set-cookie')).toBeNull();

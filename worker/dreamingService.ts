@@ -460,11 +460,13 @@ export async function rollbackDreamRun(
 
   for (const p of proposals.results || []) {
     if (p.action === 'create') {
-      // Find matching created memory and archive/delete it
+      // The memory a create made carries the exact timestamp of the apply: the run's `now` for
+      // auto_applied, the review's `now` (reviewed_at) for approved. Matching on it leaves later
+      // memories that share the title alone. A create's memory_id may name an unrelated memory.
       await env.DB.prepare(
-        `DELETE FROM business_memories WHERE account_id = ? AND domain = ? AND title = ? AND created_at >= ?`,
+        `DELETE FROM business_memories WHERE account_id = ? AND domain = ? AND title = ? AND created_at = ?`,
       )
-        .bind(accountId, p.domain, p.title, p.created_at)
+        .bind(accountId, p.domain, p.title, p.status === 'approved' ? p.reviewed_at : p.created_at)
         .run();
     } else if ((p.action === 'update' || p.action === 'deprecate') && p.memory_id && p.previous_snapshot_json) {
       try {

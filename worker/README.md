@@ -25,9 +25,9 @@ Sentry (`@sentry/cloudflare` on the Worker, `@sentry/browser` in the client) sta
 | `GET,POST /email/unsubscribe` | worker/welcomeEmail.ts | none | One-click opt-out for welcome mail. `RESEND_API_KEY` is a Worker secret. A new account is mailed once from `hello@luminarasuite.com`; migration 0036 stamps older rows so they are not mailed. The send runs in `waitUntil` and a Resend error does not fail sign-in |
 | `POST /auth/request-otp`, `/auth/verify-otp` | worker/authOtpSms.ts | none | SMS OTP |
 | `POST /auth/send-verification` | worker/index.ts | none | Email verification |
-| `POST /webhooks/auth` | worker/index.ts | webhook secret | Firebase webhook. `REQUEST_SIGNING_REQUIRED=true` switches this route to HMAC request signing (`x-luminara-key-id`, timestamp, nonce, signature) with keys from `REQUEST_SIGNING_KEYS`. The flag is off in production, and the old `x-auth-signature` check stays |
+| `POST /webhooks/auth` | worker/index.ts | webhook secret | Firebase webhook. `REQUEST_SIGNING_REQUIRED=true` switches this route to HMAC request signing (`x-luminara-key-id`, timestamp, nonce, signature) with keys from `REQUEST_SIGNING_KEYS`. The flag is off in production, and the old `x-auth-signature` check stays. `user.deleted` also revokes the user's sessions: a KV marker kept for one session lifetime (14 days) makes every session for that uid fail to load, including one minted later from an unexpired ID token. A Firebase Bearer ID token itself still works until it expires (at most an hour) |
 | `POST /auth/link` | worker/index.ts | Telegram initData + Firebase Bearer | Explicit account link. Body must be `{ confirm: true }` or the route returns 400 and writes nothing. Two distinct accounts that each have an active paid plan return 409 with no merge. `identify()` never links. Success and dual-paid refusal write an audit event |
-| `GET,PUT /workspace` | worker/userStore.ts | session | Account workspace blob (zero-knowledge key bag) |
+| `GET,PUT /workspace` | worker/userStore.ts | session | Account workspace blob (zero-knowledge key bag). BYOK keys are stored only as the client-encrypted `encryptedKeys`; a plain-text `keys` map from an older client is accepted and dropped |
 | `GET /enterprise/audit-logs` | worker/enterpriseStore.ts + auditLog | session + role | Admin/Auditor role required |
 | `GET /auth/quota` | worker/index.ts | session | Free daily meter on `DAILY_QUOTA` (one SQLite object per account per UTC day). Spend and refund are single statements on that object. 503 `HOSTED_CAPACITY` when it is unavailable. Not a KV key |
 | `POST /telegram/webhook` | worker/index.ts | webhook secret | Telegram updates |
@@ -99,9 +99,14 @@ Auth legend: `session` = Firebase/Telegram cookie or Bearer;
   (`SCOPE_INSUFFICIENT` otherwise). BYOK calls pass with `mcp:free`. OAuth tokens
   minted before enforcement lack `scopeEnforced` and stay unrestricted until their
   30-day TTL drains. Authorize without `scope` requests both; plan caps decide.
-- **Every paid call is metered.** MCP and Oracle chat `confirmTool` both check
-  `isBudgetHalted` first and write `cost_events` with `credential_kind` /
-  `credential_id` (`oracle` for chat). New paid surfaces must do the same.
+- **Every paid call is metered.** MCP, Oracle chat `confirmTool` and queued audits
+  (`processAuditJob`) all check `isBudgetHalted` first and write `cost_events`. MCP and
+  chat set `credential_kind` / `credential_id` (`oracle` for chat); a queued audit has
+  no request credential and leaves them empty. New paid surfaces must do the same.
+  Oracle chat runs its turn through `scheduleWaitUntil`, so a closed tab still meters
+  the call and settles the session turn, within the roughly 30 seconds `waitUntil`
+  allows after the client disconnects. A queued audit that already completed is not
+  run again when the queue redelivers it.
 
 ## Audit chain and Trust Network invariants (TN0-TN2)
 

@@ -239,7 +239,10 @@ export async function upsertBudgetPolicy(
     monthlyBudgetCents: number;
     currency?: string;
     createdBy?: string | null;
-    /** Default false (soft-alert era). Pass true only when enabling hard stops. */
+    /**
+     * Omit to keep the current setting, so changing the amount never switches a hard stop off.
+     * A new policy starts with it off (soft-alert era). Pass true only when enabling hard stops.
+     */
     hardStopEnabled?: boolean;
     now?: number;
   },
@@ -254,22 +257,23 @@ export async function upsertBudgetPolicy(
   }
   const now = params.now ?? Date.now();
   const currency = (params.currency || 'usd').trim().toLowerCase() || 'usd';
-  const hardStop = params.hardStopEnabled === true ? 1 : 0;
+  // null means "not given": insert as off, keep the stored value on update.
+  const hardStop = params.hardStopEnabled === undefined ? null : params.hardStopEnabled ? 1 : 0;
   const id = crypto.randomUUID();
   await env.DB.prepare(
     `INSERT INTO budget_policies
        (id, account_id, scope_type, scope_id, metric, window_kind, amount_cents, currency,
         warn_percents, hard_stop_enabled, is_active, created_by, created_at, updated_at)
      VALUES (?, ?, 'account', NULL, 'billed_cents', 'calendar_month_utc', ?, ?,
-             '[50,80,95]', ?, 1, ?, ?, ?)
+             '[50,80,95]', COALESCE(?, 0), 1, ?, ?, ?)
      ON CONFLICT(account_id, scope_type, IFNULL(scope_id, '')) WHERE is_active = 1
      DO UPDATE SET amount_cents = excluded.amount_cents,
                    currency = excluded.currency,
                    warn_percents = excluded.warn_percents,
-                   hard_stop_enabled = excluded.hard_stop_enabled,
+                   hard_stop_enabled = COALESCE(?, budget_policies.hard_stop_enabled),
                    updated_at = excluded.updated_at`,
   )
-    .bind(id, params.accountId, amount, currency, hardStop, params.createdBy ?? null, now, now)
+    .bind(id, params.accountId, amount, currency, hardStop, params.createdBy ?? null, now, now, hardStop)
     .run();
   const policy = await getBudgetPolicy(env, params.accountId, now);
   if (!policy) throw new Error('budget policy upsert failed');

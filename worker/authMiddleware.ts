@@ -31,6 +31,7 @@ export {
   mintOpaqueSession,
   loadOpaqueSession,
   revokeOpaqueSession,
+  revokeSessionsForDeletedUser,
 } from './opaqueSession';
 export type { OpaqueSessionRecord } from './opaqueSession';
 

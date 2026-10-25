@@ -47,6 +47,7 @@ import {
 } from '../services/agentCore/harnessProtocol';
 import { markProjectContextLoaded, requireProjectContextBeforePaid } from './mcpServer';
 import { getProjectContext } from './projectContextService';
+import { scheduleWaitUntil } from './welcomeEmail';
 
 /** Runtime skill slug for hosted Oracle chat (admin-seedable via agent_skills). */
 const ORACLE_CHAT_SKILL_SLUG = 'oracle-chat';
@@ -831,7 +832,9 @@ export async function handleOracleChatSse(
     }
   };
 
-  run().catch((err) => console.error('[oracleChat] stream run failed:', err));
+  // Cloudflare cancels work outside waitUntil once the client disconnects; without it a closed
+  // tab skips the cost event and the /settle call, leaving the session locked (TURN_ACTIVE).
+  scheduleWaitUntil(run().catch((err) => console.error('[oracleChat] stream run failed:', err)));
 
   return new Response(readable, {
     status: 200,

@@ -27,7 +27,12 @@ import { join } from 'node:path';
 
 function kv(store = new Map<string, string>()): KVNamespace {
   return {
-    get: async (key: string, type?: string) => {
+    get: async (key: string, type?: string | { type?: string; cacheTtl?: number }) => {
+      // Like the real KV binding, refuse a cacheTtl under 30 seconds.
+      if (typeof type === 'object' && type.cacheTtl !== undefined && type.cacheTtl < 30) {
+        throw new Error(`KV GET failed: 400 Invalid cache_ttl of ${type.cacheTtl}. Cache TTL must be at least 30.`);
+      }
+      if (typeof type === 'object') type = type.type;
       const v = store.get(key);
       if (v === undefined) return null;
       return type === 'json' ? JSON.parse(v) : v;
