@@ -313,10 +313,12 @@ Telegram does not send a paid update again once the webhook has answered 200, so
 - **A refund is finished only when the plan has gone back too.** `stars_returned` records that
   the Stars are with the payer. If taking back what the charge gave fails, the row stays
   `refund_due` and the sweep retries that part alone; Telegram is not asked to refund twice.
-- **A refund takes back what that charge gave, no more.** Its days come off; if it was the last
-  thing applied, the plan returns to what the record said before it. The subscription record keeps
-  `appliedCharges` and `chargeLinks` (the plan before each charge, and the charge before it) for
-  this.
+- **A refund takes back what that charge gave, no more.** Only the part of its days still ahead
+  comes off (the card rail's rule; the receipt's `expiresAt` is where its days end), so days it has
+  used up never shorten time bought after it on another rail; a refund that takes less than the
+  full days logs `stars_refund_partial`. If it was the last thing applied, the plan returns to what
+  the record said before it. The subscription record keeps `appliedCharges` and `chargeLinks` (the
+  plan before each charge, and the charge before it) for this.
 - **The daily sweep** (`stars_charge_sweep`) settles rows a webhook left undecided, retries
   refunds (5 attempts, then `refund_failed` and an alert to `TELEGRAM_ADMIN_ID`), and compares
   Telegram's own transaction list with the ledger. It never grants.

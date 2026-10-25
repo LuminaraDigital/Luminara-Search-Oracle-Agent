@@ -707,6 +707,33 @@ describe('refunds a person asks for go through the ledger', () => {
     expect(rowOf(db, 'ch_second').status).toBe('refunded');
   });
 
+  describe('only the part of its days still ahead comes off', () => {
+    // Stars Growth (30 days), then 30 TON days added on top. The clock stands still from here on.
+    const setUp = async () => {
+      travel(1);
+      const made = makeEnv();
+      await handleTelegramPaymentUpdate(paid('ch_growth', { payload: `growth:${PAYER}`, amount: PLANS.growth.stars }), made.env);
+      const starsEnd = made.kv.json(`sub:${PAYER}`).expiresAt as number;
+      await writeSubscriptionRecord(made.env, String(PAYER), { plan: 'growth', paymentMethod: 'ton', orderId: 'ton_after', startedAt: Date.now(), expiresAt: starsEnd + 30 * DAY });
+      return { ...made, tonEnd: starsEnd + 30 * DAY };
+    };
+
+    it('refunded on day 40, after its days have run out, it leaves the TON days and the record alone', async () => {
+      const { env, kv, tonEnd } = await setUp();
+      travel(40 * DAY);
+      expect((await refundStarsCharge(env, PAYER, 'ch_growth')).ok).toBe(true);
+      expect(kv.json(`sub:${PAYER}`)).toMatchObject({ plan: 'growth', paymentMethod: 'ton', expiresAt: tonEnd, appliedCharges: [] });
+      expect(console.warn).toHaveBeenCalledWith(JSON.stringify({ event: 'stars_refund_partial' }));
+    });
+
+    it('refunded on day 26, with 4 of its days left, it takes those 4 days off', async () => {
+      const { env, kv, tonEnd } = await setUp();
+      travel(26 * DAY);
+      expect((await refundStarsCharge(env, PAYER, 'ch_growth')).ok).toBe(true);
+      expect(kv.json(`sub:${PAYER}`)).toMatchObject({ plan: 'growth', expiresAt: tonEnd - 4 * DAY, appliedCharges: [] });
+    });
+  });
+
   it("Telegram's own refund notice closes the row and the plan, and is not sent to the chat model", async () => {
     const { env, kv, db } = makeEnv();
     await handleTelegramPaymentUpdate(paid('ch_notice'), env);

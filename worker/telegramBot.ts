@@ -1916,10 +1916,11 @@ async function planOfStarsCharge(env: Env, chargeId: string | undefined): Promis
 /**
  * Marks the receipt refunded and takes back only what this charge gave. A charge is found by its
  * receipt or by the subscription record that lists it, so a grant that stopped half way is taken
- * back too. When time is left that this charge did not pay for, its days come off; if it was the
- * last thing applied to the record, the plan goes back to what the record said before it; and
- * whatever was applied after it is re-linked to what came before it, so a later refund still puts
- * the right plan back. Otherwise the record goes. `ok` is false when the record could not be read
+ * back too. Only the part of its days still ahead comes off, so days it has used up never cut into
+ * time bought after it on another rail. When time is left after that: if it was the last thing
+ * applied to the record, the plan goes back to what the record said before it; and whatever was
+ * applied after it is re-linked to what came before it, so a later refund still puts the right
+ * plan back. Otherwise the record goes. `ok` is false when the record could not be read
  * or written, so the caller can try again: the Stars are back with the payer and the plan must
  * follow.
  */
@@ -1941,6 +1942,11 @@ async function revokeStarsGrant(env: Env, userId: number, chargeId: string): Pro
 
     const planId = String(receipt?.plan || (row?.purpose === 'plan' ? row.ref_id : ''));
     const days = Object.hasOwn(PLANS, planId) ? PLANS[planId].days : 0;
+    // The card rail's rule (reverseStripeCharge): the receipt's expiry is where this charge's days end.
+    const now = Date.now();
+    const fullMs = days * DAY_MS;
+    const aheadMs = Math.min(fullMs, Math.max(0, (Number(receipt?.expiresAt) || Infinity) - now));
+    if (aheadMs < fullMs) console.warn(JSON.stringify({ event: 'stars_refund_partial' }));
     const keys = new Set(
       [accountId, receipt?.loginId, row?.account_id, userId].map((k) => (k ? String(k) : '')).filter((k) => k && k !== '0'),
     );
@@ -1948,12 +1954,12 @@ async function revokeStarsGrant(env: Env, userId: number, chargeId: string): Pro
       const sub = (await kv.get(`sub:${key}`, 'json')) as SubscriptionRecord | null;
       if (!sub || !subscriptionListsCharge(sub, chargeId)) continue;
       const remaining = appliedChargesOf(sub).filter((c) => c !== chargeId);
-      const shortened = days > 0 ? Number(sub.expiresAt) - days * DAY_MS : 0;
-      if (shortened <= Date.now()) {
+      const shortened = days > 0 ? Number(sub.expiresAt) - aheadMs : 0;
+      if (shortened <= now) {
         await kv.delete(`sub:${key}`);
         continue;
       }
-      // Time is left that this charge did not pay for (it was added to days already there).
+      // Time is left that this charge did not pay for.
       const links = chargeLinksOf(sub);
       const mine: ChargeLink = links[chargeId] ?? {
         before: typeof receipt?.previousPlan === 'string' && receipt.previousPlan ? receipt.previousPlan : undefined,
