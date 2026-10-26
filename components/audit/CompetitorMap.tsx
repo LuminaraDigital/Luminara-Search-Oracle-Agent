@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import { ICONS } from '../../constants';
 import { countPhrase } from '../../services/audit/reportSentence';
 import { gateReportText } from '../../services/audit/reportColumnGate';
@@ -73,13 +73,26 @@ export function competitorProgressMessage(rivals: number, gaps: number): string 
     return `Identified ${countPhrase(rivals, 'key competitor')} and mapped ${countPhrase(gaps, 'keyword gap')}.`;
 }
 
-/** Rival and gap counts for the competitor table, or null when that table is absent. */
-export function verifiedRivalsFromReport(markdown: string): { rivals: number; gaps: number } | null {
+function competitorTable(markdown: string): { headers: string[]; rows: string[][] } | null {
     const doc = parseAuditReport(gateReportText(markdown || ''));
     const section = doc.sections.find((item) => /competitor/i.test(item.title));
     const table = section?.blocks.find((block) => block.kind === 'table');
-    if (!table || table.kind !== 'table') return null;
-    return renderedCompetitorCounts(table.headers, table.rows);
+    return table && table.kind === 'table' ? table : null;
+}
+
+/** Rival and gap counts for the competitor table, or null when that table is absent. */
+export function verifiedRivalsFromReport(markdown: string): { rivals: number; gaps: number } | null {
+    const table = competitorTable(markdown);
+    return table ? renderedCompetitorCounts(table.headers, table.rows) : null;
+}
+
+/** First verified rival name from the competitor table, or null when absent. */
+export function firstVerifiedRivalFromReport(markdown: string): string | null {
+    const table = competitorTable(markdown);
+    if (!table) return null;
+    const cols = mapColumns(table.headers);
+    const rival = table.rows.find((row, index) => index > 0 && shownRival(row, cols));
+    return rival ? rawCell(rival[cols.entity]) || null : null;
 }
 
 /** The sentence for the competitor table in a report, or null when that table is absent. */

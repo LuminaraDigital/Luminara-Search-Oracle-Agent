@@ -326,7 +326,7 @@ const COMPARE_PAGES: ComparePage[] = [
           'Yes. Use Semrush for keyword and competitor research and Luminara for a labeled weekly fix and llms.txt or schema fix packs.',
       },
     ],
-    sources: [{ label: 'Semrush knowledge base: AI Visibility Toolkit', url: 'https://www.semrush.com/kb/' }, { label: 'Semrush pricing', url: 'https://www.semrush.com/prices/' }, SUITE_SOURCE],
+    sources: [{ label: 'Semrush knowledge base: AI Visibility Toolkit', url: 'https://www.semrush.com/kb/1493-ai-visibility-toolkit' }, { label: 'Semrush pricing', url: 'https://www.semrush.com/prices/' }, SUITE_SOURCE],
   },
 ];
 
@@ -407,7 +407,7 @@ const BEST_PAGES: BestPage[] = [
     sources: [
       { label: 'Otterly.AI pricing', url: 'https://otterly.ai/pricing' },
       { label: 'Peec AI pricing', url: 'https://peec.ai/pricing' },
-      { label: 'Semrush knowledge base', url: 'https://www.semrush.com/kb/' },
+      { label: 'Semrush knowledge base: AI Visibility Toolkit', url: 'https://www.semrush.com/kb/1493-ai-visibility-toolkit' },
       SUITE_SOURCE,
     ],
   },
@@ -480,7 +480,7 @@ const BEST_PAGES: BestPage[] = [
     sources: [
       { label: 'Otterly.AI pricing', url: 'https://otterly.ai/pricing' },
       { label: 'Ahrefs Brand Radar', url: 'https://ahrefs.com/brand-radar' },
-      { label: 'Semrush knowledge base', url: 'https://www.semrush.com/kb/' },
+      { label: 'Semrush knowledge base: AI Visibility Toolkit', url: 'https://www.semrush.com/kb/1493-ai-visibility-toolkit' },
       SUITE_SOURCE,
     ],
   },

@@ -6,8 +6,9 @@ import { sampleAiSaidFixtures } from '../../services/audit/sampleAiSaidFixtures'
 import type { ShipCommitment } from '../../services/audit/shipCommitmentService';
 import { upsertWeeklyDecision } from '../../services/privacy/privacyClient';
 import { honestyChipLabel, normalizeMeasurementStatus } from '../../services/wdl/liveHonesty';
-import { LLMS_NAME_NOTE, llmsTxtDraft, organizationJsonLd } from '../../services/audit/fixPackCopy';
+import { LLMS_NAME_NOTE, comparisonOutlineDraft, llmsTxtDraft, organizationJsonLd } from '../../services/audit/fixPackCopy';
 import { brandNameFor } from '../../services/audit/brandName';
+import { firstVerifiedRivalFromReport } from './CompetitorMap';
 
 import type { EmpiricalEvidence } from '../../services/audit/empiricalCitationService';
 import type { RadarCitationRow } from './VisibilityRadar';
@@ -114,8 +115,14 @@ export const WeeklyDecisionCard: React.FC<WeeklyDecisionCardProps> = ({
     const raw = domain || 'domain';
     const cleanDomain = raw.replace(/^https?:\/\//i, '').replace(/\/.*$/, '').toLowerCase();
 
-    const llmsContent = llmsTxtDraft(cleanDomain, brandNameFor(cleanDomain));
-    const schemaContent = organizationJsonLd(cleanDomain);
+    const brand = brandNameFor(cleanDomain);
+    const llmsContent = llmsTxtDraft(cleanDomain, brand);
+    const schemaContent = organizationJsonLd(cleanDomain, brand);
+    const compareContent = comparisonOutlineDraft(
+      cleanDomain,
+      brand,
+      firstVerifiedRivalFromReport(reportMarkdown || ''),
+    );
 
     const triggerDownload = (filename: string, content: string, mime: string) => {
       const blob = new Blob([content], { type: mime });
@@ -133,6 +140,9 @@ export const WeeklyDecisionCard: React.FC<WeeklyDecisionCardProps> = ({
     setTimeout(() => {
       triggerDownload(`schema-${cleanDomain}.jsonld`, schemaContent, 'application/ld+json;charset=utf-8');
     }, 150);
+    setTimeout(() => {
+      triggerDownload(`compare-${cleanDomain}.md`, compareContent, 'text/markdown;charset=utf-8');
+    }, 300);
 
     setExported(true);
     setTimeout(() => setExported(false), 3000);

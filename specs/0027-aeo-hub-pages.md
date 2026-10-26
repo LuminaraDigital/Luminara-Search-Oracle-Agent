@@ -13,6 +13,8 @@ Page anatomy follows what answer engines lift: a two-sentence verdict first, a 5
 
 The `luminara-aeo-hub` plugin skill turns a transcript or an audit into a draft entry plus a syndication pack (LinkedIn, YouTube chapters, email digest). It runs in Prepare mode. A human reviews and merges.
 
+In the app, `comparisonOutlineDraft` (`services/audit/fixPackCopy.ts`) generates the same Prepare-mode `/compare/<brand>-vs-<competitor>` markdown and `FAQPage` JSON-LD outline for a customer's own domain (included in the Weekly Decision Card fix pack and on comparison or citation-gap findings in `ActionableFixList`). Competitor cells use explicit `<Verify ...>` placeholders so no rival claim is invented.
+
 ## Why
 
 Buyers ask answer engines comparative and "best tool for" questions. The previous `/compare/*` URLs served the competitor tables only inside `<noscript>`, rendered the generic `/why` page to people, and had no FAQ schema. Some competitor rows were also unsourced or wrong (for example, that a vendor had no API). Rows now come only from each vendor's public pages as of the review date.

@@ -260,7 +260,8 @@ const App: React.FC = () => {
   }, [applyContinuumForView]);
 
   useEffect(() => {
-    productTelemetry.trackPageView(view);
+    const path = (window.location.pathname || '/').replace(/\/+$/, '') || '/';
+    productTelemetry.trackPageView(view === AppView.COMPARE ? `${view}:${path}` : view);
     applyDocumentMetaForView(view);
   }, [view]);
 

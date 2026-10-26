@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { completeWeeklyMission } from '../../services/referrals/referralClient';
 import { brandNameFor } from '../../services/audit/brandName';
 import { plainCustomerReport } from '../../services/audit/reportColumnGate';
-import { llmsTxtDraft, organizationJsonLd } from '../../services/audit/fixPackCopy';
+import { comparisonOutlineDraft, llmsTxtDraft, organizationJsonLd } from '../../services/audit/fixPackCopy';
 import { starterFixContradictsPass } from '../../services/audit/teaserFailureCodes';
 
 export interface ActionableFixInputFinding {
@@ -51,6 +51,11 @@ function snippetFor(finding: ActionableFixInputFinding, domain: string, pageTitl
   const given = (finding.remediationSnippet || '').trim();
   const blob = `${finding.id} ${finding.title} ${finding.filename || ''}`;
   if (/llms/i.test(blob) && (!given || commentOnly(given))) return llmsDraft(domain, pageTitle, pageDescription);
+  if (/\b(compare|comparison|versus|citation[- ]gap)\b/i.test(blob) && (!given || commentOnly(given))) {
+    const siteName = brandNameFor(domain, pageTitle);
+    const description = (pageDescription || '').replace(/\s+/g, ' ').trim() || null;
+    return comparisonOutlineDraft(domain, { siteName, description });
+  }
   if (given && !commentOnly(given)) return given;
   return '';
 }
@@ -119,7 +124,8 @@ Sitemap: https://${cleanDomain}/sitemap.xml
       /schema/i.test(`${f.id} ${f.title}`) ? 'Page header script'
         : /llms/i.test(`${f.id} ${f.title}`) ? '/llms.txt'
           : /robots/i.test(`${f.id} ${f.title}`) ? '/robots.txt'
-            : 'notes.txt'
+            : (!f.remediationSnippet?.trim() || commentOnly(f.remediationSnippet.trim())) && /\b(compare|comparison|versus|citation[- ]gap)\b/i.test(`${f.id} ${f.title}`) ? '/compare/outline.md'
+              : 'notes.txt'
     ),
     snippet: snippetFor(f, cleanDomain, pageTitle, pageDescription),
   }));

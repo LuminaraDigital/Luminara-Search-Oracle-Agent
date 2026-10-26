@@ -1,7 +1,10 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+import { firstVerifiedRivalFromReport } from '../components/audit/CompetitorMap';
 import SeoHubPage from '../components/marketing/SeoHubPage';
+import { ActionableFixList } from '../components/retention/ActionableFixList';
+import { comparisonOutlineDraft } from '../services/audit/fixPackCopy';
 import { AppView } from '../types';
 import { resolveAppView } from '../utils/marketingRoutes';
 import { MARKETING_SHELL_BY_PATH, marketingPageForPath } from '../services/marketing/pageMeta';
@@ -85,5 +88,43 @@ describe('SEO hub pages (/compare, /best)', () => {
     const bestHtml = renderToStaticMarkup(createElement(SeoHubPage, { page: best, onTerminal: () => {} }));
     expect(bestHtml).toContain('Quick picks');
     expect(bestHtml).toContain('How we picked');
+  });
+
+  it('drafts an honest Prepare-mode comparison outline with FAQPage JSON-LD and no invented competitor claims', () => {
+    const md = [
+      '## Competitor Map',
+      '| Entity | Perception | Pages | Content Advantage |',
+      '| --- | --- | --- | --- |',
+      '| Harbour Realty | Measured | 12 | Local suburb guides |',
+      '| Bayside Agents | Cited in Sydney | 24 | Auction results table |',
+    ].join('\n');
+    const rival = firstVerifiedRivalFromReport(md);
+    expect(rival).toBe('Bayside Agents');
+
+    const outline = comparisonOutlineDraft(
+      'harbourrealty.com.au',
+      { siteName: 'Harbour Realty', description: 'Independent residential sales in Sydney.' },
+      rival,
+    );
+    expect(outline).toContain('Suggested URL path: /compare/harbour-realty-vs-bayside-agents');
+    expect(outline).toContain('# Harbour Realty vs Bayside Agents');
+    expect(outline).toContain('## Short answer');
+    expect(outline).toContain('## Side by side');
+    expect(outline).toContain('## When to choose Bayside Agents');
+    expect(outline).toContain('## When to choose Harbour Realty');
+    expect(outline).toContain('"@type": "FAQPage"');
+    expect(outline).not.toMatch(/publishes current options/);
+    expect(outline).not.toContain('\u2014');
+
+    const fixHtml = renderToStaticMarkup(
+      createElement(ActionableFixList, {
+        domain: 'harbourrealty.com.au',
+        pageTitle: 'Harbour Realty',
+        pageDescription: 'Independent residential sales in Sydney.',
+        findings: [{ id: 'citation-gap', title: 'Publish a comparison page for buyer questions' }],
+      }),
+    );
+    expect(fixHtml).toContain('/compare/outline.md');
+    expect(fixHtml).toContain('# Harbour Realty vs &lt;Competitor&gt;');
   });
 });
