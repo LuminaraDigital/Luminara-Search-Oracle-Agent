@@ -43,6 +43,10 @@ const CARD_PRICE_LIST = (['starter', 'growth', 'agency'] as const)
 export const PLANS_PAYMENTS_PARAGRAPH =
   `Plans bought with Telegram Stars run for the stated number of days from purchase and do not renew automatically. ${STARS_REFUND_CLAUSE} Card checkout is through Stripe for a one-off 30-day pass in Australian dollars: ${CARD_PRICE_LIST}. A card pass does not renew. The Telegram Mini App takes Telegram Stars only. For a card refund, follow the FAQ refund policy and email ${CONTACT_EMAIL}. ${ACL_RIGHTS_CLAUSE}`;
 
+/** Play-distributed Android terms. No prices and no website checkout. */
+export const ANDROID_PLANS_PARAGRAPH =
+  'This page does not list prices and does not offer checkout. The Android app does not take payment on this page. For a refund question, email support@luminarasuite.com.';
+
 export const LIABILITY_CLAUSE =
   `Subject to the Australian Consumer Law, the service is provided as is. To the extent the Australian Consumer Law allows, ${LEGAL_ENTITY} is not liable for indirect or consequential losses arising from use of the service.`;
 

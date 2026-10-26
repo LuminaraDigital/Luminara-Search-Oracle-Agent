@@ -54,6 +54,7 @@ import { labsVisible } from './services/ui/labsAccess';
 // Lazy-loaded secondary pages & views to keep the landing page and app shell ultra-lean.
 // lazyWithReload recovers from post-deploy hashed chunk misses with one full page reload.
 const LegalPage = lazyWithReload(() => import('./components/LegalPage').then(m => ({ default: m.LegalPage })));
+const DeleteAccountPage = lazyWithReload(() => import('./components/DeleteAccountPage').then(m => ({ default: m.DeleteAccountPage })));
 const HelpPage = lazyWithReload(() => import('./components/help/HelpPage').then(m => ({ default: m.HelpPage })));
 const NotFoundPage = lazyWithReload(() => import('./components/NotFoundPage').then(m => ({ default: m.NotFoundPage })));
 const SharedReportView = lazyWithReload(() => import('./components/audit/SharedReportView').then(m => ({ default: m.SharedReportView })));
@@ -934,6 +935,14 @@ const App: React.FC = () => {
       <Suspense fallback={<ViewLoader label="Loading document" />}>
         {introOverlay}
         <LegalPage kind={view === AppView.PRIVACY ? 'privacy' : 'terms'} onBack={() => setView(skipMarketing ? AppView.DASHBOARD : AppView.LANDING)} />
+      </Suspense>
+    );
+  }
+
+  if (view === AppView.DELETE_ACCOUNT) {
+    return (
+      <Suspense fallback={<ViewLoader label="Loading account deletion" />}>
+        <DeleteAccountPage />
       </Suspense>
     );
   }
