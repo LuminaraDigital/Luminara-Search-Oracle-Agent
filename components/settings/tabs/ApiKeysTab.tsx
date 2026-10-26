@@ -54,15 +54,12 @@ export const ApiKeysTab: React.FC = () => {
         setKeys([]);
         return;
       }
-      if (r.status === 403) {
-        setAccessDenied(true);
-        setKeys([]);
-        return;
-      }
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const data: unknown = await r.json();
       setSignedOut(false);
-      setAccessDenied(false);
-      setKeys(parseApiKeyList(await r.json()));
+      // A lapsed plan still lists its keys so they can be revoked; only a new key needs Growth+.
+      setAccessDenied((data as { mcpAccess?: unknown }).mcpAccess === false);
+      setKeys(parseApiKeyList(data));
     } catch (e) {
       setError('Could not load API keys. Check your connection and try again.');
     } finally {
@@ -186,7 +183,7 @@ export const ApiKeysTab: React.FC = () => {
             size="sm"
             onClick={createKey}
             loading={creating}
-            disabled={creating || !apiBase() || guest}
+            disabled={creating || !apiBase() || guest || accessDenied}
           >
             Create key
           </Button>
@@ -205,7 +202,7 @@ export const ApiKeysTab: React.FC = () => {
       )}
       {accessDenied && (
         <p className="text-[11px] text-warning-300 leading-relaxed" role="status">
-          API keys require the Growth or Agency plan. Upgrade to create and manage hosted MCP keys.
+          New API keys need the Growth or Agency plan. Upgrade to create one. You can still revoke the keys listed here.
         </p>
       )}
 

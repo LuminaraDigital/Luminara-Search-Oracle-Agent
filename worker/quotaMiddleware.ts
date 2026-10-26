@@ -52,6 +52,13 @@ export async function spendDailyQuota(env: Env, quotaKeyId: string, limit: numbe
   return { ok: true, used: body.used, meterKey: name };
 }
 
+/** Give back one unit on a UTC-day meter. The meter stops refunding after `limit` refunds that day. */
+export async function refundDailyQuota(env: Env, meterKey: string, limit: number): Promise<{ refunded: boolean; capped: boolean }> {
+  const body = await invokeDailyQuota(env, meterKey, 'refund', limit);
+  if (!isRefundBody(body)) return { refunded: false, capped: false };
+  return { refunded: body.refunded, capped: body.capped };
+}
+
 /** Today's used count. null means the meter could not be read. */
 export async function readFreeUsed(env: Env, quotaKeyId: string, limit: number): Promise<number | null> {
   if (!(limit > 0)) return 0;
@@ -142,9 +149,7 @@ export async function refundMeteredQuota(
   status: QuotaStatus | null,
 ): Promise<{ refunded: boolean; capped: boolean }> {
   if (!status?.meterKey || status.limit <= 0) return { refunded: false, capped: false };
-  const body = await invokeDailyQuota(env, status.meterKey, 'refund', status.limit);
-  if (!isRefundBody(body)) return { refunded: false, capped: false };
-  return { refunded: body.refunded, capped: body.capped };
+  return refundDailyQuota(env, status.meterKey, status.limit);
 }
 
 /**

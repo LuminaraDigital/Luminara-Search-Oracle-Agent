@@ -66,7 +66,10 @@ export async function enqueueDreamEvent(
   }
 
   const id = `devt_${crypto.randomUUID()}`;
-  const weight = input.signalWeight ?? DEFAULT_SIGNAL_WEIGHTS[input.eventType] ?? 1.0;
+  // The weight decides when a run wakes the model, so a caller may lower it, never raise it.
+  const serverWeight = DEFAULT_SIGNAL_WEIGHTS[input.eventType] ?? 1.0;
+  const asked = Number(input.signalWeight);
+  const weight = Number.isFinite(asked) && asked > 0 ? Math.min(asked, serverWeight) : serverWeight;
 
   await env.DB.prepare(
     `INSERT INTO dream_events (
@@ -159,16 +162,15 @@ export async function getPendingDreamEvents(
   });
 }
 
-export async function markEventsConsolidated(
-  env: Env,
+/** The statement that marks the events as consolidated by a run, for the run's own batch. */
+export function markEventsConsolidated(
+  db: D1Database,
   eventIds: string[],
   dreamRunId: string,
-): Promise<void> {
-  if (!env.DB || eventIds.length === 0) return;
+): D1PreparedStatement | null {
+  if (eventIds.length === 0) return null;
   const placeholders = eventIds.map(() => '?').join(',');
-  await env.DB.prepare(
-    `UPDATE dream_events SET dream_run_id = ? WHERE id IN (${placeholders})`,
-  )
-    .bind(dreamRunId, ...eventIds)
-    .run();
+  return db
+    .prepare(`UPDATE dream_events SET dream_run_id = ? WHERE id IN (${placeholders})`)
+    .bind(dreamRunId, ...eventIds);
 }

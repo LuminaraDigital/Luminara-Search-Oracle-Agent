@@ -20,7 +20,6 @@ import { isStripeCheckoutLive } from '../worker/stripePayment';
 import type { Env } from '../worker/env';
 import { railsOffered, resolvePaymentOptions } from '../components/paywall/paymentOptions';
 import { PLANS } from '../worker/telegramBot';
-import { Q402_SETTLEMENT_LIVE } from '../worker/q402';
 import { parseJsonc } from '../scripts/lib/jsonc.mjs';
 import { createSqliteD1 } from './helpers/sqliteD1';
 
@@ -316,11 +315,7 @@ describe('public health carries the Stars catalogue and nothing private', () => 
   });
 });
 
-describe('Q402 is off, and while it is off none of its routes answer', () => {
-  it('settlement is off', () => {
-    expect(Q402_SETTLEMENT_LIVE).toBe(false);
-  });
-
+describe('Q402 is gone, and none of its routes answer', () => {
   it.each([
     ['GET', '/api/q402/supported'],
     ['POST', '/api/q402/verify'],
@@ -353,7 +348,7 @@ describe('payment copy makes no burn, tax-on-transfer or yield claim', () => {
   });
 
   it('no file a buyer or an API client reads from says burn or deflation (the search in the task\'s acceptance)', () => {
-    // components/paywall, worker/q402, worker/tonPayment.ts and worker/termsPolicy.ts, whole files:
+    // components/paywall, worker/tonPayment.ts and worker/termsPolicy.ts, whole files:
     // a field or a comment left behind is how the wording came back last time.
     // Walked all the way down, like the search itself.
     const walk = (dir: string): string[] =>
@@ -361,7 +356,7 @@ describe('payment copy makes no burn, tax-on-transfer or yield claim', () => {
         entry.isDirectory() ? walk(`${dir}/${entry.name}`) : [`${dir}/${entry.name}`],
       );
     const sources = (list: string[]) => list.filter((f) => f.endsWith('.ts') || f.endsWith('.tsx'));
-    const files = sources([...walk('components/paywall'), ...walk('worker/q402'), 'worker/tonPayment.ts', 'worker/termsPolicy.ts']);
+    const files = sources([...walk('components/paywall'), 'worker/tonPayment.ts', 'worker/termsPolicy.ts']);
     expect(files.length).toBeGreaterThan(8);
     const linesMatching = (list: string[], pattern: RegExp) =>
       list.flatMap((rel) =>

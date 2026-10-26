@@ -30,16 +30,20 @@ describe('securityHardening', () => {
     expect(sanitizeWorkspaceWrite({ unexpected: 1 }).ok).toBe(false);
   });
 
-  it('allow-lists storage, keys, encryptedKeys', () => {
+  it('allow-lists storage, keys, encryptedKeys and never stores plain-text keys', () => {
+    const encryptedKeys = { v: 1, ciphertext: 'abc', iv: 'def', salt: 'ghi' };
     const ok = sanitizeWorkspaceWrite({
       storage: { luminara_business_dna: '{}' },
       keys: { groq: 'sk-test' },
+      encryptedKeys,
     });
     expect(ok.ok).toBe(true);
     if (ok.ok) {
       expect(ok.payload.storage?.luminara_business_dna).toBe('{}');
-      expect(ok.payload.keys?.groq).toBe('sk-test');
+      expect('keys' in ok.payload).toBe(false);
+      expect(ok.payload.encryptedKeys).toEqual(encryptedKeys);
     }
+    expect(sanitizeWorkspaceWrite({ keys: 'not a map' }).ok).toBe(false);
   });
 
   it('projects admin users without email or telegram ids', () => {

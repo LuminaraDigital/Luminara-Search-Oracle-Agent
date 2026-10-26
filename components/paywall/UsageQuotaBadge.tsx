@@ -34,6 +34,7 @@ export const UsageQuotaBadge: React.FC<Props> = ({ className = '', showIcon = tr
         used: Math.max(0, limit - remaining),
         remaining,
         resetSec: 0,
+        resetAt: Date.now(),
         isUnlimited: false,
       });
     };

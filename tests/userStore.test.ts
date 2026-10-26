@@ -6,6 +6,7 @@ import {
   AccountLinkRefusedError,
   resolveAccountId,
   writeSubscriptionRecord,
+  appliedOrderExpiry,
   getWorkspace,
   putWorkspace,
   type StoredUser,
@@ -216,9 +217,22 @@ describe('account linking', () => {
 describe('workspace blob', () => {
   it('stores and loads a workspace payload from KV', async () => {
     const { kv } = mockKv();
-    await putWorkspace({ LUMINARA_KV: kv }, 'acct-1', { storage: { luminara_business_dna: '{}' } }, 100);
+    await putWorkspace({ LUMINARA_KV: kv }, 'acct-1', { storage: { luminara_business_dna: '{}' } }, 100, null);
     const got = await getWorkspace({ LUMINARA_KV: kv }, 'acct-1');
     expect(got?.updatedAt).toBe(100);
     expect(got?.payload.storage?.luminara_business_dna).toBe('{}');
+  });
+});
+
+describe('appliedOrderExpiry', () => {
+  it('returns the expiry only when the account record names the order and has a valid expiry', async () => {
+    const { kv, store } = mockKv();
+    const env = { LUMINARA_KV: kv };
+    store.set('sub:acct_1', JSON.stringify({ plan: 'growth', appliedOrders: ['ton_1'], expiresAt: 1_900_000_000_000 }));
+    expect(await appliedOrderExpiry(env, 'acct_1', 'ton_1')).toBe(1_900_000_000_000);
+    expect(await appliedOrderExpiry(env, 'acct_1', 'ton_2')).toBeNull();
+
+    store.set('sub:acct_2', JSON.stringify({ plan: 'growth', appliedOrders: ['ton_1'] }));
+    expect(await appliedOrderExpiry(env, 'acct_2', 'ton_1')).toBeNull();
   });
 });

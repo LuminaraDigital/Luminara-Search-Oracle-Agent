@@ -41,6 +41,11 @@ function makeDb(options: { fail?: boolean } = {}) {
               statements.push({ sql, args });
               return { success: true };
             },
+            // The audit handler reads the run's status first; no row means a new run.
+            async first() {
+              if (options.fail) throw new Error('d1 unavailable');
+              return null;
+            },
           };
         },
       };

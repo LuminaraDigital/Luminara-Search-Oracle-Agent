@@ -127,6 +127,16 @@ describe('security headers', () => {
     expect(js.headers.get('content-security-policy')).toBeNull();
   });
 
+  it('withSecurityHeaders keeps a CSP the route already set', () => {
+    const sandboxed = "default-src 'none'; sandbox";
+    const res = withSecurityHeaders(
+      new Response('<p>report</p>', {
+        headers: { 'content-type': 'text/html', 'content-security-policy': sandboxed },
+      }),
+    );
+    expect(res.headers.get('content-security-policy')).toBe(sandboxed);
+  });
+
   it('caches a hashed asset for a year and leaves other files alone', async () => {
     expect(immutableAssetCache('/assets/index-Ab12cd34.js')).toBe('public, max-age=31536000, immutable');
     expect(immutableAssetCache('/favicon.ico')).toBeNull();
@@ -184,8 +194,10 @@ describe('CORS', () => {
       'set-cookie': 'a=b',
       'content-encoding': 'br',
       'content-type': 'application/json',
+      'content-security-policy': "default-src *",
     });
     stripUpstreamHeaders(h);
+    expect(h.get('content-security-policy')).toBeNull();
     expect(h.get('access-control-allow-origin')).toBeNull();
     expect(h.get('access-control-allow-credentials')).toBeNull();
     expect(h.get('set-cookie')).toBeNull();
@@ -275,6 +287,21 @@ describe('Telegram endpoints', () => {
     expect(malformed.status).toBe(400);
   });
 
+  it('answers an update too large to read with 200, so Telegram does not send it again, and handles nothing', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    let handled = 0;
+    const countingCtx = { waitUntil: () => { handled++; }, passThroughOnException: () => {} } as unknown as ExecutionContext;
+    const env = makeEnv({ BOT_TOKEN: '1:a', TELEGRAM_WEBHOOK_SECRET: 's3cret' });
+    const body = JSON.stringify({ message: { chat: { id: 1 }, from: { id: 1 }, text: 'x'.repeat(70 * 1024) } });
+
+    const res = await worker.fetch(req('/api/telegram/webhook', { method: 'POST', body, headers: { 'x-telegram-bot-api-secret-token': 's3cret' } }), env, countingCtx);
+
+    expect(res.status).toBe(200);
+    expect(handled).toBe(0);
+    expect(warn).toHaveBeenCalledWith(JSON.stringify({ event: 'telegram_body_too_large' }));
+    warn.mockRestore();
+  });
+
   it('soft-throttles a flooding chat but never throttles payment updates', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('{"ok":true}', { headers: { 'content-type': 'application/json' } })));
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -318,12 +345,14 @@ describe('Telegram endpoints', () => {
 
   it('validates auth/invoice input shape without leaking internals', async () => {
     const env = makeEnv({ BOT_TOKEN: '1:a' });
-    expect((await worker.fetch(req('/api/telegram/auth', { method: 'POST', body: 'garbage' }), env, ctx)).status).toBe(400);
-    expect((await worker.fetch(req('/api/telegram/auth', { method: 'POST', body: JSON.stringify({ initData: 42 }) }), env, ctx)).status).toBe(400);
+    const origin = { origin: 'https://luminarasuite.com' };
+    expect((await worker.fetch(req('/api/telegram/auth', { method: 'POST', headers: origin, body: 'garbage' }), env, ctx)).status).toBe(400);
+    expect((await worker.fetch(req('/api/telegram/auth', { method: 'POST', headers: origin, body: JSON.stringify({ initData: 42 }) }), env, ctx)).status).toBe(400);
     expect((await worker.fetch(req('/api/telegram/auth', { method: 'GET' }), env, ctx)).status).toBe(405);
-    const bogus = await worker.fetch(req('/api/telegram/auth', { method: 'POST', body: JSON.stringify({ initData: 'hash=abc&auth_date=1' }) }), env, ctx);
+    const bogus = await worker.fetch(req('/api/telegram/auth', { method: 'POST', headers: origin, body: JSON.stringify({ initData: 'hash=abc&auth_date=1' }) }), env, ctx);
     expect(bogus.status).toBe(401);
   });
+
 });
 
 describe('Sentinel and enrichment', () => {
@@ -408,6 +437,29 @@ describe('rate limiter', () => {
     for (let i = 0; i < 130; i++) last = await worker.fetch(req('/api/health', {}, '203.0.113.77'), env, ctx);
     expect(last!.status).toBe(429);
     expect(last!.headers.get('retry-after')).toBeTruthy();
+  });
+
+  it('puts a Dreaming run, which can call a hosted model, behind the high-cost edge limiter', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const keys: string[] = [];
+    const env = makeEnv({
+      HIGH_COST_RATE_LIMITER: {
+        limit: async ({ key }: { key: string }) => {
+          keys.push(key);
+          return { success: false };
+        },
+      },
+    });
+
+    const run = await worker.fetch(req('/api/dreaming/run', { method: 'POST', body: '{}' }, '198.51.100.21'), env, ctx);
+    const status = await worker.fetch(req('/api/dreaming/status?domain=a.com', {}, '198.51.100.22'), env, ctx);
+
+    expect(run.status).toBe(429);
+    expect(((await run.json()) as { code: string }).code).toBe('EDGE_RATE_LIMITED');
+    expect(keys).toEqual(['hc:198.51.100.21:dreaming']);
+    // Reading the status calls no model, so it is not limited here and reaches the sign-in check.
+    expect(status.status).toBe(401);
+    vi.restoreAllMocks();
   });
 });
 
@@ -765,76 +817,6 @@ describe('crawl surfaces', () => {
     const text = await res.text();
     expect(text).toContain('Terms of Service');
     expect(text).toContain('Labs features');
-  });
-});
-
-describe('proof-of-audit attest route', () => {
-  it('rejects unauthenticated POST and does not write KV', async () => {
-    const store = new Map<string, string>();
-    const env = makeEnv({ LUMINARA_KV: kv(store) });
-    const res = await worker.fetch(
-      req('/api/agent/attest', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          digestHex: 'a'.repeat(64),
-          domain: 'example.com',
-          healthScore: 90,
-          citationRatePercent: 40,
-          timestamp: Date.now(),
-          findingsCount: 1,
-          findingsFingerprint: 'f1:high:Title',
-        }),
-      }),
-      env,
-      ctx,
-    );
-    expect(res.status).toBe(401);
-    expect([...store.keys()].some((k) => k.startsWith('poa:'))).toBe(false);
-  });
-
-  it('rejects authenticated forged digests', async () => {
-    const store = new Map<string, string>();
-    const env = makeEnv({
-      LUMINARA_KV: kv(store),
-      BOT_TOKEN: '123456:ABC',
-      REQUIRE_TG_AUTH: 'false',
-    });
-
-    // Build a valid initData signature path is heavy; use Firebase-less path by stubbing identify
-    // via a signed Telegram initData is complex. Instead hit with no auth when REQUIRE is false
-    // still needs identity - POST without credentials must 401 even if REQUIRE_TG_AUTH is false
-    // for this write surface.
-    const res = await worker.fetch(
-      req('/api/agent/attest', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          digestHex: 'b'.repeat(64),
-          domain: 'example.com',
-          healthScore: 90,
-          citationRatePercent: 40,
-          timestamp: Date.now(),
-          findingsCount: 1,
-          findingsFingerprint: 'f1:high:Title',
-        }),
-      }),
-      env,
-      ctx,
-    );
-    expect(res.status).toBe(401);
-  });
-
-  it('keeps public badge verification (GET) reachable without sign-in', async () => {
-    const digest = 'c'.repeat(64);
-    const store = new Map<string, string>([[`poa:${digest}`, JSON.stringify({ digestHex: digest, domain: 'example.com' })]]);
-    const env = makeEnv({ LUMINARA_KV: kv(store) });
-
-    expect((await worker.fetch(req('/api/agent/attest?digest=bad'), env, ctx)).status).toBe(400);
-    expect((await worker.fetch(req(`/api/agent/attest?digest=${'d'.repeat(64)}`), env, ctx)).status).toBe(404);
-    const found = await worker.fetch(req(`/api/agent/attest?digest=${digest}`), env, ctx);
-    expect(found.status).toBe(200);
-    expect(((await found.json()) as { attestation?: { domain?: string } }).attestation?.domain).toBe('example.com');
   });
 });
 

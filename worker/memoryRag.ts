@@ -349,16 +349,17 @@ export async function extractFactsFromChat(
   return json({ ok: true, extractionIds: ids, candidates: candidates.length });
 }
 
+/** The prompt block, and the facts in it as the account stored them. */
 export async function ragContextForOracle(
   env: Env,
   accountId: string,
   query: string,
-): Promise<string> {
+): Promise<{ block: string; facts: string[] }> {
   const hits = await searchMemoryVectors(env, accountId, query, 5);
-  if (!hits.length) return '';
+  if (!hits.length) return { block: '', facts: [] };
   const joined = hits.map((h, i) => `${i + 1}. (${h.score.toFixed(2)}) ${h.text}`).join('\n');
   // Memory may contain attacker-influenced chat extracts; fence before system prompt merge.
-  return `## Account memory (retrieved)\n${wrapUntrustedContent('ACCOUNT_MEMORY', joined)}`.trim();
+  return { block: `## Account memory (retrieved)\n${wrapUntrustedContent('ACCOUNT_MEMORY', joined)}`.trim(), facts: hits.map((h) => h.text) };
 }
 
 export async function handleMemoryRagRoute(

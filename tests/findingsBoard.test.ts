@@ -49,6 +49,25 @@ function makeEnv(): Env {
 }
 
 describe('WDL findings API', () => {
+  it('answers a JSON null body with 400, not a crash', async () => {
+    const env = makeEnv();
+    const initData = signInitData({
+      auth_date: String(Math.floor(Date.now() / 1000)),
+      user: JSON.stringify({ id: 43, first_name: 'Owner' }),
+    });
+    const res = await handleFindingsRoute(
+      new Request('https://luminarasuite.com/api/findings/bulk', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-telegram-init-data': initData },
+        body: 'null',
+      }),
+      env,
+      '/findings/bulk',
+    );
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error?: string }).error).toBe('domain required');
+  });
+
   it('rejects unsigned bulk upsert', async () => {
     const env = makeEnv();
     const res = await handleFindingsRoute(

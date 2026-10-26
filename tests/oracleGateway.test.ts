@@ -3,6 +3,8 @@ import { GATEWAY_NO_RECEIPT_NOTE, executeOracleGatewayTask } from '../worker/ora
 import type { Env } from '../worker/env';
 import type { HostedIdentity } from '../worker/userTypes';
 import { createSqliteD1 } from './helpers/sqliteD1';
+import { memoryDailyQuotaNamespace } from './helpers/memoryDailyQuota';
+import { readFreeUsed } from '../worker/quotaMiddleware';
 
 describe('worker/oracleGateway', () => {
   it('returns 400 when targetDomain is invalid', async () => {
@@ -22,15 +24,32 @@ describe('worker/oracleGateway', () => {
     }
   });
 
-  it('returns 429 when quota check fails', async () => {
+  it('asks an anonymous caller to sign in when sign-in is required', async () => {
     const env = {
       REQUIRE_TG_AUTH: 'true',
     } as unknown as Env;
 
     const res = await executeOracleGatewayTask(env, null, { targetDomain: 'example.com' });
-    expect(res.status).toBe(429);
-    const body = (await res.json()) as { code: string };
-    expect(body.code).toBe('QUOTA_EXHAUSTED');
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ ok: false, error: 'Sign in required.', code: 'AUTH_REQUIRED' });
+  });
+
+  it('spends no free unit on its answer, which is always not_measured', async () => {
+    const kv = new Map<string, string>();
+    const env = {
+      REQUIRE_TG_AUTH: 'true',
+      FREE_DAILY_LIMIT: '1',
+      DAILY_QUOTA: memoryDailyQuotaNamespace(),
+      LUMINARA_KV: { get: async (k: string) => kv.get(k) ?? null, put: async (k: string, v: string) => void kv.set(k, v) },
+    } as unknown as Env;
+    const user: HostedIdentity = { id: 'usr_free', accountId: 'acc_free', source: 'telegram' };
+
+    const first = await executeOracleGatewayTask(env, user, { targetDomain: 'example.com' });
+    const second = await executeOracleGatewayTask(env, user, { targetDomain: 'example.com' });
+
+    expect([first.status, second.status]).toEqual([200, 200]);
+    expect(((await second.json()) as { evidence: unknown }).evidence).toEqual({ measurementStatus: 'not_measured' });
+    expect(await readFreeUsed(env, 'acc_free', 1)).toBe(0);
   });
 
   it('successfully executes gateway audit task on valid domain', async () => {

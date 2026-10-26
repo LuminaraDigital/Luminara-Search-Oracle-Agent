@@ -11,6 +11,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { handleTelegramUpdate, PLANS, plansOfferedToBuyers } from '../worker/telegramBot';
 import { memoryDailyQuotaNamespace } from './helpers/memoryDailyQuota';
+import { readFreeUsed } from '../worker/quotaMiddleware';
 import {
   BILLING_HELP_REPLY,
   BILLING_PROBLEM_WORDS,
@@ -26,6 +27,7 @@ import {
   PLAN_QUESTION_WORDS,
   planPricePromptBlock,
   TELEGRAM_CHAT_HONESTY_RULES,
+  withoutUnmeasuredClaims,
 } from '../worker/chatHonesty';
 import { UNTRUSTED_CONTENT_RULE, wrapUntrustedContent } from '../utils/untrustedContent';
 import type { Env } from '../worker/index';
@@ -865,6 +867,10 @@ describe('filterChatReply: site numbers', () => {
     ['Add FAQ schema to double your citations.'],
     ['Add FAQ schema and your citations will double.'],
     ['Your traffic doubled last month.'],
+    // Counts the review of the Oracle filter found missing: AI answers, a results page.
+    ['Around 2%.', 'What is my CTR?'],
+    ['Your brand appears in 12 AI answers.'],
+    ['You are on page 2 for your main keyword.'],
     // A number that only looks like a status code or a version.
     ['That is a 200% rise in traffic.'],
     ['You get a steady 500 visits a month.'],
@@ -1354,18 +1360,27 @@ function makeChat() {
     LUMINARA_KV: kv as any, DAILY_QUOTA: memoryDailyQuotaNamespace(), FREE_DAILY_LIMIT: '50',
     GROQ_API_KEY: 'gsk_mock_key',
   };
-  /** Sends one update. Returns what reached the model and every Telegram call, by method. */
-  async function send(text: string, modelReply = 'Add FAQ schema.', fromId = 100, telegramOk = true) {
+  /**
+   * Sends one update. Returns what reached the model and every Telegram call, by method. A null
+   * model reply means every provider refuses: Groq, and Gemini when its key is set.
+   */
+  async function send(text: string, modelReply: string | null = 'Add FAQ schema.', fromId = 100, telegramOk = true) {
     let systemPrompt = '';
     let modelCalls = 0;
     const calls: Array<{ method: string; body: Sent }> = [];
+    const geminiCalls: Array<{ url: string; headers: Record<string, string> }> = [];
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (url: string, init: { body: string }) => {
+      vi.fn(async (url: string, init: { body: string; headers: Record<string, string> }) => {
         if (url.startsWith('https://api.groq.com/')) {
           modelCalls += 1;
           systemPrompt = JSON.parse(init.body).messages[0].content;
+          if (modelReply === null) return { ok: false, status: 503, json: async () => ({}) };
           return { ok: true, json: async () => ({ choices: [{ message: { content: modelReply } }] }) };
+        }
+        if (url.startsWith('https://generativelanguage.googleapis.com/')) {
+          geminiCalls.push({ url, headers: init.headers });
+          return { ok: false, status: 503, json: async () => ({}) };
         }
         if (!url.startsWith('https://api.telegram.org/')) throw new Error(`unexpected fetch: ${url}`);
         const method = url.slice(url.lastIndexOf('/') + 1);
@@ -1377,10 +1392,10 @@ function makeChat() {
     await handleTelegramUpdate({ message: { chat: { id: fromId }, from: { id: fromId }, text } }, env);
     const sends = calls.filter((call) => call.method === 'sendMessage').map((call) => call.body);
     const history = (await kv.get(`tg:chat:${fromId}`, 'json')) as Array<{ role: string; content: string }> | null;
-    return { systemPrompt, modelCalls, calls, sends, history };
+    return { systemPrompt, modelCalls, calls, sends, history, geminiCalls };
   }
 
-  const chatTurn = (userText: string, modelReply: string, telegramOk = true) => send(userText, modelReply, 100, telegramOk);
+  const chatTurn = (userText: string, modelReply: string | null, telegramOk = true) => send(userText, modelReply, 100, telegramOk);
   return { kv, env, send, chatTurn };
 }
 
@@ -1637,6 +1652,64 @@ describe('Telegram bot (handleTelegramUpdate)', () => {
     expect(sends[0]).not.toHaveProperty('parse_mode');
   });
 
+  it('gives the free unit back when no provider answers, and sends the Gemini key in a header, not the URL', async () => {
+    chat.env.FREE_DAILY_LIMIT = '3';
+    chat.env.GEMINI_API_KEY = 'gemini-test-key';
+
+    const { sends, geminiCalls } = await chat.chatTurn('Any quick tip?', null);
+
+    expect(sends.map((s) => s.text)).toEqual(['Open the app to run an audit or ask Oracle Agent.']);
+    expect(await readFreeUsed(chat.env, '100', 3)).toBe(0);
+    expect(geminiCalls).toHaveLength(1);
+    expect(geminiCalls[0].url).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent');
+    expect(geminiCalls[0].headers['x-goog-api-key']).toBe('gemini-test-key');
+
+    // An answer that arrives keeps its unit.
+    await chat.chatTurn('Any other tip?', 'Add FAQ schema.');
+    expect(await readFreeUsed(chat.env, '100', 3)).toBe(1);
+  });
+
+  it.each([
+    ['a long reply at its last whole word', 'Add FAQ schema to every page. '.repeat(200), `${'Add FAQ schema to every page. '.repeat(136)}Add FAQ schema…`],
+    ['an emoji reply with no space, never between the halves of an emoji', '🚀'.repeat(3000), `${'🚀'.repeat(2047)}…`],
+  ])('cuts %s, with the ellipsis inside 4,096, and stores what was sent', async (_name, reply, cut) => {
+    const { sends, history } = await chat.chatTurn('Any quick tip?', reply.trim());
+
+    expect(sends.map((s) => s.text)).toEqual([cut]);
+    expect(cut.length).toBeLessThanOrEqual(4096);
+    expect(history?.[1]).toEqual({ role: 'assistant', content: cut });
+  });
+
+  it('keeps nothing in history when Telegram refuses the reply', async () => {
+    const { sends, history } = await chat.chatTurn('Any quick tip?', 'Add FAQ schema.', false);
+
+    expect(sends.map((s) => s.text)).toEqual(['Add FAQ schema.']);
+    expect(history).toBeNull();
+  });
+
+  it('gives the free unit back, once, when the turn fails after spending it', async () => {
+    chat.env.FREE_DAILY_LIMIT = '3';
+    await chat.chatTurn('Any quick tip?', 'Add FAQ schema.');
+    expect(await readFreeUsed(chat.env, '100', 3)).toBe(1);
+
+    // Any failure after the spend: here the log line for a filtered reply throws.
+    vi.mocked(console.warn).mockImplementation(() => {
+      throw new Error('log sink down');
+    });
+    const { sends } = await chat.chatTurn('Any other tip?', FIXTURE_METRIC_REPLY);
+
+    expect(sends).toEqual([]);
+    expect(await readFreeUsed(chat.env, '100', 3)).toBe(1);
+  });
+
+  it('gives the free unit back when Telegram refuses the reply', async () => {
+    chat.env.FREE_DAILY_LIMIT = '3';
+
+    await chat.chatTurn('Any quick tip?', 'Add FAQ schema to your pricing page.', false);
+
+    expect(await readFreeUsed(chat.env, '100', 3)).toBe(0);
+  });
+
   it('puts the cite-or-silence rule and the untrusted-content rule in the system prompt', async () => {
     const { systemPrompt } = await chat.chatTurn('How do I get cited?', 'Add FAQ schema.');
 
@@ -1735,5 +1808,151 @@ describe('Telegram bot (handleTelegramUpdate)', () => {
     expect(sends[0].text).toContain(hostileName);
     expect(sends[0].text).toContain('john_doe*@example.com');
     expect(sends[0].text).toContain('Total Registered Users: 2');
+  });
+});
+
+describe('filterChatReply: the review of the Oracle filter, checked on the bot', () => {
+  // Each verdict is the one the bot gave before the Oracle work: true when the reply is replaced.
+  it.each([
+    ['Pages that appear in 2 or more AI answers usually have clear FAQ schema.', 'How do I get cited?', false],
+    ['Brands that show up in 3 or more AI answers tend to have original data.', 'How do I get cited?', false],
+    ['Most brands appear in 1 to 3 answers for their own category.', 'How do I get cited?', false],
+    ['A page can appear in 10 results at once if it targets long-tail queries.', 'How do I get cited?', false],
+    ['It is on page 2 of the guide, under "Schema".', 'Where is the schema section?', false],
+    ['Results on page 2 get very few clicks.', 'Is page 2 bad?', false],
+    ['If it sits on page 2, improve the title and internal links.', 'Is page 2 bad?', false],
+    ['They show up on page one only when the content answers the query.', 'How do competitors rank?', false],
+    ['A CTR of 2% to 5% is common for organic results.', 'What is a normal CTR?', true],
+    ['Aim for a CTR that is above 3% on brand queries.', 'How do I improve my CTR?', true],
+    ['CTR is a ratio: clicks divided by impressions.', 'What is CTR?', false],
+    ['Around 40.', 'What is a good DA?', false],
+    ['Around 40 is solid for a local business.', 'What is a good DA?', false],
+    ['A good LCP is under 2.5 seconds.', 'We are a dental clinic in Erie, PA. What is the first thing to fix?', true],
+    ['Three.', 'We are a dental clinic in Erie, PA. How many FAQ pages is a good start?', false],
+    ['Domain rating is a third-party estimate, not a Google signal.', 'What is domain rating?', false],
+    ['Aim for a click-through rate above 3%.', 'How do I improve my CTR?', true],
+    ['Keep bounce rate below 50%.', 'How do I improve engagement?', true],
+    ['Add FAQ schema to raise CTR by 20%.', 'How do I improve my CTR?', true],
+  ])('gives the same verdict as before: %s', (reply, userText, replaced) => {
+    expect(filter(reply, userText).text !== reply).toBe(replaced);
+  });
+
+  it.each([
+    ['The site has a DA of 45.'],
+    ['The domain has about 230 backlinks.'],
+    ['The site gets roughly 1,200 visits a month.'],
+    ['The site currently ranks on page 2.'],
+    ['It ranks on page 2 for its main term.'],
+    ['Its domain authority is around 30.'],
+    ['The website scores 62/100 for AI visibility.'],
+    ['The brand appears in 12 AI answers.'],
+    ['Your DA is 45.'],
+    ['You get roughly 1,200 visits a month.'],
+  ])('replaces an invented site number: %s', (reply) => {
+    expect(filter(reply, 'Can you help me improve my SEO?').text).toBe(NOT_MEASURED_SENTENCE);
+  });
+
+  it('replaces every number of an invented snapshot', () => {
+    const snapshot = 'Here is a snapshot of your site:\n- DA: 45\n- Backlinks: 230\n- Monthly visits: 1,200\n- AI visibility: 37%';
+    expect(filter(snapshot, 'Can you give me an overview of my site?').text).not.toMatch(/\d/);
+  });
+});
+
+describe('withoutUnmeasuredClaims: the web Oracle chat', () => {
+  const oracle = (reply: string, userTexts: string[]) => withoutUnmeasuredClaims(reply, userTexts).text;
+
+  // The user asked how to improve and gave no number: a general figure or a target is advice.
+  it.each([
+    ['Aim for a CTR above 3%.', 'How do I improve CTR?'],
+    ['Target a CTR of at least 3%.', 'How do I improve CTR?'],
+    ['Keep your bounce rate below 50%.', 'How do I improve CTR?'],
+    ['A good LCP is under 2.5 seconds.', 'How do I improve CWV?'],
+    ['Google rates an LCP of 2.5 seconds or less as good.', 'How do I improve CWV?'],
+    ['A typical organic CTR for position 1 is 25 to 30%.', 'How do I improve CTR?'],
+    ['Lighthouse scores of 90+ are considered good.', 'How do I improve CWV?'],
+  ])('keeps a benchmark the model gave: %s', (reply, userText) => {
+    expect(oracle(reply, [userText])).toBe(reply);
+  });
+
+  it.each([
+    ['Your CTR is 1.2%.', 'How do I improve CTR?'],
+    ['Raise your CTR by 20%.', 'How do I improve CTR?'],
+    ['Publish weekly to grow your traffic by 50%.', 'How do I grow?'],
+    ['You will get 50% more traffic.', 'How do I grow?'],
+    ['I checked acme.com and found 12 broken links.', 'Any tips?'],
+    ['acme.com has a domain authority of 45.', 'Any tips?'],
+    ['About 45.', 'What is my DA?'],
+    ['Your brand appears in 12 AI answers.', 'How visible am I?'],
+    ['You are on page 2 for your main keyword.', 'How visible am I?'],
+  ])('replaces a number about the user or a named site that nobody measured: %s', (reply, userText) => {
+    expect(oracle(reply, [userText])).toBe(NOT_MEASURED_SENTENCE);
+  });
+
+  describe('the probe of the second review', () => {
+    const noAsk = ['Can you help me improve my SEO?'];
+    const cwv = ['How do I improve my Core Web Vitals and CTR?'];
+
+    it.each([
+      ['The site has a DA of 45.', noAsk],
+      ['The domain has about 230 backlinks.', noAsk],
+      ['The site gets roughly 1,200 visits a month.', noAsk],
+      ['The site currently ranks on page 2.', noAsk],
+      ['It ranks on page 2 for its main term.', noAsk],
+      ['Its domain authority is around 30.', noAsk],
+      ['The website scores 62/100 for AI visibility.', noAsk],
+      ['The brand appears in 12 AI answers.', noAsk],
+      ['Your DA is 45.', noAsk],
+      ['You get roughly 1,200 visits a month.', noAsk],
+    ])('replaces an invented site number: %s', (reply, userTexts) => {
+      expect(oracle(reply, userTexts)).toBe(NOT_MEASURED_SENTENCE);
+    });
+
+    it('replaces every line of an invented snapshot, each read by itself', () => {
+      const snapshot = 'Here is a snapshot of your site:\n- DA: 45\n- Backlinks: 230\n- Monthly visits: 1,200\n- AI visibility: 37%';
+      expect(oracle(snapshot, ['Can you give me an overview of my site?'])).toBe(`Here is a snapshot of your site:\n- ${NOT_MEASURED_SENTENCE}`);
+      const named = 'Quick snapshot of acme.io:\n- Domain authority: 45\n- Organic traffic: about 3,000 visits a month';
+      expect(oracle(named, ['Can you look at acme.io for me?'])).toBe(`Quick snapshot of acme.io:\n- ${NOT_MEASURED_SENTENCE}`);
+    });
+
+    it.each([
+      ['Aim for a CTR above 3%.', cwv],
+      ['Keep your bounce rate below 50%.', cwv],
+      ['A good LCP is under 2.5 seconds.', cwv],
+      ['Google rates an LCP of 2.5 seconds or less as good.', cwv],
+      ['The thresholds are: LCP at 2.5 s, INP at 200 ms, CLS at 0.1.', cwv],
+      ['Core Web Vitals targets:\n- LCP: under 2.5 s\n- INP: under 200 ms\n- CLS: under 0.1', cwv],
+      ['A typical organic CTR for position 1 is 25 to 30%.', cwv],
+      ['Most sites see CTR between 1% and 5%.', cwv],
+      ['Featured snippets can take 8% of clicks.', cwv],
+      ['Over 50% of searches happen on mobile.', cwv],
+      ['Lighthouse scores of 90+ are considered good.', cwv],
+      ['Sites in the top 3 positions get most of the clicks.', cwv],
+      ['The domain authority of a new site is usually under 20.', noAsk],
+      ['It usually takes 2 to 3 months to see a change in traffic.', noAsk],
+      ['Schema has 2 jobs: help engines parse the page and cite it.', noAsk],
+      ['Step 2: write 3 answers that mention the product by name.', noAsk],
+      ['Note: it can take 4 to 6 weeks for Google to recrawl.', noAsk],
+      ['Example: a page with 300 words rarely ranks first.', noAsk],
+      ['Budget: about $99 a month for a basic tool.', noAsk],
+      ['Timeline: 4 to 6 weeks.', noAsk],
+    ])('keeps a benchmark: %s', (reply, userTexts) => {
+      expect(oracle(reply, userTexts)).toBe(reply);
+    });
+
+    it('replaces a general figure that says "it", the one false positive the owner accepted', () => {
+      expect(oracle('The first result is powerful: it gets about 27% of clicks.', noAsk)).toBe(NOT_MEASURED_SENTENCE);
+    });
+  });
+
+  it('keeps a figure the user stated, in a message or in account memory, wherever the reply repeats it', () => {
+    expect(oracle('A DA of 40 is a solid base.', ['my DA is 40, how do I grow it?'])).toBe('A DA of 40 is a solid base.');
+    expect(oracle('Your CTR benchmark of 3% is ahead of most sites.', ['Our brand CTR benchmark is 3%.', 'How are we doing?'])).toBe(
+      'Your CTR benchmark of 3% is ahead of most sites.',
+    );
+  });
+
+  it('does not take a number the user wrote for something else as their figure', () => {
+    expect(oracle('Your DA is 3.', ['give me 3 tips'])).toBe(NOT_MEASURED_SENTENCE);
+    expect(oracle('You rank 5 on Perplexity.', ['I have 5 minutes, what should I fix?'])).toBe(NOT_MEASURED_SENTENCE);
   });
 });

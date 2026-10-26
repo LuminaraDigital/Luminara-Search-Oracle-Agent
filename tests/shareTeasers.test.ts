@@ -216,6 +216,36 @@ describe('teaser share entitlement', () => {
     expect(body.code).toBe('TEASER_QUOTA');
   });
 
+  it('still mints the teaser when KV refuses the quota counter write', async () => {
+    const env = makeEnv();
+    const put = env.LUMINARA_KV!.put.bind(env.LUMINARA_KV);
+    env.LUMINARA_KV!.put = (async (key: string, value: string) => {
+      if (key.startsWith('teaser:')) throw new Error('KV PUT failed: 429 Too Many Requests');
+      return put(key, value);
+    }) as KVNamespace['put'];
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const res = await worker.fetch(
+        new Request('https://luminarasuite.com/api/share/teasers', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-telegram-init-data': freeInit(32),
+            origin: 'https://luminarasuite.com',
+          },
+          body: JSON.stringify({ domain: 'stripe.com', verdict: 'Not measured.', topFix: 'Fetch the homepage again.' }),
+        }),
+        env,
+        ctx,
+      );
+      expect(res.status).toBe(200);
+      expect(((await res.json()) as { token?: string }).token).toMatch(/^[a-f0-9]{64}$/);
+      expect(warn).toHaveBeenCalledWith(JSON.stringify({ event: 'kv_counter_write_failed', prefix: 'teaser' }));
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it('lets a free Telegram user mint a teaser and still blocks full share links', async () => {
     const env = makeEnv();
     const initData = freeInit();

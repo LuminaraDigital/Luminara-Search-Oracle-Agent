@@ -7,7 +7,7 @@ import type { Env } from './index';
 import { claimTonTransaction, isTonLedgerReady, releaseTonTransaction } from './paymentLedger';
 import { PlanDowngradeRefusedError, downgradeRefusalText, wouldDowngrade } from './planRank';
 import { PLANS, alertPaymentAdmins } from './telegramBot';
-import { resolveAccountId, writeSubscriptionRecord } from './userStore';
+import { appliedOrderExpiry, hasAppliedOrder, resolveAccountId, writeSubscriptionRecord } from './userStore';
 import { recordAuditLogBestEffort } from './auditLog';
 import {
   TON_MAX_OPEN_ORDERS_PER_ACCOUNT,
@@ -987,7 +987,9 @@ export async function verifyTonPayment(
     console.error(`[TON] Verify could not read the current plan for order ${orderId}: ${err instanceof Error ? err.message : err}`);
     return { ok: false, error: TON_VERIFY_UNAVAILABLE_ERROR };
   }
-  if (wouldDowngrade(running, order.planId)) {
+  // A retry of an order whose first write reached only the account record is never held: its
+  // plan is already in place, and the write below adds nothing.
+  if (!hasAppliedOrder(running, orderId) && wouldDowngrade(running, order.planId)) {
     const refusal = new PlanDowngradeRefusedError(String(running?.plan), Number(running?.expiresAt), order.planId);
     const message = await holdPaidTonOrder(env, kv, { order, accountId, planTitle: plan.title, refusal, txHash: match.txHash, network: match.network, now: Date.now() });
     if (message === null) return { ok: false, error: TON_VERIFY_UNAVAILABLE_ERROR };
@@ -1020,15 +1022,16 @@ export async function verifyTonPayment(
   try {
     const existingSub = (await kv.get(`sub:${accountId}`, 'json')) as { expiresAt?: number } | null;
     const baseTime = existingSub?.expiresAt && existingSub.expiresAt > now ? existingSub.expiresAt : now;
-    expiresAt = baseTime + plan.days * 86400_000;
 
-    await writeSubscriptionRecord(env, order.userId, {
+    const written = await writeSubscriptionRecord(env, order.userId, {
       plan: order.planId,
       paymentMethod: 'ton',
       orderId,
       startedAt: now,
-      expiresAt,
-    });
+      expiresAt: baseTime + plan.days * 86400_000,
+    }, { orderId });
+    // An order the record already names keeps that record's expiry.
+    expiresAt = Number(written.record.expiresAt);
   } catch (err) {
     if (err instanceof PlanDowngradeRefusedError) {
       // A higher plan landed between the look above and this write. The transfer is real and the
@@ -1043,9 +1046,16 @@ export async function verifyTonPayment(
       }
       return { ok: false, error: message };
     }
-    await releaseTonTransaction(env, match.txHash, orderId);
-    console.error(`[TON] Subscription write failed after claim for order ${orderId}; claim released: ${err instanceof Error ? err.message : err}`);
-    return { ok: false, error: TON_VERIFY_UNAVAILABLE_ERROR };
+    const landed = await appliedOrderExpiry(env, accountId, orderId);
+    if (landed === null) {
+      await releaseTonTransaction(env, match.txHash, orderId);
+      console.error(`[TON] Subscription write failed after claim for order ${orderId}; claim released: ${err instanceof Error ? err.message : err}`);
+      return { ok: false, error: TON_VERIFY_UNAVAILABLE_ERROR };
+    }
+    // The account record took the days before the write threw (the login's copy failed), so the
+    // order is credited and its claim stays.
+    console.error(`[TON] Subscription write failed after the account record was written for order ${orderId}; claim kept: ${err instanceof Error ? err.message : err}`);
+    expiresAt = landed;
   }
 
   await markTonPendingOrderCredited(env, orderId);

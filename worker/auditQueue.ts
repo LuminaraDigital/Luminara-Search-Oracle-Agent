@@ -9,6 +9,7 @@ import { buildPaidToolRuntime, executePaidTool } from '../services/tools/registr
 import { getProject } from './projectService';
 import { startRun, completeRun } from './runProvenance';
 import { safePublicUrl, resolvesToPublicAddress, type DohFetch } from './security';
+import { HOSTED_PAID_CALL_COST_CENTS, isBudgetHalted, recordCostEvent } from './budgets';
 
 export function isAuditQueueEnabled(env: Env): boolean {
   return String(env.AUDIT_QUEUE_ENABLED || '').toLowerCase() === 'true';
@@ -231,6 +232,12 @@ export async function processAuditJob(
   msg: AuditJobMessage,
   opts?: { dohFetcher?: DohFetch },
 ): Promise<void> {
+  // Queues can deliver a message twice; a finished run must not pay for its paid call again.
+  const existing = env.DB
+    ? await env.DB.prepare(`SELECT status FROM audit_runs WHERE id = ?`).bind(msg.runId).first<{ status: string }>()
+    : null;
+  if (existing?.status === 'completed') return;
+
   await markRun(env, msg.runId, 'running', null, null);
   let provenanceRunId = msg.provenanceRunId ?? null;
   try {
@@ -266,7 +273,12 @@ export async function processAuditJob(
       domain: host,
     };
 
-    if (msg.projectId) {
+    // Same budget gate and metering as MCP callTool: a hard-stopped account spends nothing,
+    // and every successful hosted paid call lands one cost event.
+    const now = Date.now();
+    if (msg.projectId && (await isBudgetHalted(env, msg.accountId, now))) {
+      domainOverview = { measurementStatus: 'not_measured', code: 'BUDGET_HALTED', domain: host };
+    } else if (msg.projectId) {
       const rt = buildPaidToolRuntime({
         env,
         accountId: msg.accountId,
@@ -280,6 +292,18 @@ export async function processAuditJob(
         rt,
       );
       domainOverview = toolResult.structuredContent || { text: toolResult.text };
+      if (!toolResult.isError) {
+        await recordCostEvent(env, {
+          accountId: msg.accountId,
+          toolName: 'get_domain_overview',
+          billedCents: HOSTED_PAID_CALL_COST_CENTS,
+          projectId: msg.projectId,
+          creditClass: 'paid',
+          source: 'credit_class',
+          runId: provenanceRunId,
+          now,
+        }).catch((err) => console.error('[budgets] queued audit recordCostEvent failed:', err));
+      }
     }
 
     const result = {

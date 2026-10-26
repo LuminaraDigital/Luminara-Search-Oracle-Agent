@@ -74,6 +74,7 @@ export default defineConfig(({ mode }) => {
   const env = { ...process.env, ...loadEnv(mode, process.cwd(), '') };
   const languageToolUrl = env.LANGUAGETOOL_URL || 'http://localhost:8010';
   const umamiUrl = env.UMAMI_URL || 'http://localhost:3002';
+  const apiProxyTarget = env.VITE_API_BASE || 'https://luminarasuite.com';
   const umamiApiKey = env.UMAMI_API_KEY || '';
   const isProduction = mode === 'production' || mode === 'staging';
 
@@ -131,9 +132,19 @@ export default defineConfig(({ mode }) => {
         // Local Vite has no Worker. Relay remaining /api/* (providers, health, auth) to production
         // (or VITE_API_BASE) so Settings BYOK tests work without `wrangler dev`.
         '/api': {
-          target: env.VITE_API_BASE || 'https://luminarasuite.com',
+          target: apiProxyTarget,
           changeOrigin: true,
           secure: true,
+          // changeOrigin rewrites Host, not Origin, and the Worker refuses a foreign Origin where the
+          // session cookie is set or cleared. Only the dev page's own Origin becomes the target's.
+          configure: (proxy) => {
+            proxy.on('proxyReq', (proxyReq, req) => {
+              const from = req.headers.origin;
+              if (from && from.replace(/^https?:\/\//, '') === req.headers.host) {
+                proxyReq.setHeader('origin', new URL(apiProxyTarget).origin);
+              }
+            });
+          },
         },
       },
     },

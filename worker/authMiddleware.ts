@@ -2,15 +2,15 @@
  * Centralized Edge Auth Middleware & Route Guard for Cloudflare Workers.
  *
  * Implements:
- * 1. Public vs. Protected Route Whitelisting (defense-in-depth edge guard).
- * 2. HttpOnly, Secure, SameSite=Lax Session Cookie parsing and creation (__session).
+ * 1. Protected route guard (PROTECTED_API_ROUTES); every other route owns its auth.
+ * 2. HttpOnly, Secure, SameSite=Lax Session Cookie creation (__session) and its login CSRF guard.
  * 3. Standardized 401 Unauthorized JSON responses for API guarding.
  * 4. Cryptographic HMAC-SHA256 webhook signature verification.
  * 5. CSRF defense on state-changing mutating requests.
  */
 
 import type { Env } from './env';
-import { identify, json, secretEquals } from './workerUtils';
+import { crossSiteRefusal, identify, json, secretEquals } from './workerUtils';
 
 const identifiedOnRequest = new WeakMap<Request, Awaited<ReturnType<typeof identify>>>();
 
@@ -31,63 +31,29 @@ export {
   mintOpaqueSession,
   loadOpaqueSession,
   revokeOpaqueSession,
+  revokeSessionsForDeletedUser,
 } from './opaqueSession';
 export type { OpaqueSessionRecord } from './opaqueSession';
 
 /**
- * Explicit array of public API routes that bypass compulsory edge authentication.
- * All other /api/* routes default to protected and immediately reject unauthenticated callers.
+ * Login CSRF guard for the routes that set or clear __session (POST /auth/session,
+ * POST /telegram/auth, POST /auth/logout): a foreign Origin or a cross-site fetch gets 403.
  */
-export const PUBLIC_API_ROUTES: Array<{ method?: string; pattern: RegExp }> = [
-  { method: 'GET', pattern: /^\/health$/ },
-  { method: 'GET', pattern: /^\/gcp-oidc\/\.well-known\/openid-configuration$/ },
-  { method: 'GET', pattern: /^\/gcp-oidc\/jwks$/ },
-  { method: 'GET', pattern: /^\/desktop\/latest$/ },
-  { method: 'HEAD', pattern: /^\/desktop\/latest$/ },
-  { method: 'POST', pattern: /^\/telegram\/webhook$/ },
-  { method: 'POST', pattern: /^\/telegram\/auth$/ },
-  { method: 'POST', pattern: /^\/telegram\/invoice$/ },
-  // Signature-checked by handleStripeWebhook. Creating a checkout session is protected, below.
-  { method: 'POST', pattern: /^\/stripe\/webhook$/ },
-  { method: 'GET', pattern: /^\/auth\/session$/ },
-  { method: 'POST', pattern: /^\/auth\/session$/ },
-  { method: 'POST', pattern: /^\/auth\/logout$/ },
-  // Public by design: anti-enumeration reset, IP-throttled in handlePasswordResetRequest.
-  { method: 'POST', pattern: /^\/auth\/reset-password$/ },
-  { method: 'POST', pattern: /^\/auth\/sign-up$/ },
-  { method: 'POST', pattern: /^\/auth\/sign-in$/ },
-  { method: 'GET', pattern: /^\/email\/unsubscribe$/ },
-  { method: 'POST', pattern: /^\/email\/unsubscribe$/ },
-  // Public OTP: IP-throttled; Twilio only when OTP_SMS_ENABLED + secrets are set.
-  { method: 'POST', pattern: /^\/auth\/request-otp$/ },
-  { method: 'POST', pattern: /^\/auth\/verify-otp$/ },
-  { method: 'POST', pattern: /^\/webhooks\/auth$/ },
-  { method: 'GET', pattern: /^\/share\/reports\/[a-f0-9]{64}$/i },
-  { method: 'GET', pattern: /^\/share\/teasers\/[a-f0-9]{64}$/i },
-  // MCP OAuth: token exchange + discovery (authorize uses session via identify inside handler)
-  { method: 'POST', pattern: /^\/oauth\/mcp\/token$/ },
-  { method: 'GET', pattern: /^\/oauth\/mcp\/\.well-known\/oauth-authorization-server$/ },
-];
-
-/** Parse Cookie header into a key-value dictionary */
-export function parseCookies(request: Request): Record<string, string> {
-  const header = request.headers.get('cookie') || '';
-  if (!header.trim()) return {};
-  const cookies: Record<string, string> = {};
-  header.split(';').forEach((part) => {
-    const [rawKey, ...rest] = part.trim().split('=');
-    if (rawKey) {
-      cookies[rawKey.trim()] = decodeURIComponent(rest.join('=').trim());
-    }
-  });
-  return cookies;
-}
-
-/** Extract __session cookie token from the request */
-export function getSessionTokenFromCookie(request: Request): string | null {
-  const cookies = parseCookies(request);
-  const token = cookies[SESSION_COOKIE_NAME];
-  return token && token.trim() ? token.trim() : null;
+export function refuseCrossSiteSessionWrite(request: Request, env: Env): Response | null {
+  const refusal = crossSiteRefusal(request, env);
+  if (!refusal) return null;
+  const path = new URL(request.url).pathname;
+  if (refusal === 'origin_missing') {
+    // shortcut: a missing Origin passes because Telegram webviews are not proven to send one;
+    // refuse it once csrf_origin_missing stops showing in the logs.
+    console.warn(JSON.stringify({ event: 'csrf_origin_missing', path }));
+    return null;
+  }
+  console.warn(JSON.stringify({ event: 'csrf_rejected', path, reason: refusal }));
+  return json(
+    { ok: false, error: 'Request refused: it came from another site. Open Luminara and try again.', code: 'CSRF_REJECTED' },
+    403,
+  );
 }
 
 /** Build an HttpOnly, Secure, SameSite=Lax Set-Cookie header string */
@@ -120,36 +86,6 @@ export async function verifyWebhookSignature(payload: string, signature: string 
   } catch {
     return false;
   }
-}
-
-/** Determines whether an incoming API path and method is publicly accessible without credentials */
-export function isPublicRoute(path: string, method: string, env?: Env, request?: Request): boolean {
-  // CORS Preflight
-  if (method === 'OPTIONS') return true;
-
-  // Match against explicit whitelist
-  for (const route of PUBLIC_API_ROUTES) {
-    if ((!route.method || route.method === method) && route.pattern.test(path)) {
-      return true;
-    }
-  }
-
-  // Provider and sidecar relays handle their own routing (404 provider check, 403 path check, 405 method check, BYOK vs hosted auth)
-  if (path.startsWith('/providers/') || path.startsWith('/sidecars/')) {
-    return true;
-  }
-
-  // Admin secret / bot secret endpoints handle their own token authorization
-  if (path.startsWith('/admin/') || path === '/telegram/refund') {
-    return true;
-  }
-
-  // Enrichment probe when explicit REQUIRE_TG_AUTH is disabled
-  if (env && env.REQUIRE_TG_AUTH === 'false' && path.startsWith('/enrichment/entity')) {
-    return true;
-  }
-
-  return false;
 }
 
 export type ProtectedRouteSpec = {

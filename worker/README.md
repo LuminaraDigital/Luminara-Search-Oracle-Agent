@@ -6,7 +6,9 @@ Single `worker/index.ts` entrypoint (D1 + KV + env bindings): auth, projects,
 reports, MCP, audit runs, sentinel, admin ops. All routes dispatch on
 `url.pathname` inside `handleApi`; anything under `/api/` is wrapped in
 `withSecurityHeaders` and unhandled errors are collapsed to a bare 500 (no
-leaked internals).
+leaked internals). A `URIError` (a malformed %-escape in the path reaching
+`decodeURIComponent`) is 400 `BAD_ENCODING` instead. A JSON `null` body reads as
+`{}`: handlers use `readBody`'s parsed `value`, never `JSON.parse(text)` again.
 
 `APPCHECK_ENFORCE` (`off`, `log`, or `enforce`, unset means `off`) runs on `/api/*` before the route. `log` records a bad or missing `X-Firebase-AppCheck` token and still serves the request. `enforce` returns 401 `APP_CHECK_REQUIRED` or `APP_CHECK_INVALID`. `/api/health`, `/robots.txt`, `/llms.txt`, and any path containing `/webhook` are exempt. Staging config is `log`. Production config stays `off`. The browser initializes App Check with reCAPTCHA Enterprise when `VITE_FIREBASE_APPCHECK_SITE_KEY` is set. The Worker still verifies the same App Check JWTs. An empty site key leaves client init as a no-op.
 
@@ -18,20 +20,20 @@ Sentry (`@sentry/cloudflare` on the Worker, `@sentry/browser` in the client) sta
 | --- | --- | --- | --- |
 | `GET /health` | worker/index.ts | none | Provider + sidecar + flag probe |
 | `GET,HEAD /desktop/latest` | worker/desktopDownloads.ts | none | Desktop release metadata |
-| `POST /auth/session` | worker/index.ts + firebaseAuth | none | Firebase session exchange |
-| `POST /auth/logout` | worker/index.ts | none | Session clear |
+| `POST /auth/session` | worker/index.ts + firebaseAuth | none | Firebase or initData session exchange. A foreign `Origin` or `sec-fetch-site: cross-site` gets 403 `CSRF_REJECTED` (log `csrf_rejected`). A missing `Origin` passes and logs `csrf_origin_missing` until the logs show Telegram webviews send one |
+| `POST /auth/logout` | worker/index.ts | none | Session clear. Revokes the first `__session` cookie; a malformed cookie is ignored. Same Origin rule as `POST /auth/session` |
 | `POST /auth/reset-password` | worker/index.ts | none | Email reset |
-| `POST /auth/sign-up`, `/auth/sign-in` | worker/index.ts | none | Password auth |
+| `POST /auth/sign-up`, `/auth/sign-in` | worker/authCredentialGateway.ts | none | Password auth. Only a wrong password or unknown email counts toward the sign-in lockout (5 in 15 minutes). A network error, a provider 5xx, `PASSWORD_LOGIN_DISABLED` or a key/config fault is 503 `AUTH_UNAVAILABLE` (log `auth_unavailable` with a `reason`) and records nothing; the browser then falls back to the Firebase SDK |
 | `GET,POST /email/unsubscribe` | worker/welcomeEmail.ts | none | One-click opt-out for welcome mail. `RESEND_API_KEY` is a Worker secret. A new account is mailed once from `hello@luminarasuite.com`; migration 0036 stamps older rows so they are not mailed. The send runs in `waitUntil` and a Resend error does not fail sign-in |
 | `POST /auth/request-otp`, `/auth/verify-otp` | worker/authOtpSms.ts | none | SMS OTP |
 | `POST /auth/send-verification` | worker/index.ts | none | Email verification |
-| `POST /webhooks/auth` | worker/index.ts | webhook secret | Firebase webhook. `REQUEST_SIGNING_REQUIRED=true` switches this route to HMAC request signing (`x-luminara-key-id`, timestamp, nonce, signature) with keys from `REQUEST_SIGNING_KEYS`. The flag is off in production, and the old `x-auth-signature` check stays |
+| `POST /webhooks/auth` | worker/index.ts | webhook secret | Firebase webhook. `REQUEST_SIGNING_REQUIRED=true` switches this route to HMAC request signing (`x-luminara-key-id`, timestamp, nonce, signature) with keys from `REQUEST_SIGNING_KEYS`. The flag is off in production, and the old `x-auth-signature` check stays. `user.deleted` also revokes the user's sessions: a KV marker kept for one session lifetime (14 days) makes every session for that uid fail to load, including one minted later from an unexpired ID token. A Firebase Bearer ID token itself still works until it expires (at most an hour) |
 | `POST /auth/link` | worker/index.ts | Telegram initData + Firebase Bearer | Explicit account link. Body must be `{ confirm: true }` or the route returns 400 and writes nothing. Two distinct accounts that each have an active paid plan return 409 with no merge. `identify()` never links. Success and dual-paid refusal write an audit event |
-| `GET,PUT /workspace` | worker/userStore.ts | session | Account workspace blob (zero-knowledge key bag) |
+| `GET,PUT /workspace` | worker/userStore.ts | session | Account workspace blob (zero-knowledge key bag). BYOK keys are stored only as the client-encrypted `encryptedKeys`; a plain-text `keys` map from an older client is accepted and dropped. Migration 0042 removed the maps stored before that. The key bag only decrypts on the device that encrypted it, so a new device needs the keys entered again. The stored `updatedAt` is the version. A PUT sends `{ baseVersion, payload }`, where `baseVersion` is the `updatedAt` the client last pulled or saved (0 when it has none). If a stored copy exists and its version is not `baseVersion`, the route returns 409 with the stored `updatedAt` and `payload` and writes nothing. On D1 the write is compare-and-swap, so of two writes based on one version only one lands. There is no force override (a `force` field from an older bundle is ignored). An older cached client sends no `baseVersion`, so once a row exists every push it makes gets 409 and it reverts its local edits to the stored copy until the tab reloads; there is no service worker, so a reload picks up the current bundle. A saved write gets a version above the previous one |
 | `GET /enterprise/audit-logs` | worker/enterpriseStore.ts + auditLog | session + role | Admin/Auditor role required |
 | `GET /auth/quota` | worker/index.ts | session | Free daily meter on `DAILY_QUOTA` (one SQLite object per account per UTC day). Spend and refund are single statements on that object. 503 `HOSTED_CAPACITY` when it is unavailable. Not a KV key |
-| `POST /telegram/webhook` | worker/index.ts | webhook secret | Telegram updates |
-| `GET /telegram/auth`, `/telegram/invoice`, `/telegram/refund` | worker/index.ts | none/secret | Telegram auth + Stars |
+| `POST /telegram/webhook` | worker/index.ts | webhook secret | Telegram updates. A body over 64 KB is not read: it is logged `telegram_body_too_large` and answered 200, because Telegram sends a refused update again |
+| `POST /telegram/auth`, `/telegram/invoice`, `/telegram/refund` | worker/index.ts | none/secret | Telegram auth + Stars. `/telegram/auth` sets `__session` and has the same Origin rule as `POST /auth/session` |
 | `GET /admin/users` | worker/index.ts | admin | Requires `ADMIN_SECRET` |
 | `GET /admin/payment-support` | worker/index.ts + paymentSupport | admin | Requires `ADMIN_SECRET`. Lists payment support requests by `status` (open, answered, closed). The read is audited by count |
 | `POST /ton/invoice`, `/ton/verify` | worker/tonAttestationService | none | TON payments |
@@ -39,7 +41,7 @@ Sentry (`@sentry/cloudflare` on the Worker, `@sentry/browser` in the client) sta
 | `POST /admin/license/generate`, `/admin/license/seed` | worker/licenseService | admin | License ops |
 | `POST /admin/trust/revoke-gateway-receipts` | worker/trustReceipts.ts | admin | Revokes receipts whose signed method is `gateway_oracle_audit_v1` (issued by the gateway route before it stopped issuing). Up to 10 per call; returns `{ revoked, remaining }`. Idempotent. Works while `TRUST_RECEIPTS_ENABLED` is off. Each run writes one `admin.trust.revoke_gateway_receipts` audit entry. 503 `TRUST_RECEIPTS_TABLE_MISSING` when migration 0020 is not applied. It marks rows and their public pages; a copy saved earlier keeps a valid signature until the signing key is rotated |
 | `POST /admin/audit-receipts/:id/revoke` | worker/auditReceipts.ts | admin | Revokes one Signed Audit Receipt for any account. Works while `AUDIT_RECEIPTS_ENABLED` is off. Writes `admin.audit_receipt.revoke` for every attempt, including a miss and a repeat. 404 when the id is missing. 409 `ALREADY_REVOKED` when it is already revoked |
-| `POST /admin/skills/:slug/versions`, `POST /admin/skills/:slug/enable`, `GET /admin/skills/:slug` | worker/agentSkills.ts | admin | Agent skill versions/enable |
+| `POST /admin/skills/:slug/versions`, `POST /admin/skills/:slug/enable`, `GET /admin/skills/:slug` | worker/agentSkills.ts | admin | Agent skill versions/enable. The per-IP auth limit (20/min) runs before the secret check, so wrong secrets get 429 after 20 |
 | `POST /agent/attest` | worker/attestationService.ts | none | Agent attestation |
 | `POST /sentinel/register`, `/sentinel/status` | worker/sentinel.ts | session | Drift Sentinel targets |
 | `GET /audits/history`, `PUT /audits/history` | worker/auditHistoryRoute.ts | session | Instant Audit history, one row per account and audit id. The browser list is a cache of it: Past reports reads the API first and falls back to the browser when the call fails. PUT takes `{ entry }`, rebuilds it field by field, keeps the first `measuredAt` on a re-save, and keeps the newest 500 rows per account on every plan (`auditHistoryDepth` caps only the browser list). Exported, deleted, and moved on account link with the account. 60 calls per minute per account and per IP. Needs D1 `0038_audit_history.sql`. `DATA_PLANE=dual` also mirrors the saved row to Firestore in `waitUntil`. The flag defaults to `d1` |
@@ -50,9 +52,9 @@ Sentry (`@sentry/cloudflare` on the Worker, `@sentry/browser` in the client) sta
 | `GET /referrals/me`, `POST /referrals/claim`, `POST /referrals/qualify`, `POST /missions/complete` | worker/referrals.ts | session | Opaque `ref_` invites. Qualify pays two-sided credits only with a one-time scout receipt from a signed-in evidence call. Re-scout needs a second honest scout in the current ISO week. Credit consume is compare-and-swap. Needs unapplied D1 `0012_referrals_missions.sql`. Bot `/missions` is opt-in and is not on the Sentinel cron |
 | `POST /idea-scout`, `GET /idea-scout`, `GET /idea-scout/:id`, `PATCH /idea-scout/:id/link`, `POST /idea-scout/pulse` | worker/ideaScout.ts | session | Hypothesis card before a domain exists. Hosted generation needs Telegram or Firebase. The hosted meter is consumed before fetch or the model. Free tier: 2 cards per UTC day via D1 compare-and-swap after the row inserts. A lost slot deletes the row and does not refund the hosted charge. Missing migration 0013 returns before fetch, model, and meters. Anonymous callers are rejected before fetch or model spend. Competitor fetch is title, meta, and headings only. Card schema rejects percentages and measured badges. Needs unapplied D1 `0013_idea_scout.sql` (`idea_scouts`, `idea_scout_daily`, `niche_pulse_subs`). Bot `/pulse` stores a niche tip and is not on the Sentinel cron |
 | `GET /idea-scout/feed`, `POST /idea-scout/vote`, `POST /idea-scout/share` | worker/ideaScout.ts | session | Community idea feed. 404 unless `COMMUNITY_FEED_ENABLED=true`, which stays off until the chat rules and a named moderator exist. Cards and votes live in D1 `0033_community_feed.sql`, not KV. Share takes the id of an idea card the caller owns and publishes a copy under a new `cf_` id; another account's id is 404 and adds nothing. No response carries an account id or an idea id. The public card is the idea card's problem, prompts and hypotheses, field by field; the competitor snapshots (URLs, scraped titles and headings) are left out, though model-written prompts and hypotheses may still name a competitor. A share whose idea card is deleted mid-request is 404. One vote per account per card (primary key); the count is `COUNT(*)` over votes, never seeded. A `hidden` or `removed` card leaves the feed and takes no votes, and its row stays. 5 shares per account per UTC day; ownership and the cap are checked inside the insert. 60 reads per minute per IP, 30 votes and 10 shares per minute per account and per IP. Exported and deleted with the account, moved on account link (if that move fails it is logged and the link stands, as for the payment tables). Owner step: the KV value `idea_scout:community_feed` from before 0033 is read by nothing and holds sharers' account ids; delete it in each environment with `npx wrangler kv key delete idea_scout:community_feed --binding LUMINARA_KV --remote --env staging`, then `--env production` |
-| `GET /visibility/crawler-files` | worker/llmCrawlerRoute.ts | session | `/robots.txt`, `/llms.txt`, and optional `/ai.txt`. SSRF guarded. A same-site redirect is followed after the next host is checked again. A redirect to another site is not. When the request host is a suite Custom Domain (`luminarasuite.com`, `www`, or `staging`), crawl files for the hostnames that Worker serves are read in-process, because a fetch of its own Custom Domain returns Cloudflare 522. `ai.txt` on those hosts is 404 until a route serves it. A non-empty file mints `X-Scout-Receipt` for that host |
+| `GET /visibility/crawler-files` | worker/llmCrawlerRoute.ts | none (a session mints the receipt) | `/robots.txt`, `/llms.txt`, and optional `/ai.txt`. SSRF guarded. A same-site redirect is followed after the next host is checked again. A redirect to another site is not. When the request host is a suite Custom Domain (`luminarasuite.com`, `www`, or `staging`), crawl files for the hostnames that Worker serves are read in-process, because a fetch of its own Custom Domain returns Cloudflare 522. `ai.txt` on those hosts is 404 until a route serves it. A non-empty file mints `X-Scout-Receipt` for that host |
 | `GET /visibility/probe-crawl` | worker/probeCrawlRoute.ts | none | Anonymous landing crawl of the same three files. No scout receipt. Measured only when robots and llms each settle (200 with a body, or missing/404). A 522 stays Not measured |
-| `POST /launchpad/scan-compliance`, `GET,POST /launchpad/campaigns`, `GET /launchpad/campaigns/:id`, `PUT /launchpad/campaigns/:id/contract`, `GET /launchpad/campaigns/:id/onchain`, `GET /launchpad/config`, `POST /launchpad/vouchers`, `GET /launchpad/vouchers/:code`, `POST /launchpad/vouchers/redeem` | worker/launchpadService.ts | none (scan, public list/detail) / session (rest) | SMB Launchpad, spec 0015. 404 unless `LAUNCHPAD_ENABLED=true` (local dev with no `ENVIRONMENT` is on). Non-custodial: stores copy, the merchant-registered contract address and voucher records only, never keys or balances, and has no "raised" column. Campaign copy must pass the rule-based screen in `services/launchpad/compliance.ts` (422 otherwise). Drafts are private; a campaign is public only after its owner registers a contract (one address per campaign, unique per chain+network). Registration requires the deployment `txHash` and is verified over JSON-RPC: the tx must be a successful call to OUR factory (`services/launchpad/contracts.ts`, or `LAUNCHPAD_FACTORY_<CHAIN>_TESTNET` on testnet only) that emitted the matching deployment event for that address; with no factory configured, registration returns 409. `LAUNCHPAD_SKIP_CHAIN_VERIFY=true` skips the check on testnet only. `/onchain` reads live escrow figures over `LAUNCHPAD_RPC_<CHAIN>_<NETWORK>` (public RPC fallback) and returns `not_measured` if the RPC fails; nothing is stored. Mainnet needs `LAUNCHPAD_MAINNET_ENABLED=true`. Voucher issue, lookup and redeem are owner-only with no cross-merchant enumeration; redeem is a compare-and-swap on `status='issued'` and unexpired. Voucher expiry is null or at least 36 months. Needs unapplied D1 `0018_smb_launchpad_loyalty.sql` |
+| `POST /launchpad/scan-compliance`, `GET,POST /launchpad/campaigns`, `GET /launchpad/campaigns/:id`, `PUT /launchpad/campaigns/:id/contract`, `GET /launchpad/campaigns/:id/onchain`, `GET /launchpad/config`, `POST /launchpad/vouchers`, `GET /launchpad/vouchers/:code`, `POST /launchpad/vouchers/redeem` | worker/launchpadService.ts | none (scan, public list/detail) / session (rest) | SMB Launchpad, spec 0015. 404 unless `LAUNCHPAD_ENABLED=true` (local dev with no `ENVIRONMENT` is on). `LAUNCHPAD_ENABLED` must stay off until A4 (milestone alerts, `docs/plans/review-batch-2-fixes.md`) lands: the webhook channel posts to any https URL and the email channel sends nothing. Non-custodial: stores copy, the merchant-registered contract address and voucher records only, never keys or balances, and has no "raised" column. Campaign copy must pass the rule-based screen in `services/launchpad/compliance.ts` (422 otherwise). Drafts are private; a campaign is public only after its owner registers a contract (one address per campaign, unique per chain+network). Registration requires the deployment `txHash` and is verified over JSON-RPC: the tx must be a successful call to OUR factory (`services/launchpad/contracts.ts`, or `LAUNCHPAD_FACTORY_<CHAIN>_TESTNET` on testnet only) that emitted the matching deployment event for that address; with no factory configured, registration returns 409. `LAUNCHPAD_SKIP_CHAIN_VERIFY=true` skips the check on testnet only. `/onchain` reads live escrow figures over `LAUNCHPAD_RPC_<CHAIN>_<NETWORK>` (public RPC fallback) and returns `not_measured` if the RPC fails; nothing is stored. Mainnet needs `LAUNCHPAD_MAINNET_ENABLED=true`. Voucher issue, lookup and redeem are owner-only with no cross-merchant enumeration; redeem is a compare-and-swap on `status='issued'` and unexpired. Voucher expiry is null or at least 36 months. Needs unapplied D1 `0018_smb_launchpad_loyalty.sql` |
 | `POST /enrichment/entity` | worker/enrichmentService | session | Entity enrichment |
 | `GET /trust/audit-chain/verify` | worker/index.ts + auditLog | session + role | Walks the org's hash chain from genesis by `prev_hash` links. Reports `hash_mismatch`, `fork`, or `orphan` with `brokenAtId`. Legacy raw-accountId rows are a separate chain, verified separately. Over 5000 rows returns `truncated: true` and `ok: false` |
 | `GET /trust/keys` | worker/trustReceipts.ts | none | Ed25519 public key set for offline receipt verification. 404 unless `TRUST_RECEIPTS_ENABLED` |
@@ -64,24 +66,29 @@ Sentry (`@sentry/cloudflare` on the Worker, `@sentry/browser` in the client) sta
 | `GET,POST /memory/facts` | worker/memoryService.ts | session | Hosted memory facts |
 | `GET /rsi/skills`, `POST /rsi/skills/observations`, `POST /rsi/skills/proposals/:id/apply`, `POST /rsi/skills/:id/pin`, `POST /rsi/skills/:id/rollback`, `POST /rsi/skills/:id/usage`, `POST /rsi/skills/curate` | worker/rsiRoutes.ts | session | Learned SKILL.md library. A fix proposes a skill after two successes. Apply needs evidence, an unpinned record, a clean safety scan, passing evals, and room in the 3-change daily cap. The daily 08:00 UTC cron archives stale unpinned skills on Mondays. Needs D1 `0027_rsi_skill_library.sql` |
 | `POST,GET /rsi/corrections`, `GET /rsi/rewards`, `POST /rsi/rewards/outcomes`, `POST /rsi/rewards/pin`, `POST /rsi/rewards/rollback` | worker/rsiCorrections.ts | session | Corrections become eval cases that gate skill publishes for that account. Reward weights nudge once per ISO week from measured outcomes. Pinned weights stay fixed. Needs D1 `0028_rsi_corrections.sql` |
-| `POST /rsi/prompts/publish`, `POST /rsi/prompts/rollback` | worker/rsiCorrections.ts | admin | Writes the global `agent_skills` catalog. Requires `x-admin-secret`, the same gate as `POST /admin/skills/:slug/versions`. A session is refused. The safety scan, metric eval, and the admin actor's correction cases still run. Needs D1 `0028_rsi_corrections.sql` |
+| `POST /rsi/prompts/publish`, `POST /rsi/prompts/rollback` | worker/rsiCorrections.ts | admin | Writes the global `agent_skills` catalog. Requires `x-admin-secret`, the same gate as `POST /admin/skills/:slug/versions`, behind the same per-IP limit. A session is refused. The safety scan, metric eval, and the admin actor's correction cases still run. Needs D1 `0028_rsi_corrections.sql` |
 | `POST /rsi/fixes`, `POST /rsi/fixes/rank` | worker/rsiFixOutcomes.ts | session | Logs a fix with before/after AI citation rates into Dreaming `action_memory`. A gain counts only when both rates are measured. Rank leaves unmeasured signatures at score 0 with evidence `not_measured`. Needs D1 `0029_rsi_fix_outcomes.sql` |
 | `POST /rsi/replay/nodes`, `POST /rsi/replay/select`, `POST /rsi/replay/pin` | worker/rsiReplay.ts | session | Scores a new audit, probe, or ranking strategy on logged runs before enabling it. The current strategy stays unless the candidate mean is strictly higher on at least 3 measured runs. One enable per week. Pinned slots stay fixed. Needs D1 `0030_rsi_offline_replay.sql` |
 | `POST /rsi/posts/draft`, `POST /rsi/posts/:id/metrics`, `POST /rsi/posts/reflect` | worker/rsiPosting.ts | session | Drafts 3 to 5 posts, records one selected post (no external network call), and ingests 24h and 72h metrics. A playbook pattern is added only after 2 measured 72h successes, at most 2 edits a week. The daily 08:00 UTC cron reflects playbooks on Mondays. Needs D1 `0031_rsi_posting.sql` |
 | `POST /rsi/memory/documents`, `GET /rsi/memory/search` | worker/rsiMemorySearch.ts | session | Indexes an audit or chat for the account and searches the latest 300 by token overlap. A brand-fact nudge is returned and is not written. The client saves an accepted fact with `saveBrandFact`. Does not replace `worker/memoryRag.ts`. Needs D1 `0032_rsi_memory_search.sql` |
 | `POST /pagespeed` | worker/pagespeedRoute.ts | session | Hosted PageSpeed |
 | `POST /deploy/readback` | worker/deployReadback.ts | session | Deploy read-back for the CMS deploy screen. Body `{ url, schemaJsonLd }`. Fetches the page through `fetchPublicUrl` (public http(s) only; private, loopback and link-local addresses refused, DNS re-checked on every redirect hop) on the default web ports only, first hop and redirects alike. Answers `{ ok: true, found }`: whether a JSON-LD script element equal to the schema is in the page source. The page must be served with an HTML content type. A copy inside a comment, textarea, template, noscript, style, inline SVG or a script of another type does not count, and the `type` attribute must be `application/ld+json` (parameters after `;` allowed). The whole schema is compared, so one merged into a larger `@graph` reads as not found. Never returns the page. Every page that could not be read gets the same 422 and the same sentence, never `found: false`, so the route cannot probe ports or statuses. 10/min per account and per IP |
-| `* /mcp`, `/mcp/*` | worker/mcpServer.ts | session/apikey/oauth | MCP tool calls |
+| `* /mcp`, `/mcp/*` | worker/mcpServer.ts | session/apikey/oauth | MCP tool calls. A JSON-RPC batch holds at most 20 messages and one `tools/call`: every rate limit counts HTTP requests, so a batch with two or more calls is 400 `-32600` "Send one tools/call per request" (log `mcp_batch_refused`). Developer note in `public/docs/mcp.html` |
 | `GET,POST /projects`, `/projects/:id` | worker/projectService.ts + projectContextService.ts | session | Project memory CRUD |
 | `GET,POST /reports`, `/reports/:id` | worker/agentReportService.ts | session | Agent reports |
-| `GET,POST /api-keys`, `DELETE /api-keys/:id` | worker/apiKeyService.ts | session + plan gate | lm_live_* API keys; Growth/Agency only |
+| `GET,POST /api-keys`, `DELETE /api-keys/:id` | worker/apiKeyService.ts | session + plan gate on POST | lm_live_* API keys. Only POST needs Growth/Agency (403 `MCP_ACCESS_REQUIRED`). GET and DELETE work on any plan, so a lapsed account lists and revokes its keys; GET returns `mcpAccess` for the plan |
 | `POST /oracle/chat` | worker/oracleChat.ts | session + apiAccess | Agency Oracle SSE. Also emits `harness_event` frames (offset-addressed `AgentEventEnvelope`) next to the legacy `status`/`tool`/`token`/`done`/`provenance` events |
 | `GET /oracle/session/:id/(events?after=N\|state\|history)`, `POST /oracle/session/:id/(approval\|callback\|state/patch)` | worker/oracleChat.ts -> worker/oracleSession.ts | session + apiAccess | Owner-level control plane for one session. Allowlist only: other actions 404, POST bodies over 64 KB get 413. Admit, settle, truncate and event publishing are server-internal and never reachable from a client, so a caller cannot forge `tool_end` or approval events. DO key is `accountId:sessionId` (no cross-account access). `approval` with `remember:true` allow-lists the tool for that session only; it never bypasses `isBudgetHalted` or the context-before-paid gate. Control-plane names (`tool_approval`, `provide_callback_result`, ...) are rejected as `invokeTool` on `/oracle/chat` |
+| `GET /dreaming/(status\|memories\|proposals)`, `POST /dreaming/(events\|run)`, `POST /dreaming/proposals/:id/review`, `POST /dreaming/runs/:id/rollback` | worker/dreamingService.ts | session | Dreaming memory consolidation. The model's proposals are checked before anything is stored: one with an action other than create, update or deprecate, a memory type the store does not take, a confidence that is missing or outside 0.5 to 1, or an update or deprecate that names no active memory is dropped. A run writes its memory changes, proposals, run row (`model_id` is the hosted model's id or `deterministic`) and the consumed events in one batch, so a failed run changes nothing and its events stay pending. A create's memory and its proposal share one timestamp, which rollback matches. `POST /dreaming/run` is a high-cost path. With a hosted model key set, a run on a free plan spends one of the free daily requests it shares with chat and audits, through `checkHostedQuota` (429 `QUOTA_EXHAUSTED`: "Run now uses one of your free daily requests on free plans..." when they are used up, otherwise the refusal's own message; 503 `HOSTED_CAPACITY`), given back when the run does not wake or throws; a spent referral credit is not given back. The browser shows that 429 and does not run the consolidation locally instead. A `signalWeight` sent to `/dreaming/events` can lower an event's weight, never raise it above the server's weight for that event type |
 | `POST /audit/run`, `GET /audit/runs/:id` | worker/auditQueue.ts | session + apiAccess | Audit queue |
 | `POST /audit/scout-run` | worker/auditScoutRun.ts | session | One Instant Audit check. `www` and a subdomain of the minted site match that site on a dot boundary. A lookalike such as `evilmovida.com.au` does not. A foreign host is 403 `AUDIT_RUN_REJECTED`. A refund with health score and citation rate both null returns the check even after a covered 200, still under the daily refund cap |
 | `* /providers/:id/*` | worker/providerRelay.ts | byok/session | LLM/search/scrape proxy. Hosted `dataforseo` also needs Agency apiAccess (APS invariant 2); BYOK skips the plan gate. Hosted Groq chat (`POST /providers/groq/chat/completions`, not BYOK) falls through Groq, `GROQ_API_KEY_FALLBACK` when it differs, NVIDIA (`NVIDIA_API_KEY`, model `nvidia/llama-3.1-nemotron-70b-instruct`, worker/nvidiaChatFallback.ts), then Workers AI. That chain runs when no Groq key is set, the connection fails, or Groq returns 400, 404, 408, 429, 5xx, or a 413 whose body is a token cap. Workers AI cuts a longer prompt to its 8000-byte budget and still answers. Groq 401 and 402 stay hosted-key errors. Direct `nim` stays paid-tier. Free accounts share a KV daily cap (`NVIDIA_FALLBACK_DAILY_CAP`, default 200) and a per-account cap (`NVIDIA_FALLBACK_USER_DAILY_CAP`, default 5). A hit, a missing key, or no KV skips NVIDIA. The KV cap is approximate: KV has no atomic add, so overlapping calls can pass together, and a failed NVIDIA call gives its slot back. Paid plans are not counted on those caps. The `x-accept-fallback` header is unused. Workers AI (worker/workersAiFallback.ts) still refuses typed, tool, or over-long prompts. It refuses `response_format`, `tools`, `tool_choice`, non-string content, a bare `prompt`, any field it would have to ignore (`stop`, `logprobs`, the penalties and anything it does not know), an invalid value (it never substitutes a default for one), and a prompt over its budget, counted in UTF-8 bytes; the caller then gets the upstream's own error. When Workers AI is attempted and returns nothing or throws, the response is 503 "The backup model did not answer." and the check is refunded. The failure log includes a short error. An empty or broken fallback is not sent as an answer. A fallback reply carries `X-Provider-Fallback`, `X-Provider-Fallback-Model`, `X-Provider-Fallback-Reason` and a body `x_fallback` field, and only the chat accepts one and shows the model (`allowFallback` on the client). `finish_reason` is `length` only when the binding's reported completion tokens reached the cap; with no usage reported it is `stop` and the answer line says `usage: none`. Usage is the binding's or absent, never zeros. One log line per outcome, with no prompt text: `workers_ai_fallback_answer`, `workers_ai_fallback_refused`, `workers_ai_fallback_failed`. Hosted-key upstream errors the relay renames, each a 503: 402 is `HOSTED_PROVIDER_DEPLETED`, 401 is `HOSTED_PROVIDER_KEY_REFUSED` (the provider refused the server's key), 403 is `HOSTED_PROVIDER_REQUEST_REFUSED` (it refused this request; the cause is not known), so the client does not read either as the caller's sign-in failing. For 401 and 403 the upstream's status and its own error code or type, never its message, go to a `hosted_provider_refused` log line. A BYOK 401 or 403 is the caller's key and passes through; a BYOK 402 stays a 402 (`BYOK_PAYMENT_REQUIRED`) |
 
-Auth legend: `session` = Firebase/Telegram cookie or Bearer;
+Auth legend: `session` = Firebase/Telegram cookie or Bearer. When a Bearer is sent the
+cookie is not read, so a Bearer that fails verification never falls back to the cookie: it is
+a 401, unless valid Telegram initData on the same request identifies the Telegram user (the
+Mini App relies on that, and its client does not retry a 401 when initData is present). The
+web client drops a cached ID token under a minute from expiry, so the cookie answers instead;
 `apikey` = `lm_live_*` MCP key; `oauth` = `mcp_*` OAuth token;
 `admin` = `ADMIN_SECRET` header; `byok` = bring-your-own-key header.
 
@@ -99,9 +106,16 @@ Auth legend: `session` = Firebase/Telegram cookie or Bearer;
   (`SCOPE_INSUFFICIENT` otherwise). BYOK calls pass with `mcp:free`. OAuth tokens
   minted before enforcement lack `scopeEnforced` and stay unrestricted until their
   30-day TTL drains. Authorize without `scope` requests both; plan caps decide.
-- **Every paid call is metered.** MCP and Oracle chat `confirmTool` both check
-  `isBudgetHalted` first and write `cost_events` with `credential_kind` /
-  `credential_id` (`oracle` for chat). New paid surfaces must do the same.
+  The paid gates (scope, plan, project context) run before a destructive tool's
+  approval is spent, so a refused paid call leaves the approval `approved`.
+- **Every paid call is metered.** MCP, Oracle chat `confirmTool` and queued audits
+  (`processAuditJob`) all check `isBudgetHalted` first and write `cost_events`. MCP and
+  chat set `credential_kind` / `credential_id` (`oracle` for chat); a queued audit has
+  no request credential and leaves them empty. New paid surfaces must do the same.
+  Oracle chat runs its turn through `scheduleWaitUntil`, so a closed tab still meters
+  the call and settles the session turn, within the roughly 30 seconds `waitUntil`
+  allows after the client disconnects. A queued audit that already completed is not
+  run again when the queue redelivers it.
 
 ## Audit chain and Trust Network invariants (TN0-TN2)
 
@@ -124,7 +138,9 @@ Auth legend: `session` = Firebase/Telegram cookie or Bearer;
   `dns:TXT:<domain>` for `dns_txt`, and for the other two an http(s) URL on the domain
   or its www twin, as the domain check reports it. The guard checks the result's shape
   and that it matches; it cannot prove who built it, so only a verifier may build one. `POST /gateway/execute` checks nothing about a domain, so it issues
-  no receipt and says so (`receiptIssued: false`). `tests/receiptsNeedVerifier.test.ts`
+  no receipt and says so (`receiptIssued: false`). Its answer is always `not_measured`, so
+  it spends no free unit; with `REQUIRE_TG_AUTH=true` an anonymous caller gets 401
+  `AUTH_REQUIRED`. `tests/receiptsNeedVerifier.test.ts`
   lists the only files allowed to write the level.
 - **The Worker holds no chain signing key and sends nothing to a chain.**
   `anchorAuditCitation` makes no outbound request and answers `ok: false`, also with
@@ -264,7 +280,8 @@ no payment was taken. The staging webhook is subscribed to
 - **TON checkout is open only for an address the owner has confirmed.** `TON_CONFIRMED_ADDRESS`
   must equal `TON_RECEIVING_ADDRESS`. Until it does, no invoice is issued and public
   `/health` reports `ton: false`. Orders that already exist can still be verified.
-- **Q402 is off, and while it is off every `/q402/*` path is a 404**, including discovery.
+- **Q402 is removed.** `worker/q402/` and `Q402_LIVE` are gone; every `/q402/*` path is a 404 like
+  any unknown route, including discovery.
 - **The Stripe card rail is on for staging and production.** `env.STRIPE_CHECKOUT_LIVE === 'true'` plus a matching key mode is the only open state. `env.staging.vars` and `env.production.vars` are `"true"`. The default vars are `"false"`.
 - Public `/health` carries `ok`, the three rail booleans and `plans` (the public Stars
   catalogue: title, description, price in Stars, days). Nothing else.
@@ -281,6 +298,19 @@ no payment was taken. The staging webhook is subscribed to
   the owner to return by hand, and the buyer is told.
 - The same plan again extends it. A higher plan replaces it and keeps the days already there.
 - A caller that takes a plan away on purpose (a reversed card payment) passes `allowLowerPlan`.
+- A trial code is for an account without a paid plan. While any paid plan is running it is refused
+  before the claim and again after it (the claim is given back), so the code stays unused.
+- **A TON order or licence key is applied once.** `writeSubscriptionRecord` keeps `appliedOrders`
+  (the last 50 TON order ids and `lic_<key>` ids) through every write it makes, ended records too.
+  Two paths outside it drop the list: a Stars refund that leaves no time deletes the record, and
+  linking two sign-ins can replace an ended account record with a login's copy.
+  When the write throws after the account record took the days (the login copy failed), the rail
+  reads that record back: the order is credited and its D1 claim kept, so a single-use key cannot
+  be redeemed by another account on top of them. A retry whose order is listed while its claim was
+  given back is not held or refused for the plan it put in place; the rail passes the order id to
+  `writeSubscriptionRecord` (`opts.orderId`, never read from the record, which a rewrite carries),
+  which then writes the account record again as it stands at its own read, adds nothing, and logs
+  `order_already_applied` (pinned in `tests/tonPayment.test.ts` and `tests/licenseKey.test.ts`).
 
 ## Stars charges (pinned in `tests/starsCharges.test.ts`)
 
@@ -301,10 +331,12 @@ Telegram does not send a paid update again once the webhook has answered 200, so
 - **A refund is finished only when the plan has gone back too.** `stars_returned` records that
   the Stars are with the payer. If taking back what the charge gave fails, the row stays
   `refund_due` and the sweep retries that part alone; Telegram is not asked to refund twice.
-- **A refund takes back what that charge gave, no more.** Its days come off; if it was the last
-  thing applied, the plan returns to what the record said before it. The subscription record keeps
-  `appliedCharges` and `chargeLinks` (the plan before each charge, and the charge before it) for
-  this.
+- **A refund takes back what that charge gave, no more.** Only the part of its days still ahead
+  comes off (the card rail's rule; the receipt's `expiresAt` is where its days end), so days it has
+  used up never shorten time bought after it on another rail; a refund that takes less than the
+  full days logs `stars_refund_partial`. If it was the last thing applied, the plan returns to what
+  the record said before it. The subscription record keeps `appliedCharges` and `chargeLinks` (the
+  plan before each charge, and the charge before it) for this.
 - **The daily sweep** (`stars_charge_sweep`) settles rows a webhook left undecided, retries
   refunds (5 attempts, then `refund_failed` and an alert to `TELEGRAM_ADMIN_ID`), and compares
   Telegram's own transaction list with the ledger. It never grants.
@@ -314,6 +346,10 @@ Telegram does not send a paid update again once the webhook has answered 200, so
   account in the same instant can lose one of them (KV has no compare-and-set); and a record
   written before the ledger that stacked an upgrade names only its last charge, so refunding that
   charge keeps the upgraded plan name for the days the earlier charge paid for.
+- Known limit: each receipt keeps the expiry it was written with, so refunding two stacked charges
+  oldest first can take days from a later rail (A t0 to t0+30, B to t0+60, TON to t0+90; refund A
+  at t0+10, then B at t0+35: the record ends at t0+45, not t0+65); it never takes more than the old
+  full-days rule did, and the card rail's `granted_until` behaves the same.
 
 ## TON orders (pinned in `tests/tonPendingOrders.test.ts`)
 
@@ -370,7 +406,7 @@ message and the reply went to the model chat.
   `handleTelegramUpdate`; a captured message is not put in a prompt and not kept in
   `tg:chat:<id>`. When the window cannot be checked (the database does not answer), the message
   is not read at all and the sender is asked to send it again.
-- **Private chats only.** In a group, `/paysupport` points to the private chat.
+- **Private chats only.** In a group, `/paysupport` points to the private chat, and nothing said there reaches a support window or the chat.
 - **If no admin can be told** (no id configured, or Telegram refuses), the request is still
   saved, the buyer is told to write to the support address as well, and `[Support] ALERT` is logged.
 - `GET /api/admin/payment-support?status=open|answered|closed` lists requests (`ADMIN_SECRET`).
@@ -398,8 +434,23 @@ message and the reply went to the model chat.
   missing citations / vendor names. Wired into Oracle SSE provenance events
   (v1 flags only; does not block streams).
 - `worker/oracleInteractionGuard.ts`: instructs Oracle to respond
-  `not_measured` or "not verified" when data is missing; numeric claims
-  without tool evidence are rejected. Live.
+  `not_measured` or "not verified" when data is missing. Its monitor only flags
+  numeric claims without tool evidence (a `monitor` event). Live.
+- Oracle chat (`worker/oracleChat.ts`) runs every reply through `withoutUnmeasuredClaims`
+  (`worker/chatHonesty.ts`, the bot filter's site-number step). A sentence that states a
+  measurement nobody made is replaced with the "not measured" sentence in the session
+  history, a "Not measured" warning token follows the tokens already streamed, and
+  `oracle_output_redacted` is logged. Unlike the bot, a general figure or a target stays
+  ("Aim for a CTR above 3%", "A good LCP is under 2.5 seconds"): a sentence counts only
+  when it is about the user, us, the site under discussion ("the site", "its"), a named
+  site or a "Label: 45" reading that is not a bar ("LCP: under 2.5 s"), claims a look at a
+  site, or answers the user's question for a metric (CTR, domain rating, DA, DR and PA
+  count as metrics there), and a percentage after above, below, under, at least or at most
+  is a bar to clear, not a promise. A number from a user sentence that states a figure (in
+  a message or in the retrieved account memory) is the user's own wherever the reply
+  repeats it, and so is every number of a tool result that did not error and is
+  `measured`. One general figure that says "it" ("it gets about 27% of clicks") is still
+  replaced. Live.
 - `worker/chatHonesty.ts`: the Telegram bot's free-text chat fetches and measures
   nothing, and the model has no say over prices or payments.
   - **Two kinds of message never reach the model.** `chatRoute` reads the user's
@@ -433,12 +484,13 @@ message and the reply went to the model chat.
     prices are, where billing help is, and that this chat cannot quote prices or
     take payments.
   - A sentence that states a measurement nobody made (a percentage, a rank, a score,
-    a count of citations or visits, a claim of having looked at the site) becomes
-    one "not measured" sentence. Links, dates, phone and version numbers and HTTP
-    status codes are set aside first. A number the user wrote is kept only where the
-    sentence hands it back ("you said"). An instruction keeps its count ("Add 3 FAQ
-    questions") and loses a promised outcome. Status comes from the claim ledger
-    (`services/evidenceBound`).
+    a count of citations or visits, a count of AI answers or a results page with the
+    user as subject ("your brand appears in 12 AI answers", "you are on page 2"), a claim
+    of having looked at the site) becomes one "not measured" sentence. Links, dates,
+    phone and version numbers and HTTP status codes are set aside first. A number the
+    user wrote is kept only where the sentence hands it back ("you said"). An
+    instruction keeps its count ("Add 3 FAQ questions") and loses a promised outcome.
+    Status comes from the claim ledger (`services/evidenceBound`).
   - Inline code is read as prose. Only JSON-LD (an object with `@context`) and head
     tags (`meta`, `link`, `title`, a JSON-LD `script`) are set aside as something
     to paste, fenced or not. Any other JSON, markup or fenced text, and everything
@@ -447,11 +499,24 @@ message and the reply went to the model chat.
     luminarasuite.com, the `WEBAPP_URL` host, one the user wrote, or a reference
     host (`REFERENCE_LINK_HOSTS`). Links inside JSON-LD and head tags are checked
     too. A sentence that asks for a code, password, seed phrase or key is removed.
-  Business DNA enters the prompt only inside an untrusted-content fence whose
-  markers carry a one-time code, with each field capped at 300 characters. The
-  reply is sent with no `parse_mode` and with link previews off. The filter is a
-  backstop, pattern based and mostly English; the prompt rules and the plan-question
-  rule are the main controls. Live.
+  Business DNA enters the prompt only inside an untrusted-content fence whose markers carry
+  a one-time code, with each field capped at 300 characters. The reply is sent with no
+  `parse_mode` and with link previews off. A reply longer than one Telegram message is cut
+  at its last whole word, with the ellipsis inside 4,096 characters and no emoji split in
+  half; plain support messages are cut the same way. History keeps what was sent, and only
+  once Telegram accepted it. A turn that spent a free unit and delivered no answer (no
+  provider answered, Telegram refused the reply, or the turn failed) gives the unit back,
+  once. A message with no text (a sticker, a voice note, a photo with or without a caption,
+  a service message) gets no answer and spends nothing; inside a payment support window it
+  is still captured. Every feature of the bot is for a private chat. In a group, the
+  billing and admin commands (`/paysupport`, `/support`, `/admin`, `/refund <user>
+  <charge>`, `/reply`, `/close`, `/requests`) say to use a private chat, any other command
+  gets one plain note ("Luminara works in a private chat..."), a command addressed to
+  another bot (`/plan@OtherBot`, checked against `getMe` once per isolate) gets nothing,
+  and anything else is ignored. Payment updates are handled before this, wherever they
+  come from. Gemini gets its key in the `x-goog-api-key` header, never in the URL. The
+  filter is a backstop, pattern based and mostly English; the prompt rules and the
+  plan-question rule are the main controls. Live.
 - DataForSEO / Umami sidecars: live when env-bound; the front-end traffic
   path returns `not_configured` when unreachable. See `services/competitors/README.md`.
 - Telegram webhook, license service, sentinel scan: live when bindings exist.
@@ -502,6 +567,7 @@ URLs, TON pricing vars, D1 `DB`, KV `LUMINARA_KV`. Secrets stay server-side.
 ## Key tests
 
 - `tests/userStore.test.ts`: user/profile + workspace blob round trip.
+- `tests/workspaceVersionRoute.test.ts`: workspace PUT refuses stale and older-bundle writes; D1 compare-and-swap.
 - `tests/agentOutputValidators.test.ts`: unmeasured-output rejection.
 - `tests/browserAction.test.ts`, `tests/browserActionMcp.test.ts`: MCP + DOM action surface.
 - `tests/evalsRunner.test.ts`, `tests/honestyGates.test.ts`: honesty gates.
