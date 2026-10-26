@@ -1,6 +1,6 @@
 # Release #278 and batch 3
 
-Status: CEO gate GO after two rounds (with the citation verifier and a release/security/payments audit applied). Awaiting the owner's approval; nothing here executes before it. Code references are to `origin/staging` at 77d1dd4 (review batch 2, PR #273). Items name functions, routes and tests rather than line numbers.
+Status: approved by the owner on 2026-10-26 with the recommended answer to every decision (recorded below). CEO gate GO after two rounds, with the citation verifier and a release/security/payments audit applied. Code references are to `origin/staging` at 77d1dd4 (review batch 2, PR #273). Items name functions, routes and tests rather than line numbers.
 
 ## Summary for the owner
 
@@ -17,6 +17,8 @@ Release #278 is ready and should go out before any batch-3 work, once Workers Bu
 - Agents in this session cannot read production (D1, `wrangler deployments`); those are owner steps.
 
 ## Owner decisions
+
+Decided 2026-10-26: 1a disconnect Git on all three Workers; 2a make `staging` the default branch; 3a delete the Launchpad alert feature; 4a memoize `identify`, the growth guard and the routes rule now, the split after B3a; 5a delete `luminara-search` after 7 quiet days once no route is attached; 6a the Cursor release rule; 7a ship 1.0.3 unsigned and decide signing before the next desktop push.
 
 1. **Workers Builds** (`luminara-search-oracle-agent`, `luminara-search-oracle-agent-staging`, `luminara-search`). Leaving it connected is not an option for this release: every `main` push can redeploy production with `STRIPE_CHECKOUT_LIVE=false`, and pushing integration branches is only safe once this is settled. (a) Disconnect Git on all three, recommended; (b) keep Builds with production deploy, branch deploys and previews off.
 2. **Dependabot security PRs.** `.github/dependabot.yml` targets `staging`, but security updates always use the default branch and ignore `target-branch`; npm's `dependency-type: "all"` does not cover transitive packages. (a) Make `staging` the default branch (security PRs and new agent PRs then target it; release PRs still name `main`; no workflow is scheduled on `main`), recommended; (b) retarget each security PR to `staging` by hand; (c) turn security PRs off, keep alerts, and open a periodic `npm update <pkg>` PR to `staging`; (d) leave as is. Under (a), (b) and (c), #255, #254 and #189 are retargeted to `staging` after the back-merge and ride in Release S; under (d) they stay drafts.
