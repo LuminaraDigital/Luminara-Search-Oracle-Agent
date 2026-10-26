@@ -45,6 +45,7 @@
     "pstack",
     "ponytail",
     ".cursor",
-    ".claude"
+    ".claude",
+    "apps"
   ]
 }

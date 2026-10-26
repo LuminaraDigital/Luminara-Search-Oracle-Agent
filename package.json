@@ -72,7 +72,10 @@
     "grounding:gate": "node --experimental-strip-types services/grounding/cli.ts",
     "grounding:score": "node --experimental-strip-types services/grounding/cli.ts",
     "rl:transmute": "node scripts/rl/transmute-datasets.mjs",
-    "rl:dpo": "node --experimental-strip-types scripts/rl/dpo-alignment-orchestrator.mjs"
+    "rl:dpo": "node --experimental-strip-types scripts/rl/dpo-alignment-orchestrator.mjs",
+    "android:verify": "powershell -NoProfile -ExecutionPolicy Bypass -File apps/android/scripts/verify-release-readiness.ps1",
+    "android:keystore": "powershell -NoProfile -ExecutionPolicy Bypass -File apps/android/scripts/generate-release-keystore.ps1",
+    "android:assets": "node scripts/generate-play-store-assets.mjs"
   },
   "dependencies": {
     "@formepdf/core": "^0.28.0",
