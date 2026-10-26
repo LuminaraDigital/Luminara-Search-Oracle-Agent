@@ -6,6 +6,7 @@ import { CHECKOUT_TERM_LINE, listPriceSummary } from '../components/paywall/plan
 import { PAID_PLAN_PRICES, type PaidPlanId } from '../components/paywall/planPrices';
 import { LIVE_ANSWER_CHECKS } from '../services/marketing/engineCoverage';
 import { REAL_ESTATE_AUDIENCE } from '../services/marketing/marketingHeroCopy';
+import { HUB_PAGES, HUB_REVIEWED } from '../services/marketing/seoHubPages';
 import { COMPANY_SERVICES_URL, COMPANY_SITE_URL } from '../services/legal/consumerTerms';
 import { PLAN_ENTITLEMENTS } from '../services/plans/planEntitlements';
 
@@ -39,6 +40,7 @@ Allow: /faq
 Allow: /contact
 Allow: /desktop
 Allow: /compare/
+Allow: /best/
 Allow: /docs/
 Allow: /docs/what-is-aeo.html
 Allow: /llms.txt
@@ -64,6 +66,7 @@ Allow: /faq
 Allow: /contact
 Allow: /desktop
 Allow: /compare/
+Allow: /best/
 Allow: /docs/
 Allow: /docs/what-is-aeo.html
 Allow: /llms.txt
@@ -128,10 +131,7 @@ export function buildSitemapXml(origin: string = 'https://www.luminarasuite.com'
   <url><loc>${base}/docs/mcp.html</loc></url>
   <url><loc>${base}/docs/what-is-aeo.html</loc></url>
   <url><loc>${base}/desktop</loc></url>
-  <url><loc>${base}/compare/profound</loc></url>
-  <url><loc>${base}/compare/ahrefs</loc></url>
-  <url><loc>${base}/compare/otterly</loc></url>
-  <url><loc>${base}/compare/peec</loc></url>
+${HUB_PAGES.map((page) => `  <url><loc>${base}${page.path}</loc></url>`).join('\n')}
   <url><loc>${base}/llms.txt</loc></url>
 </urlset>
 `;
@@ -237,10 +237,12 @@ ${llmsPaidPlanBlock()}
 - Why Luminara: https://www.luminarasuite.com/why
 - Pricing: https://www.luminarasuite.com/pricing
 - Windows desktop: https://www.luminarasuite.com/desktop
-- Profound comparison: https://www.luminarasuite.com/compare/profound
-- Ahrefs comparison: https://www.luminarasuite.com/compare/ahrefs
-- Otterly AI comparison: https://www.luminarasuite.com/compare/otterly
-- Peec AI comparison: https://www.luminarasuite.com/compare/peec
+
+## Comparisons and buyer's guides
+
+Competitor rows cite each vendor's public pages as of ${HUB_REVIEWED}. No scores are published for other products.
+
+${HUB_PAGES.map((page) => `- ${page.label}: https://www.luminarasuite.com${page.path}`).join('\n')}
 
 ## Studio
 

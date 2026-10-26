@@ -64,6 +64,7 @@ const AgentReportView = lazyWithReload(() => import('./components/audit/AgentRep
 const InfrastructurePage = lazyWithReload(() => import('./components/InfrastructurePage'));
 const IntelligencePage = lazyWithReload(() => import('./components/IntelligencePage'));
 const WhyLuminaraPage = lazyWithReload(() => import('./components/WhyLuminaraPage'));
+const SeoHubPage = lazyWithReload(() => import('./components/marketing/SeoHubPage'));
 const PricingPage = lazyWithReload(() => import('./components/PricingPage'));
 const MethodologyPage = lazyWithReload(() => import('./components/MethodologyPage'));
 const SampleReportPage = lazyWithReload(() => import('./components/SampleReportPage'));
@@ -103,6 +104,7 @@ const MARKETING_VIEWS = new Set<AppView>([
   AppView.INFRASTRUCTURE,
   AppView.INTELLIGENCE,
   AppView.WHY_US,
+  AppView.COMPARE,
   AppView.PRICING,
   AppView.METHODOLOGY,
   AppView.SAMPLE_REPORT,
@@ -124,6 +126,7 @@ import {
   urlForView,
 } from './utils/marketingRoutes';
 import { applyDocumentMetaForView } from './services/marketing/documentMeta';
+import { hubPageForPath } from './services/marketing/seoHubPages';
 
 const viewFromLocation = (): AppView | null => {
   if (typeof window === 'undefined') return null;
@@ -921,7 +924,10 @@ const App: React.FC = () => {
 
   const introOverlay = showIntro ? <Suspense fallback={null}><AppIntroOverlay onComplete={completeIntro} /></Suspense> : null;
 
-  if (view === AppView.NOT_FOUND) {
+  const hubPage = view === AppView.COMPARE ? hubPageForPath(window.location.pathname) : null;
+
+  // A COMPARE view without a hub path (e.g. a stray #compare hash) is Not Found, never a blank page.
+  if (view === AppView.NOT_FOUND || (view === AppView.COMPARE && !hubPage)) {
     return (
       <Suspense fallback={null}>
         <NotFoundPage onHome={() => setView(AppView.LANDING)} />
@@ -1087,6 +1093,18 @@ const App: React.FC = () => {
           onTerminal={() => (appAuth.authenticated ? enterInstantAudit() : openLoginWall('signup'))}
           onNavigatePricing={() => setView(AppView.PRICING)}
         />
+        {marketingOverlays}
+      </Suspense>
+      </MarketingChromeContext.Provider>
+    );
+  }
+
+  if (hubPage) {
+    return (
+      <MarketingChromeContext.Provider value={marketingChrome}>
+      <Suspense fallback={<ViewLoader label="Loading" />}>
+        {introOverlay}
+        <SeoHubPage page={hubPage} onTerminal={() => enterInstantAudit()} />
         {marketingOverlays}
       </Suspense>
       </MarketingChromeContext.Provider>

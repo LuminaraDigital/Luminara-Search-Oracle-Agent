@@ -31,10 +31,10 @@ describe('marketingRoutes', () => {
     expect(marketingViewFromPathname('/how/')).toBe(AppView.INFRASTRUCTURE);
     expect(marketingViewFromPathname('/infrastructure')).toBe(AppView.INFRASTRUCTURE);
     expect(marketingViewFromPathname('/why-us')).toBe(AppView.WHY_US);
-    expect(marketingViewFromPathname('/compare/profound')).toBe(AppView.WHY_US);
-    expect(marketingViewFromPathname('/compare/ahrefs')).toBe(AppView.WHY_US);
-    expect(marketingViewFromPathname('/compare/otterly')).toBe(AppView.WHY_US);
-    expect(marketingViewFromPathname('/compare/peec')).toBe(AppView.WHY_US);
+    expect(marketingViewFromPathname('/compare/profound')).toBe(AppView.COMPARE);
+    expect(marketingViewFromPathname('/compare/ahrefs')).toBe(AppView.COMPARE);
+    expect(marketingViewFromPathname('/compare/otterly')).toBe(AppView.COMPARE);
+    expect(marketingViewFromPathname('/compare/peec')).toBe(AppView.COMPARE);
   });
 
   it('maps legacy hashes', () => {
@@ -92,10 +92,10 @@ describe('marketingRoutes', () => {
 
 describe('tab titles', () => {
   it('uses Topic | Luminara Suite, unique, under 60 characters', () => {
-    expect(resolveDocumentTitle('/compare/profound', AppView.WHY_US)).toBe('Luminara vs Profound | Luminara Suite');
-    expect(resolveDocumentTitle('/compare/ahrefs', AppView.WHY_US)).toBe('Luminara vs Ahrefs | Luminara Suite');
-    expect(resolveDocumentTitle('/compare/otterly', AppView.WHY_US)).toBe('Luminara vs Otterly | Luminara Suite');
-    expect(resolveDocumentTitle('/compare/peec', AppView.WHY_US)).toBe('Luminara vs Peec | Luminara Suite');
+    expect(resolveDocumentTitle('/compare/profound', AppView.COMPARE)).toBe('Luminara vs Profound | Luminara Suite');
+    expect(resolveDocumentTitle('/compare/ahrefs', AppView.COMPARE)).toBe('Luminara vs Ahrefs | Luminara Suite');
+    expect(resolveDocumentTitle('/compare/otterly', AppView.COMPARE)).toBe('Luminara vs Otterly | Luminara Suite');
+    expect(resolveDocumentTitle('/compare/peec', AppView.COMPARE)).toBe('Luminara vs Peec | Luminara Suite');
     expect(resolveDocumentTitle('/why', AppView.WHY_US)).toBe('Why Luminara | Luminara Suite');
     expect(resolveDocumentTitle('/dashboard', AppView.DASHBOARD)).toBe('Dashboard | Luminara Suite');
     expect(resolveDocumentTitle('/', AppView.DASHBOARD)).toBe('Dashboard | Luminara Suite');

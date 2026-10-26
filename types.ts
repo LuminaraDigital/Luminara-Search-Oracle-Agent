@@ -22,6 +22,8 @@ export enum AppView {
   INFRASTRUCTURE = 'INFRASTRUCTURE',
   INTELLIGENCE = 'INTELLIGENCE',
   WHY_US = 'WHY_US',
+  /** /compare/* and /best/* pages. The page comes from the pathname. */
+  COMPARE = 'COMPARE',
   PRICING = 'PRICING',
   METHODOLOGY = 'METHODOLOGY',
   SAMPLE_REPORT = 'SAMPLE_REPORT',

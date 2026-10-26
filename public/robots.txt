@@ -28,6 +28,7 @@ Allow: /faq
 Allow: /contact
 Allow: /desktop
 Allow: /compare/
+Allow: /best/
 Allow: /docs/
 Allow: /docs/what-is-aeo.html
 Allow: /llms.txt
@@ -53,6 +54,7 @@ Allow: /faq
 Allow: /contact
 Allow: /desktop
 Allow: /compare/
+Allow: /best/
 Allow: /docs/
 Allow: /docs/what-is-aeo.html
 Allow: /llms.txt

@@ -33,10 +33,13 @@ export const MARKETING_FAQ: MarketingFaqItem[] = [
   },
 ];
 
-export function buildFaqPageJsonLd(items: MarketingFaqItem[] = MARKETING_FAQ): Record<string, unknown> {
+export function buildFaqPageJsonLd(
+  items: MarketingFaqItem[] = MARKETING_FAQ,
+  id = 'https://www.luminarasuite.com/#faq',
+): Record<string, unknown> {
   return {
     '@type': 'FAQPage',
-    '@id': 'https://www.luminarasuite.com/#faq',
+    '@id': id,
     mainEntity: items.map((item) => ({
       '@type': 'Question',
       name: item.question,

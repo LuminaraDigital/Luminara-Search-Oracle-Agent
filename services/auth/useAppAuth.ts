@@ -42,6 +42,7 @@ export const PUBLIC_APP_VIEWS = new Set([
   'INFRASTRUCTURE',
   'INTELLIGENCE',
   'WHY_US',
+  'COMPARE',
   'PRICING',
   'METHODOLOGY',
   'SAMPLE_REPORT',
