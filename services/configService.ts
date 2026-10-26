@@ -12,7 +12,7 @@ export interface ProviderStatus {
   maskedKey: string;
 }
 
-import { canUseHostedProviderKey, isSidecarConfiguredOnServer, loadServerHealth, providerFetch, sidecarFetch } from './apiClient';
+import { NATIVE_ENGINE_IDS, canUseHostedProviderKey, isSidecarConfiguredOnServer, loadServerHealth, providerFetch, sidecarFetch } from './apiClient';
 import { isDesktopShell } from './desktop/desktopShell';
 
 /** Default sidecar origin for the desktop app and pages served from localhost. */
@@ -1046,10 +1046,8 @@ export class ConfigService {
     }
   }
 
-  private static readonly NATIVE_ENGINE_IDS = ['groq', 'nim', 'ollama', 'openrouter', 'freellm'] as const;
-
   public getNativePriority(): Array<'groq' | 'nim' | 'ollama' | 'openrouter' | 'freellm'> {
-    const allowed = ConfigService.NATIVE_ENGINE_IDS as readonly string[];
+    const allowed: readonly string[] = NATIVE_ENGINE_IDS;
     // Groq first: free hosted tier, and the most reliable cloud engine after
     // NVIDIA/Groq Llama-3.x retirements in Aug 2026.
     let order: Array<'groq' | 'nim' | 'ollama' | 'openrouter' | 'freellm'> = ['groq', 'nim', 'openrouter', 'ollama', 'freellm'];

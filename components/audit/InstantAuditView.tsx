@@ -26,7 +26,7 @@ import { toUserFacingText } from '../../utils/userFacingText';
 import { draftPersistenceService, DRAFT_KEYS } from '../../services/state/draftPersistenceService';
 import { productTelemetry } from '../../services/analytics/productTelemetry';
 import { AuditProgress } from '../ui/PlaceLoader';
-import { accountCallsAllowed, apiBase, canUseHostedProviderKey, ensureHostedProviderReady, getCurrentQuotaSync, getServerHealthSync, hasActivePaidPlanSync, loadServerHealth, workerFetchWithAuthRetry, subscribeQuota, type QuotaInfo } from '../../services/apiClient';
+import { accountCallsAllowed, apiBase, canUseHostedProviderKey, ensureHostedProviderReady, getCurrentQuotaSync, getServerHealthSync, hasActivePaidPlanSync, hostedAllowanceSpent, loadServerHealth, workerFetchWithAuthRetry, subscribeQuota, type QuotaInfo } from '../../services/apiClient';
 import { UpgradePrompt } from '../upgrade/UpgradeSurfaces';
 import { entitlementsFor } from '../../services/plans/planEntitlements';
 import { buildCursorMcpServersJson, mcpHttpUrlFromApiBase } from '../../services/mcp/cursorMcpSnippet';
@@ -231,7 +231,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       return;
     }
 
-    if (quota && !quota.isUnlimited && quota.remaining <= 0 && (!quota.bonusRemaining || quota.bonusRemaining <= 0)) {
+    if (quota && hostedAllowanceSpent(quota)) {
       setError(`Daily query limit reached (${quota.limit}/${quota.limit} used today).`);
       return;
     }
@@ -651,7 +651,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
         </div>
       )}
 
-      {!report && quota && !quota.isUnlimited && quota.remaining <= 0 && (!quota.bonusRemaining || quota.bonusRemaining <= 0) && (
+      {!report && quota && hostedAllowanceSpent(quota) && (
         <UpgradePrompt kind="quota" />
       )}
 

@@ -47,9 +47,15 @@ import {
 } from '../services/agentCore/harnessProtocol';
 import { markProjectContextLoaded, requireProjectContextBeforePaid } from './mcpServer';
 import { getProjectContext } from './projectContextService';
+import { scheduleWaitUntil } from './welcomeEmail';
+import { withoutUnmeasuredClaims } from './chatHonesty';
 
 /** Runtime skill slug for hosted Oracle chat (admin-seedable via agent_skills). */
 const ORACLE_CHAT_SKILL_SLUG = 'oracle-chat';
+
+/** Streamed after a reply that stated a number nobody measured. History keeps the filtered copy. */
+const UNMEASURED_CLAIM_WARNING =
+  'Not measured: a number in this reply was not checked or measured in this chat. Treat it as unknown until an audit measures it.';
 
 /** Cap for control-plane POST bodies (approval, callback, state patch). */
 const MAX_CONTROL_BODY_CHARS = 64 * 1024;
@@ -390,7 +396,8 @@ export async function handleOracleChatSse(
       await write('status', { stage: 'thinking' });
 
       let toolNote = '';
-      let hadToolEvidence = false;
+      // The text of a measured tool result: evidence for the numbers in the reply.
+      let measuredToolText = '';
       const allowRegexAutoTools = parseAllowRegexAutoTools(env.ORACLE_AUTO_TOOLS);
       const toolDecision = shouldInvokeResearchKeywords(message, {
         allowRegexAutoTools,
@@ -555,7 +562,6 @@ export async function handleOracleChatSse(
             executionArgs,
             rt,
           );
-          hadToolEvidence = true;
           toolNote = `\n\n${fenceToolResult('research_keywords', toolResult.text)}`;
           if (!toolResult.isError) {
             const billedCents = dfsCred ? BYOK_PAID_CALL_COST_CENTS : HOSTED_PAID_CALL_COST_CENTS;
@@ -593,6 +599,7 @@ export async function handleOracleChatSse(
               ? [{ kind: 'dfs', excerpt: toolResult.text.slice(0, 240) }]
               : [],
           );
+          if (!toolResult.isError && rawStatus === 'measured') measuredToolText = toolResult.text;
           const ledger = new ClaimLedger();
           const cite = citationSupportHeuristic({
             claimText: toolResult.text.slice(0, 400),
@@ -664,11 +671,13 @@ export async function handleOracleChatSse(
         fallbackPrompt: bundledOraclePrompt,
       });
       let systemPrompt = withHealthClaimRule(oracleSkill?.promptBody || bundledOraclePrompt);
+      let memoryFacts: string[] = [];
       try {
         const { ragContextForOracle } = await import('./memoryRag');
-        const memoryBlock = await ragContextForOracle(env, billingId(user), message);
-        if (memoryBlock) {
-          systemPrompt = `${systemPrompt}\n\n${memoryBlock}`;
+        const memory = await ragContextForOracle(env, billingId(user), message);
+        if (memory.block) {
+          systemPrompt = `${systemPrompt}\n\n${memory.block}`;
+          memoryFacts = memory.facts;
         }
       } catch {
         /* memory RAG is best-effort */
@@ -737,7 +746,7 @@ export async function handleOracleChatSse(
         }
       }
 
-      const monitor = monitorOracleOutput(fullText, hadToolEvidence);
+      const monitor = monitorOracleOutput(fullText, Boolean(measuredToolText));
       const guarded = guardPasteReadyCopy(fullText);
       if (guarded.changed) {
         // Tokens already sent keep the original phrases. The warning follows them, and history stores the stripped copy.
@@ -755,6 +764,17 @@ export async function handleOracleChatSse(
       // Honesty validators: flag into provenance only (v1 never blocks the stream).
       const validation = runAllValidators(fullText);
       const validationSummary = summarizeFindings(validation.findings);
+
+      // A number nobody measured: the warning follows the tokens already sent, and history stores
+      // the filtered copy. Figures the user gave, here or in account memory, and the numbers of a
+      // measured tool result stay.
+      const userTexts = [...memoryFacts, ...historySource.filter((t) => t.role === 'user').map((t) => t.content), message];
+      const honest = withoutUnmeasuredClaims(fullText, userTexts, measuredToolText ? [measuredToolText] : []);
+      if (honest.replaced > 0) {
+        await write('token', { text: `\n\n${UNMEASURED_CLAIM_WARNING}` });
+        fullText = honest.text;
+        console.warn(JSON.stringify({ event: 'oracle_output_redacted', sentences: honest.replaced }));
+      }
 
       if (sessionStub && fullText) {
         await sessionStub.fetch('https://oracle-session/append', {
@@ -831,7 +851,9 @@ export async function handleOracleChatSse(
     }
   };
 
-  run().catch((err) => console.error('[oracleChat] stream run failed:', err));
+  // Cloudflare cancels work outside waitUntil once the client disconnects; without it a closed
+  // tab skips the cost event and the /settle call, leaving the session locked (TURN_ACTIVE).
+  scheduleWaitUntil(run().catch((err) => console.error('[oracleChat] stream run failed:', err)));
 
   return new Response(readable, {
     status: 200,

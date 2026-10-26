@@ -3,7 +3,7 @@ import worker from '../worker/index';
 import type { Env } from '../worker/env';
 import { mintOpaqueSession } from '../worker/opaqueSession';
 import { decoratePublicHtml, resetHashedPublicUrls } from '../worker/staticPublicCache';
-import { resetAccountBoot, startAccountBoot } from '../services/auth/accountBoot';
+import { resetAccountBoot, startAccountBoot, takeAccountBoot } from '../services/auth/accountBoot';
 import { writeCachedFirebaseIdToken } from '../services/auth/firebaseIdToken';
 
 function kv(store = new Map<string, string>()): KVNamespace {
@@ -103,5 +103,24 @@ describe('signed-in boot', () => {
     expect(a?.accountId).toBe('fb:1');
     expect(b?.workspace.updatedAt).toBe(4);
     expect(vi.mocked(fetch).mock.calls.length).toBe(1);
+  });
+
+  it('hands a pending boot only to the token it was started for', async () => {
+    vi.stubGlobal('window', { location: { origin: 'https://luminarasuite.com' } });
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      ok: true,
+      accountId: 'fb:a',
+      workspace: { updatedAt: 1, payload: {} },
+      quota: { limit: 3, used: 0, remaining: 3, resetSec: 10, isUnlimited: false, plan: 'free' },
+    }), { status: 200, headers: { 'content-type': 'application/json' } })));
+    writeCachedFirebaseIdToken('tok-a');
+    const started = startAccountBoot('tok-a');
+
+    writeCachedFirebaseIdToken('tok-b');
+    expect(await takeAccountBoot()).toBeNull();
+
+    writeCachedFirebaseIdToken('tok-a');
+    expect((await takeAccountBoot())?.accountId).toBe('fb:a');
+    await started;
   });
 });

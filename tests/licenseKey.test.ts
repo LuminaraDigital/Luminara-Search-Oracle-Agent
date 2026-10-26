@@ -361,4 +361,57 @@ describe('Atomic license redemption (D1 ledger)', () => {
     const retried = await activateLicenseKey(env, 'flaky_user', minted.key);
     expect(retried.ok).toBe(true);
   });
+
+  /** A web login whose billing account is another id, as linking two sign-ins leaves it. */
+  function linkedLogin(DB: ReturnType<typeof makeEnv>['DB']) {
+    DB!.sqlite
+      .prepare(`INSERT INTO users (id, source, created_at, last_seen_at, account_id) VALUES ('fb:linked', 'firebase', 1, 1, 'acct_linked')`)
+      .run();
+  }
+
+  it('a key whose write reached only the account record is granted and stays used: no other account can redeem it, and a retry adds nothing', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { env, kv, DB } = makeEnv();
+    linkedLogin(DB);
+    const [minted] = await generateLicenseKeys(env, { plan: 'growth', durationDays: 30, count: 1 });
+
+    kv.failPutsMatching = /^sub:fb:linked$/;
+    const first = await activateLicenseKey(env, 'fb:linked', minted.key);
+    kv.failPutsMatching = null;
+    const landed = await kv.get('sub:acct_linked', 'json');
+    expect(first).toMatchObject({ ok: true, plan: 'growth', expiresAt: landed.expiresAt });
+    expect(DB!.sqlite.prepare('SELECT account_id FROM license_redemptions WHERE license_key = ?').all(minted.key)).toEqual([
+      { account_id: 'acct_linked' },
+    ]);
+
+    const other = await activateLicenseKey(env, 'user_other', minted.key);
+    expect(other.ok).toBe(false);
+    expect(other.error).toMatch(/already been redeemed/i);
+    expect(kv.store.has('sub:user_other')).toBe(false);
+
+    const retried = await activateLicenseKey(env, 'fb:linked', minted.key);
+    expect(retried.ok).toBe(false);
+    expect(await kv.get('sub:acct_linked', 'json')).toEqual(landed);
+  });
+
+  it.each([
+    ['a minted key', async (env: any) => (await generateLicenseKeys(env, { plan: 'growth', durationDays: 30, count: 1 }))[0].key],
+    // The retry must not be refused for the paid plan its own earlier write put in place.
+    ['a trial code', async () => 'LUM-GROWTH-3DAY'],
+  ])('%s the account record already names, with its claim given back, is finished without adding its days', async (_kind, keyFor) => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { env, kv, DB } = makeEnv();
+    linkedLogin(DB);
+    const key = await keyFor(env);
+    // What a write that reached only the account record left behind before its claim was kept.
+    const halfWritten = { plan: 'growth', paymentMethod: 'license_key', orderId: `lic_${key}`, startedAt: Date.now(), expiresAt: Date.now() + 30 * 86400_000 };
+    await kv.put('sub:acct_linked', JSON.stringify(halfWritten));
+
+    const retried = await activateLicenseKey(env, 'fb:linked', key);
+    expect(retried).toMatchObject({ ok: true, plan: 'growth', expiresAt: halfWritten.expiresAt });
+    const account = await kv.get('sub:acct_linked', 'json');
+    expect(account).toEqual({ ...halfWritten, appliedOrders: [`lic_${key}`] });
+    expect(await kv.get('sub:fb:linked', 'json')).toEqual(account);
+    expect(warn).toHaveBeenCalledWith(JSON.stringify({ event: 'order_already_applied' }));
+  });
 });

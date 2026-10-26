@@ -14,8 +14,6 @@ import { json } from './workerUtils';
 
 const MAX_STORAGE_KEYS = 200;
 const MAX_STORAGE_VALUE_CHARS = 200_000;
-const MAX_KEY_BAG_ENTRIES = 64;
-const MAX_KEY_VALUE_CHARS = 8_000;
 
 /** Privilege / billing fields that must never be client-writable via workspace blobs. */
 const FORBIDDEN_WORKSPACE_TOP_LEVEL = new Set([
@@ -117,6 +115,8 @@ function clampStringRecord(
 /**
  * Mass-assignment defense for PUT /workspace.
  * Allow-lists storage / keys / encryptedKeys only; rejects privilege fields.
+ * A plain-text `keys` bag (sent by older clients) is accepted but never stored: BYOK keys
+ * reach D1 only as the client-encrypted `encryptedKeys`.
  */
 export function sanitizeWorkspaceWrite(
   raw: unknown,
@@ -146,7 +146,6 @@ export function sanitizeWorkspaceWrite(
     if (typeof body.keys !== 'object' || body.keys === null || Array.isArray(body.keys)) {
       return { ok: false, error: 'keys must be a string map' };
     }
-    payload.keys = clampStringRecord(body.keys as Record<string, unknown>, MAX_KEY_BAG_ENTRIES, MAX_KEY_VALUE_CHARS);
   }
   if (body.encryptedKeys !== undefined) {
     if (typeof body.encryptedKeys !== 'object' || body.encryptedKeys === null || Array.isArray(body.encryptedKeys)) {
@@ -393,6 +392,19 @@ export function withRateLimitHeaders(response: Response, headers: Record<string,
   return out;
 }
 
+/**
+ * KV write for a soft counter or marker. KV refuses a second write to one key within a second;
+ * that must not turn a request whose work is already done into a 500 the client retries.
+ * The log carries the key prefix only, never the account id or email hash in the key.
+ */
+export async function putCounterBestEffort(env: Env, key: string, value: string, ttlSec: number): Promise<void> {
+  try {
+    await env.LUMINARA_KV?.put(key, value, { expirationTtl: ttlSec });
+  } catch {
+    console.warn(JSON.stringify({ event: 'kv_counter_write_failed', prefix: key.split(':')[0] }));
+  }
+}
+
 // ---- Sliding-window / burst / outbound budget (toll-fraud defense) ----------------------------
 
 type SlidingBucket = { timestamps: number[] };
@@ -609,10 +621,11 @@ export async function recordFailedSignIn(env: Env, emailHash: string): Promise<v
   const cutoff = now - windowMs;
   const prior = (await readSlidingBucket(env.LUMINARA_KV, key)).filter((t) => t > cutoff);
   const next = [...prior, now];
-  await env.LUMINARA_KV.put(
+  await putCounterBestEffort(
+    env,
     key,
     JSON.stringify({ timestamps: next } satisfies SlidingBucket),
-    { expirationTtl: SIGN_IN_LOCKOUT_WINDOW_SEC + 60 },
+    SIGN_IN_LOCKOUT_WINDOW_SEC + 60,
   );
 }
 
@@ -797,7 +810,7 @@ export async function incrementOutboundDaily(env: Env, by = 1): Promise<number> 
   if (!env.LUMINARA_KV || by <= 0) return 0;
   const key = `system_metrics:outbound_daily:${utcDayKey()}`;
   const next = Number((await env.LUMINARA_KV.get(key)) || 0) + by;
-  await env.LUMINARA_KV.put(key, String(next), { expirationTtl: 60 * 60 * 48 });
+  await putCounterBestEffort(env, key, String(next), 60 * 60 * 48);
   const limit =
     Number(env.OUTBOUND_EMAIL_DAILY_LIMIT || DEFAULT_OUTBOUND_DAILY_LIMIT) || DEFAULT_OUTBOUND_DAILY_LIMIT;
   if (next >= limit) {

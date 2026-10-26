@@ -87,6 +87,9 @@ type AuthCodeRecord = {
   createdAt?: number;
 };
 
+/** KV refuses a get with cacheTtl under 30 seconds, so 30 is the shortest edge cache it allows. */
+const SHORTEST_KV_CACHE_TTL_SECONDS = 30;
+
 /**
  * Consume an auth code: delete-first, then treat missing as invalid.
  * A short-lived redeemed gate reduces double-redeem races under KV eventual consistency.
@@ -96,13 +99,13 @@ async function consumeAuthCode(env: Env, code: string): Promise<AuthCodeRecord |
   const codeKey = `${CODES_KV_PREFIX}${code}`;
   const redeemedKey = `${CODES_KV_PREFIX}redeemed:${code}`;
 
-  const alreadyRedeemed = await env.LUMINARA_KV.get(redeemedKey, { cacheTtl: 0 });
+  const alreadyRedeemed = await env.LUMINARA_KV.get(redeemedKey, { cacheTtl: SHORTEST_KV_CACHE_TTL_SECONDS });
   if (alreadyRedeemed) return null;
 
   // Claim redemption before reading the code payload.
   await env.LUMINARA_KV.put(redeemedKey, '1', { expirationTtl: 600 });
 
-  const raw = await env.LUMINARA_KV.get(codeKey, { cacheTtl: 0 });
+  const raw = await env.LUMINARA_KV.get(codeKey, { cacheTtl: SHORTEST_KV_CACHE_TTL_SECONDS });
   await env.LUMINARA_KV.delete(codeKey);
   if (!raw) return null;
 

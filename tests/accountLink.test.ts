@@ -31,6 +31,7 @@ vi.mock('../worker/firebaseAuth', async () => {
 import worker from '../worker/index';
 import type { Env } from '../worker/index';
 import { identify } from '../worker/workerUtils';
+import { mintOpaqueSession } from '../worker/opaqueSession';
 import { linkTelegramFirebaseAccounts } from '../services/apiClient';
 import { createSqliteD1, type SqliteD1 } from './helpers/sqliteD1';
 
@@ -187,6 +188,56 @@ describe('identify() does not auto-link', () => {
     expect((await accountOf(db, '88002'))?.account_id).toBe('acct-tg-cookie');
     expect((await accountOf(db, 'fb:uid-web'))?.account_id).toBe('acct-fb-cookie');
     expect(subSnapshot(store)).toEqual(subsBefore);
+  });
+});
+
+describe('an explicit Bearer outranks the session cookie', () => {
+  it('resolves a Telegram cookie plus a Firebase Bearer to the Firebase user', async () => {
+    const { env } = await seedPair({ tgId: '88051', tgAccount: 'acct-tg-planted', fbAccount: 'acct-fb-own' });
+    const planted = await mintOpaqueSession(env, { uid: 'tg:88051', name: 'Ada' });
+    const who = await identify(new Request('https://luminarasuite.com/api/workspace', {
+      method: 'PUT',
+      headers: {
+        origin: 'https://luminarasuite.com',
+        cookie: `__session=${planted}`,
+        authorization: `Bearer ${firebaseGate.token}`,
+      },
+    }), env);
+
+    expect(who.error).toBeUndefined();
+    expect(who.user?.id).toBe('fb:uid-web');
+    expect(who.user?.accountId).toBe('acct-fb-own');
+  });
+
+  it('resolves valid initData plus an invalid Bearer to the Telegram user, never to the cookie', async () => {
+    const { env } = await seedPair({ tgId: '88053', tgAccount: 'acct-tg-mini', fbAccount: 'acct-fb-cookie' });
+    const session = await mintOpaqueSession(env, { uid: firebaseGate.uid, email: firebaseGate.email });
+    const who = await identify(new Request('https://luminarasuite.com/api/workspace', {
+      headers: {
+        'x-telegram-init-data': signInitData(88053, 'Ada'),
+        cookie: `__session=${session}`,
+        authorization: 'Bearer expired-firebase-token',
+      },
+    }), env);
+
+    expect(who.error).toBeUndefined();
+    expect(who.user?.id).toBe('88053');
+    expect(who.user?.accountId).toBe('acct-tg-mini');
+  });
+
+  it('returns 401 for an expired Bearer even when the cookie session is valid', async () => {
+    const { env } = await seedPair({ tgId: '88052', tgAccount: 'acct-tg', fbAccount: 'acct-fb' });
+    const session = await mintOpaqueSession(env, { uid: firebaseGate.uid, email: firebaseGate.email });
+    const res = await worker.fetch(new Request('https://luminarasuite.com/api/auth/session', {
+      headers: {
+        'cf-connecting-ip': '10.8.2.1',
+        cookie: `__session=${session}`,
+        authorization: 'Bearer expired-firebase-token',
+      },
+    }), env, ctx);
+
+    expect(res.status).toBe(401);
+    expect(((await res.json()) as { error?: string }).error).toBe('Firebase token invalid');
   });
 });
 

@@ -14,7 +14,7 @@ import { CitationPopover } from './CitationPopover';
 import { ICONS } from '../../constants';
 import { downloadBlob } from '../../utils/download';
 import { toUserFacingText } from '../../utils/userFacingText';
-import { subscribeQuota, openPaywallModal, getCurrentQuotaSync, type QuotaInfo } from '../../services/apiClient';
+import { subscribeQuota, openPaywallModal, getCurrentQuotaSync, hostedAllowanceSpent, type QuotaInfo } from '../../services/apiClient';
 import { dailyCapPaywallLine, dailyCapStudioNote } from '../paywall/planCopy';
 import {
   NotebookSourcesPanel,
@@ -127,7 +127,7 @@ export const NotebookView: React.FC<NotebookViewProps> = ({ dna }) => {
 
   const handleSendMessage = async (userText: string) => {
     if (!userText.trim() || isQuerying) return;
-    if (quota && !quota.isUnlimited && quota.remaining <= 0 && (!quota.bonusRemaining || quota.bonusRemaining <= 0)) {
+    if (quota && hostedAllowanceSpent(quota)) {
       openPaywallModal(dailyCapPaywallLine(quota.limit));
       setQueryError(dailyCapStudioNote(quota.limit));
       return;
@@ -149,7 +149,7 @@ export const NotebookView: React.FC<NotebookViewProps> = ({ dna }) => {
 
   const handleGeneratePodcast = async () => {
     if (isGeneratingPodcast) return;
-    if (quota && !quota.isUnlimited && quota.remaining <= 0 && (!quota.bonusRemaining || quota.bonusRemaining <= 0)) {
+    if (quota && hostedAllowanceSpent(quota)) {
       openPaywallModal(dailyCapPaywallLine(quota.limit));
       setStudioNotice({
         text: dailyCapStudioNote(quota.limit),
@@ -174,7 +174,7 @@ export const NotebookView: React.FC<NotebookViewProps> = ({ dna }) => {
 
   const handleGenerateArtifact = async (type: StudioArtifactType) => {
     if (generatingArtifactType) return;
-    if (quota && !quota.isUnlimited && quota.remaining <= 0 && (!quota.bonusRemaining || quota.bonusRemaining <= 0)) {
+    if (quota && hostedAllowanceSpent(quota)) {
       openPaywallModal(dailyCapPaywallLine(quota.limit));
       setStudioNotice({
         text: dailyCapStudioNote(quota.limit),

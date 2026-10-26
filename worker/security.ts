@@ -59,12 +59,15 @@ export function withAssetCache(res: Response, pathname: string): Response {
   return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
 }
 
-/** Adds security headers to a response. HTML documents additionally get the CSP. */
+/**
+ * Adds security headers to a response. HTML documents additionally get the app CSP, unless the
+ * route already set a stricter one (agent report HTML is served sandboxed and must stay that way).
+ */
 export function withSecurityHeaders(res: Response): Response {
   const out = new Response(res.body, res);
   for (const [k, v] of Object.entries(COMMON_HEADERS)) out.headers.set(k, v);
   const ct = out.headers.get('content-type') || '';
-  if (/text\/html/i.test(ct)) {
+  if (/text\/html/i.test(ct) && !out.headers.has('Content-Security-Policy')) {
     out.headers.set('Content-Security-Policy', HTML_CSP);
   }
   return out;
@@ -82,6 +85,8 @@ export function stripUpstreamHeaders(headers: Headers): void {
     'access-control-allow-methods',
     'access-control-expose-headers',
     'transfer-encoding',
+    // withSecurityHeaders keeps a CSP already on a response, so a vendor's must not ride through.
+    'content-security-policy',
   ]) headers.delete(h);
 }
 

@@ -13,7 +13,6 @@
 import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
 import { billingId, json } from './workerUtils';
-import { checkHostedQuota, QUOTA_CAPACITY_ERROR } from './quotaMiddleware';
 import {
   createTaskContext,
   executeWithLifecycle,
@@ -82,27 +81,22 @@ export async function executeOracleGatewayTask(
     return json({ ok: false, error: 'Valid target domain is required', code: 'INVALID_DOMAIN' }, 400);
   }
 
+  // The answer calls no hosted provider and is always not_measured, so it spends no free unit.
+  if (!user && env.REQUIRE_TG_AUTH === 'true') {
+    return json({ ok: false, error: 'Sign in required.', code: 'AUTH_REQUIRED' }, 401);
+  }
   const accountId = user ? billingId(user) : 'anon';
   const surface = req.surface || 'web';
   const focus = req.focus || 'AEO';
 
-  // 1. Quota check and reserve
-  const quota = await checkHostedQuota(env, user);
-  if (!quota.ok) {
-    const capacity = quota.error === QUOTA_CAPACITY_ERROR;
-    return json({ ok: false, error: quota.error, code: capacity ? 'HOSTED_CAPACITY' : 'QUOTA_EXHAUSTED' }, capacity ? 503 : 429);
-  }
-  const quotaCharged = !quota.isUnlimited && quota.used > 0;
-
-  // 2. Resource Tank resolution
+  // 1. Resource Tank resolution
   const resourcesRes = await resolveExecutionResources(env, user, headers);
 
-  // 3. Setup Task Lifecycle
+  // 2. Setup Task Lifecycle
   const ctx: TaskLifecycleContext = createTaskContext({
     accountId,
     surface,
     targetDomain: domain,
-    quotaCharged,
     runId: req.runId,
   });
 
@@ -168,7 +162,6 @@ export async function executeOracleGatewayTask(
         ok: false,
         error: lifecycleResult.error,
         code: lifecycleResult.code,
-        refunded: lifecycleResult.refunded,
         diagnostics: lifecycleResult.diagnostics,
       },
       500,

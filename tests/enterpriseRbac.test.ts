@@ -8,6 +8,8 @@ import {
   verifyAuditChain,
 } from '../worker/auditLog';
 import type { AuditLogEntry } from '../worker/userTypes';
+// Imported up front: loading the whole Worker inside a test counted against its 45 s timeout under a full parallel run.
+import worker from '../worker/index';
 
 describe('Enterprise Multi-Tenancy, RBAC & SIEM Audit Logging', () => {
   describe('Role-Based Access Control (RBAC) permissions', () => {
@@ -185,7 +187,6 @@ describe('Enterprise Multi-Tenancy, RBAC & SIEM Audit Logging', () => {
     });
 
     it('blocks unauthenticated access to /api/enterprise/audit-logs', async () => {
-      const worker = (await import('../worker/index')).default;
       const res = await worker.fetch(
         new Request('https://luminarasuite.com/api/enterprise/audit-logs', {
           headers: { 'cf-connecting-ip': '1.2.3.4' },
@@ -204,7 +205,6 @@ describe('Enterprise Multi-Tenancy, RBAC & SIEM Audit Logging', () => {
     }, 45000);
 
     it('rejects non-GET methods on /api/enterprise/audit-logs with 405', async () => {
-      const worker = (await import('../worker/index')).default;
       const res = await worker.fetch(
         new Request('https://luminarasuite.com/api/enterprise/audit-logs', {
           method: 'POST',

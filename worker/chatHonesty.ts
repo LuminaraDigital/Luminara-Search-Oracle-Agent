@@ -21,6 +21,8 @@
  *      sentence that asks for a code, password or key is removed.
  *    Only JSON-LD and head tags are set aside as something to paste. Any other JSON, markup
  *    or fenced text is read as prose.
+ * 3. withoutUnmeasuredClaims() is the site-number step alone, for the web Oracle chat
+ *    (worker/oracleChat.ts).
  *
  * Pure functions only: no I/O, no env, no model calls.
  */
@@ -706,6 +708,13 @@ const ATTRIBUTED_RE =
   /\byou\s+(?:said|say|mentioned|mention|told\s+me|tell\s+me|wrote|write|shared|noted|gave|reported|stated|quoted|typed|sent)\b|\bas\s+you\s+(?:said|wrote|mentioned|noted|say|put\s+it)\b|\byour\s+(?:own\s+)?(?:figure|number|count|estimate|guess)\s+of\b|\b(?:according\s+to|going\s+by|based\s+on)\s+(?:you|your\s+(?:message|numbers?|figures?|data))\b/i;
 const CLAUSE_END_RE = /[,;:]\s|\s(?:so|and|but|which|then|because|therefore)\s/i;
 
+/** Blanks every number in the text that the user wrote, with the same marks. */
+function withoutUserNumbers(text: string, userNumbers: Set<string>): string {
+  return text.replace(NUMBER_TOKEN_RE, (token, hash, digits, ordinal, percent) =>
+    userNumbers.has(numberKey(hash, digits, ordinal, percent)) ? ' ' : token,
+  );
+}
+
 /** Blanks the user's own numbers inside the clause that hands them back to the user. */
 function withoutAttributedNumbers(sentence: string, userNumbers: Set<string>): string {
   const said = ATTRIBUTED_RE.exec(sentence);
@@ -714,12 +723,7 @@ function withoutAttributedNumbers(sentence: string, userNumbers: Set<string>): s
   const from = said.index + said[0].length + (/^\s*[,:]\s*/.exec(sentence.slice(said.index + said[0].length))?.[0].length ?? 0);
   const stop = CLAUSE_END_RE.exec(sentence.slice(from));
   const to = stop ? from + stop.index : sentence.length;
-  const clause = sentence
-    .slice(from, to)
-    .replace(NUMBER_TOKEN_RE, (token, hash, digits, ordinal, percent) =>
-      userNumbers.has(numberKey(hash, digits, ordinal, percent)) ? ' ' : token,
-    );
-  return sentence.slice(0, from) + clause + sentence.slice(to);
+  return sentence.slice(0, from) + withoutUserNumbers(sentence.slice(from, to), userNumbers) + sentence.slice(to);
 }
 
 /** The sentence with everything that is not a measurement blanked. Inline code is read as prose. */
@@ -814,6 +818,11 @@ const SHAPE_RES: RegExp[] = [
   // "your site has 14 pages without schema", "there are 3 pages on your site"
   /\byour\s+(?:site|website|domain|homepage|home\s+page|pages?|blog|store|sitemap|schema|markup|content)\s+(?:currently\s+|now\s+|already\s+|only\s+|still\s+)?(?:has|have|had|shows?|lists?|contains?|includes?|is\s+missing|lacks?|uses?|loads?|returns?|gets?|receives?)\b[^.;!?]*\d/i,
   /\bthere\s+(?:are|is|were|was)\s+(?:[\w-]+\s+){0,2}?\d[^.;!?]*\b(?:on|in|across)\s+your\s+(?:site|website|domain|homepage|pages?|blog|store|sitemap)\b/i,
+  // "your brand appears in 12 AI answers", "you show up in 3 of them". Not "most brands appear
+  // in 1 to 3 answers": the count is the user's only when the user is the subject.
+  /\b(?:you|we|(?:your|our|the)\s+(?:site|website|brand|domain))(?:\s+[\w'’-]+)?\s+(?:appear|appears|appeared|show\s+up|shows\s+up|showed\s+up|feature|features|featured)\s+in\s+(?:about\s+|around\s+|only\s+|just\s+)?\d[\d,.]*\+?\s+(?:[\w-]+\s+){0,2}?(?:answers?|results?|responses?|queries|prompts?|searches|overviews?|engines?)\b/i,
+  // "you are on page 2 for your main keyword"
+  /\b(?:you|we|your\s+[\w-]+)\s+(?:[\w'’-]+\s+){0,2}?(?:is|are|was|were|sit|sits|land|lands|show|shows|appear|appears)\s+(?:up\s+)?on\s+page\s+(?:\d+|one|two|three)\b/i,
 ];
 // A claim of having looked. Nothing in this chat fetches a site, so it is replaced wherever it stands.
 const LOOKED_RES: RegExp[] = [
@@ -836,6 +845,12 @@ const BARE_ANSWER_RE = new RegExp(
   'i',
 );
 const METRIC_WORD_RE = new RegExp(String.raw`\b(?:${METRIC_WORD})\b`, 'i');
+// The web Oracle also reads CTR, domain rating and, in capitals only ("pa" and "Dr" are ordinary
+// words), DA, DR and PA as metrics in what the user wrote. The bot keeps its own list.
+const MORE_METRIC_WORDS_RE = /\b(?:ctr|click-through\s+rates?|domain\s+ratings?)\b/i;
+const METRIC_ABBREVIATION_RE = /\b(?:DA|DR|PA)\b/;
+const namesMetric = (text: string): boolean =>
+  METRIC_WORD_RE.test(text) || MORE_METRIC_WORDS_RE.test(text) || METRIC_ABBREVIATION_RE.test(text);
 const ASKS_FOR_ADVICE_RE = /\bshould\b|\bhow\s+(?:do|can|could|would)\s+(?:i|we)\b|\bhow\s+to\b|\bneed\s+to\b|\brecommend\b|\bsuggest\b/i;
 
 // ---------------------------------------------------------------------------------------
@@ -898,8 +913,13 @@ const PROMISED_RES: RegExp[] = [
   new RegExp(String.raw`\b(?:to|into|reach|hit)\s+(?:the\s+)?(?:#\s?\d+\b|number\s+one\b|position\s+\d+\b|first\s+place\b|top\s+\d+\b(?!\s+(?:[\w-]+\s+){0,2}?(?:${SELECTION_NOUN})\b))`, 'i'),
   new RegExp(String.raw`\bto\s+\d[\d,.]*\s?[kKmM]?\+?\s+(?:[\w-]+\s+){0,2}?(?:${COUNT_NOUN})\b`, 'i'),
 ];
-const promisesNumber = (rest: string): boolean =>
-  (PERCENT_RE.test(rest) && OUTCOME_WORD_RE.test(rest)) || PROMISED_RES.some((re) => re.test(rest));
+// "above 3%", "at least 3%", "below 50%": for the web Oracle a bar to clear, not a promised
+// change. Not "above 30% more traffic", where the change follows. The bot keeps its rule.
+const BAR_PERCENT_RE =
+  /\b(?:above|below|under|at\s+least|at\s+most)\s+(?:about\s+|around\s+|roughly\s+)?\d[\d,.]*\s?(?:%|percent\b|per\s+cent\b)(?!\s*(?:more|fewer|higher|lower)\b)/gi;
+const promisesNumber = (rest: string, barsAreTargets: boolean): boolean =>
+  (PERCENT_RE.test(barsAreTargets ? rest.replace(BAR_PERCENT_RE, ' ') : rest) && OUTCOME_WORD_RE.test(rest)) ||
+  PROMISED_RES.some((re) => re.test(rest));
 
 function isInstruction(sentence: string, rest: string): boolean {
   if (ASSERTION_RES.some((re) => re.test(rest))) return false;
@@ -909,7 +929,7 @@ function isInstruction(sentence: string, rest: string): boolean {
 }
 
 /** True when the sentence states a measurement nobody made. */
-function statesMeasurement(sentence: string, userNumbers: Set<string>, userAskedForMetric: boolean): boolean {
+function statesMeasurement(sentence: string, userNumbers: Set<string>, userAskedForMetric: boolean, barsAreTargets = false): boolean {
   // Step 1: set aside what is not a measurement, or is the user's own.
   const rest = setAside(sentence, userNumbers);
   if (LOOKED_RES.some((re) => re.test(rest))) return true;
@@ -917,7 +937,7 @@ function statesMeasurement(sentence: string, userNumbers: Set<string>, userAsked
   if (/\?["')\]]*$/.test(sentence.trim())) return false;
   // Step 3: an instruction, or a supposition, loses only a promised number.
   if (HYPOTHETICAL_RE.test(sentence.replace(LEAD_IN_RE, '')) || isInstruction(sentence, rest)) {
-    return promisesNumber(rest);
+    return promisesNumber(rest, barsAreTargets);
   }
   // Step 2: the shapes of a measurement.
   if (SHAPE_RES.some((re) => re.test(rest))) return true;
@@ -1302,4 +1322,68 @@ export function filterChatReply(reply: string, context: ChatFilterContext): Chat
   const moneyNote = moneyTalk && text.trim() !== '';
   if (moneyNote) text = `${text.trimEnd()}\n\n${MONEY_NOTE}`;
   return { text, claims: ledger.list(), planSentences, billingSentences, moneyNote, linksRemoved, secretRequests };
+}
+
+// A figure in the web Oracle chat is a claim only when it is about someone: the user ("your
+// CTR"), us, the site under discussion ("the site", "its"), a named site, or a "Label: 45"
+// reading. "A good LCP is under 2.5 seconds" is general advice.
+const ABOUT_SOMEONE_RE = new RegExp(
+  [
+    String.raw`\b(?:you|your|yours|we|our|ours|us)\b`,
+    // the site under discussion: "the site has a DA of 45", "its domain authority is 30"
+    String.raw`\b(?:the|this|that)\s+(?:site|website|domain(?!\s+(?:authority|rating|name))|homepage|home\s+page|brand)\b`,
+    String.raw`\b(?:it|its)\b`,
+    // a "Label: 45" reading, as in a list of a site's numbers, but not a bar ("LCP: under 2.5 s")
+    String.raw`^[^:.!?]{1,40}:\s*(?!(?:under|below|above|over|at\s+least|at\s+most|less\s+than|more\s+than|<|>|≤|≥)\b)(?:about\s+|around\s+|roughly\s+|~)?#?\d`,
+    String.raw`\b(?:[a-z0-9-]+\.)+[a-z]{2,}\b`,
+  ].join('|'),
+  'i',
+);
+
+/**
+ * The site-number step of filterChatReply alone, for the web Oracle chat, which may link and talk
+ * about money: a sentence that states a measurement nobody made becomes NOT_MEASURED_SENTENCE.
+ * Unlike the bot, a general figure or a target stays; a sentence counts when it is about the
+ * user or a named site, claims a look at a site, or answers the user's question for a metric.
+ * `userTexts` is what the user supplied (their messages and their account memory), the current
+ * message last. A number from a sentence of theirs that states a figure is the user's own
+ * wherever the reply repeats it, so a figure or a benchmark the user gave comes back whole. So
+ * is every number in `measuredTexts`, the text of a measured tool result. JSON-LD and head tags
+ * are not read.
+ */
+export function withoutUnmeasuredClaims(
+  reply: string,
+  userTexts: string[],
+  measuredTexts: string[] = [],
+): { text: string; replaced: number } {
+  // Only a sentence of the user's that states a figure makes its numbers theirs: "give me 3
+  // tips" does not make a 3 in the reply the user's.
+  const none = new Set<string>();
+  const statesFigure = (sentence: string): boolean => namesMetric(sentence) || statesMeasurement(sentence, none, false);
+  const userNumbers = numbersIn([...userTexts.flatMap(splitSentences).filter(statesFigure), ...measuredTexts]);
+  const lastUserText = userTexts[userTexts.length - 1] ?? '';
+  const userAskedForMetric = namesMetric(lastUserText) && !ASKS_FOR_ADVICE_RE.test(lastUserText);
+  const out: string[] = [];
+  let replaced = 0;
+  let previousWasUnmeasured = false;
+  for (const segment of splitData(reply)) {
+    for (const piece of segment.data ? [segment.text] : splitSentences(segment.text)) {
+      const lead = LIST_MARKER_RE.exec(piece)?.[0] ?? '';
+      const body = piece.slice(lead.length).trimEnd();
+      const trail = piece.slice(lead.length + body.length);
+      const claimsSomething =
+        userAskedForMetric || ABOUT_SOMEONE_RE.test(body) || LOOKED_RES.some((re) => re.test(body));
+      if (segment.data || body === '' || !claimsSomething || !statesMeasurement(withoutUserNumbers(body, userNumbers), none, userAskedForMetric, true)) {
+        out.push(piece);
+        previousWasUnmeasured = false;
+        continue;
+      }
+      replaced += 1;
+      // Two in a row read as one.
+      if (previousWasUnmeasured) out[out.length - 1] = out[out.length - 1].trimEnd() + trail;
+      else out.push(lead + NOT_MEASURED_SENTENCE + trail);
+      previousWasUnmeasured = true;
+    }
+  }
+  return { text: out.join(''), replaced };
 }

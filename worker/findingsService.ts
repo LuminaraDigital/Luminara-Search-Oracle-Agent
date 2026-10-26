@@ -133,12 +133,7 @@ export async function handleFindingsRoute(
   if (path === '/findings/bulk' && request.method === 'POST') {
     const raw = await readBody(request, MAX_SMALL_BODY_BYTES);
     if (!raw.ok) return json({ ok: false, error: raw.error }, raw.status);
-    let body: { domain?: string; clientId?: string | null; findings?: BulkItem[]; auditRunId?: string };
-    try {
-      body = JSON.parse(raw.text) as typeof body;
-    } catch {
-      return json({ ok: false, error: 'Invalid JSON' }, 400);
-    }
+    const body = (raw.value || {}) as { domain?: string; clientId?: string | null; findings?: BulkItem[]; auditRunId?: string };
     const domain = normalizeDomain(body.domain || '');
     if (!domain) return json({ ok: false, error: 'domain required' }, 400);
     const items = Array.isArray(body.findings) ? body.findings.slice(0, MAX_BULK) : [];
@@ -230,12 +225,7 @@ export async function handleFindingsRoute(
     const findingId = decodeURIComponent(patchMatch[1]);
     const raw = await readBody(request, MAX_SMALL_BODY_BYTES);
     if (!raw.ok) return json({ ok: false, error: raw.error }, raw.status);
-    let body: { status?: string; owner?: string | null; dueAt?: number | null };
-    try {
-      body = JSON.parse(raw.text) as typeof body;
-    } catch {
-      return json({ ok: false, error: 'Invalid JSON' }, 400);
-    }
+    const body = (raw.value || {}) as { status?: string; owner?: string | null; dueAt?: number | null };
 
     const existing = await env.DB.prepare(
       `SELECT * FROM audit_findings WHERE id = ? AND account_id = ?`,

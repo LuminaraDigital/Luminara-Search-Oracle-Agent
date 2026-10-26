@@ -7,6 +7,7 @@ import { MAX_SMALL_BODY_BYTES, readBody, safePublicHostname } from './security';
 import { identify, json, billingId, sha256Hex, secretEquals } from './workerUtils';
 import { isTeaserFailureCode, teaserFailureLine } from '../services/audit/teaserFailureCodes';
 import { getActiveSubscription } from './quotaMiddleware';
+import { putCounterBestEffort } from './securityHardening';
 import { planCapsFor } from './telegramBot';
 import { PRODUCTION_MINI_APP_URL, resolveMiniAppUrl } from '../services/referrals/rules';
 import { handleWinRoute } from './winShare';
@@ -322,7 +323,7 @@ async function meterTeaserCreate(env: Env, accountId: string): Promise<{ ok: tru
   if (used >= TEASER_DAILY_LIMIT) {
     return { ok: false, error: `Daily teaser limit of ${TEASER_DAILY_LIMIT} reached.` };
   }
-  await env.LUMINARA_KV.put(key, String(used + 1), { expirationTtl: 2 * 86400 });
+  await putCounterBestEffort(env, key, String(used + 1), 2 * 86400);
   return { ok: true };
 }
 

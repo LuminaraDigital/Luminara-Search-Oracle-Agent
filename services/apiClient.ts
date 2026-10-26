@@ -5,12 +5,13 @@
  * Proxy mode is on when the Worker serves the app, or when VITE_API_BASE points at it.
  */
 import { getInitDataRaw } from './telegram/tma';
-import { loadFirebaseAuth, readCachedFirebaseIdToken } from './auth/firebaseIdToken';
+import { loadFirebaseAuth, readCachedFirebaseIdToken, readFreshCachedFirebaseIdToken } from './auth/firebaseIdToken';
 import { takeAccountBoot } from './auth/accountBoot';
 import { toUserFacingText } from '../utils/userFacingText';
 import { hostedAuthBlocked, hostedAuthCircuitResponse, isAuditSiteMismatch, noteHostedAuthFailure } from './resilience/hostedAuthCircuit';
 import { noteScoutReceipt } from './referrals/scoutReceiptCapture';
-import { entitlementsFor } from './plans/planEntitlements';
+import { entitlementsFor, normalizePlanId } from './plans/planEntitlements';
+import { getCurrentQuotaSync, quotaEpoch, subscribeQuota, writeQuotaSnapshot, type QuotaInfo } from './plans/quotaSnapshot';
 import { auditRunHeaders } from './audit/auditRunSlot';
 
 export interface ServerHealth {
@@ -43,8 +44,6 @@ export interface ServerHealth {
   /** Stripe card Checkout is live when health.stripeCheckout is true (env.STRIPE_CHECKOUT_LIVE === 'true' and the key mode matches). Absent or false hides the Card rail. */
   stripeCheckout?: boolean;
   lumens?: boolean;
-  /** Q402 pay-per-call settlement is live. */
-  q402?: boolean;
   tiers?: { free?: string[]; paid?: string[] };
   /** Trust Receipts / domain verification flags. Absent on older Workers (treat as off). */
   trust?: { receiptsEnabled?: boolean; receiptSigningConfigured?: boolean; domainVerifyEnabled?: boolean };
@@ -288,7 +287,7 @@ function authHeaders(): Record<string, string> {
   const headers: Record<string, string> = {};
   const initData = getInitDataRaw();
   if (initData) headers['x-telegram-init-data'] = initData;
-  const idToken = readCachedFirebaseIdToken();
+  const idToken = readFreshCachedFirebaseIdToken();
   if (idToken) headers['Authorization'] = `Bearer ${idToken}`;
   return headers;
 }
@@ -299,7 +298,7 @@ async function authHeadersAsync(forceRefresh = false): Promise<Record<string, st
   const initData = getInitDataRaw();
   if (initData) headers['x-telegram-init-data'] = initData;
   const auth = await loadFirebaseAuth();
-  const idToken = forceRefresh ? await auth.getFirebaseIdToken(true) : (readCachedFirebaseIdToken() ?? await auth.getFirebaseIdToken(false));
+  const idToken = forceRefresh ? await auth.getFirebaseIdToken(true) : (readFreshCachedFirebaseIdToken() ?? await auth.getFirebaseIdToken(false));
   if (idToken) headers['Authorization'] = `Bearer ${idToken}`;
   Object.assign(headers, await appCheckHeader());
   return headers;
@@ -315,11 +314,12 @@ function applyAuthHeaders(target: Headers, source: Record<string, string>): void
  * Telegram initData is already present (Telegram identity takes precedence).
  */
 export async function workerFetchWithAuthRetry(url: string, init: RequestInit = {}): Promise<Response> {
+  const since = quotaEpoch();
   const headers = new Headers(init.headers || {});
   applyAuthHeaders(headers, await authHeadersAsync(false));
   const options: RequestInit = { credentials: 'same-origin', ...init, headers };
   let res = await fetch(url, options);
-  notifyRateLimitIfNeeded(res);
+  notifyRateLimitIfNeeded(res, since);
 
   // Hard ban: never auto-retry client/auth/rate-limit errors.
   if (res.status === 400 || res.status === 401 || res.status === 402 || res.status === 403 || res.status === 404 || res.status === 429) {
@@ -327,15 +327,15 @@ export async function workerFetchWithAuthRetry(url: string, init: RequestInit = 
     if (getInitDataRaw()) return res;
     applyAuthHeaders(headers, await authHeadersAsync(true));
     res = await fetch(url, { ...options, headers });
-    notifyRateLimitIfNeeded(res);
+    notifyRateLimitIfNeeded(res, since);
     return res;
   }
 
   return res;
 }
 
-function notifyRateLimitIfNeeded(res: Response): void {
-  updateQuotaFromHeaders(res.headers);
+function notifyRateLimitIfNeeded(res: Response, since: number): void {
+  updateQuotaFromHeaders(res.headers, since);
   if (res.status !== 429 || typeof window === 'undefined') return;
   const retryAfter = Number(res.headers.get('retry-after') || res.headers.get('Retry-After') || 0);
   const limit = res.headers.get('x-ratelimit-limit');
@@ -363,11 +363,12 @@ export async function fetchWithTransientRetry(
   opts?: { maxAttempts?: number },
 ): Promise<Response> {
   const maxAttempts = Math.min(2, Math.max(1, opts?.maxAttempts ?? 2));
+  const since = quotaEpoch();
   let lastError: unknown;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       const res = await fetch(input, init);
-      notifyRateLimitIfNeeded(res);
+      notifyRateLimitIfNeeded(res, since);
       if (res.status >= 400 && res.status < 500) return res;
       if (res.ok || attempt === maxAttempts) return res;
       const jitter = Math.floor(Math.random() * 200);
@@ -444,6 +445,7 @@ export async function providerFetch(providerId: string, path: string, directUrl:
     return hostedAuthCircuitResponse(clientHasHostedIdentity());
   }
 
+  const since = quotaEpoch();
   const headers = new Headers(init.headers || {});
   headers.delete('authorization');
   headers.delete('x-api-key');
@@ -458,7 +460,7 @@ export async function providerFetch(providerId: string, path: string, directUrl:
     if (opts.acceptFallback) headers.set(ACCEPT_FALLBACK_HEADER, '1');
     res = await workerFetchWithAuthRetry(`${apiBase()}/api/providers/${providerId}${path}`, { ...init, headers });
   }
-  updateQuotaFromHeaders(res.headers);
+  updateQuotaFromHeaders(res.headers, since);
   noteScoutReceipt(res.headers.get('x-scout-receipt'));
   if ((res.status === 401 || res.status === 403) && !(await isAuditSiteMismatch(res))) {
     noteHostedAuthFailure(res.status, providerId);
@@ -495,30 +497,7 @@ export function geminiProxyHttpOptions(): { baseUrl: string; headers: Record<str
 
 // ---- Live Quota Store & Paywall Interceptor --------------------------------------------------
 
-export interface QuotaInfo {
-  limit: number;
-  used: number;
-  remaining: number;
-  resetSec: number;
-  isUnlimited: boolean;
-  plan?: string;
-  expiresAt?: number;
-  /** Hosted scout credits from a qualified invite. Separate from the daily cap. */
-  bonusRemaining?: number;
-}
-
-let currentQuota: QuotaInfo | null = null;
-const quotaListeners = new Set<(q: QuotaInfo | null) => void>();
-
-export function subscribeQuota(fn: (q: QuotaInfo | null) => void): () => void {
-  quotaListeners.add(fn);
-  fn(currentQuota);
-  return () => quotaListeners.delete(fn);
-}
-
-export function getCurrentQuotaSync(): QuotaInfo | null {
-  return currentQuota;
-}
+export { getCurrentQuotaSync, subscribeQuota, type QuotaInfo };
 
 /** Paid hosted engines (NIM / Ollama Cloud / OpenRouter) require an active plan when not BYOK. */
 export const PAID_HOSTED_PROVIDER_IDS = ['nim', 'ollama', 'openrouter', 'dataforseo'] as const;
@@ -529,7 +508,7 @@ export function isPaidHostedProvider(providerId: string): boolean {
 
 /** Best-effort client view of an active Stars/TON/license plan (from quota headers or /api/auth/quota). */
 export function hasActivePaidPlanSync(): boolean {
-  const q = currentQuota;
+  const q = getCurrentQuotaSync();
   if (!q) return false;
   if (q.isUnlimited) return true;
   if (typeof q.expiresAt === 'number' && q.expiresAt > Date.now()) return true;
@@ -612,6 +591,7 @@ const PROVIDER_BYOK_SLOTS: Record<string, { storageKey: string; viteKey: string 
   nim: { storageKey: 'luminara_nvidia_key', viteKey: 'VITE_NVIDIA_API_KEY' },
   ollama: { storageKey: 'luminara_ollama_key', viteKey: 'VITE_OLLAMA_API_KEY' },
   openrouter: { storageKey: 'luminara_openrouter_key', viteKey: 'VITE_OPENROUTER_API_KEY' },
+  freellm: { storageKey: 'luminara_freellm_key', viteKey: 'VITE_FREELLM_API_KEY' },
   gemini: { storageKey: 'luminara_api_key', viteKey: 'VITE_GEMINI_API_KEY' },
   tavily: { storageKey: 'luminara_tavily_key', viteKey: 'VITE_TAVILY_API_KEY' },
   exa: { storageKey: 'luminara_exa_key', viteKey: 'VITE_EXA_API_KEY' },
@@ -647,6 +627,22 @@ function hasByokProviderKey(providerId: string): boolean {
   const slot = PROVIDER_BYOK_SLOTS[providerId];
   if (!slot) return false;
   return Boolean(readStoredKey(slot.storageKey) || readViteKey(slot.viteKey));
+}
+
+/** The engines that write an answer. ConfigService.getNativePriority orders them. */
+export const NATIVE_ENGINE_IDS = ['groq', 'nim', 'openrouter', 'ollama', 'freellm'] as const;
+
+/**
+ * The free daily hosted allowance is used up and still applies: limited, nothing left, no invite
+ * bonus, the UTC reset not reached, and no own key for a model that writes the answer (those
+ * calls are not metered; a search or crawl key alone still needs the hosted model).
+ */
+export function hostedAllowanceSpent(q: QuotaInfo): boolean {
+  return !q.isUnlimited
+    && q.remaining <= 0
+    && (!q.bonusRemaining || q.bonusRemaining <= 0)
+    && Date.now() < q.resetAt
+    && !NATIVE_ENGINE_IDS.some(hasByokProviderKey);
 }
 
 export function hostedProviderDecisionReason(providerId: string): HostedProviderDecisionReason {
@@ -769,7 +765,8 @@ export async function ensureHostedProviderReady(): Promise<HostedProviderReady> 
   return readHostedProviderReady();
 }
 
-export function updateQuotaFromHeaders(headers: Headers): void {
+/** `since`: quotaEpoch() read before the request was sent. */
+export function updateQuotaFromHeaders(headers: Headers, since = quotaEpoch()): void {
   const rem = headers.get('x-quota-remaining');
   const lim = headers.get('x-quota-limit');
   const rst = headers.get('x-quota-reset');
@@ -781,17 +778,19 @@ export function updateQuotaFromHeaders(headers: Headers): void {
     const used = isUnlimited ? 0 : Math.max(0, limitNum - remNum);
     const bonusHeader = headers.get('x-quota-bonus');
     const bonusRemaining = bonusHeader == null || bonusHeader === '' ? undefined : Number(bonusHeader);
-    const namedPlan = headers.get('x-quota-plan')?.trim().toLowerCase();
-    currentQuota = {
+    // The headers name no plan: unlimited keeps the paid plan the boot or quota read named.
+    const known = getCurrentQuotaSync();
+    const paid = isUnlimited && normalizePlanId(known?.plan) !== 'free' ? known : null;
+    writeQuotaSnapshot({
       limit: limitNum,
       used,
       remaining: remNum,
       resetSec,
       isUnlimited,
-      plan: namedPlan || (isUnlimited ? 'active' : 'free'),
+      plan: paid?.plan ?? (isUnlimited ? 'active' : 'free'),
+      expiresAt: paid?.expiresAt,
       bonusRemaining: Number.isFinite(bonusRemaining) ? bonusRemaining : undefined,
-    };
-    quotaListeners.forEach(fn => { try { fn(currentQuota); } catch {} });
+    }, since);
   }
 }
 
@@ -812,29 +811,17 @@ export function accountKnownSignedIn(): boolean {
 
 export async function fetchQuotaStatus(): Promise<QuotaInfo | null> {
   if (accountSignedIn !== true) return null;
-  const booted = await takeAccountBoot();
-  if (booted) {
-    currentQuota = {
-      limit: booted.quota.limit,
-      used: booted.quota.used,
-      remaining: booted.quota.remaining,
-      resetSec: booted.quota.resetSec,
-      isUnlimited: booted.quota.isUnlimited,
-      plan: booted.quota.plan,
-      expiresAt: booted.quota.expiresAt,
-      bonusRemaining: booted.quota.bonusRemaining,
-    };
-    quotaListeners.forEach(fn => { try { fn(currentQuota); } catch {} });
-    return currentQuota;
-  }
+  // The boot wrote its quota into the snapshot when it answered.
+  if (await takeAccountBoot()) return getCurrentQuotaSync();
   const base = apiBase();
   if (!base) return null;
+  const since = quotaEpoch();
   try {
     const r = await workerFetchWithAuthRetry(`${base}/api/auth/quota`);
     if (!r.ok) return null;
     const data = await r.json();
     if (data.ok) {
-      currentQuota = {
+      writeQuotaSnapshot({
         limit: data.limit,
         used: data.used,
         remaining: data.remaining,
@@ -843,9 +830,8 @@ export async function fetchQuotaStatus(): Promise<QuotaInfo | null> {
         plan: data.plan,
         expiresAt: data.expiresAt,
         bonusRemaining: typeof data.bonusRemaining === 'number' ? data.bonusRemaining : undefined,
-      };
-      quotaListeners.forEach(fn => { try { fn(currentQuota); } catch {} });
-      return currentQuota;
+      }, since);
+      return getCurrentQuotaSync();
     }
   } catch {}
   return null;
@@ -856,7 +842,6 @@ import type { EncryptedKeyBag } from './crypto/envelopeEncryptionService';
 /** Product memory + optional BYOK bag stored per linked account in D1/KV. */
 export type WorkspacePayload = {
   storage?: Record<string, string>;
-  keys?: Record<string, string>;
   /** Zero-knowledge client-side encrypted key bag (AES-256-GCM + PBKDF2) */
   encryptedKeys?: EncryptedKeyBag;
 };
@@ -881,10 +866,10 @@ export async function fetchWorkspace(): Promise<{
   };
 }
 
+/** `baseVersion` is the server `updatedAt` the copy was based on; any other gets 409 and the stored copy. */
 export async function putWorkspaceRemote(input: {
-  updatedAt: number;
+  baseVersion: number;
   payload: WorkspacePayload;
-  force?: boolean;
 }): Promise<{
   ok: boolean;
   conflict?: boolean;
@@ -892,6 +877,7 @@ export async function putWorkspaceRemote(input: {
   updatedAt?: number;
   payload?: WorkspacePayload;
   error?: string;
+  status?: number;
 }> {
   const base = apiBase();
   if (!base) return { ok: false, error: 'No API' };
@@ -910,7 +896,7 @@ export async function putWorkspaceRemote(input: {
       payload: data.payload,
     };
   }
-  if (!r.ok) return { ok: false, error: data.error || `HTTP ${r.status}` };
+  if (!r.ok) return { ok: false, error: data.error || `HTTP ${r.status}`, status: r.status };
   return { ok: true, accountId: data.accountId, updatedAt: data.updatedAt };
 }
 

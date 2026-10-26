@@ -6,6 +6,7 @@ import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
 import { billingId, identify, json, sha256Hex } from './workerUtils';
 import { MAX_SMALL_BODY_BYTES, readBody, safePublicHostname } from './security';
+import { putCounterBestEffort } from './securityHardening';
 import {
   REFERRAL_CLAIM_LIMIT_PER_HOUR,
   REFERRAL_QUALIFY_LIMIT_PER_HOUR,
@@ -64,7 +65,7 @@ async function allowRate(env: Env, key: string, limit: number): Promise<boolean>
   if (!env.LUMINARA_KV) return true;
   const used = Number((await env.LUMINARA_KV.get(key)) || 0);
   if (used >= limit) return false;
-  await env.LUMINARA_KV.put(key, String(used + 1), { expirationTtl: 2 * 3600 });
+  await putCounterBestEffort(env, key, String(used + 1), 2 * 3600);
   return true;
 }
 

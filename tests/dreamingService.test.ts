@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createSqliteD1 } from './helpers/sqliteD1';
 import type { Env } from '../worker/env';
 import {
@@ -13,6 +13,8 @@ import {
   handleDreamingRoute,
 } from '../worker/dreamingService';
 import type { HostedIdentity } from '../worker/userTypes';
+import { readFreeUsed } from '../worker/quotaMiddleware';
+import { memoryDailyQuotaNamespace } from './helpers/memoryDailyQuota';
 
 describe('Luminara Dreaming Service & D1 Engine', () => {
   let db: any;
@@ -200,6 +202,57 @@ describe('Luminara Dreaming Service & D1 Engine', () => {
     expect(mems[0].content).toBe('Original Content');
   });
 
+  it('rollback of a create removes only the memory that run made, not later ones with the same title', async () => {
+    await enqueueDreamEvent(env, {
+      accountId: 'acct_dream_1',
+      domain: 'lawfirm.com',
+      eventType: 'client_profile_changed',
+      payload: { name: 'Apex Law', usp: 'Corporate Tax Defense' },
+    });
+    const runRes = await executeDreamRun(env, 'acct_dream_1', 'lawfirm.com', 'manual_user', { force: true });
+    expect(runRes.ok && runRes.woke).toBe(true);
+    if (!runRes.ok || !runRes.woke) return;
+    const prop = runRes.proposals.find((p) => p.status === 'pending' && p.action === 'create');
+    expect(prop).toBeDefined();
+    if (!prop) return;
+    const review = await reviewDreamProposal(env, 'acct_dream_1', prop.id, 'approve', 'user_1');
+    expect(review.ok).toBe(true);
+
+    // A later memory with the same title, from another run or a manual edit.
+    await db.prepare(
+      `INSERT INTO business_memories (
+        id, account_id, project_id, domain, memory_type, title, content,
+        structured_data_json, confidence, status, source_refs_json,
+        created_at, updated_at, last_verified_at, expires_at
+      ) VALUES ('mem_later', 'acct_dream_1', NULL, 'lawfirm.com', 'business_dna', ?, 'Later content', '{}', 1.0, 'active', '[]', ?, ?, ?, NULL)`,
+    ).bind(prop.title, Date.now() + 5000, Date.now() + 5000, Date.now() + 5000).run();
+
+    const rollbackRes = await rollbackDreamRun(env, 'acct_dream_1', runRes.run.id);
+    expect(rollbackRes.ok).toBe(true);
+
+    const mems = await getActiveBusinessMemories(env, 'acct_dream_1', 'lawfirm.com');
+    expect(mems.map((m) => m.id)).toEqual(['mem_later']);
+  });
+
+  it('rollback of an auto-applied create removes the memory it made', async () => {
+    await enqueueDreamEvent(env, {
+      accountId: 'acct_dream_1',
+      domain: 'myclinic.com.au',
+      eventType: 'audit_completed',
+      payload: { healthScore: 75, topCompetitor: 'rivalphysio.com.au' },
+    });
+    const runRes = await executeDreamRun(env, 'acct_dream_1', 'myclinic.com.au', 'manual_user', { force: true });
+    expect(runRes.ok && runRes.woke).toBe(true);
+    if (!runRes.ok || !runRes.woke) return;
+    const applied = runRes.proposals.filter((p) => p.status === 'auto_applied' && p.action === 'create');
+    expect(applied.length).toBeGreaterThan(0);
+    expect((await getActiveBusinessMemories(env, 'acct_dream_1', 'myclinic.com.au')).length).toBeGreaterThan(0);
+
+    const rollbackRes = await rollbackDreamRun(env, 'acct_dream_1', runRes.run.id);
+    expect(rollbackRes.ok).toBe(true);
+    expect(await getActiveBusinessMemories(env, 'acct_dream_1', 'myclinic.com.au')).toEqual([]);
+  });
+
   it('exposes HTTP REST API endpoints via handleDreamingRoute', async () => {
     // 1. GET /api/dreaming/status
     const statusReq = new Request('https://api.luminara.ai/dreaming/status?domain=store.com', {
@@ -235,5 +288,184 @@ describe('Luminara Dreaming Service & D1 Engine', () => {
     const runData = await runRes?.json();
     expect(runData.ok).toBe(true);
     expect(runData.woke).toBe(true);
+  });
+});
+
+describe('Dreaming applies only what it can check in the model output', () => {
+  const ACCOUNT = 'acct_dream_model';
+  const DOMAIN = 'checked.example';
+  let db: ReturnType<typeof createSqliteD1>;
+
+  beforeEach(() => {
+    db = createSqliteD1();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  /** A Groq model that proposes from the first event it is shown, and nothing when it is shown none. */
+  function stubGroq(proposalsFor: (eventId: string) => unknown[]) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: { body: string }) => {
+        const prompt = String(JSON.parse(init.body).messages[1].content);
+        const eventId = /\[Event ID: (devt_[^\]]+)\]/.exec(prompt)?.[1];
+        const proposals = eventId ? proposalsFor(eventId) : [];
+        return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ summary: 'Model run', proposals }) } }] }), { status: 200 });
+      }),
+    );
+  }
+
+  const queueAudit = (env: Env) =>
+    enqueueDreamEvent(env, { accountId: ACCOUNT, domain: DOMAIN, eventType: 'audit_completed', payload: { healthScore: 70 } });
+
+  const titles = (sql: string): string[] => db.sqlite.prepare(sql).all(ACCOUNT).map((r: { title: string }) => r.title);
+
+  it('applies the valid proposal alone, consolidates the events in the same write, and a second forced run adds nothing', async () => {
+    const env = { DB: db, GROQ_API_KEY: 'gsk_test' } as unknown as Env;
+    const base = { content: 'From the audit.', sourceRefs: [] as string[], requiresApproval: false, rationale: 'Model said so.' };
+    stubGroq((eventId) => {
+      const refs = { ...base, sourceRefs: [eventId] };
+      return [
+        { ...refs, action: 'create', memoryId: 'mem_unrelated', memoryType: 'evidence_memory', title: 'Valid fact', confidence: 0.9 },
+        { ...refs, action: 'create', memoryType: 'secret_memory', title: 'Unknown type', confidence: 0.9 },
+        { ...refs, action: 'merge', memoryType: 'evidence_memory', title: 'Merged', confidence: 0.9 },
+        { ...refs, action: 'create', memoryType: 'action_memory', title: 'No confidence' },
+        { ...refs, action: 'update', memoryId: 'mem_missing', memoryType: 'evidence_memory', title: 'Ghost update', confidence: 0.9 },
+      ];
+    });
+    await queueAudit(env);
+
+    const first = await executeDreamRun(env, ACCOUNT, DOMAIN, 'manual_user', { force: true });
+
+    expect(first).toMatchObject({ ok: true, woke: true, run: { modelId: 'openai/gpt-oss-120b', proposalsCount: 1, autoAppliedCount: 1 } });
+    expect(titles(`SELECT title FROM business_memories WHERE account_id = ?`)).toEqual(['Valid fact']);
+    expect(db.sqlite.prepare(`SELECT title, action, memory_id, status FROM dream_proposals WHERE account_id = ?`).all(ACCOUNT)).toEqual([
+      { title: 'Valid fact', action: 'create', memory_id: null, status: 'auto_applied' },
+    ]);
+    expect(db.sqlite.prepare(`SELECT model_id FROM dream_runs WHERE account_id = ?`).all(ACCOUNT)).toEqual([{ model_id: 'openai/gpt-oss-120b' }]);
+    expect(await getPendingDreamEvents(env, ACCOUNT, DOMAIN)).toEqual([]);
+
+    await executeDreamRun(env, ACCOUNT, DOMAIN, 'manual_user', { force: true });
+    expect(titles(`SELECT title FROM business_memories WHERE account_id = ?`)).toEqual(['Valid fact']);
+  });
+
+  it('names the deterministic consolidator as the model when no hosted key is set', async () => {
+    const env = { DB: db } as unknown as Env;
+    await queueAudit(env);
+
+    const run = await executeDreamRun(env, ACCOUNT, DOMAIN, 'manual_user', { force: true });
+
+    expect(run).toMatchObject({ ok: true, woke: true, run: { modelId: 'deterministic' } });
+    expect(db.sqlite.prepare(`SELECT model_id FROM dream_runs WHERE account_id = ?`).all(ACCOUNT)).toEqual([{ model_id: 'deterministic' }]);
+  });
+});
+
+describe('a Dreaming run on a free plan', () => {
+  const dreamer = { id: 'fb:dreamer', accountId: 'acct_dreamer', source: 'firebase' } as HostedIdentity;
+  let modelCalls = 0;
+
+  beforeEach(() => {
+    modelCalls = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        modelCalls += 1;
+        return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ summary: 'Nothing new.', proposals: [] }) } }] }), { status: 200 });
+      }),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function freePlanEnv(): Env {
+    const kv = new Map<string, string>();
+    return {
+      DB: createSqliteD1(),
+      GROQ_API_KEY: 'gsk_test',
+      FREE_DAILY_LIMIT: '1',
+      DAILY_QUOTA: memoryDailyQuotaNamespace(),
+      LUMINARA_KV: {
+        get: async (k: string, type?: string) => (kv.has(k) ? (type === 'json' ? JSON.parse(kv.get(k)!) : kv.get(k)) : null),
+        put: async (k: string, v: string) => {
+          kv.set(k, v);
+        },
+      },
+    } as unknown as Env;
+  }
+
+  const post = (env: Env, path: string, body: Record<string, unknown>) =>
+    handleDreamingRoute(
+      new Request(`https://luminarasuite.com/api${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
+      env,
+      dreamer,
+      path,
+    );
+
+  it('spends one free daily run on Run now, and refuses the next with a readable 429 before calling the model', async () => {
+    const env = freePlanEnv();
+
+    const first = await post(env, '/dreaming/run', { domain: 'free.example', force: true });
+    const second = await post(env, '/dreaming/run', { domain: 'free.example', force: true });
+
+    expect(first?.status).toBe(200);
+    expect(second?.status).toBe(429);
+    expect(await second?.json()).toEqual({
+      ok: false,
+      error: "Run now uses one of your free daily requests on free plans, and today's are used up. A paid plan lifts that daily cap, or try again after 00:00 UTC.",
+      code: 'QUOTA_EXHAUSTED',
+    });
+    expect(modelCalls).toBe(1);
+  });
+
+  it('passes any other refusal through as it is', async () => {
+    const env = freePlanEnv();
+    env.REQUIRE_SUBSCRIPTION = 'true';
+
+    const res = await post(env, '/dreaming/run', { domain: 'paid-only.example', force: true });
+
+    expect(res?.status).toBe(429);
+    expect(await res?.json()).toEqual({
+      ok: false,
+      error: 'This feature needs an active plan. Add your own API key in Settings, activate a license key, or subscribe in the Telegram app.',
+      code: 'QUOTA_EXHAUSTED',
+    });
+    expect(modelCalls).toBe(0);
+  });
+
+  it('gives the run back when the run fails after the unit was spent', async () => {
+    const env = freePlanEnv();
+    Object.assign(env.DB!, {
+      batch: async () => {
+        throw new Error('D1 is down');
+      },
+    });
+
+    await expect(post(env, '/dreaming/run', { domain: 'broken.example', force: true })).rejects.toThrow('D1 is down');
+    expect(modelCalls).toBe(1);
+    expect(await readFreeUsed(env, 'acct_dreamer', 1)).toBe(0);
+  });
+
+  it('gives the run back when it does not wake', async () => {
+    const env = freePlanEnv();
+
+    const res = await post(env, '/dreaming/run', { domain: 'quiet.example' });
+
+    expect(await res?.json()).toMatchObject({ ok: true, woke: false });
+    expect(await readFreeUsed(env, 'acct_dreamer', 1)).toBe(0);
+    expect(modelCalls).toBe(0);
+  });
+
+  it("lets a client lower an event's signal weight, never raise it above the server's", async () => {
+    const env = freePlanEnv();
+
+    await post(env, '/dreaming/events', { domain: 'w.example', eventType: 'audit_completed', payload: { n: 1 }, signalWeight: 1000 });
+    await post(env, '/dreaming/events', { domain: 'w.example', eventType: 'audit_completed', payload: { n: 2 }, signalWeight: 0.5 });
+
+    const pending = await getPendingDreamEvents(env, 'acct_dreamer', 'w.example');
+    expect(pending.map((e) => e.signalWeight)).toEqual([1, 0.5]);
   });
 });
