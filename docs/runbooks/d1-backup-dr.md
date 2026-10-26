@@ -30,8 +30,9 @@ CONFIRM_PROD_BACKUP=1 npm run db:backup:prod
 
 ```bash
 npx wrangler d1 time-travel info luminara-users --env production
-# Restore ONLY into an isolated clone DB first, never straight over prod without CEO yes.
 ```
+
+`wrangler d1 time-travel restore <db> --bookmark <b>` overwrites that database in place; it cannot restore into a clone. To inspect old data, import the daily export into a clone instead. An in-place restore of `luminara-users` is never a routine rollback and needs CEO approval: it rewinds the payment and privacy claim tables (`ton_credited_tx`, `ton_pending_orders`, `stars_charges`, `stars_credited_charges`, `stripe_credited_sessions`, `license_key_claims`, `license_redemptions`, `referral_rewards`, `firestore_erase_ledger`, `signed_request_nonces`) while grants (`sub:*`) and licence keys stay in KV, so redelivered payments would credit twice, licence keys would become claimable again and erase tombstones would vanish. If it must happen: export every row newer than the bookmark from those tables first, restore, re-insert them, then reconcile against Stripe and TON before reopening payments.
 
 Every deploy records its own restore point. In `.github/workflows/deploy-cloudflare.yml` the step "Print D1 Time Travel bookmark before migrating" runs the command above (for `luminara-users-staging` on staging) immediately before "Apply D1 migrations", so the log of each deploy run holds the bookmark from just before its migration. If that step fails, the job stops and nothing is migrated or deployed. The command form was read from the help of the wrangler version this repo installs (4.145.0). The step had not yet run in CI when this was written: confirm on the first staging deploy that the log shows a line starting "The current bookmark is".
 
