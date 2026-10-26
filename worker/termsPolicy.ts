@@ -2,9 +2,29 @@
  * Static Terms of Service HTML served by the Worker (same pattern as privacy).
  * Matches LegalPage terms sections. Not counsel-approved legal advice.
  */
-import { ACL_RIGHTS_CLAUSE, LEGAL_ENTITY, LIABILITY_CLAUSE, OPERATOR_LINE, PLANS_PAYMENTS_PARAGRAPH, PUBLIC_CONTACT_LINE, TERMS_UPDATED } from '../services/legal/consumerTerms';
+import { ACL_RIGHTS_CLAUSE, ANDROID_PLANS_PARAGRAPH, LEGAL_ENTITY, LIABILITY_CLAUSE, OPERATOR_LINE, PLANS_PAYMENTS_PARAGRAPH, PUBLIC_CONTACT_LINE, TERMS_UPDATED } from '../services/legal/consumerTerms';
+import { ANDROID_LEGAL_LINKS } from '../services/legal/playClient';
 
-export const TERMS_HTML = `<!DOCTYPE html>
+function termsNav(android: boolean): string {
+  if (!android) {
+    return `  <nav>
+    <a href="/">Home</a>
+    <a href="/privacy">Privacy</a>
+    <a href="/pricing">Pricing</a>
+  </nav>`;
+  }
+  const links = ANDROID_LEGAL_LINKS.map((link) => `    <a href="${link.href}">${link.label}</a>`).join('\n');
+  return `  <nav>\n${links}\n  </nav>`;
+}
+
+export function buildTermsHtml(options?: { android?: boolean }): string {
+  const android = options?.android === true;
+  const plans = android ? ANDROID_PLANS_PARAGRAPH : PLANS_PAYMENTS_PARAGRAPH;
+  const privacyHref = android ? '/privacy?client=android' : '/privacy';
+  const footer = android
+    ? `&copy; 2026 ${OPERATOR_LINE} · Luminara Suite. Founded 2025.`
+    : `&copy; 2026 ${OPERATOR_LINE} · Luminara Suite`;
+  return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -33,11 +53,7 @@ export const TERMS_HTML = `<!DOCTYPE html>
   </style>
 </head>
 <body>
-  <nav>
-    <a href="/">Home</a>
-    <a href="/privacy">Privacy</a>
-    <a href="/pricing">Pricing</a>
-  </nav>
+${termsNav(android)}
   <h1>Terms of Service</h1>
   <p class="meta">Luminara Suite · Operated by ${OPERATOR_LINE} · Last updated ${TERMS_UPDATED}</p>
   <main>
@@ -48,7 +64,7 @@ export const TERMS_HTML = `<!DOCTYPE html>
     <h2>Your keys and accounts</h2>
     <p>You may use your own provider API keys. You are responsible for those accounts, their costs and their terms. Hosted keys on luminarasuite.com are provided to signed-in users within the free daily allowance or an active plan, and may be rate-limited or withdrawn to prevent abuse. If you enable workspace sync while signed in, workspace content and optional key bags may be stored on our Cloudflare backend for that account.</p>
     <h2>Plans and payments</h2>
-    <p>${PLANS_PAYMENTS_PARAGRAPH}</p>
+    <p>${plans}</p>
     <h2>Acceptable use</h2>
     <p>Do not use the service to attack, scrape abusively, or misrepresent third parties, and do not attempt to extract hosted credentials. We may suspend access for abuse.</p>
     <h2>Open source and trademarks</h2>
@@ -60,9 +76,12 @@ export const TERMS_HTML = `<!DOCTYPE html>
     <h2>Contact</h2>
     <p>${OPERATOR_LINE}. ${PUBLIC_CONTACT_LINE}</p>
     <h2>Privacy</h2>
-    <p>Personal data is handled as described in the <a href="/privacy">Privacy Policy</a>.</p>
+    <p>Personal data is handled as described in the <a href="${privacyHref}">Privacy Policy</a>.</p>
   </main>
-  <footer>&copy; 2026 ${OPERATOR_LINE} · Luminara Suite</footer>
+  <footer>${footer}</footer>
 </body>
 </html>
 `;
+}
+
+export const TERMS_HTML = buildTermsHtml();
