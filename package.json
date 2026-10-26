@@ -78,9 +78,9 @@
     "android:assets": "node scripts/generate-play-store-assets.mjs"
   },
   "dependencies": {
-    "@formepdf/core": "^0.28.0",
-    "@formepdf/react": "^0.28.0",
-    "@google/genai": "2.30.0",
+    "@formepdf/core": "^0.29.0",
+    "@formepdf/react": "^0.29.0",
+    "@google/genai": "2.31.0",
     "@sentry/browser": "^11.9.0",
     "@sentry/cloudflare": "^11.9.0",
     "@telegram-apps/sdk-react": "^3.3.9",
@@ -88,13 +88,13 @@
     "@tonconnect/ui-react": "^3.0.2",
     "buffer": "^6.0.3",
     "dompurify": "^3.4.17",
-    "electron-updater": "^6.8.9",
+    "electron-updater": "^6.8.11",
     "firebase": "^12.18.0",
-    "jose": "^6.2.12",
+    "jose": "^6.2.13",
     "marked": "^15.0.0",
-    "react": "^19.3.0",
-    "react-dom": "^19.3.0",
-    "viem": "^2.57.6"
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "viem": "^2.57.10"
   },
   "overrides": {
     "valibot": "1.4.2",
@@ -104,7 +104,7 @@
     "uuid": "^11.1.1"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20261014.1",
+    "@cloudflare/workers-types": "^5.20261023.1",
     "@eslint/js": "^9.39.5",
     "@playwright/test": "^1.64.1",
     "@types/dompurify": "^3.2.0",
@@ -115,21 +115,21 @@
     "@vitest/coverage-v8": "^4.1.11",
     "autoprefixer": "^10.6.1",
     "electron": "^44.7.2",
-    "electron-builder": "^26.15.3",
-    "eslint": "^10.12.0",
+    "electron-builder": "^26.18.0",
+    "eslint": "^10.13.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^17.13.0",
-    "postcss": "^8.5.30",
+    "postcss": "^8.5.31",
     "sharp": "^0.35.5",
     "tailwindcss": "^3.4.19",
     "tailwindcss-animate": "^1.0.7",
-    "typescript": "~5.8.2",
-    "typescript-eslint": "^8.71.2",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.72.0",
     "vite": "^6.2.0",
     "vite-plugin-top-level-await": "^1.6.0",
     "vite-plugin-wasm": "^3.6.0",
     "vitest": "^4.1.11",
-    "wrangler": "^4.151.0"
+    "wrangler": "^4.152.0"
   },
   "description": "Open-source AI search visibility suite: SEO, AEO and GEO audits grounded in live search results, runs on your own Groq / NVIDIA NIM / Ollama keys. Web + Telegram Mini App + Windows desktop on Cloudflare.",
   "author": "Luminara Digital",
