@@ -1,8 +1,11 @@
 import React, { useEffect, useId } from 'react';
 import { CONTACT_EMAIL } from '../../services/legal/consumerTerms';
+import { SUPPORT_EMAIL } from '../../services/legal/deleteAccountCopy';
+import { isAndroidPlayClient } from '../../services/legal/playClient';
 import { HOW_LINE, REFUND_LINE } from '../../services/help/helpPages';
 import { MARKETING_FAQ } from '../../services/marketing/marketingFaqContent';
 import { bindTelegramBackButton, isInTelegram } from '../../services/telegram/tma';
+import { PlaySafeDocument } from '../legal/PlaySafeDocument';
 import { MarketingPageHeader, MarketingPageShell } from '../marketing/MarketingPageShell';
 import { DOCUMENT_CHROME, MarketingChromeContext } from '../marketing/marketingChrome';
 
@@ -20,7 +23,7 @@ function RefundBlock() {
   );
 }
 
-function FaqBody() {
+function FaqBody({ playSafe = false }: { playSafe?: boolean }) {
   return (
     <>
       <div className="mx-auto mt-16 max-w-2xl space-y-10 text-left text-[15px] leading-relaxed text-[var(--color-ink-2)]">
@@ -35,12 +38,12 @@ function FaqBody() {
           <p className="mt-3">{HOW_LINE}</p>
         </section>
       </div>
-      <RefundBlock />
+      {playSafe ? null : <RefundBlock />}
     </>
   );
 }
 
-function ContactBody() {
+function ContactBody({ playSafe = false }: { playSafe?: boolean }) {
   const emailId = useId();
   const messageId = useId();
   return (
@@ -62,7 +65,14 @@ function ContactBody() {
           <button type="submit" className="lx-btn lx-btn-gold min-h-11">Email support</button>
         </form>
       </div>
-      <RefundBlock />
+      {playSafe ? (
+        <section className="mx-auto mt-16 max-w-2xl border-t pt-8 text-left text-[15px] leading-relaxed lx-hairline">
+          <h2 className="font-serif text-2xl text-[var(--color-ink)]">Support</h2>
+          <p className="mt-3">Email {SUPPORT_EMAIL}. This page does not list prices and does not take payment.</p>
+        </section>
+      ) : (
+        <RefundBlock />
+      )}
     </>
   );
 }
@@ -75,7 +85,8 @@ export const HelpPage: React.FC<Props> = ({ kind, onBack }) => {
     return bindTelegramBackButton(onBack);
   }, [onBack]);
 
-  const body = isFaq ? <FaqBody /> : <ContactBody />;
+  const playSafe = isAndroidPlayClient() && !isInTelegram();
+  const body = isFaq ? <FaqBody playSafe={playSafe} /> : <ContactBody playSafe={playSafe} />;
 
   if (isInTelegram()) {
     return (
@@ -86,6 +97,17 @@ export const HelpPage: React.FC<Props> = ({ kind, onBack }) => {
           {body}
         </div>
       </main>
+    );
+  }
+
+  if (playSafe) {
+    return (
+      <PlaySafeDocument
+        title={isFaq ? 'Help' : 'Contact'}
+        lede={isFaq ? 'Questions about the check.' : `Email ${CONTACT_EMAIL}. There is no phone line.`}
+      >
+        {body}
+      </PlaySafeDocument>
     );
   }
 

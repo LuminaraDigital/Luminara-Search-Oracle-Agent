@@ -4,14 +4,14 @@
  */
 import { OPERATOR_LINE, PUBLIC_CONTACT_LINE } from './consumerTerms';
 
-export const PRIVACY_UPDATED = '23 October 2026';
+export const PRIVACY_UPDATED = '25 October 2026';
 
 export const PUBLIC_PRIVACY_URL = 'https://www.luminarasuite.com/privacy';
 
 export const PUBLIC_TERMS_URL = 'https://www.luminarasuite.com/terms';
 
 export const PRIVACY_INTRO =
-  'This policy says what personal information Luminara Suite handles on the website, the Telegram Mini App, the Telegram bot, and the related Cloudflare APIs. It matches the product as shipped. It is not legal advice. For a counsel-approved data processing agreement, email privacy@luminarasuite.com.';
+  'This policy says what personal information Luminara Suite handles on the website, the Android app, the Telegram Mini App, the Telegram bot, and the related Cloudflare APIs. It matches the product as shipped. It is not legal advice. For a counsel-approved data processing agreement, email privacy@luminarasuite.com.';
 
 export interface PrivacySection {
   title: string;
@@ -23,7 +23,7 @@ export const PRIVACY_SECTIONS: PrivacySection[] = [
   {
     title: 'Who we are',
     paragraphs: [
-      `We are ${OPERATOR_LINE} ("we", "us"). The product is Luminara Suite: the website, the Telegram Mini App, and the Telegram bot @LuminaraSuiteBot. ${PUBLIC_CONTACT_LINE} Privacy: privacy@luminarasuite.com. Security: security@luminarasuite.com. Support: support@luminarasuite.com.`,
+      `We are ${OPERATOR_LINE} ("we", "us"). The product is Luminara Suite: the website, the Android app, the Telegram Mini App, and the Telegram bot @LuminaraSuiteBot. ${PUBLIC_CONTACT_LINE} Privacy: privacy@luminarasuite.com. Security: security@luminarasuite.com. Support: support@luminarasuite.com.`,
     ],
   },
   {
@@ -50,7 +50,7 @@ export const PRIVACY_SECTIONS: PrivacySection[] = [
     bullets: [
       'Account: a Firebase user id, email, and display name, or a Telegram user id, name, username, language, and an optional photo URL from Telegram\'s signed launch data (initData). We may link a Telegram login and a Firebase login to one account.',
       'What you type: business profile, domains, competitor names, chat messages, audit reports, brand memory, client workspaces, watchlists, and CMS settings you save.',
-      'API keys you paste (Groq, NVIDIA, Gemini, Tavily, Firecrawl, Exa, OpenRouter, Ollama, and similar) stay in this browser. If you are signed in and turn on workspace sync, those keys are encrypted in this browser with AES-256-GCM before upload. The key is derived with PBKDF2-SHA-256 (100,000 iterations) from a secret stored in this browser. Another browser does not have that secret, so it cannot decrypt those keys. If encryption fails, the keys are uploaded without that encryption. Audits, chat, and other workspace content are stored as you saved them, without that encryption.',
+      'API keys you paste (Groq, NVIDIA, Gemini, Tavily, Firecrawl, Exa, OpenRouter, Ollama, and similar) stay on the device where you entered them. In a browser they stay in that browser. On the Android app, keys you save are stored encrypted on the device with Android Keystore AES-256-GCM. When a provider call needs your own key, the browser or the Android app may send it to our Worker in the x-provider-key header. The Worker forwards that key to the provider for the call and does not save it as an account key. If you are signed in on the website and turn on workspace sync, those keys are encrypted in that browser with AES-256-GCM before upload. The key is derived with PBKDF2-SHA-256 (100,000 iterations) from a secret stored in that browser. Another browser does not have that secret, so it cannot decrypt those keys. If encryption fails, the keys are uploaded without that encryption. Audits, chat, and other workspace content are stored as you saved them, without that encryption.',
       'Plan and billing: plan id, expiry, a Stripe checkout session id when you pay by card, Telegram Stars charge ids, TON order amount, memo, status, and transaction hash, daily free-quota counters, and Sentinel watch targets (owner id, domain, brand, Telegram chat id, keywords, and scores). Stripe is the card payment processor. We do not store card numbers.',
       'Logs: Cloudflare request logs, and the IP address used in memory for abuse limits. We do not set first-party marketing cookies.',
     ],
@@ -58,7 +58,7 @@ export const PRIVACY_SECTIONS: PrivacySection[] = [
   {
     title: 'Where it is stored',
     bullets: [
-      'On your device: localStorage and sessionStorage hold the business profile, chat, audits, memory, themes, and keys when you are not relying on sync.',
+      'On your device: in a browser, localStorage and sessionStorage hold the business profile, chat, audits, memory, themes, and keys when you are not relying on sync. On the Android app, saved API keys are encrypted with Android Keystore AES-256-GCM.',
       'On Cloudflare: a D1 database (users and workspace JSON) and KV (subscriptions, quota, workspace fallback, Sentinel targets, short-lived TON orders, and an enrichment cache). Hosting and logs are on Cloudflare.',
       'Firebase Authentication holds email, password, and Google sign-in credentials for the luminara-suite project.',
       'Stripe holds the card payment. We keep the plan id, expiry, and checkout session id.',
@@ -70,6 +70,7 @@ export const PRIVACY_SECTIONS: PrivacySection[] = [
       'To run audits, chat, brand memory, Sentinel, and client workspaces.',
       'To sign you in, count the free daily allowance, and deliver a card pass, Stars, or TON plan.',
       'To relay blocked browser AI calls (for example NVIDIA NIM) without storing the key on that relay.',
+      'To forward a key you send in the x-provider-key header to the provider for that call, without saving it as an account key.',
       'To keep the service secure, limit abuse, and fix outages.',
       'To answer privacy, support, and security requests.',
     ],
@@ -93,7 +94,7 @@ export const PRIVACY_SECTIONS: PrivacySection[] = [
   {
     title: 'Telegram, wallets, and cards',
     paragraphs: [
-      'Inside Telegram we receive the signed launch data Telegram sends. We check it with HMAC-SHA256. We use it to identify you, meter usage, send Sentinel alerts to your chat id, and record Stars purchases. We do not receive your phone number or bank account. Telegram handles Stars payments. The Mini App takes Stars only. You can clear the bot\'s chat memory with /reset or /clear. Connecting a TON wallet shares the public address with the app in your browser. We do not hold funds, and we do not store private keys or seed phrases. Card checkout on the website is through Stripe. We store the plan id, expiry, and checkout session id. We do not store the card number.',
+      'Inside Telegram we receive the signed launch data Telegram sends. We check it with HMAC-SHA256. We use it to identify you, meter usage, send Sentinel alerts to your chat id, and record Stars purchases. We do not receive your phone number or bank account. Telegram handles Stars payments. The Mini App takes Stars only. You can clear the bot\'s chat memory with /reset or /clear. Connecting a TON wallet shares the public address with the app in your browser. We do not hold funds, and we do not store private keys or seed phrases. If a card payment is processed, Stripe processes it. We store the plan id, expiry, and checkout session id. We do not store the card number.',
     ],
   },
   {

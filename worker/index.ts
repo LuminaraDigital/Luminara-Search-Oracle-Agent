@@ -55,7 +55,9 @@ import { listSupportRequests } from './paymentSupport';
 import { resolveChainNetwork } from './chainNetwork';
 import { probeXdcRpcCached } from './chain/xdcRpc';
 import { activateLicenseKey, generateLicenseKeys, importLicenseKeys } from './licenseService';
-import { TERMS_HTML } from './termsPolicy';
+import { TERMS_HTML, buildTermsHtml } from './termsPolicy';
+import { DELETE_ACCOUNT_HTML, maybeServeAndroidLegalHtml } from './androidLegalHtml';
+import { isAndroidPlayClientSearch } from '../services/legal/playClient';
 import { LLMS_TXT, SITEMAP_XML, applyHostRobots, buildSitemapXml, robotsTxtForHost } from './crawlDocuments';
 import { maybeServeMarketingHtml, maybeServeReceiptHtml, maybeServeShareHtml, withSkippedBootSplash } from './marketingShell';
 import { desktopLatestJson, desktopWindowsDownload } from './desktopDownloads';
@@ -2222,7 +2224,7 @@ const handler = {
       url.pathname === '/tos/'
     ) {
       return guard(
-        new Response(TERMS_HTML, {
+        new Response(isAndroidPlayClientSearch(url.search) ? buildTermsHtml({ android: true }) : TERMS_HTML, {
           status: 200,
           headers: {
             'Content-Type': 'text/html; charset=utf-8',
@@ -2308,6 +2310,21 @@ const handler = {
     if (receiptHtml) {
       return guard(receiptHtml);
     }
+
+    if (url.pathname === '/delete-account' || url.pathname === '/delete-account/') {
+      return guard(
+        new Response(DELETE_ACCOUNT_HTML, {
+          status: 200,
+          headers: {
+            'Content-Type': 'text/html; charset=utf-8',
+            'Cache-Control': 'public, max-age=3600',
+          },
+        }),
+      );
+    }
+
+    const androidLegal = maybeServeAndroidLegalHtml(url, request.method);
+    if (androidLegal) return guard(androidLegal);
 
     // Marketing paths: SPA shell with path-specific title, description, canonical and JSON-LD.
     const marketingHtml = await maybeServeMarketingHtml(request, env.ASSETS);

@@ -1,7 +1,9 @@
 import React, { useEffect } from 'react';
 import { bindTelegramBackButton, isInTelegram } from '../services/telegram/tma';
-import { ACL_RIGHTS_CLAUSE, LEGAL_ENTITY, LIABILITY_CLAUSE, OPERATOR_LINE, PLANS_PAYMENTS_PARAGRAPH, PUBLIC_CONTACT_LINE, TERMS_UPDATED } from '../services/legal/consumerTerms';
+import { ACL_RIGHTS_CLAUSE, ANDROID_PLANS_PARAGRAPH, LEGAL_ENTITY, LIABILITY_CLAUSE, OPERATOR_LINE, PLANS_PAYMENTS_PARAGRAPH, PUBLIC_CONTACT_LINE, TERMS_UPDATED } from '../services/legal/consumerTerms';
+import { isAndroidPlayClient } from '../services/legal/playClient';
 import { PRIVACY_INTRO, PRIVACY_SECTIONS, PRIVACY_UPDATED, type PrivacySection } from '../services/legal/privacyCopy';
+import { PlaySafeDocument } from './legal/PlaySafeDocument';
 import { MarketingPageHeader, MarketingPageShell } from './marketing/MarketingPageShell';
 import { DOCUMENT_CHROME, MarketingChromeContext } from './marketing/marketingChrome';
 
@@ -41,7 +43,7 @@ function PrivacyBody() {
   );
 }
 
-function TermsBody() {
+function TermsBody({ playSafe = false }: { playSafe?: boolean }) {
   const sections: PrivacySection[] = [
     {
       title: 'The service',
@@ -64,7 +66,7 @@ function TermsBody() {
     {
       title: 'Plans and payments',
       paragraphs: [
-        PLANS_PAYMENTS_PARAGRAPH,
+        playSafe ? ANDROID_PLANS_PARAGRAPH : PLANS_PAYMENTS_PARAGRAPH,
       ],
     },
     {
@@ -110,7 +112,8 @@ export const LegalPage: React.FC<Props> = ({ kind, onBack }) => {
     return bindTelegramBackButton(onBack);
   }, [onBack]);
 
-  const body = isPrivacy ? <PrivacyBody /> : <TermsBody />;
+  const playSafe = isAndroidPlayClient() && !isInTelegram();
+  const body = isPrivacy ? <PrivacyBody /> : <TermsBody playSafe={playSafe} />;
   const meta = `Luminara Suite · Operated by ${OPERATOR_LINE} · Last updated ${updated}`;
 
   if (isInTelegram()) {
@@ -125,6 +128,14 @@ export const LegalPage: React.FC<Props> = ({ kind, onBack }) => {
           {body}
         </div>
       </main>
+    );
+  }
+
+  if (playSafe) {
+    return (
+      <PlaySafeDocument title={isPrivacy ? 'Privacy policy' : 'Terms of Service'} lede={meta}>
+        {body}
+      </PlaySafeDocument>
     );
   }
 

@@ -8,7 +8,7 @@ App: **Luminara Suite** (`com.luminarasuite.app`) · Operator: **LUMINARA DIGITA
 
 | Play Console Section | Declaration Answer | Evidence & Codebase Basis |
 | :--- | :--- | :--- |
-| **Privacy policy** | `https://www.luminarasuite.com/privacy` | Live privacy policy naming Luminara Digital Pty Ltd, covering collection, AI processing, BYOK encryption, retention, and APP rights. |
+| **Privacy policy** | `https://www.luminarasuite.com/privacy?client=android` | Play-safe privacy policy. No Pricing nav, no prices, and no checkout. The page without `?client=android` is the public website policy. |
 | **Ads** | **No, my app does not contain ads** | Zero ad SDKs or ad networks in `apps/android/gradle/libs.versions.toml`. |
 | **Advertising ID** | **No** | `com.google.android.gms.permission.AD_ID` and `ACCESS_ADSERVICES_AD_ID` are stripped via `tools:node="remove"` in `AndroidManifest.xml`. |
 | **Government apps** | **No** | Commercial B2B search visibility software. |
@@ -27,7 +27,7 @@ App: **Luminara Suite** (`com.luminarasuite.app`) · Operator: **LUMINARA DIGITA
 - **Is all of the user data collected by your app encrypted in transit?** -> **Yes** (`cleartextTrafficPermitted="false"` in `network_security_config.xml` and `android:usesCleartextTraffic="false"` in `AndroidManifest.xml`).
 - **Do you provide a way for users to request that their data is deleted?** -> **Yes**
   - **In-app path**: `Settings -> Privacy, Data Export & Account Deletion -> Permanently Delete Account & Data` (`POST /api/privacy/account`).
-  - **Web account deletion URL**: `https://www.luminarasuite.com/privacy` and `https://www.luminarasuite.com/contact`.
+  - **Web account deletion URL**: `https://www.luminarasuite.com/delete-account`
 
 | Category | Data Type | Collected | Shared | Required or Optional | Purpose |
 | :--- | :--- | :---: | :---: | :--- | :--- |
@@ -37,3 +37,17 @@ App: **Luminara Suite** (`com.luminarasuite.app`) · Operator: **LUMINARA DIGITA
 | **App activity** | Other user-generated content (audited domains, audit history, findings) | Yes | Yes | Optional | App functionality (stored locally in Room 3 and synced to Cloudflare D1 when signed in) |
 | **Device or other IDs** | Device or other IDs | **No** | **No** | N/A | Zero third-party analytics, crash, or advertising SDKs are bundled in `apps/android`. |
 | **App info and performance** | Crash logs / Diagnostics | **No** | **No** | N/A | Zero third-party crash reporting SDKs bundled in v1. |
+
+---
+
+## 3. Android legal URLs (1.0.3 follow-up)
+
+The 1.0.2 binary opens `/privacy`, `/terms`, and `/contact` from Settings without a query. Do not change that binary while 1.0.2 is in review.
+
+A later 1.0.3 Settings build should open these URLs in the external browser:
+
+- `https://www.luminarasuite.com/privacy?client=android`
+- `https://www.luminarasuite.com/terms?client=android`
+- `https://www.luminarasuite.com/contact?client=android`
+
+`?client=android` serves the same words without a Pricing link, without prices, and without a website checkout. Play Console can use those URLs now, and `https://www.luminarasuite.com/delete-account` for the Data safety account deletion URL. Website and Telegram pages without the query stay unchanged.
