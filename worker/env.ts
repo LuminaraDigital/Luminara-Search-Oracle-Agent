@@ -248,6 +248,12 @@ export interface Env extends DataPlaneEnv {
    * `soft` or leave policies with hard_stop_enabled=0 until invoice validation.
    */
   BUDGET_ENFORCEMENT?: string;
+  /**
+   * High-accuracy schema (POST /api/high-accuracy/schema). Unset or any value
+   * other than "on", "true", or "1" leaves the route dark. It bills the caller's
+   * own provider key and never falls back to hosted keys or Workers AI.
+   */
+  HIGH_ACCURACY?: string;
   /** Feature flags (string "true" / "false"). */
   ORACLE_SERVER_ENABLED?: string;
   /**

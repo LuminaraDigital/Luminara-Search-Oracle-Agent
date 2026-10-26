@@ -23,7 +23,8 @@ export type RunSurface =
   | 'queued_audit'
   | 'sentinel'
   | 'mcp_tool'
-  | 'crawler';
+  | 'crawler'
+  | 'high_accuracy';
 
 export type RunStatus = 'running' | 'completed' | 'failed' | 'budget_halted';
 
@@ -96,14 +97,27 @@ export async function startRun(
   }
 }
 
-/** Close a run. Best-effort: completion loss only degrades analytics. */
+/**
+ * Close a run. Best-effort: completion loss only degrades analytics.
+ * `note` overwrites wake_comment (capped at 256 chars) so a caller can store
+ * a counts-only summary. Omit it to leave the comment from startRun.
+ */
 export async function completeRun(
   env: UserStoreEnv,
   runId: string,
   status: Exclude<RunStatus, 'running'> = 'completed',
+  note?: string,
 ): Promise<void> {
   if (!env.DB) return;
   try {
+    if (note !== undefined) {
+      await env.DB.prepare(
+        `UPDATE run_provenance SET completed_at = ?, status = ?, wake_comment = ? WHERE run_id = ?`,
+      )
+        .bind(Date.now(), status, note.slice(0, 256), runId)
+        .run();
+      return;
+    }
     await env.DB.prepare(
       `UPDATE run_provenance SET completed_at = ?, status = ? WHERE run_id = ?`,
     )
