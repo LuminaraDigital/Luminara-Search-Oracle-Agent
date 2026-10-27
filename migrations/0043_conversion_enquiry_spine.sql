@@ -1,4 +1,4 @@
--- 0042_conversion_enquiry_spine.sql
+-- 0043_conversion_enquiry_spine.sql
 -- 4-Module Conversion Spine: Visibility -> Enquiry Desk -> Recovery -> Outcomes
 -- Includes Rakazo-style external_effects idempotency ledger, distinct Contact / Property / Enquiry /
 -- AppraisalAppointment / RecoveryRun records, and the 6-stage evidence-backed outcome_stage_events ledger.

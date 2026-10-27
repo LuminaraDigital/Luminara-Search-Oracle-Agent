@@ -36,7 +36,7 @@ const REQUIRED_D1_MIGRATIONS = [
   'migrations/0025_ton_pending_orders.sql',
   'migrations/0026_payment_support.sql',
   'migrations/0033_community_feed.sql',
-  'migrations/0042_conversion_enquiry_spine.sql',
+  'migrations/0043_conversion_enquiry_spine.sql',
 ];
 
 const REQUIRED_D1_TABLES = [
