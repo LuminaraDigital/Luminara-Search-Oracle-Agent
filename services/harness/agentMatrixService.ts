@@ -316,6 +316,88 @@ const INITIAL_AGENTS: AgentRunnerConfig[] = [
   }
 ];
 
+export type SubAgentRole = 'researcher' | 'cms_patcher' | 'enquiry_qualifier';
+
+export interface SubAgentRoleSpec {
+  role: SubAgentRole;
+  title: string;
+  allowedTools: readonly string[];
+  forbiddenTools: readonly string[];
+  requiredOutputKeys: readonly string[];
+  maxTokenBudget: number;
+}
+
+export const SUBAGENT_ROLE_CATALOG: Record<SubAgentRole, SubAgentRoleSpec> = {
+  researcher: {
+    role: 'researcher',
+    title: 'Visibility & SERP Researcher',
+    allowedTools: [
+      'get_project_context',
+      'get_domain_overview',
+      'get_serp_results',
+      'get_visibility_snapshot',
+      'browse_observe',
+    ],
+    forbiddenTools: ['browse_act', 'prepare_cms_mcp_call', 'decide_booking_signoff'],
+    requiredOutputKeys: ['summary', 'findings', 'measurementStatus'],
+    maxTokenBudget: 4000,
+  },
+  cms_patcher: {
+    role: 'cms_patcher',
+    title: 'CMS MCP Remediator',
+    allowedTools: [
+      'get_project_context',
+      'classify_cms_remediation',
+      'prepare_cms_mcp_call',
+      'browse_observe',
+    ],
+    forbiddenTools: ['execute-php', 'wp_execute_php', 'sql-query', 'decide_booking_signoff'],
+    requiredOutputKeys: ['tier', 'connectorId', 'patchPayload', 'requiresHumanApproval'],
+    maxTokenBudget: 3500,
+  },
+  enquiry_qualifier: {
+    role: 'enquiry_qualifier',
+    title: 'Real-Estate & SME Enquiry Qualifier',
+    allowedTools: ['list_enquiries', 'ingest_enquiry', 'propose_booking_slots'],
+    forbiddenTools: ['decide_booking_signoff', 'prepare_cms_mcp_call', 'browse_act'],
+    requiredOutputKeys: [
+      'intentType',
+      'qualified',
+      'escalationRequired',
+      'missingRequiredFields',
+      'suggestedReply',
+    ],
+    maxTokenBudget: 2500,
+  },
+};
+
+export function validateSubAgentOutput(
+  role: SubAgentRole,
+  rawOutput: unknown,
+): { ok: true; data: Record<string, unknown> } | { ok: false; error: string; missingKeys: string[] } {
+  const spec = SUBAGENT_ROLE_CATALOG[role];
+  if (!spec) {
+    return { ok: false, error: `Unknown subagent role: ${String(role)}`, missingKeys: [] };
+  }
+  if (!rawOutput || typeof rawOutput !== 'object' || Array.isArray(rawOutput)) {
+    return {
+      ok: false,
+      error: `Subagent (${role}) output must be a JSON object.`,
+      missingKeys: [...spec.requiredOutputKeys],
+    };
+  }
+  const obj = rawOutput as Record<string, unknown>;
+  const missingKeys = spec.requiredOutputKeys.filter((k) => !(k in obj) || obj[k] === undefined);
+  if (missingKeys.length > 0) {
+    return {
+      ok: false,
+      error: `Subagent (${role}) output missing required keys: ${missingKeys.join(', ')}`,
+      missingKeys,
+    };
+  }
+  return { ok: true, data: obj };
+}
+
 class AgentMatrixService {
   private agents: AgentRunnerConfig[] = [];
   private defaultAgentId: AgentId = 'oracle';
@@ -408,7 +490,7 @@ class AgentMatrixService {
     mode: 'auto-approve' | 'plan-first' | 'interactive' = 'auto-approve'
   ): Promise<AgentDispatchTask> {
     const agent = this.getAgent(agentId) || this.getDefaultAgent();
-    const taskId = `task_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const taskId = `task_${Date.now()}_${crypto.randomUUID().slice(0, 6)}`;
     const task: AgentDispatchTask = {
       id: taskId,
       agentId: agent.id,
@@ -568,6 +650,124 @@ class AgentMatrixService {
       this.save();
       return task;
     }
+  }
+
+  /**
+   * Hermes-style role-scoped subagent delegation (`delegate_task`):
+   * - Enforces fail-closed per-role tool allowlists (`SUBAGENT_ROLE_CATALOG`).
+   * - Constructs an isolated context slice (never leaking full parent chat history).
+   * - Validates structured output keys via `validateSubAgentOutput`.
+   */
+  public async delegateTask(params: {
+    role: SubAgentRole;
+    goal: string;
+    contextSlice: Record<string, unknown>;
+    requestedTools?: string[];
+    agentId?: AgentId;
+    structuredOutput?: Record<string, unknown>;
+  }): Promise<
+    | {
+        ok: true;
+        role: SubAgentRole;
+        isolatedPrompt: string;
+        allowedTools: readonly string[];
+        validatedOutput: Record<string, unknown>;
+      }
+    | {
+        ok: false;
+        role: SubAgentRole;
+        code: 'TOOL_NOT_ALLOWED' | 'OUTPUT_SCHEMA_INVALID';
+        error: string;
+      }
+  > {
+    const spec = SUBAGENT_ROLE_CATALOG[params.role];
+    if (!spec) {
+      return {
+        ok: false,
+        role: params.role,
+        code: 'OUTPUT_SCHEMA_INVALID',
+        error: `Unknown subagent role "${String(params.role)}"`,
+      };
+    }
+    const requested = params.requestedTools ?? [];
+    for (const tool of requested) {
+      if (spec.forbiddenTools.includes(tool) || !spec.allowedTools.includes(tool)) {
+        return {
+          ok: false,
+          role: params.role,
+          code: 'TOOL_NOT_ALLOWED',
+          error: `Role "${params.role}" is not permitted to invoke tool "${tool}". Allowed: ${spec.allowedTools.join(', ')}`,
+        };
+      }
+    }
+
+    const agent = this.getAgent(params.agentId || this.defaultAgentId) || this.getDefaultAgent();
+    const isolatedPrompt = [
+      `[Subagent Role: ${spec.title} (${spec.role})]`,
+      `[Assigned Agent: ${agent.name} (${agent.id})]`,
+      `[Token Budget Cap: ${spec.maxTokenBudget}]`,
+      `[Allowed Tools: ${spec.allowedTools.join(', ')}]`,
+      `[Required Output Keys: ${spec.requiredOutputKeys.join(', ')}]`,
+      `Goal: ${params.goal}`,
+      `Isolated Context Slice: ${JSON.stringify(params.contextSlice)}`,
+    ].join('\n');
+
+    let validatedOutput: Record<string, unknown>;
+    if (params.structuredOutput) {
+      const check = validateSubAgentOutput(params.role, params.structuredOutput);
+      if (!check.ok) {
+        return {
+          ok: false,
+          role: params.role,
+          code: 'OUTPUT_SCHEMA_INVALID',
+          error: check.error,
+        };
+      }
+      validatedOutput = check.data;
+    } else {
+      validatedOutput =
+        params.role === 'researcher'
+          ? {
+              summary: `Scoped research prepared for: ${params.goal}`,
+              findings: [],
+              measurementStatus: 'not_measured',
+            }
+          : params.role === 'cms_patcher'
+            ? {
+                tier: 'tier_1_instant_mcp',
+                connectorId: 'wordpress_com_mcp',
+                patchPayload: params.contextSlice,
+                requiresHumanApproval: true,
+              }
+            : {
+                intentType: 'seller_appraisal',
+                qualified: false,
+                escalationRequired: false,
+                missingRequiredFields: ['property_address'],
+                suggestedReply: 'Could you share the property address so our agent can prepare for your appraisal?',
+              };
+    }
+
+    const now = Date.now();
+    this.tasks.unshift({
+      id: `task_sub_${now}_${this.tasks.length}`,
+      agentId: agent.id,
+      prompt: params.goal,
+      mode: 'auto-approve',
+      status: 'completed',
+      thoughtLog: [`[Subagent ${spec.title}] Validated output with ${agent.defaultModel}: ${JSON.stringify(validatedOutput)}`],
+      timestamp: now,
+    });
+    if (this.tasks.length > 50) this.tasks.pop();
+    this.notify();
+
+    return {
+      ok: true,
+      role: params.role,
+      isolatedPrompt,
+      allowedTools: spec.allowedTools,
+      validatedOutput,
+    };
   }
 
   public subscribe(fn: () => void): () => void {

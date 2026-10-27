@@ -16,12 +16,97 @@ export type VisibilityMeasurementMethod =
   | 'local_serp'
   | 'none';
 
+export type OffSiteMentionChannel =
+  | 'editorial_pr'
+  | 'roundup_listicle'
+  | 'review_platform'
+  | 'community_forum';
+
+export type BrandMentionStatus = 'recommended' | 'mentioned' | 'absent';
+
 export interface EngineVisibilityEvidence {
   query: string;
   cited: boolean;
+  brandStatus?: BrandMentionStatus;
+  competitorsMentioned?: string[];
   answerSnippet?: string;
   sources?: string[];
   rawRef?: string;
+}
+
+export interface MissingMentionSource {
+  domain: string;
+  sampleUrl?: string;
+  channel: OffSiteMentionChannel;
+  competitorsMentioned: string[];
+  competitorMentionCount: number;
+  promptCount: number;
+  prompts: string[];
+  engines: VisibilityEngineId[];
+  actionRecommendation: string;
+}
+
+export function extractSourceHost(rawUrl: string): string {
+  try {
+    return new URL(rawUrl).hostname.replace(/^www\./i, '').toLowerCase();
+  } catch {
+    return rawUrl.replace(/^https?:\/\//i, '').replace(/^www\./i, '').split('/')[0].toLowerCase();
+  }
+}
+
+export function classifyBrandMentionStatus(cited: boolean, text: string): BrandMentionStatus {
+  if (!cited) return 'absent';
+  return /\b(recommend|recommended|best|top pick|top choice|leading)\b/i.test(text)
+    ? 'recommended'
+    : 'mentioned';
+}
+
+export function findMentionedCompetitors(text: string, competitors: string[]): string[] {
+  const lower = text.toLowerCase();
+  return competitors.filter((comp) => lower.includes(comp.toLowerCase().replace(/^www\./i, '')));
+}
+
+export function classifyOffSiteChannel(domain: string, urlOrSnippet = ''): OffSiteMentionChannel {
+  const d = domain.toLowerCase();
+  const ctx = `${d} ${urlOrSnippet.toLowerCase()}`;
+  if (
+    d.includes('reddit.com') ||
+    d.includes('quora.com') ||
+    d.includes('ycombinator.com') ||
+    d.includes('discord') ||
+    d.includes('community') ||
+    d.includes('forum') ||
+    d.includes('stackoverflow.com')
+  ) {
+    return 'community_forum';
+  }
+  if (
+    d.includes('g2.com') ||
+    d.includes('capterra.com') ||
+    d.includes('trustpilot.com') ||
+    d.includes('yelp.com') ||
+    d.includes('tripadvisor.com') ||
+    d.includes('reviews.io') ||
+    d.includes('feefo.com') ||
+    d.includes('youtube.com') ||
+    d.includes('youtu.be')
+  ) {
+    return 'review_platform';
+  }
+  if (
+    d.includes('pcmag.com') ||
+    d.includes('wired.com') ||
+    d.includes('tomshardware.com') ||
+    d.includes('zdnet.com') ||
+    d.includes('macrumors.com') ||
+    d.includes('cnet.com') ||
+    d.includes('techradar.com') ||
+    d.includes('timeout.com') ||
+    /\b(best-|top-|\bbest\b|\broundup\b|\bvs\b|\bcomparison\b|\balternatives\b)/.test(ctx)
+  ) {
+    return 'roundup_listicle';
+  }
+  return 'editorial_pr';
 }
 
 export interface EngineVisibilityResult {

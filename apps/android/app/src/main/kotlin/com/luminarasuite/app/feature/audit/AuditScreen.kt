@@ -20,6 +20,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -49,6 +50,7 @@ data class AuditUiState(
     val errorMessage: String? = null,
     val report: InstantAuditReport? = null,
     val recheckBanner: String? = null,
+    val isVerdictReported: Boolean = false,
 )
 
 class AuditViewModel(
@@ -73,6 +75,7 @@ class AuditViewModel(
                 isLoading = true,
                 errorMessage = null,
                 recheckBanner = null,
+                isVerdictReported = false,
             )
         }
         viewModelScope.launch {
@@ -96,16 +99,57 @@ class AuditViewModel(
         viewModelScope.launch {
             repository.recheckSingleCheck(currentReport.domain, checkId)
                 .onSuccess { res ->
-                    val statusText = if (res.passed) "PASSED" else "STILL FAILING"
+                    val statusText =
+                        when (res.passed) {
+                            true -> "PASSED"
+                            false -> "STILL FAILING"
+                            null -> "NOT MEASURED"
+                        }
+                    val updatedReport =
+                        if (res.passed != null) {
+                            val newStatus = if (res.passed) "pass" else "fail"
+                            val updatedChecks =
+                                currentReport.evaluation.checks.map { check ->
+                                    if (check.id == checkId) {
+                                        check.copy(
+                                            status = newStatus,
+                                            detail = res.detail.ifBlank { check.detail },
+                                        )
+                                    } else {
+                                        check
+                                    }
+                                }
+                            val updatedEval =
+                                currentReport.evaluation.copy(
+                                    checks = updatedChecks,
+                                    passCount = updatedChecks.count { it.status == "pass" },
+                                    failCount = updatedChecks.count { it.status == "fail" },
+                                )
+                            currentReport.copy(evaluation = updatedEval)
+                        } else {
+                            currentReport
+                        }
+                    val label = res.label.ifBlank { checkId }
                     _uiState.update {
-                        it.copy(recheckBanner = "Live recheck (${res.label}): $statusText - ${res.detail}")
+                        it.copy(
+                            report = updatedReport,
+                            recheckBanner = "Live recheck ($label): $statusText - ${res.detail}",
+                        )
                     }
                 }
                 .onFailure { err ->
                     _uiState.update {
-                        it.copy(recheckBanner = "Live recheck requires sign-in (${err.message ?: "unavailable"}). ")
+                        it.copy(recheckBanner = "Live recheck unavailable (${err.message ?: "check connection"}).")
                     }
                 }
+        }
+    }
+
+    fun reportAuditVerdict() {
+        val currentReport = _uiState.value.report ?: return
+        viewModelScope.launch {
+            repository.reportOracleTurn("audit-${currentReport.domain}")
+            _uiState.update { it.copy(isVerdictReported = true) }
         }
     }
 }
@@ -212,7 +256,9 @@ fun AuditScreen(viewModel: AuditViewModel) {
         if (report != null) {
             AuditReportContent(
                 report = report,
+                isVerdictReported = state.isVerdictReported,
                 onRecheck = viewModel::recheckCheck,
+                onReportVerdict = viewModel::reportAuditVerdict,
             )
         }
 
@@ -224,7 +270,9 @@ fun AuditScreen(viewModel: AuditViewModel) {
 @Composable
 private fun AuditReportContent(
     report: InstantAuditReport,
+    isVerdictReported: Boolean,
     onRecheck: (String) -> Unit,
+    onReportVerdict: () -> Unit,
 ) {
     WorkbenchCard(emphasized = true) {
         Row(
@@ -250,6 +298,21 @@ private fun AuditReportContent(
             }
         }
         Text(text = report.receiptNote, style = LuminaraTextStyles.Body)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+        ) {
+            TextButton(
+                onClick = onReportVerdict,
+                enabled = !isVerdictReported,
+                modifier = Modifier.testTag("report_audit_button"),
+            ) {
+                Text(
+                    text = if (isVerdictReported) "Reported · Flagged for Review" else "Report AI Output",
+                    color = if (isVerdictReported) LuminaraColors.GoldLight else LuminaraColors.Ink2,
+                )
+            }
+        }
     }
 
     WorkbenchCard {
@@ -272,6 +335,7 @@ private fun AuditReportContent(
                     OutlinedButton(
                         onClick = { onRecheck(check.id) },
                         shape = RoundedCornerShape(999.dp),
+                        modifier = Modifier.testTag("recheck_${check.id}"),
                     ) {
                         Text("Recheck Live Fix")
                     }

@@ -116,14 +116,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
     {
       id: AppView.INSTANT_AUDIT,
       title: 'Audit my website',
-      desc: 'See whether Google and AI answers mention you, then pick one fix.',
+      desc: 'See whether Google and AI answers mention you, spot the page leaks costing you enquiries, and pick one fix.',
       icon: ICONS.Radar,
       badge: 'Audit',
     },
     {
       id: AppView.ORACLE_AGENT,
       title: 'Ask a question',
-      desc: 'Get a cited answer about your brand in search and AI answers.',
+      desc: 'Get a cited answer about how your brand appears for buyer and seller questions.',
       icon: ICONS.Terminal,
       badge: 'Ask',
     },
@@ -137,6 +137,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
   ];
 
   const secondary: Door[] = [
+    {
+      id: AppView.ENQUIRY_DESK,
+      title: 'Enquiry Desk',
+      desc: 'Fix page conversion leaks, ship a review funnel pack, and qualify leads into agent-approved bookings.',
+      icon: ICONS.Organizer,
+      badge: 'Spine',
+    },
     {
       id: AppView.NOTEBOOK,
       title: 'Intelligence Studio',

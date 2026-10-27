@@ -6,6 +6,13 @@ import { CHECKOUT_TERM_LINE, TELEGRAM_STARS_HANDOFF } from '../paywall/planCopy'
 import { lazyWithReload } from '../../utils/lazyWithReload';
 import { formatAuDate } from '../../utils/formatAuDate';
 import { PUBLIC_PRIVACY_URL, PUBLIC_TERMS_URL } from '../../services/legal/privacyCopy';
+import {
+  decideBookingAppointmentApi,
+  fetchEnquiryDesk,
+  proposeBookingSlotsApi,
+  recordOutcomeStageApi,
+  setEnquiryTakeoverApi,
+} from '../../services/enquiries/enquiryApiClient';
 
 const TelegramAccountTon = lazyWithReload(() =>
   import('./TelegramAccountTon').then((m) => ({ default: m.TelegramAccountTon })),
@@ -36,7 +43,111 @@ export const TelegramAccountBody: React.FC<TelegramAccountPanelProps> = ({
   const [showLicense, setShowLicense] = useState(false);
   const [licenseKey, setLicenseKey] = useState('');
   const [activating, setActivating] = useState(false);
+  const [tmaEnquiries, setTmaEnquiries] = useState<
+    Array<{
+      id: string;
+      fullName: string;
+      propertyAddress: string;
+      status: string;
+      automationPaused: boolean;
+      proposedSlotLabel?: string;
+      [key: string]: unknown;
+    }>
+  >(() => {
+    try {
+      const raw = localStorage.getItem('conversion_spine:enquiries');
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  });
   const plans = getServerHealthSync().plans ?? {};
+
+  useEffect(() => {
+    if (typeof fetch !== 'function') return;
+    void fetchEnquiryDesk('default')
+      .then((res) => {
+        if (res.ok && Array.isArray(res.enquiries) && res.enquiries.length > 0) {
+          setTmaEnquiries((prev) => {
+            const byId = new Map(prev.map((item) => [item.id, item]));
+            return res.enquiries!.map((e) => {
+              const existing = byId.get(e.id) || {};
+              return {
+                ...existing,
+                id: e.id,
+                fullName: e.contactName,
+                propertyAddress: e.propertyAddress || 'Address pending qualification',
+                status: e.status,
+                automationPaused: e.automationPaused,
+              };
+            });
+          });
+        }
+      })
+      .catch(() => null);
+  }, []);
+
+  const handleTmaApproveBooking = (enquiryId: string) => {
+    haptic('success');
+    setTmaEnquiries((prev) => {
+      const next = prev.map((e) =>
+        e.id === enquiryId ? { ...e, status: 'booked', bookingApprovedBy: 'TMA Principal Agent' } : e,
+      );
+      try {
+        localStorage.setItem('conversion_spine:enquiries', JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+    setStatus('Appraisal slot approved and recorded in Outcomes Ledger.');
+    const now = Date.now();
+    void proposeBookingSlotsApi(enquiryId, {
+      proposedSlots: [
+        {
+          slotId: 'slot_1',
+          startAt: now + 24 * 3600_000,
+          endAt: now + 24 * 3600_000 + 30 * 60_000,
+          label: 'TMA 1-Tap Approved Appraisal',
+        },
+      ],
+    })
+      .then((prop) => {
+        if (prop.ok && prop.appointment?.id) {
+          return decideBookingAppointmentApi(prop.appointment.id, {
+            decision: 'approve',
+            selectedSlotId: 'slot_1',
+          });
+        }
+        return recordOutcomeStageApi({
+          projectId: 'default',
+          enquiryId,
+          stage: 'agent_approved_booking',
+          evidenceType: 'agent_signoff_receipt',
+          evidenceRef: `tma_signoff_${enquiryId}_${now}`,
+        });
+      })
+      .catch(() => null);
+  };
+
+  const handleTmaToggleTakeover = (enquiryId: string, currentPaused: boolean) => {
+    haptic('medium');
+    const nextPaused = !currentPaused;
+    setTmaEnquiries((prev) => {
+      const next = prev.map((e) =>
+        e.id === enquiryId ? { ...e, automationPaused: nextPaused } : e,
+      );
+      try {
+        localStorage.setItem('conversion_spine:enquiries', JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+    setStatus(nextPaused ? 'AI paused - personal agent takeover active.' : 'Playbook automation resumed.');
+    void setEnquiryTakeoverApi(enquiryId, { paused: nextPaused }).catch(() => null);
+  };
   const inTg = isInTelegram();
   const tonOpen = !inTg && isTonAvailable(getServerHealthSync());
 
@@ -207,6 +318,55 @@ export const TelegramAccountBody: React.FC<TelegramAccountPanelProps> = ({
       )}
 
       {status && <p className="text-[11px] text-warning-300" role="status">{status}</p>}
+
+      {/* 1-Tap Mobile Sign-Off Desk & Hot Enquiry Takeover (Stage 2) */}
+      {tmaEnquiries.length > 0 && (
+        <div
+          data-testid="tma-signoff-desk"
+          className="pt-3 border-t border-white/10 space-y-2"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-mono uppercase tracking-wider text-gold-light font-bold">
+              Mobile Sign-Off Desk &amp; Enquiry Takeover
+            </span>
+            <span className="text-[9px] font-mono text-gray-500">
+              {tmaEnquiries.length} active
+            </span>
+          </div>
+          {tmaEnquiries.slice(0, 3).map((item) => (
+            <div
+              key={item.id}
+              className="rounded-xl border border-white/10 bg-black/50 p-2.5 space-y-1.5"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-semibold text-white truncate">{item.fullName}</span>
+                <span className="text-[9px] font-mono uppercase px-1.5 py-0.5 rounded bg-white/5 text-gray-300">
+                  {item.status}
+                </span>
+              </div>
+              <p className="text-[11px] text-gray-400 truncate">{item.propertyAddress}</p>
+              <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                {item.status !== 'booked' && (
+                  <button
+                    type="button"
+                    onClick={() => handleTmaApproveBooking(item.id)}
+                    className="px-2.5 py-1 rounded-lg bg-gold text-black text-[10px] font-bold uppercase tracking-wider hover:bg-gold-light transition-colors"
+                  >
+                    Approve Slot
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => handleTmaToggleTakeover(item.id, item.automationPaused)}
+                  className="px-2.5 py-1 rounded-lg border border-white/15 bg-white/5 text-[10px] font-mono uppercase text-gray-200 hover:bg-white/10 transition-colors"
+                >
+                  {item.automationPaused ? 'Resume Playbook' : 'Take Over'}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* License Key Redemption */}
       <div className="pt-2 border-t border-white/5">

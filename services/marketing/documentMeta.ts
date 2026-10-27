@@ -2,6 +2,7 @@ import { AppView } from '../../types';
 import {
   DASHBOARD_TAB_TITLE,
   DEFAULT_OG_IMAGE,
+  ENQUIRY_DESK_TAB_TITLE,
   MARKETING_ORIGIN,
   MARKETING_SHELL_BY_PATH,
   instantAuditTabTitle,
@@ -125,6 +126,7 @@ export function resolveDocumentTitle(pathname: string, view: AppView): string {
   const page = shellFor(pathname, view);
   if (page) return page.title;
   if (view === AppView.DASHBOARD) return DASHBOARD_TAB_TITLE;
+  if (view === AppView.ENQUIRY_DESK) return ENQUIRY_DESK_TAB_TITLE;
   if (view === AppView.INSTANT_AUDIT) return instantAuditTabTitle(parseUrlSwapRoute(pathname)?.targetUrl);
   return DEFAULT_APP_META.title;
 }

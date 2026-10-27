@@ -17,7 +17,8 @@ export type ScheduledJobName =
   | 'weekly_decision_digest'
   | 'rsi_skill_curator'
   | 'rsi_posting_reflection'
-  | 'citation_watch';
+  | 'citation_watch'
+  | 'recovery_campaign_sweep';
 
 export const ALL_SCHEDULED_JOBS: readonly ScheduledJobName[] = [
   'sentinel',
@@ -30,6 +31,7 @@ export const ALL_SCHEDULED_JOBS: readonly ScheduledJobName[] = [
   'rsi_skill_curator',
   'rsi_posting_reflection',
   'citation_watch',
+  'recovery_campaign_sweep',
 ];
 
 /**
@@ -58,6 +60,7 @@ const CRON_JOBS: Record<string, readonly ScheduledJobName[]> = {
     'rsi_skill_curator',
     'rsi_posting_reflection',
     'citation_watch',
+    'recovery_campaign_sweep',
   ],
 };
 

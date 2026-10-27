@@ -5,6 +5,8 @@ import { LEGAL_ENTITY_LINE } from '../services/legal/consumerTerms';
 /** User-facing copy this change touches. Fails if an em dash or en dash lands in it. */
 const COPY_FILES = [
   'components/LandingPage.tsx',
+  'components/InfrastructurePage.tsx',
+  'components/IntelligencePage.tsx',
   'components/WhyLuminaraPage.tsx',
   'components/PricingPage.tsx',
   'components/LegalPage.tsx',
@@ -32,6 +34,7 @@ const COPY_FILES = [
   'worker/telegramBot.ts',
   'worker/welcomeEmail.ts',
   'public/llms.txt',
+  'public/ai.txt',
   'public/privacy.html',
   'public/docs/what-is-aeo.html',
   'index.html',
@@ -43,6 +46,10 @@ const COPY_FILES = [
   'services/account/accountSummary.ts',
   'services/share/winShare.ts',
   'worker/winShare.ts',
+  'components/suite/EnquiryDeskView.tsx',
+  'components/audit/CmsMcpRemediationPanel.tsx',
+  'services/enquiries/playbookQualificationService.ts',
+  'services/deployment/remediationTierRouter.ts',
 ] as const;
 
 describe('suite copy', () => {
@@ -78,5 +85,48 @@ describe('suite copy', () => {
     expect(terms).toContain('OPERATOR_LINE');
     expect(terms).not.toContain('Luminara Digital Agency');
     expect(terms).not.toMatch(/GST/i);
+  });
+
+  it('includes the 4-stage pipeline, deliverable preview, and access matrix on how-it-works', () => {
+    const howItWorks = readFileSync('components/InfrastructurePage.tsx', 'utf8');
+    expect(howItWorks).toContain('The 4-stage loop');
+    expect(howItWorks).toContain('Deliverable 01');
+    expect(howItWorks).toContain('Deliverable 02');
+    expect(howItWorks).toContain('Illustrative example, not a live measurement');
+    expect(howItWorks).toContain('Start as a guest');
+    expect(howItWorks).toContain('Create free account');
+  });
+
+  it('includes the 3-way buyer matrix, agency role cards, and honest fit guide on why', () => {
+    const whyPage = readFileSync('components/WhyLuminaraPage.tsx', 'utf8');
+    expect(whyPage).toContain('The 3-way buyer decision');
+    expect(whyPage).toContain('Retainer SEO Agency');
+    expect(whyPage).toContain('Read-Only AI Trackers');
+    expect(whyPage).toContain('Role 01');
+    expect(whyPage).toContain('Role 02');
+    expect(whyPage).toContain('Role 03');
+    expect(whyPage).toContain('When Luminara fits');
+    expect(whyPage).toContain('When another tool or team is better');
+  });
+
+  it('includes the 4-step grounding pipeline, separate SEO/AEO/GEO cards, switchyard bento, and access matrix on ai', () => {
+    const aiPage = readFileSync('components/IntelligencePage.tsx', 'utf8');
+    expect(aiPage).toContain('Evidence before advice');
+    expect(aiPage).toContain('Discipline 01');
+    expect(aiPage).toContain('Discipline 02');
+    expect(aiPage).toContain('Discipline 03');
+    expect(aiPage).toContain('Architecture 01');
+    expect(aiPage).toContain('Architecture 02');
+    expect(aiPage).toContain('Hosted allowance vs. your own keys');
+  });
+
+  it('includes the agency fit cards, 4-tier capability matrix, and pass FAQ on pricing', () => {
+    const pricingPage = readFileSync('components/PricingPage.tsx', 'utf8');
+    expect(pricingPage).toContain('Which pass fits your agency');
+    expect(pricingPage).toContain('Profile 01');
+    expect(pricingPage).toContain('Profile 02');
+    expect(pricingPage).toContain('Profile 03');
+    expect(pricingPage).toContain('Side-by-side comparison');
+    expect(pricingPage).toContain('Pass terms, keys');
   });
 });

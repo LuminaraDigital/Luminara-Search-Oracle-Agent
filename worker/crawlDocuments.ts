@@ -11,7 +11,7 @@ import { COMPANY_SERVICES_URL, COMPANY_SITE_URL } from '../services/legal/consum
 import { PLAN_ENTITLEMENTS } from '../services/plans/planEntitlements';
 
 export const ROBOTS_TXT = `# Luminara Suite crawl policy
-# Public marketing pages, /llms.txt, and redacted /share/teaser/ cards are meant to be cited.
+# Public marketing pages, /llms.txt, /ai.txt, and redacted /share/teaser/ cards are meant to be cited.
 # Share URLs under /share/ are unlisted (not in the sitemap) and served noindex. They are
 # allowed here only so link unfurls can fetch the preview HTML.
 # Attestation verify, API, and OAuth stay disallowed.
@@ -44,6 +44,7 @@ Allow: /best/
 Allow: /docs/
 Allow: /docs/what-is-aeo.html
 Allow: /llms.txt
+Allow: /ai.txt
 Allow: /sitemap.xml
 Allow: /share/
 Allow: /share/teaser/
@@ -70,6 +71,7 @@ Allow: /best/
 Allow: /docs/
 Allow: /docs/what-is-aeo.html
 Allow: /llms.txt
+Allow: /ai.txt
 Allow: /sitemap.xml
 Allow: /share/
 Allow: /share/teaser/
@@ -133,6 +135,7 @@ export function buildSitemapXml(origin: string = 'https://www.luminarasuite.com'
   <url><loc>${base}/desktop</loc></url>
 ${HUB_PAGES.map((page) => `  <url><loc>${base}${page.path}</loc></url>`).join('\n')}
   <url><loc>${base}/llms.txt</loc></url>
+  <url><loc>${base}/ai.txt</loc></url>
 </urlset>
 `;
 }
@@ -256,11 +259,44 @@ ${HUB_PAGES.map((page) => `- ${page.label}: https://www.luminarasuite.com${page.
 - Terms: https://www.luminarasuite.com/terms
 `;
 
+export const AI_TXT = `# Luminara Suite AI policy (ai.txt)
+# Public marketing pages, /llms.txt, /ai.txt, and redacted /share/teaser/ cards may be crawled and cited with attribution.
+# Unlisted full reports under /share/ are served noindex and are not for training or citation.
+# API, verification, report storage, and OAuth routes are disallowed.
+# Structured product context for answer engines lives at https://www.luminarasuite.com/llms.txt
+# Methodology and honesty glossary: https://www.luminarasuite.com/docs/what-is-aeo.html
+
+User-agent: *
+Allow: /
+Allow: /how-it-works
+Allow: /ai
+Allow: /why
+Allow: /pricing
+Allow: /methodology
+Allow: /sample-report
+Allow: /privacy
+Allow: /terms
+Allow: /faq
+Allow: /contact
+Allow: /desktop
+Allow: /compare/
+Allow: /best/
+Allow: /docs/
+Allow: /docs/what-is-aeo.html
+Allow: /llms.txt
+Allow: /ai.txt
+Allow: /sitemap.xml
+Allow: /share/teaser/
+Disallow: /api/
+Disallow: /verify/
+Disallow: /reports/
+Disallow: /oauth/
+`;
+
 /**
  * Crawl file this Worker would serve for one of its own Custom Domains.
  * A fetch() of that hostname returns Cloudflare 522, so callers read these bytes instead.
  * Returns null when `serveHost` does not serve `fileUrl` (another host, or not a crawl file).
- * shortcut: suite /ai.txt has no Worker route (a static miss is 404); add a branch if one is served.
  */
 export function readServedCrawlFile(serveHost: string, fileUrl: string): { status: number; body: string } | null {
   let parsed: URL;
@@ -276,6 +312,6 @@ export function readServedCrawlFile(serveHost: string, fileUrl: string): { statu
   if (!ownProduction && !ownStaging) return null;
   if (parsed.pathname === '/robots.txt') return { status: 200, body: robotsTxtForHost(target, undefined) };
   if (parsed.pathname === '/llms.txt') return { status: 200, body: LLMS_TXT };
-  if (parsed.pathname === '/ai.txt') return { status: 404, body: '' };
+  if (parsed.pathname === '/ai.txt') return { status: 200, body: AI_TXT };
   return null;
 }

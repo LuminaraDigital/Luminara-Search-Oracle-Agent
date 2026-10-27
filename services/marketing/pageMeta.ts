@@ -237,51 +237,57 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
     path: '/how-it-works',
     title: 'How it works | Luminara Suite',
     description:
-      'How an audit checks a site. Competitor scan, impact ranking, and saved progress need sign-in.',
-    jsonLd: graph('/how-it-works', 'How it works', 'Audit modules and workflow.'),
+      'How an audit checks a site, generates a ready-to-paste Fix Pack, and qualifies leads in the Enquiry Desk. Competitor scan, impact ranking, and saved progress need sign-in.',
+    jsonLd: graph('/how-it-works', 'How it works', 'Audit modules, Fix Pack deliverables, and Enquiry Desk workflow.'),
     crawlerBody: `
 <section>
   <h1>How it works</h1>
-  <p>Luminara Suite runs checks across search and AI answers, then returns a ranked list of fixes in plain English.</p>
+  <p>Luminara Suite runs checks across search and AI answers, returns a ranked list of ready-to-paste fixes in plain English, and qualifies inbound enquiries into agent-approved bookings.</p>
   <ul>
     <li>Site crawl for titles, meta and technical blockers</li>
     <li>${LIVE_ANSWER_CHECKS}</li>
-    <li>Schema mapping. Competitor comparison needs a signed-in business profile</li>
-    <li>Impact ranking and saved progress need sign-in. Guests see Not measured</li>
+    <li>Schema mapping and ready-to-paste LocalBusiness and FAQPage JSON-LD. Competitor comparison needs a signed-in business profile</li>
+    <li>Impact ranking, Enquiry Desk qualification, and saved progress need sign-in. Guests see Not measured</li>
   </ul>
-  <p><a href="/docs/what-is-aeo.html">What is AEO</a> · <a href="/">Home</a> · <a href="/pricing">Pricing</a></p>
+  <p><a href="/docs/what-is-aeo.html">What is AEO</a> · <a href="/sample-report">Sample report</a> · <a href="/">Home</a> · <a href="/pricing">Pricing</a></p>
 </section>`,
   },
   '/ai': {
     path: '/ai',
     title: 'Our AI | Luminara Suite',
     description:
-      'Live search grounding plus the models you connect in Settings. Findings stay tied to evidence you actually collected.',
-    jsonLd: graph('/ai', 'Our AI', 'Search grounding and AI providers.'),
+      'Evidence-before-advice AI grounding: live crawl checks, separate SEO/AEO/GEO diagnostics, multi-provider BYOK switchyard, and MCP agent access.',
+    jsonLd: graph('/ai', 'Our AI', 'Search grounding, separate SEO/AEO/GEO checks, BYOK switchyard, and MCP server.'),
     crawlerBody: `
 <section>
   <h1>Our AI</h1>
-  <p>Live search grounding plus the models you choose. Findings stay tied to evidence when data is available; otherwise the product marks them as not measured.</p>
-  <p>Connect your own model and search providers in Settings, or use the hosted allowance on a plan.</p>
-  <p><a href="/">Home</a> · <a href="/how-it-works">How it works</a></p>
+  <p>Live search grounding plus the models you choose, keeping SEO, AEO, and GEO separate without a fake composite score. ${LIVE_ANSWER_CHECKS} Findings stay tied to evidence when data is available; otherwise the product marks them as Not measured.</p>
+  <ul>
+    <li>Deterministic crawl-file and DOM schema inspection before any model call</li>
+    <li>Separate SEO, AEO, and GEO checks with ready-to-paste LocalBusiness and FAQPage JSON-LD</li>
+    <li>Connect your own keys (Gemini, Groq, OpenRouter, DataForSEO) in Settings, or use the hosted daily allowance</li>
+    <li>Programmatic MCP server (/api/mcp) on Growth and Agency passes with SHA-256 idempotency and human booking sign-off</li>
+  </ul>
+  <p><a href="/">Home</a> · <a href="/how-it-works">How it works</a> · <a href="/sample-report">Sample report</a> · <a href="/pricing">Pricing</a></p>
 </section>`,
   },
   '/why': {
     path: '/why',
     title: 'Why Luminara | Luminara Suite',
     description:
-      'For real estate agencies that need a clear plan for Google and AI answers, without a full consultancy engagement or a new website.',
-    jsonLd: graph('/why', 'Why Luminara', 'Why real estate agencies choose Luminara Suite.'),
+      'For real estate agencies that need a clear plan for Google and AI answers, ready-to-paste page and schema fixes, and Enquiry Desk qualification without a consultancy retainer.',
+    jsonLd: graph('/why', 'Why Luminara', 'Why real estate agencies choose Luminara Suite over manual retainers and read-only AI trackers.'),
     crawlerBody: `
 <section>
   <h1>Why Luminara</h1>
-  <p>Luminara Suite is for real estate agencies that need a clear plan for Google and AI answers, without buying a full consultancy engagement or rebuilding their website.</p>
+  <p>Luminara Suite is for real estate agencies that need a clear plan for Google and AI answers, without buying a full consultancy engagement or rebuilding their website. ${LIVE_ANSWER_CHECKS}</p>
   <ul>
-    <li>Instant audits with ranked fixes</li>
-    <li>Honest AEO signals (not invented scores)</li>
-    <li>BYOK or hosted keys</li>
+    <li>Instant audits with ranked, ready-to-paste LocalBusiness and FAQPage schema fixes</li>
+    <li>Enquiry Desk qualification with Australian statutory guardrails and agent-approved booking sign-off</li>
+    <li>Honest AEO signals labeled Measured, Estimated, or Not measured (never invented scores)</li>
+    <li>Free account (3 checks/day), 30-day passes, or bring your own AI keys</li>
   </ul>
-  <p><a href="/pricing">Pricing</a> · <a href="/">Home</a></p>
+  <p><a href="/how-it-works">How it works</a> · <a href="/sample-report">Sample report</a> · <a href="/pricing">Pricing</a> · <a href="/">Home</a></p>
 </section>`,
   },
   '/pricing': {
@@ -338,6 +344,7 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
 };
 
 export const DASHBOARD_TAB_TITLE = 'Dashboard | Luminara Suite';
+export const ENQUIRY_DESK_TAB_TITLE = 'Enquiry Desk | Luminara Suite';
 
 const TAB_TITLE_MAX = 60;
 const TAB_TITLE_SUFFIX = ' | Luminara Suite';

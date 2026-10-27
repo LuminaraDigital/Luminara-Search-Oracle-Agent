@@ -6,9 +6,16 @@ import { sampleAiSaidFixtures } from '../../services/audit/sampleAiSaidFixtures'
 import type { ShipCommitment } from '../../services/audit/shipCommitmentService';
 import { upsertWeeklyDecision } from '../../services/privacy/privacyClient';
 import { honestyChipLabel, normalizeMeasurementStatus } from '../../services/wdl/liveHonesty';
-import { LLMS_NAME_NOTE, comparisonOutlineDraft, llmsTxtDraft, organizationJsonLd } from '../../services/audit/fixPackCopy';
+import {
+  LLMS_NAME_NOTE,
+  comparisonOutlineDraft,
+  llmsTxtDraft,
+  offSiteMentionPackDraft,
+  organizationJsonLd,
+} from '../../services/audit/fixPackCopy';
 import { brandNameFor } from '../../services/audit/brandName';
 import { firstVerifiedRivalFromReport } from './CompetitorMap';
+import { scoutAuthoritySources } from '../../services/visibility/authorityScoutService';
 
 import type { EmpiricalEvidence } from '../../services/audit/empiricalCitationService';
 import type { RadarCitationRow } from './VisibilityRadar';
@@ -17,6 +24,7 @@ import { probeLlmCrawlerReadiness } from '../../services/audit/llmCrawlerProbe';
 import { MindshareRadarCard } from '../visibility/MindshareRadarCard';
 import { formatAuDate } from '../../utils/formatAuDate';
 import { PerceptionMatrix } from '../visibility/PerceptionMatrix';
+import { classifyRemediationTier } from '../../services/deployment/remediationTierRouter';
 
 interface WeeklyDecisionCardProps {
   domain: string;
@@ -32,6 +40,8 @@ interface WeeklyDecisionCardProps {
   reportMarkdown?: string;
   onSelectAction?: (actionId: string, label: string) => void;
 }
+
+const EMPTY_EVIDENCE: EmpiricalEvidence[] = [];
 
 /**
  * One weekly decision: action, Why (Sample AI-said or finding), verify hint.
@@ -52,7 +62,8 @@ export const WeeklyDecisionCard: React.FC<WeeklyDecisionCardProps> = ({
 }) => {
   const [busy, setBusy] = useState(false);
   const [persistNote, setPersistNote] = useState<string | null>(null);
-  const rememberedBrand = brandNameFor(domain);
+  const cleanDomain = (domain || 'domain').replace(/^https?:\/\//i, '').replace(/\/.*$/, '').toLowerCase();
+  const rememberedBrand = brandNameFor(cleanDomain);
   const aiSaid = useMemo(() => sampleAiSaidFixtures(domain, rememberedBrand), [domain, rememberedBrand]);
   const llmsPreview = useMemo(() => llmsTxtDraft(domain, rememberedBrand), [domain, rememberedBrand]);
   const verifyBy = useMemo(() => {
@@ -60,10 +71,18 @@ export const WeeklyDecisionCard: React.FC<WeeklyDecisionCardProps> = ({
     return formatAuDate(base + 14 * 24 * 60 * 60 * 1000);
   }, [commitment?.committedAt]);
 
-  const mappedEvidence: EmpiricalEvidence[] = useMemo(() => {
-    if (evidence && evidence.length > 0) return evidence;
-    return [];
-  }, [evidence]);
+  const mappedEvidence = evidence && evidence.length > 0 ? evidence : EMPTY_EVIDENCE;
+
+  const authorityScout = useMemo(
+    () =>
+      scoutAuthoritySources({
+        targetDomain: domain,
+        evidence: mappedEvidence,
+        rawSources,
+      }),
+    [domain, mappedEvidence, rawSources],
+  );
+  const topMissingHub = authorityScout.missingCompetitorSources[0] || authorityScout.topUntappedHub;
 
   useEffect(() => {
     if (!commitment || !domain) return;
@@ -111,30 +130,44 @@ export const WeeklyDecisionCard: React.FC<WeeklyDecisionCardProps> = ({
     }
   };
 
-  const handleExportFixPack = () => {
-    const raw = domain || 'domain';
-    const cleanDomain = raw.replace(/^https?:\/\//i, '').replace(/\/.*$/, '').toLowerCase();
+  const triggerDownload = (filename: string, content: string, mime: string) => {
+    const blob = new Blob([content], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
 
-    const brand = brandNameFor(cleanDomain);
-    const llmsContent = llmsTxtDraft(cleanDomain, brand);
-    const schemaContent = organizationJsonLd(cleanDomain, brand);
+  const handleExportMentionPack = () => {
+    if (!topMissingHub) return;
+    const mentionContent = offSiteMentionPackDraft({
+      host: cleanDomain,
+      siteNameOrEvidence: rememberedBrand,
+      channel: topMissingHub.offSiteChannel,
+      targetHubDomain: topMissingHub.domain,
+      rivalName:
+        topMissingHub.competitorsMentioned[0] ||
+        firstVerifiedRivalFromReport(reportMarkdown || ''),
+    });
+    triggerDownload(
+      `mention-pack-${cleanDomain}-${topMissingHub.domain}.md`,
+      mentionContent,
+      'text/markdown;charset=utf-8',
+    );
+  };
+
+  const handleExportFixPack = () => {
+    const llmsContent = llmsTxtDraft(cleanDomain, rememberedBrand);
+    const schemaContent = organizationJsonLd(cleanDomain, rememberedBrand);
     const compareContent = comparisonOutlineDraft(
       cleanDomain,
-      brand,
+      rememberedBrand,
       firstVerifiedRivalFromReport(reportMarkdown || ''),
     );
-
-    const triggerDownload = (filename: string, content: string, mime: string) => {
-      const blob = new Blob([content], { type: mime });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    };
 
     triggerDownload(`llms-${cleanDomain}.txt`, llmsContent, 'text/plain;charset=utf-8');
     setTimeout(() => {
@@ -143,6 +176,11 @@ export const WeeklyDecisionCard: React.FC<WeeklyDecisionCardProps> = ({
     setTimeout(() => {
       triggerDownload(`compare-${cleanDomain}.md`, compareContent, 'text/markdown;charset=utf-8');
     }, 300);
+    if (topMissingHub) {
+      setTimeout(() => {
+        handleExportMentionPack();
+      }, 450);
+    }
 
     setExported(true);
     setTimeout(() => setExported(false), 3000);
@@ -153,21 +191,20 @@ export const WeeklyDecisionCard: React.FC<WeeklyDecisionCardProps> = ({
     setProving(true);
     setVerificationNote(null);
     try {
-      const clean = domain.replace(/^https?:\/\//i, '').replace(/\/.*$/, '').toLowerCase();
-      const report = await probeLlmCrawlerReadiness(`https://${clean}`);
+      const report = await probeLlmCrawlerReadiness(`https://${cleanDomain}`);
       const llmsPass = report.checks.some((c) => c.id === 'llms_txt' && c.status === 'pass');
       const anyDirective = report.checks.some((c) => (c.id === 'ai_bot_directives' || c.id === 'llms_structure') && c.status === 'pass');
 
       if (llmsPass || anyDirective) {
         setVerificationStatus('measured');
-        setVerificationNote(`Verified live on ${clean}: measured crawler evidence detected.`);
+        setVerificationNote(`Verified live on ${cleanDomain}: measured crawler evidence detected.`);
         if (primary) {
           const updated = await patchFindingStatus(domain, primary.id, 'done');
           if (updated) onFindingUpdated?.(updated);
         }
       } else {
         setVerificationStatus('unverified');
-        setVerificationNote(`Not detected yet on https://${clean}/llms.txt. Deploy the exported fix pack to your public root and re-check.`);
+        setVerificationNote(`Not detected yet on https://${cleanDomain}/llms.txt. Deploy the exported fix pack to your public root and re-check.`);
       }
     } catch {
       setVerificationStatus('unverified');
@@ -294,6 +331,36 @@ export const WeeklyDecisionCard: React.FC<WeeklyDecisionCardProps> = ({
               {verificationNote}
             </p>
           )}
+          {verificationStatus === 'unverified' && (() => {
+            const unverifiedDecision = classifyRemediationTier({
+              domain,
+              summary: primary.title,
+              findingCategory: 'llms_txt',
+              cmsPlatform: 'unknown',
+              previousDeployBlocked: true,
+            });
+            return (
+              <div className="mt-3 rounded-lg border border-gold/25 bg-black/60 p-3 flex flex-wrap items-center justify-between gap-2">
+                <div className="text-xs text-gray-300">
+                  <span className="font-mono text-[10px] uppercase tracking-wider text-gold-light block">
+                    {unverifiedDecision.badgeLabel}
+                  </span>
+                  Need full-stack root file routing, SSR schema injection, or custom CRM automation?
+                </div>
+                <a
+                  href={
+                    unverifiedDecision.engineeringBrief?.partnerUrl ||
+                    `https://luminara.digital/?utm_source=luminarasuite&utm_medium=weekly_decision&domain=${encodeURIComponent(domain)}`
+                  }
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-2.5 py-1 rounded-lg bg-gold text-black font-bold text-[10px] uppercase tracking-wider hover:bg-gold-light transition-colors"
+                >
+                  Delegate to Luminara Digital &rarr;
+                </a>
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -304,8 +371,40 @@ export const WeeklyDecisionCard: React.FC<WeeklyDecisionCardProps> = ({
         radarRows={radarRows}
         history={mindshareHistory}
         reportMarkdown={reportMarkdown}
+        authorityScoutSummary={authorityScout}
         onSelectAction={onSelectAction}
       />
+
+      {topMissingHub && (
+        <div className="mb-6 rounded-xl border border-cyan-500/20 bg-cyan-500/[0.04] p-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex-1 min-w-[240px]">
+            <div className="flex flex-wrap items-center gap-2 mb-1">
+              <span className="text-[10px] font-mono uppercase tracking-wider text-cyan-300 font-bold">
+                Missing Brand Mention Source
+              </span>
+              <span className="text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded bg-white/5 border border-white/10 text-gray-300">
+                {topMissingHub.offSiteChannel.replace(/_/g, ' ')}
+              </span>
+              {topMissingHub.competitorsMentioned.length > 0 && (
+                <span className="text-[10px] font-mono text-amber-300/90">
+                  Names: {topMissingHub.competitorsMentioned.join(', ')}
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-gray-300 leading-relaxed">
+              <strong className="text-white font-mono">{topMissingHub.domain}</strong>: {topMissingHub.actionRecommendation}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handleExportMentionPack}
+            className="px-3 py-1.5 rounded-lg border border-cyan-400/40 bg-cyan-400/10 hover:bg-cyan-400/20 text-[11px] font-mono text-cyan-200 uppercase tracking-wider transition-colors shrink-0 inline-flex items-center gap-1.5"
+          >
+            <ICONS.FileText className="w-3.5 h-3.5" />
+            Prepare Mention Pack
+          </button>
+        </div>
+      )}
 
       {mappedEvidence.some((e) => Boolean((e as { engine?: string }).engine)) && (
         <PerceptionMatrix

@@ -5,7 +5,7 @@ import {
   unevaluatedLlmCrawlerReport,
 } from '../services/audit/llmCrawlerReadiness';
 import { citabilityStatusLabel, suiteCitabilityChecklist } from '../services/audit/suiteCitabilityChecklist';
-import { LLMS_TXT, ROBOTS_TXT } from '../worker/crawlDocuments';
+import { AI_TXT, LLMS_TXT, ROBOTS_TXT } from '../worker/crawlDocuments';
 import { parseTeaserCreateBody, TEASER_CRAWLER_CHECK_LIMIT } from '../worker/shareService';
 
 const noScore = (value: unknown) => {
@@ -99,20 +99,20 @@ describe('deeper LLM crawler lens', () => {
     noScore(missing);
   });
 
-  it('passes Suite llms.txt structure and robots cite paths', () => {
+  it('passes Suite llms.txt structure, robots cite paths, and ai.txt policy', () => {
     const report = evaluateLlmCrawlerReadiness({
       llmsTxt: LLMS_TXT,
       llmsHttpStatus: 200,
       robotsTxt: ROBOTS_TXT,
       robotsHttpStatus: 200,
-      aiTxt: '',
-      aiHttpStatus: 404,
+      aiTxt: AI_TXT,
+      aiHttpStatus: 200,
     });
     expect(report.checks.find((check) => check.id === 'llms_txt')?.status).toBe('pass');
     expect(report.checks.find((check) => check.id === 'llms_structure')?.status).toBe('pass');
     expect(report.checks.find((check) => check.id === 'ai_bot_directives')?.status).toBe('pass');
     expect(report.checks.find((check) => check.id === 'cite_paths')?.status).toBe('pass');
-    expect(report.checks.find((check) => check.id === 'ai_txt')?.status).toBe('fail');
+    expect(report.checks.find((check) => check.id === 'ai_txt')?.status).toBe('pass');
     noScore(report);
   });
 });

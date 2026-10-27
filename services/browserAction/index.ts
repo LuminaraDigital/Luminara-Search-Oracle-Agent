@@ -16,6 +16,24 @@ export {
   fieldContextCacheKey,
 } from './fieldText';
 export { BrowserActionLoop, predict, act, tick } from './loop';
+export {
+  POINTERBENCH_FRAME_WIDTH,
+  POINTERBENCH_FRAME_HEIGHT,
+  MASKED_VALUE,
+  BOT_BLOCK_SIGNATURES,
+  classifyBotBlockPage,
+  isSensitiveFieldLabel,
+  maskSensitiveInputValue,
+  evaluateCelestoBrowserActionPolicy,
+  shouldTriggerVisionFallback,
+  resolvePointerBenchFallback,
+} from './visionFallback';
+export type {
+  BotBlockClassification,
+  CelestoBrowserActionPolicyDecision,
+  PointerBenchFallbackInput,
+  PointerBenchFallbackResult,
+} from './visionFallback';
 export { verifyDone, confirmDoneGoalOverlap } from './verify';
 export {
   BROWSE_OBSERVE_TOOL,

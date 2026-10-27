@@ -57,7 +57,7 @@ import { resolveChainNetwork } from './chainNetwork';
 import { probeXdcRpcCached } from './chain/xdcRpc';
 import { activateLicenseKey, generateLicenseKeys, importLicenseKeys } from './licenseService';
 import { TERMS_HTML } from './termsPolicy';
-import { LLMS_TXT, SITEMAP_XML, applyHostRobots, buildSitemapXml, robotsTxtForHost } from './crawlDocuments';
+import { AI_TXT, LLMS_TXT, SITEMAP_XML, applyHostRobots, buildSitemapXml, robotsTxtForHost } from './crawlDocuments';
 import { maybeServeMarketingHtml, maybeServeReceiptHtml, maybeServeShareHtml, withSkippedBootSplash } from './marketingShell';
 import { desktopLatestJson, desktopWindowsDownload } from './desktopDownloads';
 import { resolveAppView } from '../utils/marketingRoutes';
@@ -147,6 +147,9 @@ import { ingestProductAnalytics } from './productAnalytics';
 import { handleWeeklyDecisionsRoute, sendWeeklyDecisionDigest } from './weeklyDecisionService';
 import { handleDreamingRoute } from './dreamingService';
 import { handleRsiRoute } from './rsiRoutes';
+import { handleEnquiryDeskRoute } from './enquiryDeskService';
+import { handleRecoveryRoute, sweepDueRecoveryRuns } from './recoveryCampaignService';
+import { handleCmsMcpRoute } from './cmsMcpRelay';
 import { runRsiSkillCurator } from './rsiCurator';
 import { runPostingReflection } from './rsiPosting';
 import { handleLaunchpadRoute } from './launchpadService';
@@ -1664,6 +1667,27 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     if (launchpadRes) return withCors(launchpadRes);
   }
 
+  // 4-Module Conversion Spine (0042) & CMS Fixer MCP Relay.
+  if (/^\/(enquiries|outcomes|recovery|cms-mcp)(\/|$)/.test(path)) {
+    const who = identifiedForRequest(request) ?? (await identify(request, env));
+    if (who.error || !who.user) {
+      return withCors(json({ ok: false, error: who.error || 'Unauthorized', code: 'AUTH_REQUIRED' }, 401));
+    }
+    const dual = await enforceDualRateLimit(env, {
+      action: 'conversion_spine',
+      accountId: billingId(who.user),
+      ip: clientIp(request),
+      limitPerKey: 60,
+      windowSec: 60,
+    });
+    if (!dual.ok) return withCors(dual.response);
+    const res =
+      (await handleEnquiryDeskRoute(request, env, who.user, path)) ??
+      (await handleRecoveryRoute(request, env, who.user, path)) ??
+      (await handleCmsMcpRoute(request, env, who.user, path));
+    if (res) return withCors(res);
+  }
+
   // Trust Network TN1/TN2 (migration 0020). Flag-gated inside each handler.
   if (path === '/trust/keys' || path.startsWith('/trust/receipts')) {
     const res = await handleTrustReceiptsRoute(request, env, path);
@@ -2263,6 +2287,17 @@ const handler = {
         }),
       );
     }
+    if (url.pathname === '/ai.txt') {
+      return guard(
+        new Response(AI_TXT, {
+          status: 200,
+          headers: {
+            'Content-Type': 'text/plain; charset=utf-8',
+            'Cache-Control': 'public, max-age=3600',
+          },
+        }),
+      );
+    }
 
     // Windows desktop installer: R2 mirror when bound, otherwise GitHub Releases.
     if (url.pathname === '/desktop/windows' || url.pathname === '/desktop/windows/') {
@@ -2390,6 +2425,13 @@ const handler = {
         sweepTonPendingOrders(env)
           .then(() => undefined)
           .catch((err) => console.error('[TON] pending-order sweep failed', err)),
+      );
+    }
+    if (jobs.includes('recovery_campaign_sweep')) {
+      ctx.waitUntil(
+        sweepDueRecoveryRuns(env)
+          .then(() => undefined)
+          .catch((err) => console.error('[Recovery] scheduled sweep failed', err)),
       );
     }
   },

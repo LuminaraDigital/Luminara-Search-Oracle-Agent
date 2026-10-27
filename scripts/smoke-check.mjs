@@ -36,6 +36,7 @@ const REQUIRED_D1_MIGRATIONS = [
   'migrations/0025_ton_pending_orders.sql',
   'migrations/0026_payment_support.sql',
   'migrations/0033_community_feed.sql',
+  'migrations/0042_conversion_enquiry_spine.sql',
 ];
 
 const REQUIRED_D1_TABLES = [
@@ -65,6 +66,14 @@ const REQUIRED_D1_TABLES = [
   'payment_support_requests',
   'community_feed_cards',
   'community_feed_votes',
+  'external_effects',
+  'crm_contacts',
+  'crm_properties',
+  'contact_property_links',
+  'enquiries',
+  'appraisal_appointments',
+  'recovery_runs',
+  'outcome_stage_events',
 ];
 
 // 1. Verify build bundle integrity

@@ -10,7 +10,7 @@ import { ACL_RIGHTS_CLAUSE, LEGAL_ABN, legalAbnLine } from '../services/legal/co
 import { LIVE_ANSWER_CHECKS } from '../services/marketing/engineCoverage';
 import { MARKETING_FAQ } from '../services/marketing/marketingFaqContent';
 import { MARKETING_SHELL_BY_PATH } from '../services/marketing/pageMeta';
-import { LLMS_TXT } from '../worker/crawlDocuments';
+import { AI_TXT, LLMS_TXT } from '../worker/crawlDocuments';
 import { STRIPE_PLAN_CONFIG } from '../worker/stripePayment';
 import { PLANS } from '../worker/telegramBot';
 import { PRIVACY_HTML } from '../worker/privacyPolicy';
@@ -53,6 +53,7 @@ describe('claim honesty', () => {
       ...MARKETING_FAQ.map((item) => item.answer),
       ...Object.values(MARKETING_SHELL_BY_PATH).flatMap((page) => [page.description, page.crawlerBody]),
       LLMS_TXT,
+      AI_TXT,
       readFileSync('index.html', 'utf8'),
       readFileSync('public/docs/what-is-aeo.html', 'utf8'),
       ...Object.values(PLANS).map((plan) => `${plan.title}\n${plan.description}`),
@@ -80,6 +81,7 @@ describe('claim honesty', () => {
     }
     expect(readFileSync('index.html', 'utf8')).toContain(MARKETING_SHELL_BY_PATH['/'].description);
     expect(readFileSync('public/llms.txt', 'utf8')).toBe(LLMS_TXT);
+    expect(readFileSync('public/ai.txt', 'utf8')).toBe(AI_TXT);
   });
 
   it('does not sell seats, unlimited audits, 24/7 sentinel, or re-audits', () => {

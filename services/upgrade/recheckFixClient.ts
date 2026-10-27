@@ -11,7 +11,12 @@ export interface RecheckResponse {
   code?: string;
 }
 
-export async function requestRecheck(input: { domain: string; checkId: string; expect?: string }): Promise<RecheckResponse> {
+export async function requestRecheck(input: {
+  domain: string;
+  checkId: string;
+  expect?: string;
+  targetUrl?: string;
+}): Promise<RecheckResponse> {
   const base = apiBase();
   if (!base) {
     return { ok: false, measured: false, passed: null, detail: 'Not measured. This check was not rechecked.', code: 'NO_API' };
@@ -20,7 +25,13 @@ export async function requestRecheck(input: { domain: string; checkId: string; e
     const res = await workerFetchWithAuthRetry(`${base}/api/audit/scout-run`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ recheck: true, domain: input.domain, checkId: input.checkId, expect: input.expect }),
+      body: JSON.stringify({
+        recheck: true,
+        domain: input.domain,
+        checkId: input.checkId,
+        expect: input.expect,
+        targetUrl: input.targetUrl,
+      }),
     });
     const body = (await res.json().catch(() => null)) as Partial<RecheckResponse> | null;
     if (!body || typeof body.detail !== 'string') {

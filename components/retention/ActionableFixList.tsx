@@ -79,7 +79,7 @@ export const ActionableFixList: React.FC<ActionableFixListProps> = ({ domain, fi
       id: 'fix-llms-txt',
       title: 'Add a short page at /llms.txt',
       targetEngine: 'A page on your site',
-      description: 'Add /llms.txt with a short summary of what you sell. The file is a hint, not a score.',
+      description: 'Add /llms.txt with a short summary of what you sell and how buyers can book or enquire. The file is a hint, not a score.',
       filename: '/llms.txt',
       snippet: llmsTxtDraft(domain),
     },
@@ -87,7 +87,7 @@ export const ActionableFixList: React.FC<ActionableFixListProps> = ({ domain, fi
       id: 'fix-schema-org',
       title: 'Add a business identity tag',
       targetEngine: 'A tag in the page header',
-      description: 'Add a business identity tag in the page header so the page names the business. Paste the block below.',
+      description: 'Add a business identity tag in the page header so the page names the business and its contact URL. Paste the block below.',
       filename: 'Page header script',
       snippet: `<script type="application/ld+json">\n${organizationJsonLd(domain)}\n</script>`,
     },
@@ -95,7 +95,7 @@ export const ActionableFixList: React.FC<ActionableFixListProps> = ({ domain, fi
       id: 'fix-robots-txt',
       title: 'Let crawlers read public pages in robots.txt',
       targetEngine: 'Crawler rules in robots.txt',
-      description: 'If robots.txt blocks a crawler, that crawler may not read public pages. The lines below name the crawlers to allow.',
+      description: 'If robots.txt blocks a crawler, that crawler may not read public pages or suburb guides. The lines below name the crawlers to allow.',
       filename: '/robots.txt',
       snippet: `# Allow these crawlers to read public pages
 User-agent: GPTBot

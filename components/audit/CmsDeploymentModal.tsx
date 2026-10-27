@@ -10,6 +10,7 @@ import {
 } from '../../services/deployment/cmsDeploymentService';
 import { writingQualityService, type WritingQualityReport } from '../../services/audit/writingQualityService';
 import { schemaSafetyGate, type SchemaSafetyResult } from '../../services/deployment/schemaSafetyGate';
+import { CmsMcpRemediationPanel } from './CmsMcpRemediationPanel';
 
 interface CmsDeploymentModalProps {
   isOpen: boolean;
@@ -245,12 +246,12 @@ export const CmsDeploymentModal: React.FC<CmsDeploymentModalProps> = ({
           break;
       }
       setResult(res);
-    } catch (err: any) {
+    } catch (err: unknown) {
       setResult({
         success: false,
         platform,
         deploymentId: `err-${Date.now()}`,
-        message: err?.message || 'Deployment dispatch failed.',
+        message: err instanceof Error ? err.message : 'Deployment dispatch failed.',
         diffSummary: { linesAdded: 0, linesRemoved: 0 },
         timestamp: Date.now(),
       });
@@ -589,6 +590,12 @@ export const CmsDeploymentModal: React.FC<CmsDeploymentModalProps> = ({
 
           {/* Result Alert */}
           {result && <DeploymentResultAlert result={result} />}
+
+          {/* Multi-CMS MCP Bridge (Wix, WordPress.com, GoBuildWP, Respira, Squarespace) + luminara.digital Scope */}
+          <CmsMcpRemediationPanel
+            payload={defaultPayload}
+            deployBlocked={deployBlocked || Boolean(result && !result.success)}
+          />
 
           {/* Past History Accordion */}
           {history.length > 0 && (

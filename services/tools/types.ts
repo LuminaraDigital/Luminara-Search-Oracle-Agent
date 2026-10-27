@@ -39,6 +39,7 @@ export type PaidToolRuntime = {
   /** BYOK login:password or null (hosted Agency secrets). */
   dataForSeoCredential: string | null;
   getProject: (projectId: string) => Promise<ToolProject | null>;
+  getCompetitors?: (projectId: string) => Promise<string[]>;
   getResearchLog: (projectId: string) => Promise<ResearchLogEntry[]>;
   appendResearchLog: (projectId: string, summary: string) => Promise<void>;
   dfsPost: (path: string, payload: unknown) => Promise<{

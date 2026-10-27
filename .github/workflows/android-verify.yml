@@ -32,6 +32,9 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      - name: Accept Android SDK Licenses
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+
       - name: Setup Gradle Cache
         uses: gradle/actions/setup-gradle@d9c87d481d55275bb5441eef3fe0e46805f9ef70 # v3.5.0
 
@@ -49,7 +52,7 @@ jobs:
       - name: Assert Test Count
         working-directory: apps/android
         env:
-          MIN_TESTS: '10'
+          MIN_TESTS: '14'
         run: |
           set -euo pipefail
           results=app/build/test-results/testDebugUnitTest
@@ -94,6 +97,9 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      - name: Accept Android SDK Licenses
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+
       - name: Setup Gradle Cache
         uses: gradle/actions/setup-gradle@d9c87d481d55275bb5441eef3fe0e46805f9ef70 # v3.5.0
 
@@ -130,7 +136,9 @@ jobs:
           missing=0
           for descriptor in \
             'Lcom/luminarasuite/app/MainActivity;' \
-            'Lcom/luminarasuite/app/core/database/LuminaraDatabase_Impl;'
+            'Lcom/luminarasuite/app/core/database/LuminaraDatabase_Impl;' \
+            'Lcom/luminarasuite/app/core/model/ProbeCrawlResponse$$serializer;' \
+            'Lcom/luminarasuite/app/core/model/GroqChatRequest$$serializer;'
           do
             if ! grep -qa "$descriptor" "$work"/classes*.dex; then
               echo "::error::R8 stripped $descriptor - a keep rule regressed."

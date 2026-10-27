@@ -9,7 +9,7 @@ export const MARKETING_FAQ: MarketingFaqItem[] = [
   {
     question: 'What does Luminara Suite check?',
     answer:
-      'Instant Audit checks your site and live web search, then gives a plain-English verdict and one fix. Each result is labeled Measured, Estimated, or Not measured.',
+      'Instant Audit checks your site and live web search, flags the citation and page leaks that cost you appraisal enquiries, and gives a plain-English verdict with one ready-to-paste fix. Each result is labeled Measured, Estimated, or Not measured.',
   },
   {
     question: 'What is the difference between the live crawl check and the full audit?',
@@ -24,7 +24,7 @@ export const MARKETING_FAQ: MarketingFaqItem[] = [
   {
     question: 'How is this different from Semrush or Ahrefs?',
     answer:
-      'Those tools go deep on classic SEO data such as keywords and backlinks. Luminara checks your site and live web search, and the one fix to make next. Many teams use both.',
+      'Those tools go deep on classic SEO data such as keywords and backlinks. Luminara checks your site and live web search for the buyer questions that drive appraisal calls, and gives you the one page, review, or schema fix to ship next. Many teams use both.',
   },
   {
     question: 'Can agencies share reports and connect Cursor?',

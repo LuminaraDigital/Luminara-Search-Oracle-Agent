@@ -5,6 +5,13 @@
 import { chooseWithLlm } from './choose';
 import { fieldContext, fieldContextCacheKey, fieldTextWithLlm } from './fieldText';
 import {
+  classifyBotBlockPage,
+  evaluateCelestoBrowserActionPolicy,
+  maskSensitiveInputValue,
+  shouldTriggerVisionFallback,
+  type PointerBenchFallbackResult,
+} from './visionFallback';
+import {
   DEFAULT_MAX_STEPS,
   StalePageError,
   type Decision,
@@ -31,6 +38,17 @@ export type BrowserActionLoopOptions = {
     goal: string,
     history: HistoryEntry[],
   ) => Promise<Decision>;
+  /** Optional PointerBench 1024x768 vision fallback invoked when DOM action loop stalls. */
+  visionFallback?: (ctx: {
+    goal: string;
+    page: ObservePayload;
+    history: HistoryEntry[];
+    reason: string;
+  }) => Promise<PointerBenchFallbackResult>;
+  /** Optional Celesto Two-Tier policy enforcement. */
+  enforceTwoTierPolicy?: boolean;
+  writeApproved?: boolean;
+  allowSensitiveFill?: boolean;
   maxSteps?: number;
 };
 
@@ -48,6 +66,10 @@ export class BrowserActionLoop {
   private readonly chooseLlm?: LlmFn;
   private readonly fieldLlm?: LlmFn;
   private readonly chooseFn?: BrowserActionLoopOptions['chooseFn'];
+  private readonly visionFallback?: BrowserActionLoopOptions['visionFallback'];
+  private readonly enforceTwoTierPolicy: boolean;
+  private readonly writeApproved: boolean;
+  private readonly allowSensitiveFill: boolean;
   private pendingText: PendingText | null = null;
   private startedAt: number | null = null;
 
@@ -58,6 +80,10 @@ export class BrowserActionLoop {
     this.chooseLlm = opts.chooseLlm;
     this.fieldLlm = opts.fieldLlm;
     this.chooseFn = opts.chooseFn;
+    this.visionFallback = opts.visionFallback;
+    this.enforceTwoTierPolicy = opts.enforceTwoTierPolicy ?? false;
+    this.writeApproved = opts.writeApproved ?? true;
+    this.allowSensitiveFill = opts.allowSensitiveFill ?? false;
     this.state = {
       goal: opts.goal,
       page: opts.initialPage,
@@ -97,6 +123,23 @@ export class BrowserActionLoop {
 
     await this.ensureFreshPage();
     this.state.decision = null;
+
+    const botCheck = classifyBotBlockPage(this.state.page);
+    if (botCheck.blockedByBotProtection) {
+      const blockedDecision: Decision = {
+        choice: 'BLOCKED',
+        operation: 'BLOCKED',
+        target: null,
+        confidence: 1,
+        probabilities: { BLOCKED: 1 },
+        operation_probabilities: { BLOCKED: 1 },
+      };
+      this.state.decision = blockedDecision;
+      this.state.decisions.push(blockedDecision);
+      this.state.status = 'predicted';
+      this.markElapsed();
+      return this.state;
+    }
 
     let decision: Decision;
     if (this.chooseFn) {
@@ -150,7 +193,38 @@ export class BrowserActionLoop {
 
     const action = page.actions.find((a) => a.id === selected);
     if (!action) {
+      const fbPage = await this.tryVisionFallback(page);
+      if (fbPage) {
+        this.state.history.push({
+          step: this.state.history.length + 1,
+          action: `PointerBench (${fbPage.point[0]}, ${fbPage.point[1]})`,
+          kind: 'click',
+          choice: 'POINTERBENCH_POINT',
+          text: null,
+          operation: 'CLICK',
+          target: null,
+          page_changed: fbPage.nextPage.fingerprint !== page.fingerprint,
+          url: fbPage.nextPage.url,
+          confidence: decision.confidence,
+        });
+        this.state.page = fbPage.nextPage;
+        this.state.status = 'ready';
+        this.markElapsed();
+        return this.state;
+      }
       throw new Error(`Unknown action id ${selected}; no action executed.`);
+    }
+
+    if (this.enforceTwoTierPolicy) {
+      const policy = evaluateCelestoBrowserActionPolicy(action, {
+        writeApproved: this.writeApproved,
+        allowSensitiveFill: this.allowSensitiveFill,
+      });
+      if (!policy.allowed) {
+        this.state.status = 'blocked';
+        this.markElapsed();
+        return this.state;
+      }
     }
 
     let text: string | undefined;
@@ -174,10 +248,14 @@ export class BrowserActionLoop {
         text = result.text;
         helper = { raw: result.raw };
         this.pendingText = { key, text, helper };
+        const maskedForTrace = maskSensitiveInputValue(
+          `${action.label ?? ''} ${action.role ?? ''}`,
+          text,
+        );
         this.state.text_calls.push({
           ...helper,
           field: action.label,
-          value: text,
+          value: maskedForTrace,
         });
       }
     }
@@ -192,12 +270,16 @@ export class BrowserActionLoop {
     this.pendingText = null;
     this.markElapsed();
 
+    const maskedHistoryText = maskSensitiveInputValue(
+      `${action.label ?? ''} ${action.role ?? ''}`,
+      text,
+    );
     const entry: HistoryEntry = {
       step: this.state.history.length + 1,
       action: action.label,
       kind: action.kind,
       choice: selected,
-      text: text ?? null,
+      text: maskedHistoryText ?? null,
       operation: decision.operation,
       target: decision.target,
       page_changed: null,
@@ -213,13 +295,45 @@ export class BrowserActionLoop {
     entry.url = nextPage.url;
 
     const repeated = this.state.history.slice(-3);
-    this.state.status =
+    const stalled =
       repeated.length === 3 &&
-      repeated.every((h) => h.page_changed === false && h.kind !== 'wait')
-        ? 'blocked'
-        : 'ready';
+      repeated.every((h) => h.page_changed === false && h.kind !== 'wait');
+
+    let recoveredByVisionFallback = false;
+    const fbPage = await this.tryVisionFallback(this.state.page);
+    if (fbPage) {
+      this.state.page = fbPage.nextPage;
+      recoveredByVisionFallback = true;
+      entry.page_changed = true;
+      entry.url = fbPage.nextPage.url;
+    }
+
+    this.state.status = stalled && !recoveredByVisionFallback ? 'blocked' : 'ready';
 
     return this.state;
+  }
+
+  private async tryVisionFallback(
+    page: ObservePayload,
+  ): Promise<{ nextPage: ObservePayload; point: readonly [number, number] } | null> {
+    if (!this.visionFallback) return null;
+    const check = shouldTriggerVisionFallback(page, this.state.history);
+    if (!check.trigger) return null;
+    const fbRes = await this.visionFallback({
+      goal: this.state.goal,
+      page,
+      history: this.state.history,
+      reason: check.reason,
+    });
+    if (!fbRes.ok || !fbRes.point) return null;
+    const nextPage =
+      fbRes.nextPage ??
+      (await this.executeAct({
+        actionId: 'POINTERBENCH_POINT',
+        fingerprint: page.fingerprint,
+        point: fbRes.point,
+      }));
+    return { nextPage, point: fbRes.point };
   }
 
   private async ensureFreshOrStale(): Promise<void> {

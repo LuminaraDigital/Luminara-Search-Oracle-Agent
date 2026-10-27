@@ -67,4 +67,50 @@ describe('authorityScoutService', () => {
 
     expect(scout.topUntappedHub?.domain).toBe('reddit.com');
   });
+
+  it('classifies off-site channels and surfaces missing competitor sources', () => {
+    const evidence: EmpiricalEvidence[] = [
+      {
+        id: 'c1',
+        query: 'best electric car leasing uk',
+        intent: 'commercial',
+        targetDomain: 'autotrader.co.uk',
+        brandCited: false,
+        brandRank: null,
+        citedUrl: 'https://wired.com/reviews/best-car-leasing-sites',
+        snippet: 'Carwow and Cazoo lead our roundup of the best leasing platforms.',
+        competitorsCited: ['carwow.co.uk', 'cazoo.co.uk'],
+        citationConfidence: 90,
+        timestamp: Date.now(),
+      },
+      {
+        id: 'c2',
+        query: 'fuel price trends uk',
+        intent: 'informational',
+        targetDomain: 'autotrader.co.uk',
+        brandCited: false,
+        brandRank: null,
+        citedUrl: 'https://ukfuels.co.uk/news/fuel-price-report',
+        snippet: 'Carwow data shows regional fuel efficiency shifts.',
+        competitorsCited: ['carwow.co.uk'],
+        citationConfidence: 85,
+        timestamp: Date.now(),
+      },
+    ];
+
+    const scout = scoutAuthoritySources({
+      targetDomain: 'autotrader.co.uk',
+      evidence,
+    });
+
+    expect(scout.missingCompetitorSources).toHaveLength(2);
+    expect(scout.missingCompetitorSources[0].domain).toBe('wired.com');
+    expect(scout.missingCompetitorSources[0].offSiteChannel).toBe('roundup_listicle');
+    expect(scout.missingCompetitorSources[0].competitorsMentioned).toEqual([
+      'carwow.co.uk',
+      'cazoo.co.uk',
+    ]);
+    expect(scout.missingCompetitorSources[1].domain).toBe('ukfuels.co.uk');
+    expect(scout.missingCompetitorSources[1].offSiteChannel).toBe('editorial_pr');
+  });
 });
