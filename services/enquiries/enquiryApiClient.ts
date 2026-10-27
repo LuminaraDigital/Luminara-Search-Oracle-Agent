@@ -1,5 +1,5 @@
 /**
- * Authenticated Worker API Client for the 4-Module Conversion Spine & CMS MCP Relay (0042).
+ * Authenticated Worker API Client for the 4-Module Conversion Spine & CMS MCP Relay (0043).
  * Uses `workerFetchWithAuthRetry` and `apiBase()` so Firebase ID tokens, Telegram initData,
  * and AppCheck headers are attached automatically.
  */
@@ -11,10 +11,13 @@ import type {
   OutcomeStage,
 } from './playbookQualificationService';
 import type {
+   buildSquarespaceInjectionPack,
   CmsMcpConnectorId,
   RemediationFindingInput,
   RemediationTierDecision,
 } from '../deployment/remediationTierRouter';
+
+type SquarespaceInjectionPack = ReturnType<typeof buildSquarespaceInjectionPack>;
 
 export async function fetchEnquiryDesk(projectId = 'default'): Promise<{
   ok: boolean;
@@ -320,7 +323,7 @@ export async function prepareCmsMcpCallApi(input: {
   effectKey?: string;
   mode?: string;
   envelope?: Record<string, unknown>;
-  pack?: { headerSnippet: string; instructions: string[]; verificationNote: string };
+  pack?: SquarespaceInjectionPack;
   escalationDecision?: RemediationTierDecision;
   code?: string;
   error?: string;
@@ -338,7 +341,7 @@ export async function prepareCmsMcpCallApi(input: {
     effectKey: typeof data.effectKey === 'string' ? data.effectKey : undefined,
     mode: typeof data.mode === 'string' ? data.mode : undefined,
     envelope: data.envelope as Record<string, unknown> | undefined,
-    pack: data.pack as { headerSnippet: string; instructions: string[]; verificationNote: string } | undefined,
+    pack: data.pack as SquarespaceInjectionPack | undefined,
     escalationDecision: data.escalationDecision as RemediationTierDecision | undefined,
     code: typeof data.code === 'string' ? data.code : undefined,
     error: typeof data.error === 'string' ? data.error : undefined,

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ICONS } from '../../constants';
 import type { RemediationPayload } from '../../services/deployment/cmsDeploymentService';
 import {
@@ -36,31 +36,37 @@ export const CmsMcpRemediationPanel: React.FC<CmsMcpRemediationPanelProps> = ({
   const [serverEscalation, setServerEscalation] = useState<RemediationTierDecision | null>(null);
   const [preparingEnvelope, setPreparingEnvelope] = useState(false);
 
-  const findingInput: RemediationFindingInput = {
-    domain: payload.domain,
-    findingCategory,
-    cmsPlatform:
-      selectedConnector === 'wix_mcp'
-        ? 'wix'
-        : selectedConnector === 'squarespace_injection'
-          ? 'squarespace'
-          : selectedConnector === 'webflow_api'
-            ? 'webflow'
-            : selectedConnector === 'github_pr'
-              ? 'custom'
-              : 'wordpress',
-    pageBuilderDetected:
-      selectedConnector === 'gobuildwp_mcp' || selectedConnector === 'respira_mcp'
-        ? 'Elementor / Bricks'
-        : null,
-    previousDeployBlocked: deployBlocked,
-    summary: payload.title,
-  };
+  const findingInput: RemediationFindingInput = useMemo(
+    () => ({
+      domain: payload.domain,
+      findingCategory,
+      cmsPlatform:
+        selectedConnector === 'wix_mcp'
+          ? 'wix'
+          : selectedConnector === 'squarespace_injection'
+            ? 'squarespace'
+            : selectedConnector === 'webflow_api'
+              ? 'webflow'
+              : selectedConnector === 'github_pr'
+                ? 'custom'
+                : 'wordpress',
+      pageBuilderDetected:
+        selectedConnector === 'gobuildwp_mcp' || selectedConnector === 'respira_mcp'
+          ? 'Elementor / Bricks'
+          : null,
+      previousDeployBlocked: deployBlocked,
+      summary: payload.title,
+    }),
+    [payload.domain, findingCategory, selectedConnector, deployBlocked, payload.title],
+  );
 
   const localTierDecision = classifyRemediationTier(findingInput, payload.schemaJsonLd);
   const tierDecision = serverEscalation ?? localTierDecision;
 
   useEffect(() => {
+    setServerEscalation(null);
+    setMcpEnvelopePreview(null);
+    setMcpErrorNote(null);
     if (!expanded || typeof fetch !== 'function') return;
     void fetchCmsMcpCatalogApi().catch(() => null);
     void classifyCmsRemediationApi({
@@ -73,18 +79,23 @@ export const CmsMcpRemediationPanel: React.FC<CmsMcpRemediationPanelProps> = ({
         }
       })
       .catch(() => null);
-  }, [expanded, selectedConnector, findingCategory, deployBlocked, payload.domain, payload.title, payload.schemaJsonLd]);
+  }, [expanded, findingInput, payload.schemaJsonLd]);
 
   const handlePrepareMcpEnvelope = async () => {
     setPreparingEnvelope(true);
     setMcpErrorNote(null);
+    const targetToolName =
+      findingCategory === 'page_builder_layout' &&
+      !CMS_MCP_CONNECTOR_CATALOG[selectedConnector]?.supportsPageBuilders
+        ? 'wp_update_post'
+        : 'update_seo_metadata';
     try {
       const desktopBridge = getDesktopBridge();
       const desktopValidate = desktopBridge?.validateMcpCall || desktopBridge?.validateMcpInvocation;
       if (desktopValidate) {
         const check = await desktopValidate({
           connectorId: selectedConnector,
-          toolName: 'update_seo_metadata',
+          toolName: targetToolName,
           isWriteOperation: true,
           userConfirmed: true,
         });
@@ -98,7 +109,7 @@ export const CmsMcpRemediationPanel: React.FC<CmsMcpRemediationPanelProps> = ({
         connectorId: selectedConnector,
         domain: payload.domain,
         title: payload.title,
-        toolName: 'update_seo_metadata',
+        toolName: targetToolName,
         pageMetaKeys: findingCategory === 'page_builder_layout' ? ['_elementor_edit_mode'] : [],
         userConfirmed: true,
         snapshotCreated: true,

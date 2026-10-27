@@ -56,6 +56,7 @@ export const PUBLIC_APP_VIEWS = new Set([
   'TRUST_CENTER',
   'LAUNCHPAD',
   'VISION',
+  'ENQUIRY_DESK',
 ]);
 
 /**

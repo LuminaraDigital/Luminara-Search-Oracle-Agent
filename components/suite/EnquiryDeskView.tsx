@@ -268,17 +268,35 @@ export const EnquiryDeskView: React.FC = () => {
     for (const [k, v] of Object.entries(activeEnquiry.answers)) {
       if (v?.value) existingStrings[k] = v.value;
     }
-    const evalResult = evaluateInboundEnquiryTurn({
+    const preCheck = evaluateInboundEnquiryTurn({
       intentType: activeEnquiry.intentType,
       inboundText: text,
       recordedAnswers: existingStrings,
     });
-    const nextField =
-      evalResult.action === 'continue_playbook' ? evalResult.nextQuestion?.fieldKey : undefined;
+    const answeredField =
+      preCheck.action === 'continue_playbook' ? preCheck.nextQuestion?.fieldKey : undefined;
+    const mergedStrings =
+      answeredField && !existingStrings[answeredField]
+        ? { ...existingStrings, [answeredField]: text }
+        : existingStrings;
+    const evalResult =
+      mergedStrings === existingStrings
+        ? preCheck
+        : evaluateInboundEnquiryTurn({
+            intentType: activeEnquiry.intentType,
+            inboundText: text,
+            recordedAnswers: mergedStrings,
+          });
     const nextAnswers = { ...activeEnquiry.answers };
-    if (nextField && !nextAnswers[nextField]?.value) {
-      nextAnswers[nextField] = { value: text, messageId: `msg_${Date.now()}` };
+    if (answeredField && !nextAnswers[answeredField]?.value) {
+      nextAnswers[answeredField] = { value: text, messageId: `msg_${Date.now()}` };
     }
+    const newlyQualified =
+      evalResult.action === 'continue_playbook' &&
+      !evalResult.nextQuestion &&
+      activeEnquiry.status !== 'qualified' &&
+      activeEnquiry.status !== 'booking_proposed' &&
+      activeEnquiry.status !== 'booked';
     setEnquiries((prev) =>
       prev.map((item) =>
         item.id === activeEnquiry.id
@@ -299,6 +317,9 @@ export const EnquiryDeskView: React.FC = () => {
     setStageCounts((prev) => ({
       ...prev,
       two_way_conversation: prev.two_way_conversation + 1,
+      qualified_opportunity: newlyQualified
+        ? prev.qualified_opportunity + 1
+        : prev.qualified_opportunity,
     }));
     setFeedbackBanner(
       evalResult.suggestedReply
@@ -309,7 +330,7 @@ export const EnquiryDeskView: React.FC = () => {
       void appendEnquiryTurnApi(activeEnquiry.id, {
         sender: 'prospect',
         text,
-        extractedAnswers: nextField ? { [nextField]: text } : undefined,
+        extractedAnswers: answeredField ? { [answeredField]: text } : undefined,
       })
         .then((res) => {
           const reply =
