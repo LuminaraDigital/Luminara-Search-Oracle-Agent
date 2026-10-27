@@ -116,6 +116,30 @@ export function writeCachedFirebaseIdToken(token: string | null): void {
   cachedIdToken = token;
 }
 
+const MIN_HEADER_TOKEN_LIFE_MS = 60_000;
+
+function tokenExpiresAtMs(token: string): number | null {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))) as { exp?: unknown };
+    return typeof payload.exp === 'number' ? payload.exp * 1000 : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The cached token for an Authorization header, or null once it is under a minute from expiry.
+ * The cache only moves on onIdTokenChanged, so an idle tab holds an expired token, and the
+ * Worker answers a failing Bearer with 401 instead of reading the cookie. Without one a sync
+ * caller is served by the session cookie and an async caller asks the SDK for a fresh token.
+ * A token with no readable `exp` is sent as before.
+ */
+export function readFreshCachedFirebaseIdToken(): string | null {
+  if (!cachedIdToken) return null;
+  const expiresAt = tokenExpiresAtMs(cachedIdToken);
+  return expiresAt !== null && expiresAt - Date.now() < MIN_HEADER_TOKEN_LIFE_MS ? null : cachedIdToken;
+}
+
 /** Dynamic import so the entry chunk does not statically depend on Firebase. */
 export function loadFirebaseAuth() {
   return import('./firebaseAuthService');

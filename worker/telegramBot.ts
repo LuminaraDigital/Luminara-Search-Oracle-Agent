@@ -4,7 +4,7 @@
  */
 import type { Env } from './index';
 import { resolveAccountId, writeSubscriptionRecord, listAllUsers, getWorkspace } from './userStore';
-import { QUOTA_CAPACITY_ERROR, spendDailyQuota } from './quotaMiddleware';
+import { QUOTA_CAPACITY_ERROR, refundDailyQuota, spendDailyQuota } from './quotaMiddleware';
 import { readRetentionSnapshot } from './referrals';
 import { nichePulseReply } from './ideaScout';
 import { guardPasteReadyCopy } from '../services/audit/healthClaimGuard';
@@ -237,6 +237,23 @@ export const api = async (
   }
 };
 
+/** Telegram's limit for one message, counted in UTF-16 units like a JS string length. */
+const TELEGRAM_MESSAGE_MAX = 4096;
+
+/**
+ * A text that fits one Telegram message. A longer one is cut at its last whole word that fits,
+ * with the ellipsis inside the limit, and never between the two halves of an emoji.
+ */
+function fitTelegramMessage(text: string): string {
+  if (text.length <= TELEGRAM_MESSAGE_MAX) return text;
+  const room = TELEGRAM_MESSAGE_MAX - 1;
+  const head = text.slice(0, room);
+  const wordEnd = /\s/.test(text[room]) ? room : head.search(/\s\S*$/);
+  // A reply with no space in its last half (a long link, a run of emoji) is cut where it fills.
+  const cut = wordEnd > room / 2 ? head.slice(0, wordEnd) : head.replace(/[\uD800-\uDBFF]$/, '');
+  return `${cut.trimEnd()}…`;
+}
+
 const openAppKeyboard = (env: Env, startParam?: string) => ({
   inline_keyboard: [[
     { text: '🔍 Open Luminara Suite', web_app: { url: startParam ? `${env.WEBAPP_URL}?startapp=${encodeURIComponent(startParam)}` : env.WEBAPP_URL } },
@@ -304,14 +321,12 @@ export async function generateOracleChatResponse(
           parts: [{ text: systemMsg.content }],
         };
       }
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${env.GEMINI_API_KEY}`,
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(body),
-        },
-      );
+      // The key goes in a header: a URL ends up in logs.
+      const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
+        body: JSON.stringify(body),
+      });
       if (res.ok) {
         const data = (await res.json().catch(() => ({}))) as any;
         const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
@@ -352,7 +367,25 @@ export async function generateOracleChatResponse(
   return null;
 }
 
+/** The commands that work in a group: each says there that it is for a private chat. */
+const GROUP_COMMAND_RE = /^\/(?:paysupport|support|admin|reply|close|requests)\b/i;
+const REFUND_COMMAND_RE = /^\/refund\s+(\d+)\s+([\w-]+)/;
+const PRIVATE_CHAT_ONLY_TEXT = 'Luminara works in a private chat. Open a chat with this bot and send /start.';
+
+/** This bot's username in lower case, once Telegram has said it. */
+let ownUsername = '';
+
+/** Whether a command addressed with @name is for this bot. When Telegram cannot say, it is. */
+async function addressedToThisBot(env: Env, name: string): Promise<boolean> {
+  if (!ownUsername) ownUsername = String((await api(env, 'getMe', {})).result?.username ?? '').toLowerCase();
+  return !ownUsername || ownUsername === name.toLowerCase();
+}
+
 export async function handleTelegramUpdate(update: any, env: Env): Promise<void> {
+  const limit = Number(env.FREE_DAILY_LIMIT || 3);
+  // Set while this turn holds a free unit that no delivered answer has used. Given back below,
+  // on every path out, so a failure after the spend does not keep it.
+  let meterKey = '';
   try {
     if (isTelegramPaymentUpdate(update)) {
       // The webhook route awaits payment updates itself; this keeps direct callers working.
@@ -365,6 +398,19 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
 
     const text: string = msg.text || '';
     const chatId = msg.chat.id;
+
+    // Everything below is for one person: a reply can name their plan or their Business DNA,
+    // and Telegram refuses a Mini App button in a group. So a group gets one plain note for a
+    // command and nothing for anything else.
+    if (!isPrivateChat(msg)) {
+      const addressee = /^\/\w+@(\w+)/.exec(text)?.[1];
+      // A command for another bot in the group is that bot's to answer.
+      if (addressee && !(await addressedToThisBot(env, addressee))) return;
+      if (!GROUP_COMMAND_RE.test(text) && !REFUND_COMMAND_RE.test(text)) {
+        if (text.startsWith('/')) await sendPlain(env, chatId, PRIVATE_CHAT_ONLY_TEXT);
+        return;
+      }
+    }
 
     if (text.startsWith('/start')) {
       const startParam = text.split(' ')[1];
@@ -683,7 +729,7 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
       return;
     }
 
-    const refundMatch = text.match(/^\/refund\s+(\d+)\s+([a-zA-Z0-9_\-]+)/);
+    const refundMatch = text.match(REFUND_COMMAND_RE);
     if (refundMatch) {
       const adminIds = (env.TELEGRAM_ADMIN_ID || '').split(',').map(s => s.trim()).filter(Boolean);
       const isSenderAdmin = adminIds.includes(String(msg.from?.id));
@@ -726,6 +772,10 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
     // put in a prompt and not kept in the chat history. This has to stay above the chat.
     if (await receiveSupportMessage(env, msg, text || String(msg.caption || ''))) return;
 
+    // A message with no text (a sticker, a voice note, a photo with or without a caption, a
+    // service message) is not answered. Its capture for support, just above, still runs.
+    if (!text.trim()) return;
+
     // Interactive conversational session with Oracle Agent (Hermes-like agentic loop)
     // 1. Send typing action so user gets immediate visual feedback
     await api(env, 'sendChatAction', { chat_id: chatId, action: 'typing' });
@@ -742,27 +792,31 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
       }
     }
 
-    // Stores a chat reply in session memory and sends it. No parse_mode: the text is not valid
-    // Markdown, and Telegram rejects the whole message when the markup does not parse. No link
-    // preview: a chat reply must not unfurl a page.
-    const deliverChatReply = async (reply: string, keyboard: unknown): Promise<void> => {
-      if (env.LUMINARA_KV) {
-        try {
-          const nextHist = [...history, { role: 'user' as const, content: text }, { role: 'assistant' as const, content: reply }].slice(-6);
-          await env.LUMINARA_KV.put(histKey, JSON.stringify(nextHist), { expirationTtl: 86400 });
-        } catch (err) {
-          console.error('[Telegram Bot] Failed storing chat history in KV', err);
-        }
-      }
+    // Sends a chat reply, cut to one message, and keeps what was sent in session memory once
+    // Telegram took it. No parse_mode: the text is not valid Markdown, and Telegram rejects the
+    // whole message when the markup does not parse. No link preview: a chat reply must not
+    // unfurl a page.
+    const deliverChatReply = async (reply: string, keyboard: unknown): Promise<boolean> => {
+      const sent = fitTelegramMessage(reply);
       const sendResult = await api(env, 'sendMessage', {
         chat_id: chatId,
-        text: reply,
+        text: sent,
         link_preview_options: { is_disabled: true },
         reply_markup: keyboard,
       });
       if (!sendResult.ok) {
         console.error('[Telegram Bot] chat reply was not delivered', sendResult.description);
+        return false;
       }
+      if (env.LUMINARA_KV) {
+        try {
+          const nextHist = [...history, { role: 'user' as const, content: text }, { role: 'assistant' as const, content: sent }].slice(-6);
+          await env.LUMINARA_KV.put(histKey, JSON.stringify(nextHist), { expirationTtl: 86400 });
+        } catch (err) {
+          console.error('[Telegram Bot] Failed storing chat history in KV', err);
+        }
+      }
+      return true;
     };
 
     // 3. A payment problem, and a question about our own plans, prices or how to pay, never
@@ -804,7 +858,6 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
         return;
       }
 
-      const limit = Number(env.FREE_DAILY_LIMIT || 3);
       if (limit > 0) {
         const spent = await spendDailyQuota(env, accountId, limit);
         if (!spent.ok) {
@@ -824,6 +877,7 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
           });
           return;
         }
+        meterKey = spent.meterKey;
       }
     }
 
@@ -892,6 +946,8 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
         }
       : openAppKeyboard(env);
 
+    // 8. Update session memory and deliver the response
+    const delivered = aiResponse ? await deliverChatReply(aiResponse, replyKeyboard) : false;
     if (!aiResponse) {
       // Graceful fallback to app prompt if AI service is not configured or fails
       await api(env, 'sendMessage', {
@@ -899,13 +955,13 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
         text: 'Open the app to run an audit or ask Oracle Agent.',
         reply_markup: replyKeyboard,
       });
-      return;
     }
-
-    // 8. Update session memory and deliver the response
-    await deliverChatReply(aiResponse, replyKeyboard);
+    // The unit paid for an answer that reached the user.
+    if (delivered) meterKey = '';
   } catch (e) {
     console.error('telegram update failed', e);
+  } finally {
+    if (meterKey) await refundDailyQuota(env, meterKey, limit);
   }
 }
 
@@ -1001,7 +1057,7 @@ const SUPPORT_TOO_MANY_TEXT =
 const SUPPORT_NOT_READ_TEXT =
   'Something went wrong on our side, so this message was not read. Please send it again in a minute.';
 
-/** One notice to an admin, under Telegram's 4,096 characters and under what sendPlain sends. */
+/** One notice to an admin, inside one Telegram message, so sendPlain never has to cut it. */
 const SUPPORT_NOTICE_MAX = 3900;
 const SUPPORT_SHORTENED_NOTE = '\n> (shortened here to fit one message; the stored request has the rest)';
 
@@ -1061,7 +1117,7 @@ function ageText(ms: number): string {
 }
 
 async function sendPlain(env: Env, chatId: number | string, text: string): Promise<boolean> {
-  const sent = await api(env, 'sendMessage', { chat_id: chatId, text: text.slice(0, 4000) });
+  const sent = await api(env, 'sendMessage', { chat_id: chatId, text: fitTelegramMessage(text) });
   return sent.ok === true;
 }
 
@@ -1916,10 +1972,11 @@ async function planOfStarsCharge(env: Env, chargeId: string | undefined): Promis
 /**
  * Marks the receipt refunded and takes back only what this charge gave. A charge is found by its
  * receipt or by the subscription record that lists it, so a grant that stopped half way is taken
- * back too. When time is left that this charge did not pay for, its days come off; if it was the
- * last thing applied to the record, the plan goes back to what the record said before it; and
- * whatever was applied after it is re-linked to what came before it, so a later refund still puts
- * the right plan back. Otherwise the record goes. `ok` is false when the record could not be read
+ * back too. Only the part of its days still ahead comes off, so days it has used up never cut into
+ * time bought after it on another rail. When time is left after that: if it was the last thing
+ * applied to the record, the plan goes back to what the record said before it; and whatever was
+ * applied after it is re-linked to what came before it, so a later refund still puts the right
+ * plan back. Otherwise the record goes. `ok` is false when the record could not be read
  * or written, so the caller can try again: the Stars are back with the payer and the plan must
  * follow.
  */
@@ -1941,6 +1998,11 @@ async function revokeStarsGrant(env: Env, userId: number, chargeId: string): Pro
 
     const planId = String(receipt?.plan || (row?.purpose === 'plan' ? row.ref_id : ''));
     const days = Object.hasOwn(PLANS, planId) ? PLANS[planId].days : 0;
+    // The card rail's rule (reverseStripeCharge): the receipt's expiry is where this charge's days end.
+    const now = Date.now();
+    const fullMs = days * DAY_MS;
+    const aheadMs = Math.min(fullMs, Math.max(0, (Number(receipt?.expiresAt) || Infinity) - now));
+    if (aheadMs < fullMs) console.warn(JSON.stringify({ event: 'stars_refund_partial' }));
     const keys = new Set(
       [accountId, receipt?.loginId, row?.account_id, userId].map((k) => (k ? String(k) : '')).filter((k) => k && k !== '0'),
     );
@@ -1948,12 +2010,12 @@ async function revokeStarsGrant(env: Env, userId: number, chargeId: string): Pro
       const sub = (await kv.get(`sub:${key}`, 'json')) as SubscriptionRecord | null;
       if (!sub || !subscriptionListsCharge(sub, chargeId)) continue;
       const remaining = appliedChargesOf(sub).filter((c) => c !== chargeId);
-      const shortened = days > 0 ? Number(sub.expiresAt) - days * DAY_MS : 0;
-      if (shortened <= Date.now()) {
+      const shortened = days > 0 ? Number(sub.expiresAt) - aheadMs : 0;
+      if (shortened <= now) {
         await kv.delete(`sub:${key}`);
         continue;
       }
-      // Time is left that this charge did not pay for (it was added to days already there).
+      // Time is left that this charge did not pay for.
       const links = chargeLinksOf(sub);
       const mine: ChargeLink = links[chargeId] ?? {
         before: typeof receipt?.previousPlan === 'string' && receipt.previousPlan ? receipt.previousPlan : undefined,

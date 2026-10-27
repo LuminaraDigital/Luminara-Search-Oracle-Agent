@@ -7,7 +7,7 @@ import { PlanDowngradeRefusedError, planRank, wouldDowngrade } from '../worker/p
 import { writeSubscriptionRecord } from '../worker/userStore';
 import { createTonInvoice, verifyTonPayment, TON_PRICING, crc16Xmodem } from '../worker/tonPayment';
 import { TON_CLAIM_SETTLED_MS, closeExpiredTonPendingOrders } from '../worker/tonPendingOrders';
-import { activateLicenseKey } from '../worker/licenseService';
+import { activateLicenseKey, generateLicenseKeys } from '../worker/licenseService';
 import { createSqliteD1, type SqliteD1 } from './helpers/sqliteD1';
 
 /**
@@ -620,9 +620,14 @@ describe('TON', () => {
 });
 
 describe('licence keys', () => {
-  it('a trial key offered by an Agency subscriber is refused and is still redeemable afterwards', async () => {
-    const { env, kv, db } = makeEnv();
+  /** A single-use key for a full plan, minted the way the admin route mints one. */
+  const mint = async (env: Env, plan: string, durationDays = 30) =>
+    (await generateLicenseKeys(env, { plan, durationDays, isTrial: false }))[0].key;
+
+  it('a key for a lower plan offered by an Agency subscriber is refused and is still redeemable afterwards', async () => {
+    const { env, kv } = makeEnv();
     const before = await subscribe(kv, 'agency', 2);
+    const key = await mint(env, 'growth');
 
     // Every statement sent to the database while the key is refused.
     const statements: string[] = [];
@@ -635,7 +640,7 @@ describe('licence keys', () => {
       batch: (list: any[]) => real.batch(list),
     } as unknown as D1Database;
 
-    const refused = await activateLicenseKey(env, String(USER), 'LUM-GROWTH-3DAY');
+    const refused = await activateLicenseKey(env, String(USER), key);
     env.DB = real;
     expect(refused.ok).toBe(false);
     expect(refused.error).toContain('You already have the Agency plan until');
@@ -644,20 +649,18 @@ describe('licence keys', () => {
     // Refused before the claim, not claimed and given back: for a single-use key, a claim held
     // even for a moment could turn away the buyer it was sold to.
     expect(statements.filter((sql) => /license_/.test(sql) && /\b(INSERT|UPDATE|DELETE)\b/i.test(sql))).toEqual([]);
-    // Nothing was claimed: not the key, and not this account's one trial.
-    expect(db.sqlite.prepare('SELECT COUNT(*) AS n FROM license_trial_claims').get().n).toBe(0);
-    expect(kv.store.has(`license:trial:claimed:${USER}`)).toBe(false);
 
     // Once Agency has run out, the same key works for the same account.
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(Date.now() + 3 * DAY);
-    const later = await activateLicenseKey(env, String(USER), 'LUM-GROWTH-3DAY');
+    const later = await activateLicenseKey(env, String(USER), key);
     expect(later.ok).toBe(true);
     expect(kv.json(`sub:${USER}`).plan).toBe('growth');
   });
 
   it('a higher plan that starts between the check and the write still wins, and the key is given back', async () => {
     const { env, kv, db } = makeEnv();
+    const licence = await mint(env, 'growth');
     // The first look at the subscription finds none; the higher plan lands before the second.
     let looks = 0;
     let agency: Record<string, unknown> | null = null;
@@ -670,28 +673,26 @@ describe('licence keys', () => {
       }
     };
 
-    const refused = await activateLicenseKey(env, String(USER), 'LUM-GROWTH-3DAY');
+    const refused = await activateLicenseKey(env, String(USER), licence);
     expect(looks).toBeGreaterThanOrEqual(2);
     expect(refused.ok).toBe(false);
     expect(refused.error).toContain('You already have the Agency plan until');
     expect(refused.error).toContain('the key was not used and is still valid');
     expect(kv.json(`sub:${USER}`)).toEqual(agency);
-    // The claim made before the write was released: the key, this account's redemption and its one trial.
+    // The claim made before the write was released.
     expect(db.sqlite.prepare('SELECT COUNT(*) AS n FROM license_redemptions').get().n).toBe(0);
-    expect(db.sqlite.prepare('SELECT COUNT(*) AS n FROM license_trial_claims').get().n).toBe(0);
-    expect(kv.store.has(`license:trial:claimed:${USER}`)).toBe(false);
 
     kv.beforeGet = () => {};
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(Date.now() + 3 * DAY);
-    expect((await activateLicenseKey(env, String(USER), 'LUM-GROWTH-3DAY')).ok).toBe(true);
+    expect((await activateLicenseKey(env, String(USER), licence)).ok).toBe(true);
     expect(kv.json(`sub:${USER}`).plan).toBe('growth');
   });
 
   it('a key for the same plan or a higher one is redeemed as before', async () => {
     const { env, kv } = makeEnv();
     const before = await subscribe(kv, 'starter', 10);
-    const res = await activateLicenseKey(env, String(USER), 'LUM-AGENCY-7DAY');
+    const res = await activateLicenseKey(env, String(USER), await mint(env, 'agency', 7));
     expect(res.ok).toBe(true);
     expect(kv.json(`sub:${USER}`)).toMatchObject({ plan: 'agency', expiresAt: before.expiresAt + 7 * DAY });
   });
@@ -700,5 +701,65 @@ describe('licence keys', () => {
     const { env, kv } = makeEnv();
     expect((await activateLicenseKey(env, String(USER), 'LUM-PROMO-3DAY')).ok).toBe(true);
     expect(kv.json(`sub:${USER}`).plan).toBe('starter');
+  });
+});
+
+describe('trial codes are for accounts without a paid plan', () => {
+  const TRIAL_REFUSED = 'The code was not used; trial codes are for accounts without a paid plan.';
+
+  it('a trial code offered on a running Starter plan is refused, is not used, and works once Starter has ended', async () => {
+    const { env, kv, db } = makeEnv();
+    const before = await subscribe(kv, 'starter', 2);
+
+    const refused = await activateLicenseKey(env, String(USER), 'LUM-AGENCY-7DAY');
+    expect(refused).toEqual({ ok: false, error: TRIAL_REFUSED });
+    expect(kv.json(`sub:${USER}`)).toEqual(before);
+    expect(console.warn).toHaveBeenCalledWith(JSON.stringify({ event: 'license_trial_refused' }));
+    // Nothing was claimed: not the code, and not this account's one trial.
+    expect(db.sqlite.prepare('SELECT COUNT(*) AS n FROM license_key_claims').get().n).toBe(0);
+    expect(db.sqlite.prepare('SELECT COUNT(*) AS n FROM license_trial_claims').get().n).toBe(0);
+    expect(kv.store.has(`license:trial:claimed:${USER}`)).toBe(false);
+
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(Date.now() + 3 * DAY);
+    expect(await activateLicenseKey(env, String(USER), 'LUM-AGENCY-7DAY')).toMatchObject({ ok: true, plan: 'agency', durationDays: 7 });
+    expect(kv.json(`sub:${USER}`).plan).toBe('agency');
+  });
+
+  it('a free-tier record that has not expired is not a paid plan, so the trial code works', async () => {
+    const { env, kv } = makeEnv();
+    await subscribe(kv, 'free', 20);
+    expect(await activateLicenseKey(env, String(USER), 'LUM-AGENCY-7DAY')).toMatchObject({ ok: true, plan: 'agency' });
+    expect(kv.json(`sub:${USER}`).plan).toBe('agency');
+  });
+
+  it('a paid plan that starts between the check and the write refuses the trial code too, and the claim is given back', async () => {
+    const { env, kv, db } = makeEnv();
+    // The first look at the subscription finds none; Starter lands before the second.
+    let looks = 0;
+    let starter: Record<string, unknown> | null = null;
+    kv.beforeGet = (key) => {
+      if (key !== `sub:${USER}`) return;
+      looks += 1;
+      if (looks === 2) {
+        starter = { plan: 'starter', paymentMethod: 'stars', startedAt: Date.now(), expiresAt: Date.now() + 2 * DAY };
+        kv.store.set(key, JSON.stringify(starter));
+      }
+    };
+
+    const refused = await activateLicenseKey(env, String(USER), 'LUM-AGENCY-7DAY');
+    expect(looks).toBeGreaterThanOrEqual(2);
+    expect(refused).toEqual({ ok: false, error: TRIAL_REFUSED });
+    expect(kv.json(`sub:${USER}`)).toEqual(starter);
+    // The claim made before the write was released: the code, this account's redemption and its one trial.
+    expect(db.sqlite.prepare('SELECT COUNT(*) AS n FROM license_redemptions').get().n).toBe(0);
+    expect(db.sqlite.prepare('SELECT COUNT(*) AS n FROM license_trial_claims').get().n).toBe(0);
+    expect(kv.store.has(`license:trial:claimed:${USER}`)).toBe(false);
+
+    kv.beforeGet = () => {};
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(Date.now() + 3 * DAY);
+    expect((await activateLicenseKey(env, String(USER), 'LUM-AGENCY-7DAY')).ok).toBe(true);
+    expect(kv.json(`sub:${USER}`).plan).toBe('agency');
   });
 });

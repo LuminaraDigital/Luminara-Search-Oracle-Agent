@@ -10,7 +10,7 @@ const { app, BrowserWindow, shell, Menu, Tray, nativeImage, ipcMain, dialog, ses
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { applyWindowsHardening } = require('./windowsHardening.cjs');
-const { createNavigationGuard } = require('./security.cjs');
+const { createShellPolicy, createNavigationGuard, createTrustedIpc } = require('./security.cjs');
 const { setupAutoUpdater } = require('./updater.cjs');
 const { setupCrashReporting, installProcessErrorHandlers } = require('./crashReporting.cjs');
 const { createDesktopCoordinator } = require('./coordinator/desktopCoordinator.cjs');
@@ -93,6 +93,39 @@ function applyEnterpriseNetworkConfig(app) {
   }
 }
 
+const SPLASH_URL = pathToFileURL(path.join(__dirname, 'splash.html')).href;
+const OFFLINE_URL = pathToFileURL(path.join(__dirname, 'offline.html')).href;
+
+const shellPolicy = createShellPolicy({
+  webappUrl: resolveWebappUrl(),
+  isDev: IS_DEV,
+  // Only for a self-hosted Firebase project; production and staging auth domains are built in.
+  firebaseAuthDomain: process.env.VITE_FIREBASE_AUTH_DOMAIN,
+  shellPageUrls: [SPLASH_URL, OFFLINE_URL],
+});
+
+/** The Google sign-in popup and blank print windows: no preload, so no desktop bridge. */
+const POPUP_WINDOW_OPTIONS = { webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } };
+
+const openInSystem = (url) => shell.openExternal(url);
+
+function openWindow({ url }) {
+  const action = shellPolicy.windowOpenAction(url);
+  if (action === 'child') return { action: 'allow', overrideBrowserWindowOptions: POPUP_WINDOW_OPTIONS };
+  if (action === 'external') void openInSystem(url);
+  return { action: 'deny' };
+}
+
+// Every window, popups included, opens new windows through the same policy.
+app.on('web-contents-created', (_event, contents) => {
+  contents.setWindowOpenHandler(openWindow);
+  contents.on('did-create-window', (child, { url }) => {
+    // A blank print window stays on its page; its links go to the system. The sign-in popup must
+    // navigate (Workspace SSO redirects to any identity provider), so it gets no guard.
+    if (url === 'about:blank') child.webContents.on('will-navigate', createNavigationGuard(shellPolicy, () => false, openInSystem));
+  });
+});
+
 applyEnterpriseNetworkConfig(app);
 applyWindowsHardening(app);
 
@@ -117,14 +150,6 @@ function iconPath(name) {
 
 function createWindow() {
   const webappUrl = resolveWebappUrl();
-  const guard = createNavigationGuard({
-    allowedOrigins: [
-      'https://luminarasuite.com',
-      'https://www.luminarasuite.com',
-      'http://localhost:3000',
-      'http://127.0.0.1:3000',
-    ],
-  });
 
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -146,15 +171,9 @@ function createWindow() {
     },
   });
 
-  guard.attach(mainWindow);
-
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (guard.isAllowed(url)) {
-      return { action: 'allow' };
-    }
-    void shell.openExternal(url);
-    return { action: 'deny' };
-  });
+  const guardNavigation = createNavigationGuard(shellPolicy, shellPolicy.isAllowedNavigation, openInSystem);
+  mainWindow.webContents.on('will-navigate', guardNavigation);
+  mainWindow.webContents.on('will-redirect', guardNavigation);
 
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show();
@@ -171,15 +190,14 @@ function createWindow() {
     mainWindow = null;
   });
 
-  mainWindow.webContents.on('did-fail-load', (_event, errorCode, _errorDescription, validatedURL) => {
-    if (errorCode === -3) return; // ignore aborted/redirected loads
+  mainWindow.webContents.on('did-fail-load', (_event, errorCode, _errorDescription, validatedURL, isMainFrame) => {
+    // A failed frame (an embed, an iframe) must not swap the whole app for the offline page.
+    if (!isMainFrame || errorCode === -3) return; // -3: aborted/redirected loads
     if (validatedURL && validatedURL.startsWith('file:')) return;
-    const offline = path.join(__dirname, 'offline.html');
-    void mainWindow?.loadURL(pathToFileURL(offline).href);
+    void mainWindow?.loadURL(OFFLINE_URL);
   });
 
-  const splash = path.join(__dirname, 'splash.html');
-  void mainWindow.loadURL(pathToFileURL(splash).href).then(() => {
+  void mainWindow.loadURL(SPLASH_URL).then(() => {
     const bootDelayMs = IS_DEV ? 200 : 600;
     setTimeout(() => {
       void mainWindow?.loadURL(webappUrl);
@@ -293,6 +311,9 @@ function createTray() {
 
 let mainUpdaterApi = null;
 
+/** Bridge calls answer only the app and the shell's own splash and offline pages. */
+const handleTrusted = createTrustedIpc(ipcMain, shellPolicy);
+
 function registerIpc() {
   const updaterApi = setupAutoUpdater({
     mainWindow,
@@ -300,7 +321,7 @@ function registerIpc() {
   });
   mainUpdaterApi = updaterApi;
 
-  ipcMain.handle('desktop:get-info', () => ({
+  handleTrusted('desktop:get-info', () => ({
     shellVersion: app.getVersion(),
     webappUrl: resolveWebappUrl(),
     platform: process.platform,
@@ -308,24 +329,24 @@ function registerIpc() {
     autoUpdateEnabled: updaterApi.getAutoUpdateEnabled(),
   }));
 
-  ipcMain.handle('desktop:open-external', (_event, url) => {
+  handleTrusted('desktop:open-external', (_event, url) => {
     if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) {
       throw new Error('Only http(s) URLs can be opened externally');
     }
     return shell.openExternal(url);
   });
 
-  ipcMain.handle('desktop:get-update-prefs', () => updaterApi.getUpdatePrefs());
+  handleTrusted('desktop:get-update-prefs', () => updaterApi.getUpdatePrefs());
 
-  ipcMain.handle('desktop:set-auto-update', (_event, enabled) => {
+  handleTrusted('desktop:set-auto-update', (_event, enabled) => {
     return updaterApi.setAutoUpdateEnabled(Boolean(enabled));
   });
 
-  ipcMain.handle('desktop:check-updates', () => updaterApi.checkForUpdatesManual());
+  handleTrusted('desktop:check-updates', () => updaterApi.checkForUpdatesManual());
 
-  ipcMain.handle('desktop:install-update', () => updaterApi.quitAndInstall());
+  handleTrusted('desktop:install-update', () => updaterApi.quitAndInstall());
 
-  ipcMain.handle('desktop:retry-connection', () => {
+  handleTrusted('desktop:retry-connection', () => {
     if (mainWindow) {
       void mainWindow.loadURL(resolveWebappUrl());
     }
@@ -337,23 +358,23 @@ function registerIpc() {
     persistToDisk: true,
   });
 
-  ipcMain.handle('desktop:coordinator:status', () => coordinator.getStatus());
-  ipcMain.handle('desktop:coordinator:check-crawler', () => coordinator.checkCrawlerHealth());
-  ipcMain.handle('desktop:coordinator:supervise-crawler', (_event, opts) =>
+  handleTrusted('desktop:coordinator:status', () => coordinator.getStatus());
+  handleTrusted('desktop:coordinator:check-crawler', () => coordinator.checkCrawlerHealth());
+  handleTrusted('desktop:coordinator:supervise-crawler', (_event, opts) =>
     coordinator.superviseCrawler(opts && typeof opts === 'object' ? opts : {}),
   );
-  ipcMain.handle('desktop:coordinator:resolve-profile', (_event, profileId) => coordinator.resolveProfile(profileId));
-  ipcMain.handle('desktop:coordinator:list-routines', () => coordinator.listRoutines());
-  ipcMain.handle('desktop:coordinator:upsert-routine', (_event, spec) => coordinator.upsertRoutine(spec));
-  ipcMain.handle('desktop:coordinator:run-routine', (_event, routineId, mockObservation) =>
+  handleTrusted('desktop:coordinator:resolve-profile', (_event, profileId) => coordinator.resolveProfile(profileId));
+  handleTrusted('desktop:coordinator:list-routines', () => coordinator.listRoutines());
+  handleTrusted('desktop:coordinator:upsert-routine', (_event, spec) => coordinator.upsertRoutine(spec));
+  handleTrusted('desktop:coordinator:run-routine', (_event, routineId, mockObservation) =>
     coordinator.runRoutineOnce(routineId, mockObservation),
   );
-  ipcMain.handle('desktop:coordinator:validate-mcp', (_event, payload) => coordinator.validateMcpCall(payload));
-  ipcMain.handle('desktop:coordinator:store-secret', (_event, payload) => {
+  handleTrusted('desktop:coordinator:validate-mcp', (_event, payload) => coordinator.validateMcpCall(payload));
+  handleTrusted('desktop:coordinator:store-secret', (_event, payload) => {
     const { key, value } = payload && typeof payload === 'object' ? payload : {};
     return coordinator.storeSecret(key, value);
   });
-  ipcMain.handle('desktop:coordinator:has-secret', (_event, key) => coordinator.hasSecret(key));
+  handleTrusted('desktop:coordinator:has-secret', (_event, key) => coordinator.hasSecret(key));
 
   app.on('before-quit', () => {
     coordinator.stopCrawler();
@@ -376,6 +397,11 @@ if (!gotLock) {
 
   app.whenReady().then(() => {
     configureLlmSessionSecurity();
+    // A link to another app from a frame or popup fires no navigation event in the main window;
+    // Electron asks this permission before Windows opens it.
+    session.defaultSession.setPermissionRequestHandler((_contents, permission, callback, details) => {
+      callback(shellPolicy.isPermissionGranted(permission, details));
+    });
     registerIpc();
     buildMenu();
     createWindow();

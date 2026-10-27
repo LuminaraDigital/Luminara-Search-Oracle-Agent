@@ -1,5 +1,5 @@
 /**
- * Client-Side Jetton Payment Orchestrator (TEP-74 & Q402).
+ * Client-Side Jetton Payment Orchestrator (TEP-74).
  *
  * Constructs compliant TEP-74 Jetton transfer messages for TonConnect UI
  * to transfer USDT or $LORA tokens with forward memos.
@@ -8,7 +8,7 @@
 import { beginCell, toNano, Address, Cell } from '@ton/core';
 import { apiBase } from '../apiClient';
 import { getInitDataRaw } from '../telegram/tma';
-import { getFirebaseIdTokenSync } from '../auth/firebaseAuthService';
+import { readFreshCachedFirebaseIdToken } from '../auth/firebaseIdToken';
 import { verifyTonPayment, type TonInvoiceResponse } from './tonService';
 
 export const OP_JETTON_TRANSFER = 0x0f8a7ea5;
@@ -77,7 +77,7 @@ export async function createJettonInvoice(
   };
   const initData = getInitDataRaw();
   if (initData) headers['x-telegram-init-data'] = initData;
-  const idToken = getFirebaseIdTokenSync();
+  const idToken = readFreshCachedFirebaseIdToken();
   if (idToken) headers['authorization'] = `Bearer ${idToken}`;
 
   const res = await fetch(`${base}/api/ton/invoice`, {
@@ -171,29 +171,4 @@ export async function executeJettonPayment(
     }
     return { ok: false, error: `Transfer failed: ${msg}` };
   }
-}
-
-/**
- * Creates an X-PAYMENT header payload for programmatic Q402 requests.
- */
-export function createQ402PaymentHeader(params: {
-  scheme: 'ton/native-transfer' | 'ton/jetton-transfer';
-  network: 'mainnet' | 'testnet';
-  orderId?: string;
-  txHash: string;
-  payerAddress: string;
-  amount: string;
-  asset: 'TON' | 'USDT' | 'LORA';
-}): string {
-  const payload = {
-    x402Version: 1,
-    scheme: params.scheme,
-    network: params.network,
-    orderId: params.orderId,
-    txHash: params.txHash,
-    payerAddress: params.payerAddress,
-    amount: params.amount,
-    asset: params.asset,
-  };
-  return btoa(JSON.stringify(payload));
 }

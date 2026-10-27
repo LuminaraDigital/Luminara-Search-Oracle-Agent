@@ -18,6 +18,14 @@ set LUMINARA_WEBAPP_URL=https://luminarasuite.com/
 npx electron .
 ```
 
+The production and staging Firebase auth domains are built into the shell. A web app on a self-hosted Firebase project also needs its auth domain, or the Google sign-in popup opens in the system browser instead of the app:
+
+```bash
+set LUMINARA_WEBAPP_URL=https://suite.example.com/
+set VITE_FIREBASE_AUTH_DOMAIN=auth.example.com
+npx electron .
+```
+
 ## One-click Windows installer
 
 ```bash
@@ -32,7 +40,7 @@ Output lands in `release/` (NSIS one-click setup). CI builds the same artifact o
 |-------|----------------|
 | `electron/main.cjs` | Window, tray, menu, single-instance lock; loads suite with `?client=desktop` |
 | `electron/preload.cjs` | Narrow `window.luminaraDesktop` bridge |
-| `electron/security.cjs` | Navigation allowlist |
+| `electron/security.cjs` | Trust policy, pure and tested. The main window's top frame loads only the app's exact origins (`localhost:3000` only in dev); any other http(s), mailto or TON wallet (`tc:`, `tg:`, `tonkeeper-tc:` and the other wallet schemes in `@tonconnect/sdk`) navigation there (Stripe checkout, a plain link, a wallet deep link) opens in the system instead. `window.open` in any window gives the Firebase auth handler a sandboxed popup with no preload and no navigation guard (SSO redirects anywhere), gives `about:blank` the same popup kept on its page (print), sends the same http(s), mailto and wallet links to the system and opens nothing else. A frame or popup may launch another app only for those schemes (the `openExternal` permission); search-ms:, ms-msdt:, file: and the rest are refused. Bridge calls are refused unless they come from the app or the shell's own splash and offline pages |
 | `services/desktop/desktopShell.ts` | Detect shell; App skips marketing landing (same as Telegram) |
 | Cloudflare Worker | API, auth, TON, static web app |
 | GitHub Releases | Shell installer + `electron-updater` feed |

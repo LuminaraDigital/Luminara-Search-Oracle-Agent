@@ -52,11 +52,12 @@ import {
 } from './telegramBot';
 import { createTonInvoice, verifyTonPayment, sweepTonPendingOrders, isTonPaymentConfigured, isTonAddressConfirmed, isTonCheckoutOpen, TON_IN_TELEGRAM_ERROR, TON_PRICING, JETTON_PRICING, JETTON_CHECKOUT_LIVE } from './tonPayment';
 import { listSupportRequests } from './paymentSupport';
-import { getQ402SupportedCatalog, Q402_SETTLEMENT_LIVE } from './q402';
 import { resolveChainNetwork } from './chainNetwork';
 import { probeXdcRpcCached } from './chain/xdcRpc';
 import { activateLicenseKey, generateLicenseKeys, importLicenseKeys } from './licenseService';
-import { TERMS_HTML } from './termsPolicy';
+import { TERMS_HTML, buildTermsHtml } from './termsPolicy';
+import { DELETE_ACCOUNT_HTML, maybeServeAndroidLegalHtml } from './androidLegalHtml';
+import { isAndroidPlayClientSearch } from '../services/legal/playClient';
 import { AI_TXT, LLMS_TXT, SITEMAP_XML, applyHostRobots, buildSitemapXml, robotsTxtForHost } from './crawlDocuments';
 import { maybeServeMarketingHtml, maybeServeReceiptHtml, maybeServeShareHtml, withSkippedBootSplash } from './marketingShell';
 import { desktopLatestJson, desktopWindowsDownload } from './desktopDownloads';
@@ -84,7 +85,7 @@ import { getOrCreateUserOrg, hasPermission } from './enterpriseStore';
 import { auditOrgIdFor, recordAuditLog, getAuditLogs, recordAuditLogBestEffort, getAuditChainEntries, verifyAuditChain } from './auditLog';
 import { isAdminAuthorized } from './adminAuth';
 
-import { applyCorsHeaders, corsHeaders, identify, json, secretEquals, billingId, sha256Hex } from './workerUtils';
+import { applyCorsHeaders, corsHeaders, getSessionCookieToken, identify, json, secretEquals, billingId, sha256Hex } from './workerUtils';
 import { getActiveSubscription, readQuotaSnapshot } from './quotaMiddleware';
 import { handleReferralRoute } from './referrals';
 import { handleIdeaScoutRoute } from './ideaScout';
@@ -101,9 +102,10 @@ import {
   buildSessionCookie,
   buildLogoutCookie,
   verifyWebhookSignature,
-  getSessionTokenFromCookie,
+  refuseCrossSiteSessionWrite,
   mintOpaqueSession,
   revokeOpaqueSession,
+  revokeSessionsForDeletedUser,
   isOpaqueSessionId,
   looksLikeJwt,
 } from './authMiddleware';
@@ -312,6 +314,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     path === '/mcp' ||
     path.startsWith('/mcp/') ||
     path === '/oracle/chat' ||
+    path === '/dreaming/run' ||
     path === '/audit/run' ||
     path === '/enrichment/entity' ||
     path === '/pagespeed';
@@ -395,7 +398,6 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       jettonPricing: JETTON_PRICING,
       jettonCheckout: JETTON_CHECKOUT_LIVE,
       stripeCheckout: isStripeCheckoutLive(env), lumens: env.LUMENS_ENABLED === 'true',
-      q402: Q402_SETTLEMENT_LIVE,
       chainNetwork,
       xdcRpcOk,
       proofAnchorEnabled: String(env.PROOF_ANCHOR_ENABLED || '').toLowerCase() === 'true',
@@ -444,6 +446,8 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     }
 
     if (request.method === 'POST') {
+      const csrf = refuseCrossSiteSessionWrite(request, env);
+      if (csrf) return withCors(csrf);
       const read = await readBody(request, MAX_SMALL_BODY_BYTES);
       if (!read.ok) return withCors(json({ error: read.error }, read.status));
       const body = (read.value || {}) as { idToken?: string; initData?: string };
@@ -540,7 +544,9 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
 
   if (path === '/auth/logout') {
     if (request.method !== 'POST') return withCors(json({ error: 'Method not allowed' }, 405));
-    const sessionToken = getSessionTokenFromCookie(request);
+    const csrf = refuseCrossSiteSessionWrite(request, env);
+    if (csrf) return withCors(csrf);
+    const sessionToken = getSessionCookieToken(request);
     if (sessionToken && isOpaqueSessionId(sessionToken)) {
       await revokeOpaqueSession(env, sessionToken);
     }
@@ -594,7 +600,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       return withCors(json({ ok: false, error: who.error || 'Unauthorized', code: 'AUTH_REQUIRED' }, 401));
     }
     const bearer = bearerFromAuthorization(request.headers.get('authorization'));
-    const cookieTok = getSessionTokenFromCookie(request);
+    const cookieTok = getSessionCookieToken(request);
     const jwtCookie = cookieTok && !isOpaqueSessionId(cookieTok) && looksLikeJwt(cookieTok) ? cookieTok : '';
     let bodyToken = '';
     if (!bearer && !jwtCookie) {
@@ -630,7 +636,8 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     }
     let payload: any = {};
     try {
-      payload = JSON.parse(read.text);
+      // The signature covers the raw text, so this route parses it itself.
+      payload = JSON.parse(read.text) || {};
     } catch {
       return withCors(json({ ok: false, error: 'Malformed JSON payload' }, 400));
     }
@@ -644,6 +651,8 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       }
       if (env.LUMINARA_KV) {
         await env.LUMINARA_KV.delete(`user:${targetId}`);
+        // Without this the user's sessions stay valid and the next request re-creates the users row.
+        await revokeSessionsForDeletedUser(env, targetId.replace(/^fb:/, ''));
       }
     } else if ((event === 'user.created' || event === 'user.updated') && (data.uid || data.id)) {
       const uid = String(data.uid || data.id).replace(/^fb:/, '');
@@ -772,24 +781,27 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
 
       const read = await readBody(request, MAX_BODY_BYTES);
       if (!read.ok) return withCors(json({ error: read.error }, read.status));
-      const body = (read.value || {}) as { updatedAt?: number; payload?: unknown; force?: boolean };
-      const clientUpdatedAt = Number(body.updatedAt || 0);
+      const body = (read.value || {}) as { baseVersion?: unknown; payload?: unknown };
       const sanitized = sanitizeWorkspaceWrite(body.payload ?? {});
       if (!sanitized.ok) return withCors(json({ ok: false, error: sanitized.error, code: 'INVALID_PAYLOAD' }, 400));
       const payload = sanitized.payload;
+      const conflict = (stored: Awaited<ReturnType<typeof getWorkspace>>) => withCors(json({
+        ok: false,
+        conflict: true,
+        accountId,
+        updatedAt: stored?.updatedAt ?? 0,
+        payload: stored?.payload ?? {},
+      }, 409));
+      // The stored updatedAt is the version. A write names the version it was based on and is
+      // refused unless that is still the stored one, so a stale device takes the stored copy
+      // instead of replacing it. Older bundles send no baseVersion (and a `force` that is
+      // ignored), so once a row exists their writes are refused too.
       const existing = await getWorkspace(env, accountId);
-      // 409 Conflict: only trigger if existing record is newer by more than a 15-second clock skew tolerance
-      if (existing && !body.force && clientUpdatedAt > 0 && (existing.updatedAt - clientUpdatedAt) > 15_000) {
-        return withCors(json({
-          ok: false,
-          conflict: true,
-          accountId,
-          updatedAt: existing.updatedAt,
-          payload: existing.payload,
-        }, 409));
-      }
-      const updatedAt = Math.max(clientUpdatedAt, Date.now());
-      const saved = await putWorkspace(env, accountId, payload, updatedAt);
+      if (existing && body.baseVersion !== existing.updatedAt) return conflict(existing);
+      const updatedAt = Math.max(Date.now(), (existing?.updatedAt ?? 0) + 1);
+      const saved = await putWorkspace(env, accountId, payload, updatedAt, existing?.updatedAt ?? null);
+      // Another write landed between the read and this one.
+      if (!saved) return conflict(await getWorkspace(env, accountId));
 
       // Enterprise Audit Log: record sync event asynchronously
       try {
@@ -800,7 +812,6 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
           action: 'workspace.sync',
           details: {
             hasEncryptedKeys: Boolean(payload.encryptedKeys),
-            keyCount: Object.keys(payload.keys || {}).length,
             storageItemCount: Object.keys(payload.storage || {}).length,
           },
           ip_address: clientIp(request),
@@ -925,6 +936,11 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     const secret = request.headers.get('x-telegram-bot-api-secret-token') || '';
     if (!secretEquals(secret, env.TELEGRAM_WEBHOOK_SECRET)) return json({ error: 'bad secret' }, 401);
     const read = await readBody(request, MAX_SMALL_BODY_BYTES);
+    // Telegram sends a refused update again, and one too large to read stays too large.
+    if (!read.ok && read.status === 413) {
+      console.warn(JSON.stringify({ event: 'telegram_body_too_large' }));
+      return json({ ok: true });
+    }
     if (!read.ok) return json({ error: read.error }, read.status);
     // A payment update is handled before the webhook answers, and is never throttled. Telegram
     // does not send an update again once it has a 200, so a paid charge must be on record
@@ -955,6 +971,8 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     if (!v.ok) return withCors(json({ error: v.reason }, 401));
 
     if (path === '/telegram/auth') {
+      const csrf = refuseCrossSiteSessionWrite(request, env);
+      if (csrf) return withCors(csrf);
       const tgIdentity: HostedIdentity = { id: String(v.user.id), source: 'telegram' };
       const sub = await getActiveSubscription(env, tgIdentity);
       const resolvedSub = sub || (env.LUMINARA_KV ? await env.LUMINARA_KV.get(`sub:${v.user.id}`, 'json') : null);
@@ -1109,22 +1127,6 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
   if (path === '/stripe/webhook') {
     if (request.method !== 'POST') return withCors(json({ error: 'Method not allowed' }, 405));
     return withCors(handleStripeWebhook(request, env));
-  }
-
-  // Q402 (x402-style pay-per-call on TON) is off, and while it is off none of its routes answer.
-  // The discovery route used to publish the merchant address and TON, USDT and LORA prices to
-  // anyone, for a rail that cannot settle and a wallet the owner had not confirmed. Every
-  // /q402/* path is a 404 until Q402_SETTLEMENT_LIVE is true (worker/q402/facilitator.ts) and
-  // tests/moneyInvariants.test.ts is changed with it.
-  if (path.startsWith('/q402/')) {
-    if (!Q402_SETTLEMENT_LIVE) {
-      return withCors(json({ ok: false, error: 'Not found' }, 404));
-    }
-    if (path === '/q402/supported') {
-      if (request.method !== 'GET') return withCors(json({ error: 'Method not allowed' }, 405));
-      return withCors(json(getQ402SupportedCatalog(env)));
-    }
-    return withCors(json({ ok: false, error: 'Not found' }, 404));
   }
 
   // Temporary License Key Activation (growth trial passes & enterprise licenses)
@@ -1307,6 +1309,9 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
 
   // Admin: runtime agent skill catalog (versioned methodology prompts in D1)
   if (path.startsWith('/admin/skills/')) {
+    // The per-IP limit runs before the secret check so the secret cannot be guessed at full speed.
+    const hit = limited('auth', RATE_AUTH_PER_MIN);
+    if (hit) return hit;
     const adminSkills = isAdminAuthorized(env, request);
     if (!adminSkills.ok) return withCors(adminSkills.response);
 
@@ -1322,8 +1327,6 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
 
     if (sub === '/versions') {
       if (request.method !== 'POST') return withCors(json({ error: 'Method not allowed' }, 405));
-      const hit = limited('auth', RATE_AUTH_PER_MIN);
-      if (hit) return hit;
       const read = await readBody(request, MAX_SMALL_BODY_BYTES);
       if (!read.ok) return withCors(json({ error: read.error }, read.status));
       const body = (read.value || {}) as { promptBody?: string; modelHint?: string; notes?: string };
@@ -1346,8 +1349,6 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
 
     if (sub === '/enable') {
       if (request.method !== 'POST') return withCors(json({ error: 'Method not allowed' }, 405));
-      const hit = limited('auth', RATE_AUTH_PER_MIN);
-      if (hit) return hit;
       const read = await readBody(request, MAX_SMALL_BODY_BYTES);
       if (!read.ok) return withCors(json({ error: read.error }, read.status));
       const body = (read.value || {}) as { version?: number; enabled?: boolean };
@@ -1368,8 +1369,6 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
 
     // GET /admin/skills/:slug -> latest prompt + version metadata
     if (request.method !== 'GET') return withCors(json({ error: 'Method not allowed' }, 405));
-    const hit = limited('auth', RATE_AUTH_PER_MIN);
-    if (hit) return hit;
     if (!env.DB) {
       return withCors(json({ ok: false, error: 'agent_skills requires a D1 database (env.DB). Check your wrangler.toml d1_databases binding.' }, 503));
     }
@@ -1633,10 +1632,10 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
   // Global Oracle prompt catalog. Same gate as POST /admin/skills/:slug/versions.
   // A signed-in session must not publish or roll back agent_skills.
   if (path === '/rsi/prompts/publish' || path === '/rsi/prompts/rollback') {
-    const promptAdmin = isAdminAuthorized(env, request);
-    if (!promptAdmin.ok) return withCors(promptAdmin.response);
     const promptLimit = limited('auth', RATE_AUTH_PER_MIN);
     if (promptLimit) return promptLimit;
+    const promptAdmin = isAdminAuthorized(env, request);
+    if (!promptAdmin.ok) return withCors(promptAdmin.response);
     const promptActor: HostedIdentity = { id: 'admin', source: 'firebase', accountId: 'admin' };
     const promptRoute = await handleRsiRoute(request, env, promptActor, path);
     if (promptRoute) return withCors(promptRoute);
@@ -1771,7 +1770,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     if (path === '/budgets/self' && request.method === 'PUT') {
       const body = await readBody(request, MAX_SMALL_BODY_BYTES);
       if (!body.ok) return withCors(json({ error: body.error }, body.status));
-      const raw = JSON.parse(body.text || '{}') as { monthlyBudgetCents?: unknown };
+      const raw = (body.value || {}) as { monthlyBudgetCents?: unknown };
       const monthlyBudgetCents = Number(raw.monthlyBudgetCents);
       if (!Number.isFinite(monthlyBudgetCents) || Math.floor(monthlyBudgetCents) <= 0) {
         return withCors(json({ ok: false, error: 'monthlyBudgetCents must be a positive integer of cents' }, 400));
@@ -1895,7 +1894,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     if (path === '/projects' && request.method === 'POST') {
       const body = await readBody(request, MAX_SMALL_BODY_BYTES);
       if (!body.ok) return withCors(json({ error: body.error }, body.status));
-      const raw = JSON.parse(body.text || '{}') as Record<string, unknown>;
+      const raw = (body.value || {}) as Record<string, unknown>;
       const created = await createProject(env, accountId, {
         domain: String(raw.domain || ''),
         name: typeof raw.name === 'string' ? raw.name : undefined,
@@ -1925,7 +1924,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       if (isContext && request.method === 'PATCH') {
         const body = await readBody(request, MAX_SMALL_BODY_BYTES);
         if (!body.ok) return withCors(json({ error: body.error }, body.status));
-        const raw = JSON.parse(body.text || '{}') as { updates?: ProjectContextPatch[] };
+        const raw = (body.value || {}) as { updates?: ProjectContextPatch[] };
         const updated = await updateProjectContext(
           env,
           accountId,
@@ -1957,7 +1956,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     if (path === '/reports' && request.method === 'POST') {
       const body = await readBody(request, 600_000);
       if (!body.ok) return withCors(json({ error: body.error }, body.status));
-      const raw = JSON.parse(body.text || '{}') as Record<string, unknown>;
+      const raw = (body.value || {}) as Record<string, unknown>;
       const saved = await saveAgentReport(env, accountId, {
         projectId: String(raw.projectId || ''),
         title: String(raw.title || ''),
@@ -2003,20 +2002,26 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     if (who.error || !who.user) {
       return withCors(json({ ok: false, error: who.error || 'Unauthorized', code: 'AUTH_REQUIRED' }, 401));
     }
+    // Only minting needs Growth or Agency: a lapsed plan still lists and revokes its keys.
     const sub = await getActiveSubscription(env, who.user);
     const caps = planCapsFor(sub?.plan);
-    if (!caps.mcpAccess) {
-      return withCors(
-        json(
-          { ok: false, error: 'API keys require Growth or Agency', code: 'MCP_ACCESS_REQUIRED' },
-          403,
-        ),
-      );
-    }
     if (path === '/api-keys' && request.method === 'GET') {
-      return withCors(json({ ok: true, keys: await listApiKeys(env, who.user), tools: listMcpToolCatalogue() }));
+      return withCors(json({
+        ok: true,
+        mcpAccess: caps.mcpAccess,
+        keys: await listApiKeys(env, who.user),
+        tools: listMcpToolCatalogue(),
+      }));
     }
     if (path === '/api-keys' && request.method === 'POST') {
+      if (!caps.mcpAccess) {
+        return withCors(
+          json(
+            { ok: false, error: 'API keys require Growth or Agency', code: 'MCP_ACCESS_REQUIRED' },
+            403,
+          ),
+        );
+      }
       const dual = await enforceDualKeySlidingLimit(env, {
         action: 'api_key_create',
         uid: billingId(who.user),
@@ -2027,7 +2032,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       if (!dual.ok) return withCors(dual.response);
       const body = await readBody(request, MAX_SMALL_BODY_BYTES);
       if (!body.ok) return withCors(json({ error: body.error }, body.status));
-      const raw = JSON.parse(body.text || '{}') as { name?: string };
+      const raw = (body.value || {}) as { name?: string };
       const created = await createApiKey(env, who.user, raw.name || 'MCP key');
       if (!created.ok) return withCors(json({ ok: false, error: created.error }, created.status));
       return withCors(withRateLimitHeaders(json({ ok: true, key: created.key, meta: created.meta }), dual.headers));
@@ -2154,12 +2159,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     if (who.error) return withCors(json({ error: who.error }, 401));
     const body = await readBody(request, MAX_SMALL_BODY_BYTES);
     if (!body.ok) return withCors(json({ error: body.error }, body.status));
-    let reqData: OracleGatewayRequest;
-    try {
-      reqData = JSON.parse(body.text || '{}') as OracleGatewayRequest;
-    } catch {
-      return withCors(json({ ok: false, error: 'Invalid JSON body', code: 'INVALID_JSON' }, 400));
-    }
+    const reqData = (body.value || {}) as OracleGatewayRequest;
     return withCors(await executeOracleGatewayTask(env, who.user, reqData, request.headers));
   }
 
@@ -2227,6 +2227,10 @@ const handler = {
         if (unsub) return guard(unsub);
         return guard(await runWithWaitUntil(ctx, () => handleApi(request, env, ctx)));
       } catch (e) {
+        // A malformed %-escape in the path reaches decodeURIComponent in several routes.
+        if (e instanceof URIError) {
+          return guard(json({ ok: false, error: 'The URL has invalid percent-encoding.', code: 'BAD_ENCODING' }, 400));
+        }
         // Never echo internal error details (stack traces, upstream messages, env hints) to callers.
         console.error('[api] unhandled error', request.method, url.pathname, e);
         reportWorkerException(env, e, { path: url.pathname, method: request.method });
@@ -2244,7 +2248,7 @@ const handler = {
       url.pathname === '/tos/'
     ) {
       return guard(
-        new Response(TERMS_HTML, {
+        new Response(isAndroidPlayClientSearch(url.search) ? buildTermsHtml({ android: true }) : TERMS_HTML, {
           status: 200,
           headers: {
             'Content-Type': 'text/html; charset=utf-8',
@@ -2341,6 +2345,21 @@ const handler = {
     if (receiptHtml) {
       return guard(receiptHtml);
     }
+
+    if (url.pathname === '/delete-account' || url.pathname === '/delete-account/') {
+      return guard(
+        new Response(DELETE_ACCOUNT_HTML, {
+          status: 200,
+          headers: {
+            'Content-Type': 'text/html; charset=utf-8',
+            'Cache-Control': 'public, max-age=3600',
+          },
+        }),
+      );
+    }
+
+    const androidLegal = maybeServeAndroidLegalHtml(url, request.method);
+    if (androidLegal) return guard(androidLegal);
 
     // Marketing paths: SPA shell with path-specific title, description, canonical and JSON-LD.
     const marketingHtml = await maybeServeMarketingHtml(request, env.ASSETS);

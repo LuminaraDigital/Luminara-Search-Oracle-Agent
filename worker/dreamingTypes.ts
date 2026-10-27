@@ -104,8 +104,11 @@ export interface DreamProposalRow {
 export interface DreamAgentOutput {
   runId?: string;
   summary: string;
+  /** What wrote the proposals: the hosted model's id, or `deterministic`. */
+  modelId: string;
   proposals: Array<{
-    action: DreamProposalAction;
+    /** A merge is never proposed: nothing applies one. */
+    action: Exclude<DreamProposalAction, 'merge'>;
     memoryId?: string;
     memoryType: DreamMemoryType;
     title: string;

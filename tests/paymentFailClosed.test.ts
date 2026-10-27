@@ -9,14 +9,13 @@ import {
   JETTON_UNAVAILABLE_ERROR,
   type TonOrder,
 } from '../worker/tonPayment';
-import { getQ402SupportedCatalog, Q402_SETTLEMENT_LIVE } from '../worker/q402';
 import { isJettonCheckoutAvailable } from '../components/paywall/paymentOptions';
 import { createSqliteD1 } from './helpers/sqliteD1';
 
 /**
- * Regression guards for the Q402 / Jetton integration. Each test pins a hole that existed
- * before this file: Jetton orders credited on memo text alone, Q402 settling without any
- * on-chain proof, invented contract addresses, and UI rails that could not settle.
+ * Regression guards for the Jetton integration. Each test pins a hole that existed before this
+ * file: Jetton orders credited on memo text alone, invented contract addresses, and UI rails that
+ * could not settle. Q402 settled without any on-chain proof and has been removed; its routes stay 404s.
  */
 
 function syntheticTonAddress(tag: number, fill: number): string {
@@ -144,14 +143,8 @@ describe('Jetton checkout fails closed', () => {
   });
 });
 
-describe('Q402 settlement fails closed', () => {
-  it('ships with settlement disabled and says so in discovery', () => {
-    const { env } = makeEnv();
-    expect(Q402_SETTLEMENT_LIVE).toBe(false);
-    expect(getQ402SupportedCatalog(env).settlementLive).toBe(false);
-  });
-
-  it.each(['/api/q402/verify', '/api/q402/settle', '/api/q402/audit'])('%s is a 404 while Q402 is off, and returns no audit', async (route) => {
+describe('Q402 settlement is gone', () => {
+  it.each(['/api/q402/verify', '/api/q402/settle', '/api/q402/audit'])('%s is a 404 with a payment header, and returns no audit', async (route) => {
     const { env } = makeEnv();
     const payment = JSON.stringify({
       x402Version: 1,

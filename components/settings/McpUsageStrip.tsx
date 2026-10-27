@@ -36,16 +36,14 @@ export const McpUsageStrip: React.FC = () => {
       if (!base) return;
       try {
         const r = await workerFetchWithAuthRetry(`${base}/api/api-keys`, { method: 'GET' });
-        if (r.status === 403) {
-          const data = (await r.json().catch(() => ({}))) as { code?: string };
-          if (!cancelled && data.code === 'MCP_ACCESS_REQUIRED') {
-            setMcpAccessRequired(true);
-          }
+        if (!r.ok) return;
+        const data = (await r.json()) as { mcpAccess?: boolean; tools?: CatalogueTool[] };
+        if (cancelled) return;
+        if (data.mcpAccess === false) {
+          setMcpAccessRequired(true);
           return;
         }
-        if (!r.ok) return;
-        const data = (await r.json()) as { tools?: CatalogueTool[] };
-        if (!cancelled && Array.isArray(data.tools) && data.tools.length) {
+        if (Array.isArray(data.tools) && data.tools.length) {
           setMcpAccessRequired(false);
           setTools(
             data.tools.map((t) => ({

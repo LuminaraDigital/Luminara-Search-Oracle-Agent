@@ -1,6 +1,7 @@
 /**
- * Syncs product memory (and optional BYOK keys) to the Worker/D1 workspace for the
- * signed-in account so logging back in restores DNA, audits, VFS, chat, and keys.
+ * Syncs product memory (and the encrypted BYOK key bag) to the Worker/D1 workspace for the
+ * signed-in account so logging back in restores DNA, audits, VFS and chat. The key bag only
+ * decrypts on the device that encrypted it.
  */
 import {
   accountKnownSignedIn,
@@ -67,15 +68,20 @@ const KEY_BAG_KEYS = [
 const CHAT_SESSION_KEY = 'luminara_chat_session';
 const LOCAL_META_KEY = 'luminara_workspace_meta';
 
-type LocalMeta = { updatedAt: number; accountId?: string };
+/**
+ * `baseVersion` is the server version (its `updatedAt`) this copy was last pulled from or saved as.
+ * `dirty` means local edits since then that the server does not have yet. Older builds wrote only a
+ * local-clock `updatedAt`; such a copy reads as based on nothing and not dirty, so it takes the server copy.
+ */
+type LocalMeta = { accountId?: string; baseVersion?: number; dirty?: boolean };
 
 function readMeta(): LocalMeta {
   try {
     const raw = localStorage.getItem(LOCAL_META_KEY);
-    if (!raw) return { updatedAt: 0 };
+    if (!raw) return {};
     return JSON.parse(raw) as LocalMeta;
   } catch {
-    return { updatedAt: 0 };
+    return {};
   }
 }
 
@@ -103,28 +109,23 @@ async function collectPayload(accountId?: string): Promise<WorkspacePayload> {
   }
 
   const hasKeys = Object.keys(keys).length > 0;
-  if (!hasKeys) {
+  // Keys leave the browser only encrypted. With no account to derive the passphrase from, or if
+  // encryption fails, they stay on this device instead of reaching the server in plain text.
+  if (!hasKeys || !accountId) {
     return { storage };
   }
 
-  // If we have an active account, encrypt the key bag client-side (Zero-Knowledge)
-  if (accountId) {
-    try {
-      const passphrase = getOrCreateAccountEncryptionPassphrase(accountId);
-      const encryptedKeys = await encryptKeyBag(keys, passphrase);
-      return {
-        storage,
-        encryptedKeys,
-      };
-    } catch (err) {
-      console.warn('[WorkspaceSync] Client-side key encryption failed; falling back to standard sync', err);
-    }
+  try {
+    const passphrase = getOrCreateAccountEncryptionPassphrase(accountId);
+    const encryptedKeys = await encryptKeyBag(keys, passphrase);
+    return {
+      storage,
+      encryptedKeys,
+    };
+  } catch (err) {
+    console.warn('[WorkspaceSync] Client-side key encryption failed; keys stay on this device', err);
+    return { storage };
   }
-
-  return {
-    storage,
-    keys,
-  };
 }
 
 async function applyPayload(payload: WorkspacePayload, accountId?: string): Promise<void> {
@@ -145,7 +146,7 @@ async function applyPayload(payload: WorkspacePayload, accountId?: string): Prom
     }
   }
 
-  // 1. If encrypted key bag is present, decrypt client-side
+  // If an encrypted key bag is present, decrypt it client-side
   if (payload.encryptedKeys && accountId) {
     try {
       const passphrase = getOrCreateAccountEncryptionPassphrase(accountId);
@@ -161,22 +162,27 @@ async function applyPayload(payload: WorkspacePayload, accountId?: string): Prom
       console.warn('[WorkspaceSync] Client-side key decryption failed:', err);
     }
   }
-
-  // 2. Backward compatibility: apply legacy unencrypted keys if present
-  const keys = payload.keys || {};
-  for (const [key, value] of Object.entries(keys)) {
-    try {
-      localStorage.setItem(key, value);
-    } catch {
-      /* ignore */
-    }
-  }
 }
 
+type PullResult = { ok: boolean; accountId?: string; error?: string };
+
+const RESTORED_EVENT = 'luminara-workspace-restored';
+/** A failed push is tried again once the 10 s backoff has passed. */
+const PUSH_RETRY_MS = 11_000;
+
 let pushTimer: ReturnType<typeof setTimeout> | null = null;
-let syncing = false;
+/** The running sign-in pull. No push starts while it runs, and a second caller shares it. */
+let pullInFlight: Promise<PullResult> | null = null;
+let pushInFlight: Promise<void> | null = null;
+/** Bumped on every local edit, so a pull or push can tell whether edits landed while it ran. */
+let editSeq = 0;
 /** True after this page's sign-in pull finishes or cannot run. Guests are ready without it. */
 let pullSettled = false;
+/** True once this page's pull succeeded. Until then storage may hold another account's leftovers. */
+let pullSucceeded = false;
+/** Bumped by clearLocalWorkspace, so a pull that started before a sign-out does not apply its copy. */
+let clearSeq = 0;
+let onlineHooked = false;
 
 /** Signed-in history is ready only after the workspace pull has settled. */
 export function workspaceHistoryReady(): boolean {
@@ -186,7 +192,16 @@ export function workspaceHistoryReady(): boolean {
 function settleWorkspacePull(accountId?: string): void {
   pullSettled = true;
   if (typeof window === 'undefined') return;
-  window.dispatchEvent(new CustomEvent('luminara-workspace-restored', { detail: { accountId } }));
+  window.dispatchEvent(new CustomEvent(RESTORED_EVENT, { detail: { accountId } }));
+}
+
+/**
+ * Runs `listener` after every pull settles and after a refused push applied the stored copy, so
+ * whatever shows synced state can re-read it from storage. Returns the unsubscribe.
+ */
+export function onWorkspaceRestored(listener: () => void): () => void {
+  window.addEventListener(RESTORED_EVENT, listener);
+  return () => window.removeEventListener(RESTORED_EVENT, listener);
 }
 
 /** The account this browser's workspace copy last synced with. Unset for a guest's copy. */
@@ -197,6 +212,8 @@ export function workspaceAccountId(): string | undefined {
 /** Clears all local workspace memory, keys, and chat session from the browser (e.g. on sign-out). */
 export function clearLocalWorkspace(): void {
   pullSettled = false;
+  pullSucceeded = false;
+  clearSeq += 1;
   if (typeof window === 'undefined') return;
   for (const key of MEMORY_KEYS) {
     try { localStorage.removeItem(key); } catch {}
@@ -208,16 +225,41 @@ export function clearLocalWorkspace(): void {
   try { localStorage.removeItem(LOCAL_META_KEY); } catch {}
 }
 
-/** Pull server workspace after login; server wins when it is newer. */
-export async function pullWorkspaceOnLogin(): Promise<{ ok: boolean; accountId?: string; error?: string }> {
+function hasLocalContent(): boolean {
+  const stored = (key: string) => Boolean(localStorage.getItem(key));
+  if (MEMORY_KEYS.some(stored) || KEY_BAG_KEYS.some(stored)) return true;
+  try {
+    return Boolean(sessionStorage.getItem(CHAT_SESSION_KEY));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Pull the server workspace after login. The server copy wins unless this browser holds edits
+ * made on top of the version the server still has (or the server has nothing yet); only then is
+ * the local copy pushed. Concurrent callers share one pull.
+ */
+export function pullWorkspaceOnLogin(): Promise<PullResult> {
+  if (!pullInFlight) {
+    pullInFlight = runPull().finally(() => {
+      pullInFlight = null;
+    });
+  }
+  return pullInFlight;
+}
+
+async function runPull(): Promise<PullResult> {
   if (!apiBase() || typeof window === 'undefined') {
     settleWorkspacePull();
     return { ok: false, error: 'No API' };
   }
-  if (syncing) return { ok: false, error: 'busy' };
-  syncing = true;
+  const seq = editSeq;
+  const cleared = clearSeq;
   let accountId: string | undefined;
   try {
+    // A push already on the wire lands first, so the meta read below carries its version.
+    await pushInFlight;
     const booted = await takeAccountBoot();
     const remote: Awaited<ReturnType<typeof fetchWorkspace>> = booted
       ? {
@@ -228,32 +270,37 @@ export async function pullWorkspaceOnLogin(): Promise<{ ok: boolean; accountId?:
         }
       : await fetchWorkspace();
     if (!remote.ok) return { ok: false, error: remote.error || 'pull failed' };
+    // Signed out while this pull was on the wire: the copy belongs to the account that left.
+    if (clearSeq !== cleared) return { ok: false, error: 'signed out' };
 
-    const local = readMeta();
+    let local = readMeta();
     // If switching accounts on this browser, purge previous account's local storage first
     if (local.accountId && remote.accountId && local.accountId !== remote.accountId) {
       clearLocalWorkspace();
+      local = {};
     }
 
-    const remoteUpdated = remote.updatedAt || 0;
+    const remoteVersion = remote.updatedAt || 0;
     accountId = remote.accountId;
-    if (remoteUpdated > 0 && remoteUpdated >= local.updatedAt) {
+    const ownEdits =
+      (local.baseVersion || 0) === remoteVersion && (remoteVersion === 0 ? hasLocalContent() : Boolean(local.dirty));
+    if (remoteVersion > 0 && !ownEdits) {
+      // The server moved past this copy, or this copy has no edits of its own: the server copy wins.
       await applyPayload(remote.payload || {}, remote.accountId);
-      writeMeta({ updatedAt: remoteUpdated, accountId: remote.accountId });
+      writeMeta({ accountId: remote.accountId, baseVersion: remoteVersion, dirty: editSeq !== seq });
     } else {
-      const localPayload = await collectPayload(remote.accountId);
-      const hasLocal =
-        Object.keys(localPayload.storage || {}).length > 0 ||
-        Object.keys(localPayload.keys || {}).length > 0 ||
-        Boolean(localPayload.encryptedKeys);
-      if (hasLocal) await flushWorkspacePush(true);
+      // Pushes encrypt the key bag with the account in meta, so record it before any push.
+      writeMeta({ ...readMeta(), accountId: remote.accountId });
+      if (ownEdits) await pushNow();
     }
+    pullSucceeded = true;
     return { ok: true, accountId: remote.accountId };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'pull failed' };
   } finally {
-    syncing = false;
     settleWorkspacePull(accountId);
+    // Pushes asked for during the pull were skipped; send those edits now.
+    if (editSeq !== seq) scheduleWorkspacePush();
   }
 }
 
@@ -268,34 +315,91 @@ export function scheduleWorkspacePush(delayMs = 3000): void {
 
 let lastPushFailedAt = 0;
 
+/**
+ * Pushes the local copy now. `force` only skips the failure backoff: the server still refuses a
+ * copy based on an older version than it holds. Skipped while a pull or another push runs; each
+ * of those reschedules when edits landed during it. Before this page's pull has succeeded it runs
+ * the pull instead, which pushes the local edits only when they belong on the server's version.
+ */
 export async function flushWorkspacePush(force = false): Promise<void> {
   if (!apiBase() || typeof window === 'undefined') return;
   // Guests have no account workspace; local state stays local until they sign in.
   if (!accountKnownSignedIn()) return;
-  // If recently rate-limited (within 10s), back off
-  if (Date.now() - lastPushFailedAt < 10_000 && !force) return;
-
-  const meta = readMeta();
-  const payload = await collectPayload(meta.accountId);
-  // Ensure monotonic timestamp to avoid clock-skew conflicts
-  const updatedAt = Math.max(Date.now(), (meta.updatedAt || 0) + 1);
-  const result = await putWorkspaceRemote({ updatedAt, payload, force });
-  if (result.conflict && result.payload) {
-    await applyPayload(result.payload, result.accountId || meta.accountId);
-    writeMeta({ updatedAt: result.updatedAt || updatedAt, accountId: result.accountId });
+  if (pullInFlight || pushInFlight) return;
+  if (!pullSucceeded) {
+    void pullWorkspaceOnLogin();
     return;
   }
-  if (result.ok) {
+  // If recently rate-limited (within 10s), back off and try again after it.
+  if (Date.now() - lastPushFailedAt < 10_000 && !force) {
+    scheduleWorkspacePush(PUSH_RETRY_MS);
+    return;
+  }
+  // This push covers a debounced one still waiting; edits after it reschedule on their own.
+  if (pushTimer) clearTimeout(pushTimer);
+  pushTimer = null;
+  pushInFlight = pushNow().finally(() => {
+    pushInFlight = null;
+  });
+  await pushInFlight;
+}
+
+/** Tries a failed push again after the backoff, or as soon as the browser is back online. */
+function retryPushLater(): void {
+  scheduleWorkspacePush(PUSH_RETRY_MS);
+  if (onlineHooked) return;
+  onlineHooked = true;
+  window.addEventListener('online', () => {
+    if (!readMeta().dirty) return;
+    if (pushTimer) clearTimeout(pushTimer);
+    pushTimer = null;
+    void flushWorkspacePush(true);
+  });
+}
+
+/** One push based on the server version in meta. Never throws: a failure starts the backoff. */
+async function pushNow(): Promise<void> {
+  const meta = readMeta();
+  const seq = editSeq;
+  try {
+    const payload = await collectPayload(meta.accountId);
+    const result = await putWorkspaceRemote({ baseVersion: meta.baseVersion || 0, payload });
+    const accountId = result.accountId || meta.accountId;
+    if (result.conflict && result.payload) {
+      // Another device saved first. Its copy wins, as it does on sign-in.
+      await applyPayload(result.payload, accountId);
+      writeMeta({ accountId, baseVersion: result.updatedAt || 0, dirty: false });
+      window.dispatchEvent(new CustomEvent(RESTORED_EVENT, { detail: { accountId } }));
+      return;
+    }
+    if (!result.ok) {
+      lastPushFailedAt = Date.now();
+      // Worth another try when the server was busy or down. A body it refused would fail again.
+      if (!result.status || result.status === 429 || result.status >= 500) retryPushLater();
+      return;
+    }
     lastPushFailedAt = 0;
-    writeMeta({ updatedAt: result.updatedAt || updatedAt, accountId: result.accountId });
-  } else {
+    const editedSince = editSeq !== seq;
+    writeMeta({ accountId, baseVersion: result.updatedAt || 0, dirty: editedSince });
+    if (editedSince) scheduleWorkspacePush();
+  } catch {
+    // Offline, or the request never completed.
     lastPushFailedAt = Date.now();
+    retryPushLater();
   }
 }
 
-/** Call after local DNA / keys / audit changes. */
+/** Call after a real local edit to synced state, never on mount or restore. */
 export function noteWorkspaceDirty(): void {
-  const meta = readMeta();
-  writeMeta({ ...meta, updatedAt: Date.now() });
+  editSeq += 1;
+  writeMeta({ ...readMeta(), dirty: true });
   scheduleWorkspacePush();
+}
+
+/** Stores one synced localStorage item. Only a value that differs from the stored one is an edit. */
+export function saveWorkspaceItem(key: string, value: string | null): void {
+  if (localStorage.getItem(key) === value) return;
+  if (value === null) localStorage.removeItem(key);
+  else localStorage.setItem(key, value);
+  noteWorkspaceDirty();
 }

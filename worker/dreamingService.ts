@@ -22,7 +22,11 @@ import {
   type EnqueueEventInput,
 } from './dreamingQueue';
 import { evaluateWakeGate } from './dreamingWakeGate';
-import { runDreamAgent } from './dreamAgent';
+import { hasHostedDreamModel, runDreamAgent } from './dreamAgent';
+import { checkHostedQuota, QUOTA_CAPACITY_ERROR, refundMeteredQuota } from './quotaMiddleware';
+
+const DREAM_RUN_LIMIT_ERROR =
+  "Run now uses one of your free daily requests on free plans, and today's are used up. A paid plan lifts that daily cap, or try again after 00:00 UTC.";
 
 export async function getActiveBusinessMemories(
   env: Env,
@@ -121,11 +125,17 @@ export async function executeDreamRun(
   const durationMs = Date.now() - startTime;
 
   const runId = `drun_${crypto.randomUUID()}`;
+  // One timestamp for the run: a create's memory and its proposal share it, and a rollback
+  // finds the memory by it.
   const now = Date.now();
+  const db = env.DB;
 
   let autoAppliedCount = 0;
   let pendingReviewCount = 0;
   const createdProposals: DreamProposal[] = [];
+  // Every write of the run lands in one batch, so a failure leaves no memory changed, no
+  // proposal or run recorded, and the events pending for the next run.
+  const writes: D1PreparedStatement[] = [];
 
   for (const p of agentOutput.proposals) {
     const proposalId = `dprop_${crypto.randomUUID()}`;
@@ -154,86 +164,94 @@ export async function executeDreamRun(
       // Auto-apply mutation directly to business_memories
       if (p.action === 'create') {
         const memId = `mem_${crypto.randomUUID()}`;
-        await env.DB.prepare(
-          `INSERT INTO business_memories (
+        writes.push(
+          db
+            .prepare(
+              `INSERT INTO business_memories (
             id, account_id, project_id, domain, memory_type, title, content,
             structured_data_json, confidence, status, source_refs_json,
             created_at, updated_at, last_verified_at, expires_at
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, NULL)`,
-        )
-          .bind(
-            memId,
-            accountId,
-            opts.projectId || null,
-            cleanDomain,
-            p.memoryType,
-            p.title,
-            p.content,
-            JSON.stringify(p.structuredData || {}),
-            p.confidence,
-            JSON.stringify(p.sourceRefs),
-            now,
-            now,
-            now,
-          )
-          .run();
+            )
+            .bind(
+              memId,
+              accountId,
+              opts.projectId || null,
+              cleanDomain,
+              p.memoryType,
+              p.title,
+              p.content,
+              JSON.stringify(p.structuredData || {}),
+              p.confidence,
+              JSON.stringify(p.sourceRefs),
+              now,
+              now,
+              now,
+            ),
+        );
       } else if (p.action === 'update' && p.memoryId) {
-        await env.DB.prepare(
-          `UPDATE business_memories SET
+        writes.push(
+          db
+            .prepare(
+              `UPDATE business_memories SET
             title = ?, content = ?, structured_data_json = ?,
             confidence = ?, source_refs_json = ?, updated_at = ?, last_verified_at = ?
            WHERE id = ? AND account_id = ?`,
-        )
-          .bind(
-            p.title,
-            p.content,
-            JSON.stringify(p.structuredData || {}),
-            p.confidence,
-            JSON.stringify(p.sourceRefs),
-            now,
-            now,
-            p.memoryId,
-            accountId,
-          )
-          .run();
+            )
+            .bind(
+              p.title,
+              p.content,
+              JSON.stringify(p.structuredData || {}),
+              p.confidence,
+              JSON.stringify(p.sourceRefs),
+              now,
+              now,
+              p.memoryId,
+              accountId,
+            ),
+        );
       } else if (p.action === 'deprecate' && p.memoryId) {
-        await env.DB.prepare(
-          `UPDATE business_memories SET status = 'archived', updated_at = ?
+        writes.push(
+          db
+            .prepare(
+              `UPDATE business_memories SET status = 'archived', updated_at = ?
            WHERE id = ? AND account_id = ?`,
-        )
-          .bind(now, p.memoryId, accountId)
-          .run();
+            )
+            .bind(now, p.memoryId, accountId),
+        );
       }
     }
 
-    await env.DB.prepare(
-      `INSERT INTO dream_proposals (
+    writes.push(
+      db
+        .prepare(
+          `INSERT INTO dream_proposals (
         id, dream_run_id, account_id, domain, action, memory_id,
         memory_type, title, proposed_content, structured_data_json,
         confidence, requires_approval, status, rationale, source_refs_json,
         previous_snapshot_json, reviewed_by, reviewed_at, created_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)`,
-    )
-      .bind(
-        proposalId,
-        runId,
-        accountId,
-        cleanDomain,
-        p.action,
-        p.memoryId || null,
-        p.memoryType,
-        p.title,
-        p.content,
-        JSON.stringify(p.structuredData || {}),
-        p.confidence,
-        requiresApproval ? 1 : 0,
-        initialStatus,
-        p.rationale,
-        JSON.stringify(p.sourceRefs),
-        previousSnapshot ? JSON.stringify(previousSnapshot) : null,
-        now,
-      )
-      .run();
+        )
+        .bind(
+          proposalId,
+          runId,
+          accountId,
+          cleanDomain,
+          p.action,
+          p.memoryId || null,
+          p.memoryType,
+          p.title,
+          p.content,
+          JSON.stringify(p.structuredData || {}),
+          p.confidence,
+          requiresApproval ? 1 : 0,
+          initialStatus,
+          p.rationale,
+          JSON.stringify(p.sourceRefs),
+          previousSnapshot ? JSON.stringify(previousSnapshot) : null,
+          now,
+        ),
+    );
 
     createdProposals.push({
       id: proposalId,
@@ -256,39 +274,35 @@ export async function executeDreamRun(
     });
   }
 
-  // Create dream_runs record
-  await env.DB.prepare(
-    `INSERT INTO dream_runs (
+  writes.push(
+    db
+      .prepare(
+        `INSERT INTO dream_runs (
       id, account_id, project_id, domain, trigger_reason,
       events_evaluated_count, proposals_count, auto_applied_count,
       pending_review_count, rejected_count, summary, model_id,
       duration_ms, created_at, rolled_back_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 'gemini-2.5-flash', ?, ?, NULL)`,
-  )
-    .bind(
-      runId,
-      accountId,
-      opts.projectId || null,
-      cleanDomain,
-      triggerReason,
-      pendingEvents.length,
-      createdProposals.length,
-      autoAppliedCount,
-      pendingReviewCount,
-      agentOutput.summary,
-      durationMs,
-      now,
-    )
-    .run();
-
-  // Mark processed events as consolidated
-  if (pendingEvents.length > 0) {
-    await markEventsConsolidated(
-      env,
-      pendingEvents.map((e) => e.id),
-      runId,
-    );
-  }
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, NULL)`,
+      )
+      .bind(
+        runId,
+        accountId,
+        opts.projectId || null,
+        cleanDomain,
+        triggerReason,
+        pendingEvents.length,
+        createdProposals.length,
+        autoAppliedCount,
+        pendingReviewCount,
+        agentOutput.summary,
+        agentOutput.modelId,
+        durationMs,
+        now,
+      ),
+  );
+  const consolidated = markEventsConsolidated(db, pendingEvents.map((e) => e.id), runId);
+  if (consolidated) writes.push(consolidated);
+  await db.batch(writes);
 
   const run: DreamRun = {
     id: runId,
@@ -302,7 +316,7 @@ export async function executeDreamRun(
     pendingReviewCount,
     rejectedCount: 0,
     summary: agentOutput.summary,
-    modelId: 'gemini-2.5-flash',
+    modelId: agentOutput.modelId,
     durationMs,
     createdAt: now,
   };
@@ -460,11 +474,13 @@ export async function rollbackDreamRun(
 
   for (const p of proposals.results || []) {
     if (p.action === 'create') {
-      // Find matching created memory and archive/delete it
+      // The memory a create made carries the exact timestamp of the apply: the run's `now` for
+      // auto_applied, the review's `now` (reviewed_at) for approved. Matching on it leaves later
+      // memories that share the title alone. A create's memory_id may name an unrelated memory.
       await env.DB.prepare(
-        `DELETE FROM business_memories WHERE account_id = ? AND domain = ? AND title = ? AND created_at >= ?`,
+        `DELETE FROM business_memories WHERE account_id = ? AND domain = ? AND title = ? AND created_at = ?`,
       )
-        .bind(accountId, p.domain, p.title, p.created_at)
+        .bind(accountId, p.domain, p.title, p.status === 'approved' ? p.reviewed_at : p.created_at)
         .run();
     } else if ((p.action === 'update' || p.action === 'deprecate') && p.memory_id && p.previous_snapshot_json) {
       try {
@@ -571,13 +587,28 @@ export async function handleDreamingRoute(
     };
     if (!body.domain) return json({ ok: false, error: 'domain required' }, 400);
 
+    // A run that wakes calls the hosted model, so on a free plan it spends a free daily unit.
+    // The unit comes back when the run does not wake or fails.
+    const quota = hasHostedDreamModel(env) ? await checkHostedQuota(env, user) : null;
+    if (quota && !quota.ok) {
+      const capacity = quota.error === QUOTA_CAPACITY_ERROR;
+      // Only a used-up daily meter has counted anything; any other refusal says why itself.
+      return json(
+        { ok: false, error: quota.used > 0 ? DREAM_RUN_LIMIT_ERROR : quota.error, code: capacity ? 'HOSTED_CAPACITY' : 'QUOTA_EXHAUSTED' },
+        capacity ? 503 : 429,
+      );
+    }
     const res = await executeDreamRun(
       env,
       accountId,
       body.domain,
       body.triggerReason || 'manual_user',
       { force: body.force ?? false },
-    );
+    ).catch(async (err: unknown) => {
+      await refundMeteredQuota(env, quota);
+      throw err;
+    });
+    if (!res.ok || !res.woke) await refundMeteredQuota(env, quota);
     return json(res, res.ok ? 200 : 500);
   }
 

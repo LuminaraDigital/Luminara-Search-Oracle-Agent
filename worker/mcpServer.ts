@@ -28,6 +28,7 @@ import {
   governanceFor,
 } from './mcpGovernance';
 import { MAX_BODY_BYTES, readBody } from './security';
+import { putCounterBestEffort } from './securityHardening';
 import {
   BYOK_PAID_CALL_COST_CENTS,
   HOSTED_PAID_CALL_COST_CENTS,
@@ -140,9 +141,7 @@ export async function markProjectContextLoaded(
   projectId: string,
 ): Promise<void> {
   if (!env.LUMINARA_KV) return;
-  await env.LUMINARA_KV.put(contextLoadedKey(accountId, projectId), String(Date.now()), {
-    expirationTtl: CONTEXT_LOADED_TTL_SEC,
-  });
+  await putCounterBestEffort(env, contextLoadedKey(accountId, projectId), String(Date.now()), CONTEXT_LOADED_TTL_SEC);
 }
 
 /**
@@ -624,6 +623,28 @@ async function callTool(
     );
   }
 
+  // Paid gates run before the approval below, so a call they refuse does not spend it.
+  // Scope gate: hosted paid research needs mcp:research on the credential. BYOK
+  // calls spend the caller's own DataForSEO account, so mcp:free is enough.
+  if (creditClass === 'paid' && !ctx.dataForSeoCredential && !credentialAllowsResearch(ctx.credential)) {
+    return textResult(
+      'Paid tool blocked: this connection was authorized with mcp:free only. Reconnect with scope "mcp:free mcp:research" (Agency plan) or pass DataForSEO BYOK as x-provider-key.',
+      { code: 'SCOPE_INSUFFICIENT', requiredScope: 'mcp:research', grantedScopes: ctx.credential.scopes },
+      true,
+    );
+  }
+  if (creditClass === 'paid' && !canUsePaid(ctx)) {
+    return textResult(
+      'Paid tool blocked. Upgrade to Agency or pass DataForSEO BYOK as x-provider-key (login:password).',
+      { code: 'PAID_TOOL_FORBIDDEN' },
+      true,
+    );
+  }
+  if (creditClass === 'paid') {
+    const contextGate = await requireProjectContextBeforePaid(ctx.env, ctx.accountId, projectId);
+    if (contextGate) return contextGate;
+  }
+
   // Only a destructive call spends an approval: each one authorizes a single call with its args.
   const approved =
     governanceFor(name).risk === 'destructive' &&
@@ -669,26 +690,6 @@ async function callTool(
   }
 
   if (!tool) return textResult(`Unknown tool: ${name}`, { code: 'TOOL_NOT_FOUND' }, true);
-  // Scope gate: hosted paid research needs mcp:research on the credential. BYOK
-  // calls spend the caller's own DataForSEO account, so mcp:free is enough.
-  if (tool.creditClass === 'paid' && !ctx.dataForSeoCredential && !credentialAllowsResearch(ctx.credential)) {
-    return textResult(
-      'Paid tool blocked: this connection was authorized with mcp:free only. Reconnect with scope "mcp:free mcp:research" (Agency plan) or pass DataForSEO BYOK as x-provider-key.',
-      { code: 'SCOPE_INSUFFICIENT', requiredScope: 'mcp:research', grantedScopes: ctx.credential.scopes },
-      true,
-    );
-  }
-  if (tool.creditClass === 'paid' && !canUsePaid(ctx)) {
-    return textResult(
-      'Paid tool blocked. Upgrade to Agency or pass DataForSEO BYOK as x-provider-key (login:password).',
-      { code: 'PAID_TOOL_FORBIDDEN' },
-      true,
-    );
-  }
-  if (tool.creditClass === 'paid') {
-    const contextGate = await requireProjectContextBeforePaid(ctx.env, ctx.accountId, projectId);
-    if (contextGate) return contextGate;
-  }
   const result = await tool.handler(args || {}, ctx);
 
   // Cost ingestion: cost events land only after a successful PAID tool
@@ -790,6 +791,12 @@ export async function handleMcpRequest(
     return mcpJson(rpcError(null, -32600, `Batch too large: at most ${MAX_MCP_BATCH} messages per request`), 400);
   }
   const messages = Array.isArray(body) ? body : [body];
+  // Every rate limit counts HTTP requests, so one request may spend at most one tool call.
+  const toolCalls = messages.filter((msg) => (msg as { method?: unknown } | null)?.method === 'tools/call').length;
+  if (toolCalls > 1) {
+    console.warn(JSON.stringify({ event: 'mcp_batch_refused', toolCalls }));
+    return mcpJson(rpcError(null, -32600, 'Send one tools/call per request'), 400);
+  }
   const responses: unknown[] = [];
 
   for (const msg of messages) {

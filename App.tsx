@@ -27,7 +27,7 @@ import { UsageQuotaBadge } from './components/paywall/UsageQuotaBadge';
 import { PaywallSlot } from './components/paywall/PaywallSlot';
 import { TelegramBottomNav } from './components/telegram/TelegramBottomNav';
 import { ReplayTourButton } from './components/onboarding/FirstRunTour';
-import { pullWorkspaceOnLogin, noteWorkspaceDirty, clearLocalWorkspace } from './services/sync/workspaceSyncService';
+import { pullWorkspaceOnLogin, noteWorkspaceDirty, clearLocalWorkspace, saveWorkspaceItem, onWorkspaceRestored } from './services/sync/workspaceSyncService';
 import { brandMemoryVaultService } from './services/memory/brandMemoryVaultService';
 import { PremiumAtmosphere } from './components/ui/PremiumAtmosphere';
 import { lazyWithReload } from './utils/lazyWithReload';
@@ -54,6 +54,7 @@ import { labsVisible } from './services/ui/labsAccess';
 // Lazy-loaded secondary pages & views to keep the landing page and app shell ultra-lean.
 // lazyWithReload recovers from post-deploy hashed chunk misses with one full page reload.
 const LegalPage = lazyWithReload(() => import('./components/LegalPage').then(m => ({ default: m.LegalPage })));
+const DeleteAccountPage = lazyWithReload(() => import('./components/DeleteAccountPage').then(m => ({ default: m.DeleteAccountPage })));
 const HelpPage = lazyWithReload(() => import('./components/help/HelpPage').then(m => ({ default: m.HelpPage })));
 const NotFoundPage = lazyWithReload(() => import('./components/NotFoundPage').then(m => ({ default: m.NotFoundPage })));
 const SharedReportView = lazyWithReload(() => import('./components/audit/SharedReportView').then(m => ({ default: m.SharedReportView })));
@@ -445,26 +446,26 @@ const App: React.FC = () => {
   // After sign-in, restore DNA / audits / keys / chat from the linked account workspace.
   useEffect(() => {
     if (!appAuth.authenticated || appAuth.loading) return;
-    let cancelled = false;
-    void (async () => {
-      const result = await pullWorkspaceOnLogin();
-      if (cancelled || !result.ok) return;
-      try {
-        const saved = localStorage.getItem('luminara_business_dna');
-        setDna(saved ? JSON.parse(saved) as BusinessDNA : null);
-      } catch {
-        /* ignore */
-      }
-      try {
-        const chat = sessionStorage.getItem(CHAT_STORAGE_KEY);
-        const parsed: unknown = chat ? JSON.parse(chat) : null;
-        if (chat) setMessages(Array.isArray(parsed) ? (parsed as Message[]) : []);
-      } catch {
-        /* ignore */
-      }
-    })();
-    return () => { cancelled = true; };
+    void pullWorkspaceOnLogin();
   }, [appAuth.authenticated, appAuth.loading]);
+
+  // A pull, or a push the server refused, writes the account's copy into storage. Show that copy,
+  // or the next DNA or chat write would push this screen's older state over it.
+  useEffect(() => onWorkspaceRestored(() => {
+    try {
+      const saved = localStorage.getItem('luminara_business_dna');
+      setDna(saved ? JSON.parse(saved) as BusinessDNA : null);
+    } catch {
+      /* ignore */
+    }
+    try {
+      const chat = sessionStorage.getItem(CHAT_STORAGE_KEY);
+      const parsed: unknown = chat ? JSON.parse(chat) : null;
+      if (chat) setMessages(Array.isArray(parsed) ? (parsed as Message[]) : []);
+    } catch {
+      /* ignore */
+    }
+  }), []);
 
   useEffect(() => {
     const openSettings = () => setIsKeyModalOpen(true);
@@ -580,12 +581,8 @@ const App: React.FC = () => {
 
   useEffect(() => {
     try {
-      if (dna) {
-        localStorage.setItem('luminara_business_dna', JSON.stringify(dna));
-      } else {
-        localStorage.removeItem('luminara_business_dna');
-      }
-      noteWorkspaceDirty();
+      // Mount and workspace restores hand back what storage already holds, so they are not edits.
+      saveWorkspaceItem('luminara_business_dna', dna ? JSON.stringify(dna) : null);
     } catch (e) {
       console.warn('Could not persist Business DNA', e);
     }
@@ -942,6 +939,14 @@ const App: React.FC = () => {
       <Suspense fallback={<ViewLoader label="Loading document" />}>
         {introOverlay}
         <LegalPage kind={view === AppView.PRIVACY ? 'privacy' : 'terms'} onBack={() => setView(skipMarketing ? AppView.DASHBOARD : AppView.LANDING)} />
+      </Suspense>
+    );
+  }
+
+  if (view === AppView.DELETE_ACCOUNT) {
+    return (
+      <Suspense fallback={<ViewLoader label="Loading account deletion" />}>
+        <DeleteAccountPage />
       </Suspense>
     );
   }

@@ -97,6 +97,16 @@ describe('budget policy CRUD', () => {
     expect(rows?.n).toBe(1);
   });
 
+  it('changing the amount keeps a hard stop that is already on', async () => {
+    const env = makeEnv();
+    await upsertBudgetPolicy(env, { accountId: 'acct_keep', monthlyBudgetCents: 1000, hardStopEnabled: true, now: MAY_15 });
+    const changed = await upsertBudgetPolicy(env, { accountId: 'acct_keep', monthlyBudgetCents: 2500, now: MAY_15 + 1000 });
+    expect(changed.amount_cents).toBe(2500);
+    expect(changed.hard_stop_enabled).toBe(1);
+    const off = await upsertBudgetPolicy(env, { accountId: 'acct_keep', monthlyBudgetCents: 2500, hardStopEnabled: false, now: MAY_15 + 2000 });
+    expect(off.hard_stop_enabled).toBe(0);
+  });
+
   it('rejects zero and negative budgets', async () => {
     const env = makeEnv();
     await expect(
@@ -524,6 +534,14 @@ describe('budget routes', () => {
     );
     expect(bad.status).toBe(400);
 
+    const nullBody = await worker.fetch(
+      new Request('https://luminarasuite.com/api/budgets/self', { method: 'PUT', headers, body: 'null' }),
+      env,
+      ctx,
+    );
+    expect(nullBody.status).toBe(400);
+    expect(((await nullBody.json()) as { error?: string }).error).toBe('monthlyBudgetCents must be a positive integer of cents');
+
     const good = await worker.fetch(
       new Request('https://luminarasuite.com/api/budgets/self', {
         method: 'PUT',
@@ -545,6 +563,29 @@ describe('budget routes', () => {
     );
     const status = (await readBack.json()) as { policy?: { amount_cents?: number } };
     expect(status.policy?.amount_cents).toBe(4200);
+  });
+
+  it('PUT /api/budgets/self keeps a hard stop that is already on', async () => {
+    const env = routeEnv();
+    const initData = await tgInitData(7704);
+    await upsertBudgetPolicy(env, { accountId: '7704', monthlyBudgetCents: 1000, hardStopEnabled: true });
+    const res = await worker.fetch(
+      new Request('https://luminarasuite.com/api/budgets/self', {
+        method: 'PUT',
+        headers: {
+          'content-type': 'application/json',
+          'x-telegram-init-data': initData,
+          'cf-connecting-ip': '10.60.0.4',
+        },
+        body: JSON.stringify({ monthlyBudgetCents: 5000 }),
+      }),
+      env,
+      ctx,
+    );
+    expect(res.status).toBe(200);
+    const policy = await getBudgetPolicy(env, '7704');
+    expect(policy?.amount_cents).toBe(5000);
+    expect(policy?.hard_stop_enabled).toBe(1);
   });
 
   it('POST /api/budgets/self/resume lifts a hard stop for the caller', async () => {

@@ -5,7 +5,7 @@
  */
 import { apiBase } from '../apiClient';
 import { getInitDataRaw } from '../telegram/tma';
-import { getFirebaseIdTokenSync } from '../auth/firebaseAuthService';
+import { readFreshCachedFirebaseIdToken } from '../auth/firebaseIdToken';
 import { beginCell } from '@ton/core';
 import { planTonPayment } from './transactionPlan';
 
@@ -40,7 +40,7 @@ function authHeaders(): Record<string, string> {
   };
   const initData = getInitDataRaw();
   if (initData) headers['x-telegram-init-data'] = initData;
-  const idToken = getFirebaseIdTokenSync();
+  const idToken = readFreshCachedFirebaseIdToken();
   if (idToken) headers['authorization'] = `Bearer ${idToken}`;
   return headers;
 }

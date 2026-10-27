@@ -10,6 +10,7 @@ import {
 import { normalizeTonTxHash, tonTxHashAliases } from '../worker/chainNetwork';
 import { claimTonTransaction } from '../worker/paymentLedger';
 import { PLANS } from '../worker/telegramBot';
+import { writeSubscriptionRecord } from '../worker/userStore';
 import { buildCommentBoc } from '../services/ton/tonService';
 import { createSqliteD1 } from './helpers/sqliteD1';
 
@@ -33,7 +34,10 @@ function createMockKv() {
   return {
     store,
     failPutsMatching: null as RegExp | null,
+    /** Runs before a read is answered, so a test can change the store between two reads. */
+    beforeGet: null as ((key: string) => void) | null,
     async get(key: string, type?: string) {
+      this.beforeGet?.(key);
       const val = store.get(key);
       if (val === undefined) return null;
       if (type === 'json') return JSON.parse(val);
@@ -648,5 +652,105 @@ describe('Atomic TON crediting (D1 ledger)', () => {
     kv.failPutsMatching = null;
     expect((await verifyTonPayment(env, inv.order.orderId, { fetcher })).ok).toBe(true);
     expect(kv.store.has('sub:user_flaky')).toBe(true);
+  });
+});
+
+describe('an order whose first write reached only the account record', () => {
+  const DAY = 86400_000;
+
+  /** A web login linked to its account, and a Starter order paid on chain. */
+  async function linkedOrder() {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { env, kv } = makeEnv();
+    env.DB.sqlite
+      .prepare(`INSERT INTO users (id, source, created_at, last_seen_at, account_id) VALUES ('fb:buyer', 'firebase', 1, 1, 'acct_buyer')`)
+      .run();
+    const inv = await createTonInvoice(env, 'fb:buyer', 'starter');
+    if (!inv.ok) throw new Error(inv.error);
+    const orderId = inv.order.orderId;
+    const fetcher = vi.fn(async () => toncenterResponse(inv.order.memo, TON_PRICING.starter.nanoTon, 'tx_half'));
+    const check = () => verifyTonPayment(env, orderId, { fetcher });
+    // What such a write left behind before its claim was kept: the account record names the
+    // order and the transfer is unclaimed.
+    const halfWritten = { plan: 'starter', paymentMethod: 'ton', orderId, startedAt: Date.now(), expiresAt: Date.now() + PLANS.starter.days * DAY };
+    return { env, kv, warn, check, orderId, halfWritten };
+  }
+
+  it('is reported paid and keeps its claim on the transfer, and a second check adds nothing', async () => {
+    const { env, kv, check, orderId } = await linkedOrder();
+
+    kv.failPutsMatching = /^sub:fb:buyer$/;
+    const first = await check();
+    kv.failPutsMatching = null;
+    const landed = await kv.get('sub:acct_buyer', 'json');
+    expect(first).toEqual({ ok: true, plan: 'starter', expiresAt: landed.expiresAt });
+    expect(env.DB.sqlite.prepare('SELECT order_id FROM ton_credited_tx WHERE tx_hash = ?').get('tx_half')).toEqual({ order_id: orderId });
+
+    expect(await check()).toEqual({ ok: true, plan: 'starter', expiresAt: landed.expiresAt });
+    expect(await kv.get('sub:acct_buyer', 'json')).toEqual(landed);
+  });
+
+  it('with its transfer unclaimed, the next check finishes it without adding its days, and the login copy catches up', async () => {
+    const { kv, warn, check, halfWritten } = await linkedOrder();
+    await kv.put('sub:acct_buyer', JSON.stringify(halfWritten));
+
+    expect(await check()).toEqual({ ok: true, plan: 'starter', expiresAt: halfWritten.expiresAt });
+    const account = await kv.get('sub:acct_buyer', 'json');
+    expect(account).toEqual({ ...halfWritten, appliedOrders: [halfWritten.orderId] });
+    expect(await kv.get('sub:fb:buyer', 'json')).toEqual(account);
+    expect(warn).toHaveBeenCalledWith(JSON.stringify({ event: 'order_already_applied' }));
+  });
+
+  it('a higher Stars plan bought since is kept, and the order is not held or added again', async () => {
+    const { env, kv, check, halfWritten } = await linkedOrder();
+    await kv.put('sub:acct_buyer', JSON.stringify(halfWritten));
+    await writeSubscriptionRecord(env, 'fb:buyer', {
+      plan: 'growth',
+      paymentMethod: 'stars',
+      chargeId: 'ch_between',
+      appliedCharges: ['ch_between'],
+      startedAt: Date.now(),
+      expiresAt: halfWritten.expiresAt + PLANS.growth.days * DAY,
+    });
+    const stars = await kv.get('sub:acct_buyer', 'json');
+
+    expect(await check()).toEqual({ ok: true, plan: 'starter', expiresAt: stars.expiresAt });
+    expect(await kv.get('sub:acct_buyer', 'json')).toEqual(stars);
+    expect(await kv.get('sub:fb:buyer', 'json')).toEqual(stars);
+    expect([...kv.store.keys()].filter((k) => k.startsWith('sub_pending:'))).toEqual([]);
+  });
+
+  it('a Stars charge that lands while it is being finished keeps its days and its place on the record', async () => {
+    const { kv, check, halfWritten } = await linkedOrder();
+    await kv.put('sub:acct_buyer', JSON.stringify({ ...halfWritten, appliedCharges: ['ch_before'] }));
+    const withStars = { ...halfWritten, appliedOrders: [halfWritten.orderId], appliedCharges: ['ch_before', 'ch_landed'], expiresAt: halfWritten.expiresAt + PLANS.starter.days * DAY };
+    // The Stars Starter charge lands after the rail's own look at the record and before the write.
+    let reads = 0;
+    kv.beforeGet = (key) => {
+      if (key === 'sub:acct_buyer' && ++reads === 3) kv.store.set(key, JSON.stringify(withStars));
+    };
+
+    expect(await check()).toEqual({ ok: true, plan: 'starter', expiresAt: withStars.expiresAt });
+    expect(reads).toBeGreaterThanOrEqual(3);
+    expect(await kv.get('sub:acct_buyer', 'json')).toEqual(withStars);
+    expect(await kv.get('sub:fb:buyer', 'json')).toEqual(withStars);
+  });
+
+  it('a caller that rewrites a record it read, orderId and all, still writes its change (a card reversal after a TON purchase)', async () => {
+    const { env, kv } = makeEnv();
+    const now = Date.now();
+    const ton = { plan: 'growth', paymentMethod: 'ton', orderId: 'ton_last', expiresAt: now + 60 * DAY };
+    await kv.put('sub:user_reversed', JSON.stringify(ton));
+    await writeSubscriptionRecord(env, 'user_reversed', { ...ton, expiresAt: now + 30 * DAY }, { allowLowerPlan: true });
+    expect(await kv.get('sub:user_reversed', 'json')).toEqual({ ...ton, expiresAt: now + 30 * DAY, appliedOrders: ['ton_last'] });
+  });
+
+  it('the record keeps the orders it was built from through writes by other rails, after its plan has ended too', async () => {
+    const { env, kv } = makeEnv();
+    await kv.put('sub:user_orders', JSON.stringify({ plan: 'starter', paymentMethod: 'ton', orderId: 'ton_old', expiresAt: Date.now() - 1 }));
+    await writeSubscriptionRecord(env, 'user_orders', { plan: 'growth', paymentMethod: 'stars', expiresAt: Date.now() + 30 * 86400_000 });
+    await writeSubscriptionRecord(env, 'user_orders', { plan: 'growth', paymentMethod: 'ton', orderId: 'ton_new', expiresAt: Date.now() + 60 * 86400_000 });
+    expect((await kv.get('sub:user_orders', 'json')).appliedOrders).toEqual(['ton_old', 'ton_new']);
   });
 });

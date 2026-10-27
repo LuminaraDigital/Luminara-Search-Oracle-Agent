@@ -27,7 +27,12 @@ import { join } from 'node:path';
 
 function kv(store = new Map<string, string>()): KVNamespace {
   return {
-    get: async (key: string, type?: string) => {
+    get: async (key: string, type?: string | { type?: string; cacheTtl?: number }) => {
+      // Like the real KV binding, refuse a cacheTtl under 30 seconds.
+      if (typeof type === 'object' && type.cacheTtl !== undefined && type.cacheTtl < 30) {
+        throw new Error(`KV GET failed: 400 Invalid cache_ttl of ${type.cacheTtl}. Cache TTL must be at least 30.`);
+      }
+      if (typeof type === 'object') type = type.type;
       const v = store.get(key);
       if (v === undefined) return null;
       return type === 'json' ? JSON.parse(v) : v;
@@ -130,6 +135,26 @@ describe('P1 ADMIN_SECRET separation', () => {
     expect(res.status).toBe(401);
     const body = (await res.json()) as { code?: string };
     expect(body.code).toBe('ADMIN_SECRET_REQUIRED');
+  });
+
+  it('throttles wrong secrets per IP on the skill and prompt catalogs before checking them', async () => {
+    const env = makeEnv({ ADMIN_SECRET: 'real-admin-secret' });
+    const routes = [
+      { path: '/api/admin/skills/oracle-chat', method: 'GET', ip: '10.7.250.1' },
+      { path: '/api/rsi/prompts/publish', method: 'POST', ip: '10.7.250.2' },
+    ];
+    for (const route of routes) {
+      const statuses: number[] = [];
+      for (let n = 0; n < 21; n++) {
+        const res = await worker.fetch(
+          req(route.path, { method: route.method, headers: { 'x-admin-secret': 'wrong' } }, route.ip),
+          env,
+          ctx,
+        );
+        statuses.push(res.status);
+      }
+      expect(statuses, route.path).toEqual([...Array<number>(20).fill(401), 429]);
+    }
   });
 
   it('accepts the correct ADMIN_SECRET', () => {

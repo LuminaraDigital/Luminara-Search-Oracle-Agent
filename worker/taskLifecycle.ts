@@ -5,13 +5,10 @@
  *   initiated -> observing -> executing -> settled (success) OR reverted (failure)
  *
  * Invariant: If a task encounters fatal provider, network, or execution failure,
- * onRevert executes automatically. It restores metered daily quota, updates the
- * audit run status to 'reverted', records failure diagnostics, and returns an
- * instructive recovery payload.
+ * onRevert executes automatically. It updates the audit run status to 'failed',
+ * records failure diagnostics, and returns an instructive recovery payload.
  */
 import type { Env } from './env';
-import { meterName } from './dailyQuota';
-import { refundMeteredQuota } from './quotaMiddleware';
 
 export type TaskState = 'initiated' | 'observing' | 'executing' | 'settled' | 'reverted';
 
@@ -21,7 +18,6 @@ export interface TaskLifecycleContext {
   surface: 'web' | 'tma' | 'mcp' | 'cron';
   targetDomain: string;
   state: TaskState;
-  quotaCharged: boolean;
   runId?: string | null;
   createdAt: number;
   diagnostics: string[];
@@ -32,7 +28,6 @@ export interface TaskLifecycleOptions {
   accountId: string;
   surface?: 'web' | 'tma' | 'mcp' | 'cron';
   targetDomain: string;
-  quotaCharged?: boolean;
   runId?: string | null;
 }
 
@@ -47,31 +42,10 @@ export function createTaskContext(options: TaskLifecycleOptions): TaskLifecycleC
     surface: options.surface || 'web',
     targetDomain: options.targetDomain,
     state: 'initiated',
-    quotaCharged: Boolean(options.quotaCharged),
     runId: options.runId ?? null,
     createdAt: Date.now(),
     diagnostics: [],
   };
-}
-
-/**
- * Restores 1 metered daily check on the account's UTC-day object when a task reverts.
- * Safe no-op if the meter is missing or the counter is already zero.
- */
-export async function refundHostedQuota(env: Env, accountId: string): Promise<boolean> {
-  if (!accountId) return false;
-  const limit = Number(env.FREE_DAILY_LIMIT || 3);
-  if (!(limit > 0)) return false;
-  const released = await refundMeteredQuota(env, {
-    ok: true,
-    limit,
-    used: 0,
-    remaining: 0,
-    resetSec: 0,
-    isUnlimited: false,
-    meterKey: meterName(accountId),
-  });
-  return released.refunded;
 }
 
 /**
@@ -105,12 +79,11 @@ export interface LifecycleExecutionResult<T> {
   error?: string;
   code?: string;
   diagnostics: string[];
-  refunded: boolean;
 }
 
 /**
  * Runs an analytical task within the lifecycle state machine.
- * Guaranteed onRevert execution on failure with automatic quota restoration.
+ * Guaranteed onRevert execution on failure.
  */
 export async function executeWithLifecycle<T>(
   env: Env,
@@ -135,20 +108,11 @@ export async function executeWithLifecycle<T>(
       state: 'settled',
       data: result,
       diagnostics: ctx.diagnostics,
-      refunded: false,
     };
   } catch (err: unknown) {
     ctx.state = 'reverted';
     const rawError = err instanceof Error ? err.message : String(err || 'Unknown error');
     ctx.diagnostics.push(`[reverted] Task ${ctx.taskId} reverted: ${rawError}`);
-
-    let refunded = false;
-    if (ctx.quotaCharged) {
-      refunded = await refundHostedQuota(env, ctx.accountId);
-      if (refunded) {
-        ctx.diagnostics.push(`[reverted] Restored 1 daily request quota to ${ctx.accountId}`);
-      }
-    }
 
     await updateAuditRunState(env, ctx.runId, 'failed', rawError);
 
@@ -158,7 +122,6 @@ export async function executeWithLifecycle<T>(
       error: rawError,
       code: 'TASK_REVERTED',
       diagnostics: ctx.diagnostics,
-      refunded,
     };
   }
 }

@@ -2,7 +2,7 @@
  * MCP Tool Governance (spec 0010): policy decision branches, action-request
  * lifecycle, dedupe, expiry, and integration through the /api/mcp path.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import worker from '../worker/index';
 import type { Env } from '../worker/env';
 import {
@@ -14,6 +14,7 @@ import {
   approveActionRequest,
   denyActionRequest,
   consumeApprovedRequest,
+  getActionRequestById,
 } from '../worker/mcpGovernance';
 import { redactSensitive } from '../worker/logRedaction';
 import { handleMcpRequest } from '../worker/mcpServer';
@@ -269,7 +270,7 @@ describe('mcp integration', () => {
 
   it('destructive tool returns requiresApproval without executing', async () => {
     const env = makeEnv();
-    const res = await handleMcpRequest(mcpCall('browse_goal', { url: 'https://x.test' }), env, user);
+    const res = await handleMcpRequest(mcpCall('browse_close', { sessionId: 's0' }), env, user);
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       result?: { structuredContent?: { requiresApproval?: boolean; actionRequestId?: string }; isError?: boolean };
@@ -277,6 +278,19 @@ describe('mcp integration', () => {
     expect(body.result?.isError).toBeFalsy();
     expect(body.result?.structuredContent?.requiresApproval).toBe(true);
     expect(body.result?.structuredContent?.actionRequestId).toBeTruthy();
+  });
+
+  it('a paid tool refused for the plan leaves its approval unspent', async () => {
+    const env = makeEnv();
+    const args = { goal: 'Find the pricing page', checks: { textIncludes: 'Pricing' } };
+    const { id } = await createActionRequest(env, { userId: 'acct_gov', toolName: 'browse_goal', args });
+    expect(await approveActionRequest(env, id, 'acct_gov')).toBe(true);
+
+    const res = await handleMcpRequest(mcpCall('browse_goal', args), env, user);
+    const body = (await res.json()) as { result?: { isError?: boolean; structuredContent?: { code?: string } } };
+    expect(body.result?.isError).toBe(true);
+    expect(body.result?.structuredContent?.code).toBe('PAID_TOOL_FORBIDDEN');
+    expect((await getActionRequestById(env, id))?.status).toBe('approved');
   });
 
   it('write tool without subscription returns governance block', async () => {
@@ -343,6 +357,33 @@ describe('mcp integration', () => {
     );
     expect(ok.status).toBe(200);
     expect(((await ok.json()) as unknown[]).length).toBe(20);
+  });
+
+  it('refuses a batch with more than one tools/call and keeps a batch with one', async () => {
+    const env = makeEnv();
+    const call = (id: number) => ({ jsonrpc: '2.0', id, method: 'tools/call', params: { name: 'whoami', arguments: {} } });
+    const post = (body: unknown) =>
+      handleMcpRequest(new Request('https://luminarasuite.com/api/mcp', { method: 'POST', body: JSON.stringify(body) }), env, user);
+
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const refused = await post([call(1), call(2)]);
+      expect(refused.status).toBe(400);
+      expect(await refused.json()).toEqual({
+        jsonrpc: '2.0',
+        id: null,
+        error: { code: -32600, message: 'Send one tools/call per request' },
+      });
+      expect(warn).toHaveBeenCalledWith(JSON.stringify({ event: 'mcp_batch_refused', toolCalls: 2 }));
+    } finally {
+      warn.mockRestore();
+    }
+
+    const mixed = await post([{ jsonrpc: '2.0', id: 1, method: 'initialize' }, { jsonrpc: '2.0', id: 2, method: 'tools/list' }, call(3)]);
+    expect(mixed.status).toBe(200);
+    const results = (await mixed.json()) as Array<{ id: number; result?: { isError?: boolean } }>;
+    expect(results.map((r) => r.id)).toEqual([1, 2, 3]);
+    expect(results[2].result?.isError).toBe(false);
   });
 
   it('rejects an oversized request body with 413', async () => {

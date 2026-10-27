@@ -31,6 +31,21 @@ export function opaqueSessionKvKey(sessionId: string): string {
   return `session:${sessionId}`;
 }
 
+function deletedUserKvKey(uid: string): string {
+  return `session_revoked_user:${uid}`;
+}
+
+/**
+ * Sessions are keyed by session id with no per-user index, so a deleted user's sessions cannot be
+ * listed and removed. Instead this marker, kept for one session lifetime, makes every session for
+ * that uid fail to load, including one minted afterwards from a Firebase ID token that has not
+ * expired yet. Firebase never reuses a uid, so the marker cannot block a later account.
+ */
+export async function revokeSessionsForDeletedUser(env: Env, uid: string): Promise<void> {
+  if (!env.LUMINARA_KV || !uid) return;
+  await env.LUMINARA_KV.put(deletedUserKvKey(uid), String(Date.now()), { expirationTtl: SESSION_TTL_SECONDS });
+}
+
 export async function mintOpaqueSession(
   env: Env,
   user: { uid: string; email?: string; name?: string },
@@ -63,6 +78,10 @@ export async function loadOpaqueSession(env: Env, sessionId: string): Promise<Op
   const record = (await env.LUMINARA_KV.get(opaqueSessionKvKey(sessionId), 'json')) as OpaqueSessionRecord | null;
   if (!record || typeof record.uid !== 'string' || !record.uid) return null;
   if (typeof record.exp === 'number' && record.exp < Date.now()) {
+    await env.LUMINARA_KV.delete(opaqueSessionKvKey(sessionId));
+    return null;
+  }
+  if (await env.LUMINARA_KV.get(deletedUserKvKey(record.uid))) {
     await env.LUMINARA_KV.delete(opaqueSessionKvKey(sessionId));
     return null;
   }
