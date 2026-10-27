@@ -50,6 +50,7 @@ const PATH_ALIASES: Record<string, AppView> = {
   labs: AppView.ECOSYSTEM_HUB,
   lab: AppView.ECOSYSTEM_HUB,
   onboarding: AppView.BUSINESS_DNA,
+  'enquiry-desk': AppView.ENQUIRY_DESK,
   desktop: AppView.LANDING,
   ...Object.fromEntries(HUB_PAGES.map((page) => [page.path.slice(1), AppView.COMPARE])),
 };
@@ -70,6 +71,7 @@ const HASH_TO_VIEW: Record<string, AppView> = {
   TOS: AppView.TERMS,
   LABS: AppView.ECOSYSTEM_HUB,
   ONBOARDING: AppView.BUSINESS_DNA,
+  'ENQUIRY-DESK': AppView.ENQUIRY_DESK,
 };
 
 /**

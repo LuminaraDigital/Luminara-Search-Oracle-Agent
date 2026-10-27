@@ -37,6 +37,13 @@ export async function fetchEnquiryDesk(projectId = 'default'): Promise<{
       escalationReason?: string;
     };
   }>;
+  appointments?: Array<{
+    id: string;
+    enquiryId: string;
+    approvalStatus: string;
+    approvedByUserId?: string | null;
+    proposedSlots?: Array<{ slotId: string; startAt: number; endAt: number; label: string }>;
+  }>;
   funnel?: { countsByStage?: Record<OutcomeStage, number> };
   error?: string;
 }> {
@@ -56,6 +63,7 @@ export async function fetchEnquiryDesk(projectId = 'default'): Promise<{
     ok: true,
     status: r.status,
     enquiries: Array.isArray(data.enquiries) ? (data.enquiries as any) : [],
+    appointments: Array.isArray(data.appointments) ? (data.appointments as any) : [],
     funnel: (data.funnel as any) || undefined,
   };
 }

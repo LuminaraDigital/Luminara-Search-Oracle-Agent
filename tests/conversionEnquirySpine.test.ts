@@ -607,6 +607,35 @@ describe('Stage 5: Clean-Room Twenty CRM GraphQL Adapter & SSRF Guard', () => {
         `/enquiries/appointments/${propRes.appointment.id}/decide`,
       );
       expect(approveIsoRes?.status).toBe(200);
+
+      const listRes = await handleEnquiryDeskRoute(
+        new Request('https://luminarasuite.com/api/enquiries?projectId=proj_au_1', {
+          method: 'GET',
+        }),
+        env,
+        TEST_USER,
+        '/enquiries',
+      );
+      expect(listRes?.status).toBe(200);
+      const listJson = (await listRes?.json()) as {
+        appointments?: Array<{ id: string; enquiryId: string; approvalStatus: string }>;
+      };
+      expect(listJson.appointments?.[0]?.enquiryId).toBe(ingested.enquiry.id);
+      expect(listJson.appointments?.[0]?.approvalStatus).toBe('approved');
+
+      const stringSlotProp = await createBookingProposal(env, {
+        accountId: 'usr_test_1',
+        projectId: 'proj_au_1',
+        enquiryId: ingested.enquiry.id,
+        contactId: '',
+        assignedAgentId: 'agent_1',
+        proposedSlots: ['2026-10-29T04:00:00.000Z'],
+        now: monday1pmSydney + 1000,
+      });
+      expect(stringSlotProp.ok).toBe(true);
+      if (stringSlotProp.ok) {
+        expect(stringSlotProp.appointment.proposedSlots[0]?.slotId).toBe('slot_1');
+      }
     }
   });
 });

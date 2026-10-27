@@ -85,7 +85,7 @@ export async function createBookingProposal(
     contactId: string;
     propertyId?: string | null;
     assignedAgentId: string;
-    proposedSlots: ProposedBookingSlot[];
+    proposedSlots: unknown[];
     now?: number;
   },
 ): Promise<{ ok: true; appointment: AppraisalAppointmentRecord } | { ok: false; error: string; status: number }> {
@@ -101,21 +101,18 @@ export async function createBookingProposal(
     };
   }
 
-  for (const slot of args.proposedSlots) {
-    if (
-      !slot ||
-      typeof slot !== 'object' ||
-      !slot.slotId ||
-      !Number.isFinite(slot.startAt) ||
-      !Number.isFinite(slot.endAt) ||
-      slot.endAt <= slot.startAt
-    ) {
+  const now = args.now ?? Date.now();
+  const normalizedSlots: ProposedBookingSlot[] = [];
+  for (let i = 0; i < args.proposedSlots.length; i++) {
+    const norm = normalizeProposedSlot(args.proposedSlots[i], i, now);
+    if (!norm) {
       return {
         ok: false,
         error: 'Each proposed slot must have a valid slotId and startAt < endAt timestamp.',
         status: 400,
       };
     }
+    normalizedSlots.push(norm);
   }
 
   const enquiryRow = await env.DB.prepare(
@@ -133,9 +130,8 @@ export async function createBookingProposal(
 
   const resolvedContactId = args.contactId?.trim() || enquiryRow.contact_id;
   const resolvedPropertyId = args.propertyId !== undefined ? args.propertyId : enquiryRow.property_id;
-  const now = args.now ?? Date.now();
   const id = `appt_${args.enquiryId}_${now}`;
-  const slotsJson = JSON.stringify(args.proposedSlots);
+  const slotsJson = JSON.stringify(normalizedSlots);
 
   await env.DB.prepare(
     `INSERT INTO appraisal_appointments (
@@ -173,7 +169,7 @@ export async function createBookingProposal(
       contactId: resolvedContactId,
       propertyId: resolvedPropertyId ?? null,
       assignedAgentId: args.assignedAgentId,
-      proposedSlots: args.proposedSlots,
+      proposedSlots: normalizedSlots,
       confirmedStartAt: null,
       confirmedEndAt: null,
       approvalStatus: 'pending_agent_signoff',
@@ -359,4 +355,48 @@ export async function decideBookingAppointment(
       updatedAt: now,
     },
   };
+}
+
+export async function listProjectAppointments(
+  env: Env,
+  accountId: string,
+  projectId: string,
+): Promise<AppraisalAppointmentRecord[]> {
+  if (!env.DB) return [];
+  const rows = await env.DB.prepare(
+    `SELECT id, account_id, project_id, enquiry_id, contact_id, property_id, assigned_agent_id,
+            proposed_slots_json, confirmed_start_at, confirmed_end_at, approval_status,
+            approved_by_user_id, approved_at, calendar_external_id, created_at, updated_at
+     FROM appraisal_appointments
+     WHERE account_id = ? AND project_id = ?
+     ORDER BY created_at DESC LIMIT 100`,
+  )
+    .bind(accountId, projectId)
+    .all<Record<string, unknown>>();
+  return (rows.results || []).map((row) => {
+    const rawSlots = safeJsonParse<unknown[]>(String(row.proposed_slots_json || '[]'), []);
+    const proposedSlots = Array.isArray(rawSlots)
+      ? rawSlots
+          .map((item, idx) => normalizeProposedSlot(item, idx, Number(row.created_at) || Date.now()))
+          .filter((item): item is ProposedBookingSlot => item !== null)
+      : [];
+    return {
+      id: String(row.id),
+      accountId: String(row.account_id),
+      projectId: String(row.project_id),
+      enquiryId: String(row.enquiry_id),
+      contactId: String(row.contact_id),
+      propertyId: row.property_id ? String(row.property_id) : null,
+      assignedAgentId: String(row.assigned_agent_id),
+      proposedSlots,
+      confirmedStartAt: row.confirmed_start_at !== null && row.confirmed_start_at !== undefined ? Number(row.confirmed_start_at) : null,
+      confirmedEndAt: row.confirmed_end_at !== null && row.confirmed_end_at !== undefined ? Number(row.confirmed_end_at) : null,
+      approvalStatus: String(row.approval_status) as AppraisalAppointmentRecord['approvalStatus'],
+      approvedByUserId: row.approved_by_user_id ? String(row.approved_by_user_id) : null,
+      approvedAt: row.approved_at !== null && row.approved_at !== undefined ? Number(row.approved_at) : null,
+      calendarExternalId: row.calendar_external_id ? String(row.calendar_external_id) : null,
+      createdAt: Number(row.created_at),
+      updatedAt: Number(row.updated_at),
+    };
+  });
 }

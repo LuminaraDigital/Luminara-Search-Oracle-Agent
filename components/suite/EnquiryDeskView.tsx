@@ -125,7 +125,9 @@ export const EnquiryDeskView: React.FC = () => {
     try {
       const data = await fetchEnquiryDesk('default');
       if (!data.ok) {
-        if (data.status !== 401) {
+        if (data.status === 401 && manual) {
+          setErrorBanner('Sign in to a free account to sync enquiries and the Outcomes Ledger with Cloud D1.');
+        } else if (data.status !== 401) {
           setErrorBanner(`Cloud sync returned HTTP ${data.status}; showing local workspace state.`);
         }
         return;
@@ -139,6 +141,7 @@ export const EnquiryDeskView: React.FC = () => {
               filteredAnswers[k] = { value: v.value, messageId: v.messageId };
             }
           }
+          const appt = data.appointments?.find((a) => a.enquiryId === e.id);
           return {
             id: e.id,
             fullName: e.contactName,
@@ -150,7 +153,13 @@ export const EnquiryDeskView: React.FC = () => {
             slaDueAt: e.slaDueAt,
             answers: filteredAnswers,
             escalationReason: e.qualificationBrief?.escalationReason,
-            proposedSlotLabel: 'Next Business Day 2:00 PM - Licensed Agent Appraisal',
+            appointmentId: appt?.id,
+            proposedSlotLabel:
+              appt?.proposedSlots?.[0]?.label || 'Next Business Day 2:00 PM - Licensed Agent Appraisal',
+            bookingApprovedBy:
+              e.status === 'booked' || appt?.approvalStatus === 'approved'
+                ? 'Licensed Principal Agent'
+                : undefined,
           };
         });
         setEnquiries(mapped);

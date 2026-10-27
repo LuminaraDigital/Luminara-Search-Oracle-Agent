@@ -32,6 +32,7 @@ import {
 import {
   createBookingProposal,
   decideBookingAppointment,
+  listProjectAppointments,
   type ProposedBookingSlot,
 } from './bookingApprovalService';
 import {
@@ -678,11 +679,12 @@ export async function handleEnquiryDeskRoute(
 
   if (path === '/enquiries' && request.method === 'GET') {
     const projectId = (url.searchParams.get('projectId') || 'default').trim();
-    const [enquiries, funnel] = await Promise.all([
+    const [enquiries, funnel, appointments] = await Promise.all([
       listProjectEnquiries(env, accountId, projectId),
       getProjectConversionFunnelSummary(env, accountId, projectId),
+      listProjectAppointments(env, accountId, projectId),
     ]);
-    return json({ ok: true, projectId, enquiries, funnel, playbooks: Object.values(APPROVED_PLAYBOOKS) });
+    return json({ ok: true, projectId, enquiries, funnel, appointments, playbooks: Object.values(APPROVED_PLAYBOOKS) });
   }
 
   if (path === '/enquiries' && request.method === 'POST') {
@@ -842,18 +844,8 @@ export async function handleEnquiryDeskRoute(
 
   if (path === '/enquiries/appointments' && request.method === 'GET') {
     const projectId = (url.searchParams.get('projectId') || 'default').trim();
-    if (!env.DB) return json({ ok: true, projectId, appointments: [] });
-    const rows = await env.DB.prepare(
-      `SELECT id, project_id, enquiry_id, contact_id, property_id, assigned_agent_id,
-              proposed_slots_json, confirmed_start_at, confirmed_end_at, approval_status,
-              approved_by_user_id, approved_at, calendar_external_id, created_at, updated_at
-       FROM appraisal_appointments
-       WHERE account_id = ? AND project_id = ?
-       ORDER BY created_at DESC LIMIT 100`,
-    )
-      .bind(accountId, projectId)
-      .all<Record<string, unknown>>();
-    return json({ ok: true, projectId, appointments: rows.results || [] });
+    const appointments = await listProjectAppointments(env, accountId, projectId);
+    return json({ ok: true, projectId, appointments });
   }
 
   const bookingDecideMatch = path.match(/^\/enquiries\/appointments\/([^/]+)\/(?:decision|decide)$/);
