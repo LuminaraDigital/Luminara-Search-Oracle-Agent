@@ -66,6 +66,7 @@ const InfrastructurePage = lazyWithReload(() => import('./components/Infrastruct
 const IntelligencePage = lazyWithReload(() => import('./components/IntelligencePage'));
 const WhyLuminaraPage = lazyWithReload(() => import('./components/WhyLuminaraPage'));
 const SeoHubPage = lazyWithReload(() => import('./components/marketing/SeoHubPage'));
+const FreeToolPage = lazyWithReload(() => import('./components/marketing/freeTools/FreeToolPage'));
 const PricingPage = lazyWithReload(() => import('./components/PricingPage'));
 const MethodologyPage = lazyWithReload(() => import('./components/MethodologyPage'));
 const SampleReportPage = lazyWithReload(() => import('./components/SampleReportPage'));
@@ -107,6 +108,7 @@ const MARKETING_VIEWS = new Set<AppView>([
   AppView.INTELLIGENCE,
   AppView.WHY_US,
   AppView.COMPARE,
+  AppView.FREE_TOOLS,
   AppView.PRICING,
   AppView.METHODOLOGY,
   AppView.SAMPLE_REPORT,
@@ -129,6 +131,7 @@ import {
 } from './utils/marketingRoutes';
 import { applyDocumentMetaForView } from './services/marketing/documentMeta';
 import { hubPageForPath } from './services/marketing/seoHubPages';
+import { freeToolForPath, isFreeToolsPath } from './services/marketing/freeTools';
 
 const viewFromLocation = (): AppView | null => {
   if (typeof window === 'undefined') return null;
@@ -263,7 +266,8 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const path = (window.location.pathname || '/').replace(/\/+$/, '') || '/';
-    productTelemetry.trackPageView(view === AppView.COMPARE ? `${view}:${path}` : view);
+    const perPath = view === AppView.COMPARE || view === AppView.FREE_TOOLS;
+    productTelemetry.trackPageView(perPath ? `${view}:${path}` : view);
     applyDocumentMetaForView(view);
   }, [view]);
 
@@ -924,9 +928,14 @@ const App: React.FC = () => {
   const introOverlay = showIntro ? <Suspense fallback={null}><AppIntroOverlay onComplete={completeIntro} /></Suspense> : null;
 
   const hubPage = view === AppView.COMPARE ? hubPageForPath(window.location.pathname) : null;
+  const onFreeToolsPath = view === AppView.FREE_TOOLS && isFreeToolsPath(window.location.pathname);
 
-  // A COMPARE view without a hub path (e.g. a stray #compare hash) is Not Found, never a blank page.
-  if (view === AppView.NOT_FOUND || (view === AppView.COMPARE && !hubPage)) {
+  // A COMPARE or FREE_TOOLS view without its path (e.g. a stray #compare hash) is Not Found, never a blank page.
+  if (
+    view === AppView.NOT_FOUND ||
+    (view === AppView.COMPARE && !hubPage) ||
+    (view === AppView.FREE_TOOLS && !onFreeToolsPath)
+  ) {
     return (
       <Suspense fallback={null}>
         <NotFoundPage onHome={() => setView(AppView.LANDING)} />
@@ -1124,6 +1133,18 @@ const App: React.FC = () => {
       <Suspense fallback={<ViewLoader label="Loading" />}>
         {introOverlay}
         <SeoHubPage page={hubPage} onTerminal={() => enterInstantAudit()} />
+        {marketingOverlays}
+      </Suspense>
+      </MarketingChromeContext.Provider>
+    );
+  }
+
+  if (onFreeToolsPath) {
+    return (
+      <MarketingChromeContext.Provider value={marketingChrome}>
+      <Suspense fallback={<ViewLoader label="Loading" />}>
+        {introOverlay}
+        <FreeToolPage tool={freeToolForPath(window.location.pathname)} onCheckSite={() => enterInstantAudit()} />
         {marketingOverlays}
       </Suspense>
       </MarketingChromeContext.Provider>

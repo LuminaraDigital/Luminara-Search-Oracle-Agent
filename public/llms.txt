@@ -79,9 +79,20 @@ Competitor rows cite each vendor's public pages as of October 2026. No scores ar
 - Luminara vs Otterly: https://www.luminarasuite.com/compare/otterly
 - Luminara vs Peec: https://www.luminarasuite.com/compare/peec
 - Luminara vs Semrush: https://www.luminarasuite.com/compare/semrush
+- Luminara vs ChatSEO: https://www.luminarasuite.com/compare/chatseo
 - Best AI visibility tools for real estate: https://www.luminarasuite.com/best/ai-visibility-tools-for-real-estate-agencies
 - Best AEO audit tools for small business: https://www.luminarasuite.com/best/aeo-audit-tools-for-small-business
 - Best AI visibility tools with MCP: https://www.luminarasuite.com/best/ai-visibility-tools-with-mcp
+
+## Free tools
+
+They run in the browser with no account. Nothing typed is sent to Luminara.
+
+- All free tools: https://www.luminarasuite.com/free-tools
+- SERP snippet preview: https://www.luminarasuite.com/free-tools/serp-preview
+- Robots.txt generator for AI crawlers: https://www.luminarasuite.com/free-tools/robots-txt-generator
+- llms.txt generator: https://www.luminarasuite.com/free-tools/llms-txt-generator
+- Real estate schema generator: https://www.luminarasuite.com/free-tools/schema-generator
 
 ## Studio
 

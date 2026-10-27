@@ -14,6 +14,7 @@ import { HONEST_VISIBILITY_PROMISE, LIVE_ANSWER_CHECKS } from './engineCoverage'
 import { buildFaqPageJsonLd } from './marketingFaqContent';
 import { REAL_ESTATE_AUDIENCE } from './marketingHeroCopy';
 import { HUB_FAQ_HEADING, HUB_PAGES, HUB_REVIEWED, type HubPage } from './seoHubPages';
+import { FREE_TOOLS, FREE_TOOLS_CLOSING, FREE_TOOLS_HUB, FREE_TOOLS_PATH, type FreeTool } from './freeTools';
 import { CONTACT_CRAWLER, FAQ_CRAWLER } from '../help/helpPages';
 import { privacyCrawlerBody } from '../legal/privacyCrawler';
 
@@ -115,6 +116,9 @@ const listItems = (items: readonly string[]) => items.map((item) => `<li>${esc(i
 const linkList = (links: readonly { label: string; href: string }[]) =>
   links.map((link) => `<a href="${esc(link.href)}">${esc(link.label)}</a>`).join(' · ');
 
+const faqHtml = (items: readonly { question: string; answer: string }[]) =>
+  items.map((item) => `<h3>${esc(item.question)}</h3><p>${esc(item.answer)}</p>`).join('');
+
 /** Static crawler HTML for a hub page. Same data as the React view. */
 function hubCrawlerBody(page: HubPage): string {
   const body = page.kind === 'compare'
@@ -127,7 +131,7 @@ function hubCrawlerBody(page: HubPage): string {
       .map((pick) => `<li><h2>${esc(pick.name)}: ${esc(pick.bestFor)}</h2><p>${esc(pick.icp)}</p><p>Pros:</p><ul>${listItems(pick.pros)}</ul><p>Cons:</p><ul>${listItems(pick.cons)}</ul><p>${esc(pick.pricing)}</p></li>`)
       .join('')}</ol>
   <h2>How we picked</h2><ul>${listItems(page.methodology)}</ul>`;
-  const faq = page.faq.map((item) => `<h3>${esc(item.question)}</h3><p>${esc(item.answer)}</p>`).join('');
+  const faq = faqHtml(page.faq);
   const sources = linkList(page.sources.map((source) => ({ label: source.label, href: source.url })));
   const related = linkList(HUB_PAGES.filter((other) => other !== page).map((other) => ({ label: other.label, href: other.path })));
   return `
@@ -162,8 +166,72 @@ function hubShell(page: HubPage): MarketingShellMeta {
   };
 }
 
+const toolLinks = (tools: readonly FreeTool[]) => linkList(tools.map((tool) => ({ label: tool.label, href: tool.path })));
+
+/** Static crawler HTML for /free-tools/*. Same data as the React view; the tool itself needs JavaScript. */
+function freeToolShell(tool: FreeTool): MarketingShellMeta {
+  const url = `${MARKETING_ORIGIN}${tool.path}`;
+  const app = {
+    '@type': 'WebApplication',
+    '@id': `${url}#tool`,
+    name: tool.label,
+    url,
+    applicationCategory: 'BusinessApplication',
+    operatingSystem: 'Web',
+    isAccessibleForFree: true,
+    publisher: { '@id': `${MARKETING_ORIGIN}/#organization` },
+  };
+  return {
+    path: tool.path,
+    title: `${tool.label} | Luminara Suite`,
+    description: tool.description,
+    jsonLd: graph(tool.path, tool.h1, tool.description, false, [app, buildFaqPageJsonLd(tool.faq, `${url}#faq`)]),
+    crawlerBody: `
+<section>
+  <h1>${esc(tool.h1)}</h1>
+  <p>${esc(tool.lede)}</p>
+  <h2>How to use it</h2><ol>${listItems(tool.steps)}</ol>
+  ${tool.why.map((block) => `<h2>${esc(block.heading)}</h2><p>${esc(block.body)}</p>`).join('')}
+  <h2>Common questions</h2>${faqHtml(tool.faq)}
+  <p>More free tools: ${toolLinks(FREE_TOOLS.filter((other) => other !== tool))}</p>
+  <p>${esc(FREE_TOOLS_CLOSING.body)} <a href="/">Run the free crawl check</a> · <a href="${FREE_TOOLS_PATH}">All free tools</a></p>
+</section>`,
+  };
+}
+
+const FREE_TOOLS_HUB_SHELL: MarketingShellMeta = {
+  path: FREE_TOOLS_PATH,
+  title: `${FREE_TOOLS_HUB.label} | Luminara Suite`,
+  description: FREE_TOOLS_HUB.description,
+  jsonLd: graph(FREE_TOOLS_PATH, FREE_TOOLS_HUB.h1, FREE_TOOLS_HUB.description, false, [
+    {
+      '@type': 'ItemList',
+      '@id': `${MARKETING_ORIGIN}${FREE_TOOLS_PATH}#tools`,
+      name: FREE_TOOLS_HUB.h1,
+      numberOfItems: FREE_TOOLS.length,
+      itemListElement: FREE_TOOLS.map((tool, i) => ({
+        '@type': 'ListItem',
+        position: i + 1,
+        name: tool.label,
+        url: `${MARKETING_ORIGIN}${tool.path}`,
+      })),
+    },
+    buildFaqPageJsonLd([...FREE_TOOLS_HUB.faq], `${MARKETING_ORIGIN}${FREE_TOOLS_PATH}#faq`),
+  ]),
+  crawlerBody: `
+<section>
+  <h1>${esc(FREE_TOOLS_HUB.h1)}</h1>
+  <p>${esc(FREE_TOOLS_HUB.lede)}</p>
+  <ul>${FREE_TOOLS.map((tool) => `<li><a href="${tool.path}">${esc(tool.label)}</a>: ${esc(tool.blurb)}</li>`).join('')}</ul>
+  <h2>Common questions</h2>${faqHtml(FREE_TOOLS_HUB.faq)}
+  <p>${esc(FREE_TOOLS_CLOSING.body)} <a href="/">Run the free crawl check</a> · <a href="/pricing">Pricing</a></p>
+</section>`,
+};
+
 export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
   ...Object.fromEntries(HUB_PAGES.map((page) => [page.path, hubShell(page)])),
+  [FREE_TOOLS_PATH]: FREE_TOOLS_HUB_SHELL,
+  ...Object.fromEntries(FREE_TOOLS.map((tool) => [tool.path, freeToolShell(tool)])),
   '/': {
     path: '/',
     title: 'AI visibility audit | Luminara Suite',

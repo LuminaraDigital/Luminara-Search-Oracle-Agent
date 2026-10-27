@@ -27,6 +27,21 @@ export const MARKETING_FAQ: MarketingFaqItem[] = [
       'Those tools go deep on classic SEO data such as keywords and backlinks. Luminara checks your site and live web search for the buyer questions that drive appraisal calls, and gives you the one page, review, or schema fix to ship next. Many teams use both.',
   },
   {
+    question: 'How is this different from asking an AI chatbot about my site?',
+    answer:
+      'A chatbot answers from memory and can guess. Luminara fetches your live site and web search, shows the evidence for each result, and labels anything it could not check as Not measured.',
+  },
+  {
+    question: 'Does Luminara make up numbers?',
+    answer:
+      'No. A result is Measured only when it came from a live check. A directional read is labeled Estimated. Missing data stays Not measured and is never filled in.',
+  },
+  {
+    question: 'Does Luminara change my website?',
+    answer:
+      'Only if you ask it to. By default it reads your public pages and hands you copy and schema to paste. If you connect WordPress, Webflow, or GitHub, it can send the schema for you, and the result says whether the change was confirmed on the live page.',
+  },
+  {
     question: 'Can agencies share reports and connect Cursor?',
     answer:
       'A measured win can be shared on the free plan. Growth includes full branded share links and MCP access for Cursor and Claude. Agency adds API access and client workspaces.',

@@ -1,5 +1,6 @@
 import { AppView } from '../types';
 import { HUB_PAGES } from '../services/marketing/seoHubPages';
+import { FREE_TOOLS, FREE_TOOLS_PATH } from '../services/marketing/freeTools';
 import { parseUrlSwapRoute } from './urlSwapRouting';
 
 /** Canonical public paths for crawlable marketing surfaces. */
@@ -53,6 +54,8 @@ const PATH_ALIASES: Record<string, AppView> = {
   'enquiry-desk': AppView.ENQUIRY_DESK,
   desktop: AppView.LANDING,
   ...Object.fromEntries(HUB_PAGES.map((page) => [page.path.slice(1), AppView.COMPARE])),
+  [FREE_TOOLS_PATH.slice(1)]: AppView.FREE_TOOLS,
+  ...Object.fromEntries(FREE_TOOLS.map((tool) => [tool.path.slice(1), AppView.FREE_TOOLS])),
 };
 
 /** Legacy hash fragments that used to drive marketing views. */
