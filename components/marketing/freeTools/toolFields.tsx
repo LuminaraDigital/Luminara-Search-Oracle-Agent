@@ -64,57 +64,88 @@ export const ToolField: React.FC<FieldProps> = ({
   );
 };
 
-/** Pill toggle group. `value` null means no option matches the current settings. */
+/**
+ * Pill radio group on native radios, so arrow keys and checked state come from the browser.
+ * `value` null means no option matches the current settings.
+ */
 export function ToolSegmented<T extends string>({
   label,
+  showLabel = false,
   options,
   value,
   onChange,
 }: {
   label: string;
+  showLabel?: boolean;
   options: ReadonlyArray<{ id: T; label: string }>;
   value: T | null;
   onChange: (value: T) => void;
 }) {
+  const name = useId();
   return (
-    <div role="radiogroup" aria-label={label} className="inline-flex flex-wrap gap-2">
-      {options.map((option) => (
-        <button
-          key={option.id}
-          type="button"
-          role="radio"
-          aria-checked={option.id === value}
-          onClick={() => onChange(option.id)}
-          className="lx-chip"
-        >
-          {option.label}
-        </button>
-      ))}
-    </div>
+    <fieldset>
+      <legend className={showLabel ? `${LABEL} mb-3` : 'sr-only'}>{label}</legend>
+      <div className="inline-flex flex-wrap gap-2">
+        {options.map((option) => (
+          <label key={option.id} className="lx-chip cursor-pointer">
+            <input
+              type="radio"
+              name={name}
+              value={option.id}
+              checked={option.id === value}
+              onChange={() => onChange(option.id)}
+              className="sr-only"
+            />
+            {option.label}
+          </label>
+        ))}
+      </div>
+    </fieldset>
   );
 }
 
+type CopyState = 'idle' | 'copied' | 'failed';
+
+const COPY_LABEL: Record<CopyState, string> = { idle: 'Copy', copied: 'Copied', failed: 'Select and copy' };
+
 /** Read-only output with a copy button. `onCopied` fires once per successful copy. */
-export const ToolOutput: React.FC<{ label: string; text: string; onCopied?: () => void }> = ({
+export const ToolOutput: React.FC<{ label: string; text: string; onCopied: () => void }> = ({
   label,
   text,
   onCopied,
 }) => {
-  const [copied, setCopied] = useState(false);
+  const [state, setState] = useState<CopyState>('idle');
+  const preRef = useRef<HTMLPreElement>(null);
   const timer = useRef<number | undefined>(undefined);
   useEffect(() => () => window.clearTimeout(timer.current), []);
 
+  const show = (next: CopyState) => {
+    setState(next);
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => setState('idle'), 2500);
+  };
+
+  // Without clipboard access (some in-app browsers), select the text so the user can copy it.
+  const selectText = () => {
+    const pre = preRef.current;
+    const selection = window.getSelection();
+    if (!pre || !selection) return;
+    selection.selectAllChildren(pre);
+    show('failed');
+  };
+
   const copy = () => {
-    if (!navigator.clipboard) return;
+    if (!navigator.clipboard) {
+      selectText();
+      return;
+    }
     navigator.clipboard
       .writeText(text)
       .then(() => {
-        setCopied(true);
-        onCopied?.();
-        window.clearTimeout(timer.current);
-        timer.current = window.setTimeout(() => setCopied(false), 2000);
+        show('copied');
+        onCopied();
       })
-      .catch(() => undefined);
+      .catch(selectText);
   };
 
   return (
@@ -122,14 +153,14 @@ export const ToolOutput: React.FC<{ label: string; text: string; onCopied?: () =
       <div className="flex items-center justify-between gap-3">
         <p className="lx-eyebrow">{label}</p>
         <button type="button" onClick={copy} className="lx-btn lx-btn-ghost min-h-0 px-4 py-1.5 text-xs">
-          {copied ? 'Copied' : 'Copy'}
+          {COPY_LABEL[state]}
         </button>
       </div>
-      <pre className="lx-code mt-4" tabIndex={0} aria-label={label}>
+      <pre ref={preRef} className="lx-code mt-4" tabIndex={0} role="region" aria-label={label}>
         {text}
       </pre>
       <p aria-live="polite" className="sr-only">
-        {copied ? `${label} copied` : ''}
+        {state === 'copied' ? `${label} copied` : state === 'failed' ? `${label} selected. Copy it with your keyboard.` : ''}
       </p>
     </div>
   );

@@ -29,10 +29,12 @@ export const FREE_TOOLS_PATH = '/free-tools';
 
 /** Closing call to action on every free tools page, and the last crawler paragraph. */
 export const FREE_TOOLS_CLOSING = {
-  eyebrow: 'Start free',
-  cta: 'Run the free crawl check',
-  body: `The free crawl check reads your robots.txt and llms.txt with no card and no account. Instant Audit then checks your site and live web search and gives you one fix to ship. ${LIVE_ANSWER_CHECKS}`,
+  eyebrow: 'Free crawl check',
+  body: `The free crawl check reads your current robots.txt and llms.txt with no card and no account. Instant Audit then checks your site and live web search and gives you one fix to ship. ${LIVE_ANSWER_CHECKS}`,
 } as const;
+
+/** Added to each generator's last step: most agency owners hand files to whoever runs their site. */
+const HAND_OFF = 'Not sure how? Send it to whoever manages your website.';
 
 export const FREE_TOOLS_HUB = {
   path: FREE_TOOLS_PATH,
@@ -40,7 +42,7 @@ export const FREE_TOOLS_HUB = {
   description:
     'Free tools for Google and AI answers: SERP preview, robots.txt with AI crawler switches, llms.txt generator, and real estate schema. No sign-up.',
   h1: 'Free tools for Google and AI answers',
-  lede: 'Four tools that run in your browser. No account, no card, and nothing you type leaves this page.',
+  lede: 'Tools that run in your browser. No account, no card, and nothing you type into a tool leaves this page.',
   faq: [
     {
       question: 'Are these tools free?',
@@ -49,12 +51,13 @@ export const FREE_TOOLS_HUB = {
     },
     {
       question: 'Do you store what I type?',
-      answer: 'No. The tools run on this page and send nothing to our servers. Copy the result and paste it into your site.',
+      answer:
+        'No. The tools run on this page and send nothing you type to our servers. The crawl check at the bottom is separate: it sends the domain you enter so we can read its robots.txt and llms.txt.',
     },
     {
       question: 'Which tool should I start with?',
       answer:
-        'Start with the robots.txt generator. If AI crawlers are blocked, no other fix can get your pages quoted in an AI answer.',
+        'Start with the free crawl check at the bottom of this page. It reads your current robots.txt and llms.txt. If AI crawlers are blocked, the robots.txt generator writes rules that let them in.',
     },
   ] satisfies MarketingFaqItem[],
 } as const;
@@ -82,7 +85,7 @@ export const FREE_TOOLS: readonly FreeTool[] = [
       },
       {
         heading: 'Why the description still matters',
-        body: 'The description is not a ranking factor, but it is the sales line under your result. A clear one earns the click, and AI answers often lift the same sentence.',
+        body: 'The description is not a ranking factor, but it is the sales line under your result. A clear one earns the click, and some AI search tools read the same line.',
       },
     ],
     faq: [
@@ -114,12 +117,12 @@ export const FREE_TOOLS: readonly FreeTool[] = [
       'Pick a starting point: allow every AI crawler, allow answers but not training, or block them all.',
       'Flip any single crawler on or off.',
       'Add private paths, such as /admin/, and your sitemap URL.',
-      'Copy the file and save it as robots.txt at the root of your site.',
+      `Copy the result. If you already have a robots.txt, add these lines to it instead of replacing it. ${HAND_OFF}`,
     ],
     why: [
       {
         heading: 'Answer crawlers and training crawlers are different',
-        body: 'OAI-SearchBot, Claude-SearchBot and PerplexityBot fetch pages for answers that can cite you. GPTBot, ClaudeBot, CCBot and Google-Extended control training. You can allow the first group and block the second.',
+        body: 'OAI-SearchBot, Claude-SearchBot and PerplexityBot fetch pages for answers that can cite you. GPTBot, ClaudeBot and CCBot collect training data. You can allow the first group and block the second. Google-Extended covers both Gemini training and Gemini answers, so the middle preset leaves it allowed.',
       },
       {
         heading: 'One wrong line hides you from AI answers',
@@ -135,12 +138,12 @@ export const FREE_TOOLS: readonly FreeTool[] = [
       {
         question: 'What is Google-Extended?',
         answer:
-          'Google-Extended is a control token, not a separate crawler. Blocking it tells Google not to use your pages for Gemini training. It does not remove you from Google Search.',
+          'Google-Extended is a control token, not a separate crawler. Blocking it tells Google not to use your pages to train Gemini or to ground answers in the Gemini app. It does not remove you from Google Search.',
       },
       {
         question: 'Does every AI crawler obey robots.txt?',
         answer:
-          'The major operators say their crawlers do. robots.txt is a request, not a lock, so use a firewall rule for anything that must stay private.',
+          'Crawlers that build an index or train models generally do. Fetchers that open a page because a user asked, such as ChatGPT-User and Perplexity-User, may not. robots.txt is a request, not a lock, so use a firewall rule for anything that must stay private.',
       },
     ],
   },
@@ -157,12 +160,12 @@ export const FREE_TOOLS: readonly FreeTool[] = [
       'Enter your business name and a one-sentence summary.',
       'Add a few lines of detail: what you sell, where, and to whom.',
       'List your key pages with a short note on each.',
-      'Copy the file and save it as llms.txt at the root of your site.',
+      `Copy the file and save it as llms.txt at the root of your site. ${HAND_OFF}`,
     ],
     why: [
       {
         heading: 'A summary you control',
-        body: 'Without one, an AI tool guesses what you do from whatever page it reads first. llms.txt gives it your own one-line answer and the pages you want quoted.',
+        body: 'Where a tool reads it, llms.txt gives it your own one-line answer and the pages you want quoted. Without one, the tool has to work out what you do from whatever page it reads first.',
       },
       {
         heading: 'Cheap to add, easy to keep current',
@@ -199,7 +202,7 @@ export const FREE_TOOLS: readonly FreeTool[] = [
       'Choose RealEstateAgent or LocalBusiness.',
       'Fill in your name, website, phone and address. Leave a field empty to keep it out.',
       'List the suburbs you serve and any profile links, such as your Google Business Profile.',
-      'Add up to three common questions, then copy the script tag into your page.',
+      `Add up to three questions that already appear, with the same answers, on that page. Then copy the script tag into it. ${HAND_OFF}`,
     ],
     why: [
       {
@@ -229,15 +232,15 @@ export const FREE_TOOLS: readonly FreeTool[] = [
   },
 ];
 
-const TOOL_BY_PATH = new Map(FREE_TOOLS.map((tool) => [tool.path, tool]));
+const TOOL_BY_PATH = new Map<string, FreeTool>(FREE_TOOLS.map((tool) => [tool.path, tool]));
 
-/** Tool for a pathname (trailing slash tolerant), or null. */
-export function freeToolForPath(pathname: string): FreeTool | null {
-  return TOOL_BY_PATH.get(pathname.replace(/\/+$/, '') as FreeTool['path']) ?? null;
-}
-
-/** True for the hub and every tool path. */
-export function isFreeToolsPath(pathname: string): boolean {
+/**
+ * The free tools page for a pathname (trailing slash tolerant, case sensitive like the hub pages):
+ * `{ tool: null }` for the hub, `{ tool }` for a tool, or null when the path is not a free tools page.
+ */
+export function freeToolsPageForPath(pathname: string): { tool: FreeTool | null } | null {
   const clean = pathname.replace(/\/+$/, '');
-  return clean === FREE_TOOLS_PATH || TOOL_BY_PATH.has(clean as FreeTool['path']);
+  if (clean === FREE_TOOLS_PATH) return { tool: null };
+  const tool = TOOL_BY_PATH.get(clean);
+  return tool ? { tool } : null;
 }

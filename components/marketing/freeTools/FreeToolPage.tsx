@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
-import { MarketingPageHeader, MarketingPageShell } from '../MarketingPageShell';
+import { MARKETING_BODY as BODY, MARKETING_SECTION as SECTION, MarketingPageHeader, MarketingPageShell } from '../MarketingPageShell';
+import { MarketingFaq } from '../MarketingFaq';
 import {
   FREE_TOOLS,
   FREE_TOOLS_CLOSING,
@@ -8,6 +9,8 @@ import {
   type FreeToolId,
 } from '../../../services/marketing/freeTools';
 import { productTelemetry } from '../../../services/analytics/productTelemetry';
+import type { AuditHandoff } from '../../../services/activation/auditHandoff';
+import { DomainCheck } from '../DomainCheck';
 import { SerpPreviewTool } from './SerpPreviewTool';
 import { RobotsTxtTool } from './RobotsTxtTool';
 import { LlmsTxtTool } from './LlmsTxtTool';
@@ -19,23 +22,6 @@ const PANELS: Record<FreeToolId, React.FC<{ onCopied: () => void }>> = {
   'llms-txt-generator': LlmsTxtTool,
   'schema-generator': SchemaTool,
 };
-
-const SECTION = 'mt-16 border-t pt-16 lx-hairline';
-const BODY = 'text-[15px] leading-relaxed text-[var(--color-ink-2)]';
-
-const Faq: React.FC<{ items: readonly { question: string; answer: string }[] }> = ({ items }) => (
-  <section aria-labelledby="tool-faq-heading" className={SECTION}>
-    <h2 id="tool-faq-heading" className="lx-display lx-h3 mb-8">Common questions</h2>
-    <div className="max-w-3xl border-b lx-hairline">
-      {items.map((item) => (
-        <details key={item.question} className="lx-faq group border-t lx-hairline">
-          <summary className="py-6 text-lg leading-snug text-[var(--color-ink)]">{item.question}</summary>
-          <p className={`-mt-1 max-w-2xl pb-7 ${BODY}`}>{item.answer}</p>
-        </details>
-      ))}
-    </div>
-  </section>
-);
 
 const ToolCards: React.FC<{ tools: readonly FreeTool[] }> = ({ tools }) => (
   <ul className="grid list-none gap-6 p-0 sm:grid-cols-2">
@@ -77,7 +63,7 @@ const ToolBody: React.FC<{ tool: FreeTool }> = ({ tool }) => {
         ))}
       </section>
 
-      <Faq items={tool.faq} />
+      <MarketingFaq embedded className="mt-16" items={tool.faq} heading="Common questions" />
 
       <section aria-labelledby="more-tools-heading" className={SECTION}>
         <h2 id="more-tools-heading" className="lx-eyebrow mb-6">More free tools</h2>
@@ -87,8 +73,15 @@ const ToolBody: React.FC<{ tool: FreeTool }> = ({ tool }) => {
   );
 };
 
+interface FreeToolPageProps {
+  tool: FreeTool | null;
+  isAuthenticated?: boolean;
+  /** Guests go to sign-up with the handoff; signed-in users go straight to the audit. */
+  onFullAudit: (handoff?: AuditHandoff) => void;
+}
+
 /** /free-tools and /free-tools/*. Copy, crawler HTML, and JSON-LD share services/marketing/freeTools. */
-const FreeToolPage: React.FC<{ tool: FreeTool | null; onCheckSite: () => void }> = ({ tool, onCheckSite }) => {
+const FreeToolPage: React.FC<FreeToolPageProps> = ({ tool, isAuthenticated, onFullAudit }) => {
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [tool]);
@@ -101,33 +94,36 @@ const FreeToolPage: React.FC<{ tool: FreeTool | null; onCheckSite: () => void }>
         eyebrow: FREE_TOOLS_CLOSING.eyebrow,
         title: (
           <>
-            Now check your <span className="italic lx-gold-text pr-[0.08em]">whole site.</span>
+            Now check your <span className="italic lx-gold-text pr-[0.08em]">own site.</span>
           </>
         ),
         body: FREE_TOOLS_CLOSING.body,
-        cta: { label: FREE_TOOLS_CLOSING.cta, onClick: onCheckSite },
+        // The same live check as the landing hero, so the one gold action runs on this page.
+        form: (
+          <DomainCheck
+            inputId="free-tools-domain"
+            isAuthenticated={isAuthenticated}
+            onFullAudit={onFullAudit}
+            surface={`free_tools:${tool?.id ?? 'hub'}`}
+          />
+        ),
       }}
     >
       <MarketingPageHeader
         eyebrow={tool ? 'Free tool · runs in your browser' : 'Free tools'}
         title={tool ? tool.h1 : FREE_TOOLS_HUB.h1}
         lede={tool ? tool.lede : FREE_TOOLS_HUB.lede}
-      >
-        {!tool && (
-          <button type="button" onClick={onCheckSite} className="lx-btn lx-btn-gold">
-            {FREE_TOOLS_CLOSING.cta}
-          </button>
-        )}
-      </MarketingPageHeader>
+      />
 
       {tool ? (
         <ToolBody tool={tool} />
       ) : (
         <>
-          <section aria-label="Tools" className="mt-14">
+          <section aria-labelledby="tools-heading" className="mt-14">
+            <h2 id="tools-heading" className="sr-only">Tools</h2>
             <ToolCards tools={FREE_TOOLS} />
           </section>
-          <Faq items={FREE_TOOLS_HUB.faq} />
+          <MarketingFaq embedded className="mt-16" items={FREE_TOOLS_HUB.faq} heading="Common questions" />
         </>
       )}
     </MarketingPageShell>

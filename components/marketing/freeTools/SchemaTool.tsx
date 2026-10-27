@@ -15,12 +15,12 @@ const TYPES = [
 
 type TextKey = Exclude<keyof SchemaOptions, 'type' | 'areaServed' | 'sameAs' | 'faq'>;
 
-const TEXT_FIELDS: ReadonlyArray<{ key: TextKey; label: string; url?: boolean }> = [
+const TEXT_FIELDS: ReadonlyArray<{ key: TextKey; label: string; inputMode?: 'url' | 'tel' | 'email' }> = [
   { key: 'name', label: 'Business name' },
-  { key: 'url', label: 'Website', url: true },
+  { key: 'url', label: 'Website', inputMode: 'url' },
   { key: 'description', label: 'Short description' },
-  { key: 'telephone', label: 'Phone' },
-  { key: 'email', label: 'Email' },
+  { key: 'telephone', label: 'Phone', inputMode: 'tel' },
+  { key: 'email', label: 'Email', inputMode: 'email' },
   { key: 'street', label: 'Street address' },
   { key: 'locality', label: 'Suburb or city' },
   { key: 'region', label: 'State or region' },
@@ -28,15 +28,11 @@ const TEXT_FIELDS: ReadonlyArray<{ key: TextKey; label: string; url?: boolean }>
   { key: 'country', label: 'Country code' },
 ];
 
-const EMPTY_FAQ: MarketingFaqItem[] = [
+const STARTER_FAQ: MarketingFaqItem[] = [
   { question: 'Do you charge for an appraisal?', answer: '' },
   { question: '', answer: '' },
   { question: '', answer: '' },
 ];
-
-function lines(text: string): string[] {
-  return text.split('\n');
-}
 
 export const SchemaTool: React.FC<{ onCopied: () => void }> = ({ onCopied }) => {
   const [type, setType] = useState<BusinessType>('RealEstateAgent');
@@ -54,12 +50,12 @@ export const SchemaTool: React.FC<{ onCopied: () => void }> = ({ onCopied }) => 
   });
   const [areas, setAreas] = useState('Hawthorn\nKew\nCamberwell');
   const [profiles, setProfiles] = useState('');
-  const [faq, setFaq] = useState<MarketingFaqItem[]>(EMPTY_FAQ);
+  const [faq, setFaq] = useState<MarketingFaqItem[]>(STARTER_FAQ);
 
   const setFaqItem = (index: number, patch: Partial<MarketingFaqItem>) =>
     setFaq((prev) => prev.map((item, i) => (i === index ? { ...item, ...patch } : item)));
 
-  const graph = buildSchemaGraph({ type, ...text, areaServed: lines(areas), sameAs: lines(profiles), faq });
+  const graph = buildSchemaGraph({ type, ...text, areaServed: areas.split('\n'), sameAs: profiles.split('\n'), faq });
 
   return (
     <div className="grid gap-8 lg:grid-cols-2">
@@ -71,7 +67,7 @@ export const SchemaTool: React.FC<{ onCopied: () => void }> = ({ onCopied }) => 
               key={field.key}
               label={field.label}
               value={text[field.key]}
-              inputMode={field.url ? 'url' : undefined}
+              inputMode={field.inputMode}
               onChange={(value) => setText((prev) => ({ ...prev, [field.key]: value }))}
             />
           ))}
@@ -87,6 +83,10 @@ export const SchemaTool: React.FC<{ onCopied: () => void }> = ({ onCopied }) => 
         />
         <fieldset className="space-y-4">
           <legend className="text-sm font-medium text-[var(--color-ink)]">Common questions (optional)</legend>
+          <p className="text-xs text-[var(--color-ink-2)]">
+            Only add questions that appear, with the same answer, on the page you paste this into. Google ignores FAQ
+            markup for text visitors cannot see.
+          </p>
           {faq.map((item, index) => (
             <div key={index} className="grid gap-3 sm:grid-cols-2">
               <ToolField

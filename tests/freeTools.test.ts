@@ -9,7 +9,7 @@ import {
   TITLE_FONT_PX,
   TITLE_MAX_PX,
 } from '../services/freeTools/serpPreview';
-import { AI_BOTS, buildRobotsTxt, presetBlocks } from '../services/freeTools/robotsTxt';
+import { AI_BOTS, buildRobotsTxt, matchingPreset, presetBlocks } from '../services/freeTools/robotsTxt';
 import { buildLlmsTxt } from '../services/freeTools/llmsTxt';
 import { buildSchemaGraph, schemaScriptTag, type SchemaOptions } from '../services/freeTools/schemaJsonLd';
 import { toHttpUrl } from '../services/freeTools/httpUrl';
@@ -65,11 +65,14 @@ describe('serp preview', () => {
 
   it('builds the breadcrumb Google shows', () => {
     expect(serpBreadcrumb('https://www.example.com.au/suburbs/hawthorn/')).toEqual({
-      site: 'example.com.au',
+      site: 'www.example.com.au',
       crumbs: ['suburbs', 'hawthorn'],
     });
     expect(serpBreadcrumb('example.com').site).toBe('example.com');
     expect(serpBreadcrumb('').site).toBe('example.com');
+    // Not a web address: no "ftp" host. A bad escape stays as typed instead of throwing.
+    expect(serpBreadcrumb('ftp://example.com/a')).toEqual({ site: 'example.com', crumbs: [] });
+    expect(serpBreadcrumb('https://x.com/caf%C3%A9/%E0%A4%A')).toEqual({ site: 'x.com', crumbs: ['café', '%E0%A4%A'] });
   });
 
   it('escapes the head tags it hands back', () => {
@@ -99,7 +102,39 @@ describe('robots.txt generator', () => {
     const txt = buildRobotsTxt({ blocked: presetBlocks('answers_not_training'), disallowPaths: [], sitemapUrl: '' });
     expect(txt).toMatch(/User-agent: GPTBot\nDisallow: \//);
     expect(txt).toMatch(/User-agent: OAI-SearchBot\nAllow: \//);
+    // Google-Extended also grounds Gemini answers, so the answers preset keeps it.
+    expect(txt).toMatch(/User-agent: Google-Extended\nAllow: \//);
     expect(txt).not.toContain('Sitemap:');
+  });
+
+  it('keeps every answer and user crawler open on the answers preset', () => {
+    const blocked = presetBlocks('answers_not_training');
+    for (const bot of AI_BOTS) expect(blocked[bot.agent], bot.agent).toBe(bot.purpose === 'training');
+  });
+
+  it('maps each preset back to itself and a single flipped switch to custom', () => {
+    for (const preset of ['allow_all', 'answers_not_training', 'block_all_ai'] as const) {
+      expect(matchingPreset(presetBlocks(preset))).toBe(preset);
+    }
+    expect(matchingPreset({ ...presetBlocks('allow_all'), GPTBot: true })).toBeNull();
+  });
+
+  it('refuses a private path that would block the whole site', () => {
+    for (const whole of ['/', '/*', ' / ', '#/']) {
+      const txt = buildRobotsTxt({ blocked: presetBlocks('allow_all'), disallowPaths: [whole], sitemapUrl: '' });
+      expect(txt, whole).not.toMatch(/Disallow: \/\*?\n/);
+      expect(readiness(txt, null).ai_bot_directives, whole).toBe('pass');
+    }
+  });
+
+  it('cuts robots.txt comments and keeps only the path of a pasted URL', () => {
+    const txt = buildRobotsTxt({
+      blocked: {},
+      disallowPaths: ['/a#b', 'https://x.com/private?x=1#top'],
+      sitemapUrl: '',
+    });
+    expect(txt).toContain('User-agent: *\nDisallow: /a\nDisallow: /private?x=1\n');
+    expect(txt).not.toContain('https://');
   });
 
   it('fails our own crawler check when every AI crawler is blocked', () => {
@@ -149,12 +184,28 @@ describe('llms.txt generator', () => {
     expect(checks.llms_structure).toBe('pass');
   });
 
-  it('strips brackets that would break a link', () => {
+  it('strips brackets and encodes parentheses that would break a link', () => {
     const txt = buildLlmsTxt({
       ...options,
-      sections: [{ heading: 'Pages', links: [{ title: 'A [b]', url: 'https://example.com', note: '' }] }],
+      sections: [
+        {
+          heading: 'Pages',
+          links: [
+            { title: 'A [b]', url: 'https://example.com', note: '' },
+            { title: 'Wiki', url: 'https://example.com/a_(b)', note: '' },
+          ],
+        },
+      ],
     });
     expect(txt).toContain('- [A b](https://example.com/)');
+    expect(txt).toContain('- [Wiki](https://example.com/a_%28b%29)');
+  });
+
+  it('keeps details as plain paragraphs', () => {
+    const txt = buildLlmsTxt({ ...options, details: '# Not a heading\n## Nor this\nPlain line', sections: [] });
+    expect(txt).toBe(
+      '# Smith & Co Real Estate\n\n> Independent agency selling homes in Hawthorn and Kew.\n\nNot a heading\nNor this\nPlain line\n',
+    );
   });
 });
 

@@ -27,12 +27,26 @@ function oneLine(value: string): string {
   return value.replace(/\s+/g, ' ').replace(/[[\]]/g, '').trim();
 }
 
+/** Details are plain paragraphs: a leading `#` would add a heading the layout does not allow. */
+function plainDetails(value: string): string {
+  return value
+    .split('\n')
+    .map((line) => line.replace(/^\s*#+\s*/, ''))
+    .join('\n')
+    .trim();
+}
+
+/** `(` and `)` would end the markdown link early. */
+function linkTarget(url: string): string {
+  return url.replace(/\(/g, '%28').replace(/\)/g, '%29');
+}
+
 export function buildLlmsTxt(options: LlmsOptions): string {
   const name = oneLine(options.siteName) || 'Your site';
   const out: string[] = [`# ${name}`, ''];
   const summary = oneLine(options.summary);
   if (summary) out.push(`> ${summary}`, '');
-  const details = options.details.trim();
+  const details = plainDetails(options.details);
   if (details) out.push(details, '');
 
   for (const section of options.sections) {
@@ -42,7 +56,8 @@ export function buildLlmsTxt(options: LlmsOptions): string {
         const title = oneLine(link.title);
         if (!url || !title) return null;
         const note = oneLine(link.note);
-        return note ? `- [${title}](${url}): ${note}` : `- [${title}](${url})`;
+        const target = linkTarget(url);
+        return note ? `- [${title}](${target}): ${note}` : `- [${title}](${target})`;
       })
       .filter((row): row is string => row !== null);
     const heading = oneLine(section.heading);

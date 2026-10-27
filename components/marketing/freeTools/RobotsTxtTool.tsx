@@ -3,20 +3,11 @@ import {
   AI_BOTS,
   BOT_PURPOSE_LABEL,
   buildRobotsTxt,
+  matchingPreset,
   presetBlocks,
   ROBOTS_PRESETS,
-  type RobotsPreset,
 } from '../../../services/freeTools/robotsTxt';
 import { ToolField, ToolOutput, ToolSegmented } from './toolFields';
-
-/** The preset the switches currently match, or null once a single crawler was flipped. */
-function matchingPreset(blocked: Record<string, boolean>): RobotsPreset | null {
-  const match = ROBOTS_PRESETS.find((p) => {
-    const want = presetBlocks(p.id);
-    return AI_BOTS.every((bot) => Boolean(blocked[bot.agent]) === want[bot.agent]);
-  });
-  return match?.id ?? null;
-}
 
 export const RobotsTxtTool: React.FC<{ onCopied: () => void }> = ({ onCopied }) => {
   const [blocked, setBlocked] = useState<Record<string, boolean>>(() => presetBlocks('allow_all'));
@@ -31,15 +22,13 @@ export const RobotsTxtTool: React.FC<{ onCopied: () => void }> = ({ onCopied }) 
     <div className="grid gap-8 lg:grid-cols-2">
       <div className="space-y-6">
         <div>
-          <p className="text-sm font-medium text-[var(--color-ink)]">Start from</p>
-          <div className="mt-3">
-            <ToolSegmented
-              label="Start from"
-              options={ROBOTS_PRESETS}
-              value={preset}
-              onChange={(next) => setBlocked(presetBlocks(next))}
-            />
-          </div>
+          <ToolSegmented
+            label="Start from"
+            showLabel
+            options={ROBOTS_PRESETS}
+            value={preset}
+            onChange={(next) => setBlocked(presetBlocks(next))}
+          />
           {presetNote && <p className="mt-2 text-xs text-[var(--color-ink-2)]">{presetNote}</p>}
         </div>
 
@@ -47,7 +36,7 @@ export const RobotsTxtTool: React.FC<{ onCopied: () => void }> = ({ onCopied }) 
           <legend className="text-sm font-medium text-[var(--color-ink)]">AI crawlers</legend>
           <ul className="mt-3 divide-y divide-[rgb(252_246_186_/_0.08)] list-none m-0 p-0">
             {AI_BOTS.map((bot) => {
-              const isBlocked = Boolean(blocked[bot.agent]);
+              const allowed = !blocked[bot.agent];
               return (
                 <li key={bot.agent} className="flex items-center justify-between gap-4 py-2.5">
                   <div className="min-w-0">
@@ -58,12 +47,13 @@ export const RobotsTxtTool: React.FC<{ onCopied: () => void }> = ({ onCopied }) 
                   </div>
                   <button
                     type="button"
-                    aria-pressed={!isBlocked}
-                    aria-label={`${bot.agent}: ${isBlocked ? 'blocked' : 'allowed'}`}
-                    onClick={() => setBlocked((prev) => ({ ...prev, [bot.agent]: !isBlocked }))}
+                    role="switch"
+                    aria-checked={allowed}
+                    aria-label={`Allow ${bot.agent}`}
+                    onClick={() => setBlocked((prev) => ({ ...prev, [bot.agent]: !prev[bot.agent] }))}
                     className="lx-chip shrink-0"
                   >
-                    {isBlocked ? 'Blocked' : 'Allowed'}
+                    {allowed ? 'Allowed' : 'Blocked'}
                   </button>
                 </li>
               );
@@ -76,7 +66,7 @@ export const RobotsTxtTool: React.FC<{ onCopied: () => void }> = ({ onCopied }) 
           value={paths}
           onChange={setPaths}
           multiline
-          hint="Every crawler is asked to skip these."
+          hint="Every crawler is asked to skip these. A path of / on its own is left out, because it would block the whole site."
         />
         <ToolField label="Sitemap URL" value={sitemap} onChange={setSitemap} inputMode="url" />
       </div>
@@ -84,7 +74,8 @@ export const RobotsTxtTool: React.FC<{ onCopied: () => void }> = ({ onCopied }) 
       <div className="space-y-4">
         <ToolOutput label="robots.txt" text={output} onCopied={onCopied} />
         <p className="text-xs text-[var(--color-ink-2)]">
-          Save it as robots.txt at the root of your site, so it opens at /robots.txt.
+          It lives at /robots.txt on your site. If you already have one, add these lines to it instead of replacing
+          it. Not sure how? Send it to whoever manages your website.
         </p>
       </div>
     </div>

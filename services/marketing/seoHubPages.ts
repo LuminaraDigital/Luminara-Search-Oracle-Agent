@@ -339,16 +339,16 @@ const COMPARE_PAGES: ComparePage[] = [
     verdict:
       'Choose ChatSEO if you want an AI SEO assistant that answers from your Search Console data, writes articles, and publishes them to your CMS. Choose Luminara Suite if you run a real estate agency or small team and want one ranked fix at a time, with every result labeled Measured, Estimated, or Not measured.',
     rows: [
-      { label: 'Built for', them: 'Site owners, founders, consultants, and online stores', us: US.audience },
-      { label: 'Headline metrics', them: 'Search Console clicks and impressions, plus a domain authority figure in onboarding', us: US.metrics },
+      { label: 'Built for', them: 'Website owners, founders, consultants, agencies, and online stores', us: US.audience },
+      { label: 'Headline metrics', them: 'Search Console clicks and impressions, plus Ahrefs Domain Rating for you and your competitors in onboarding', us: US.metrics },
       { label: 'Coverage', them: 'Search Console on every plan, Google Analytics on higher plans, plus keyword, SERP, and backlink data', us: US.engines },
       { label: 'Output', them: 'Chat answers and action plans from 12 SEO agents, an AI article writer, and CMS publishing', us: US.output },
       { label: 'Developer access', them: 'API and MCP from the second plan up', us: US.access },
-      { label: 'Pricing model', them: 'Monthly or annual plans with message credits, and a 7-day money-back guarantee', us: US.pricing },
+      { label: 'Pricing model', them: 'Free to start, then monthly or annual plans with message credits and a 7-day money-back guarantee', us: US.pricing },
     ],
     chooseThem: [
       'You want to ask SEO questions in chat and get answers from your own Search Console data.',
-      'You want articles written and published to WordPress or Webflow for you.',
+      'You want articles written and published to WordPress or Shopify for you.',
       'You want keyword, backlink, and competitor research in one subscription.',
     ],
     chooseUs: [
@@ -360,12 +360,12 @@ const COMPARE_PAGES: ComparePage[] = [
       {
         question: 'Is Luminara Suite an alternative to ChatSEO?',
         answer:
-          'For AI answer readiness, yes. ChatSEO is a broad SEO assistant built on Search Console data and content writing. Luminara checks whether AI answers can read and quote your site, and labels what it did and did not measure.',
+          'For AI answer readiness, yes. ChatSEO is a broad SEO assistant built on Search Console data and content writing, and says it also looks at what AI assistants see. Luminara is built for real estate agencies and labels every result Measured, Estimated, or Not measured.',
       },
       {
         question: 'Does Luminara Suite connect to Google Search Console?',
         answer:
-          'Instant Audit reads a Search Console export that you upload. ChatSEO connects to Search Console directly and builds its chat on that data.',
+          'Not directly. Instant Audit can show clicks, impressions, CTR, and position from a Search Console CSV export that you upload. ChatSEO connects to Search Console directly and builds its chat on that data.',
       },
       {
         question: 'Can I use ChatSEO and Luminara Suite together?',
@@ -376,6 +376,7 @@ const COMPARE_PAGES: ComparePage[] = [
     sources: [
       { label: 'ChatSEO home page', url: 'https://chatseo.app/' },
       { label: 'ChatSEO pricing', url: 'https://chatseo.app/pricing' },
+      { label: 'Where ChatSEO numbers come from', url: 'https://chatseo.app/help/where-chatseo-numbers-come-from' },
       SUITE_SOURCE,
     ],
   },

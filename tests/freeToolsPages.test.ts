@@ -9,9 +9,9 @@ import {
   FREE_TOOLS,
   FREE_TOOLS_HUB,
   FREE_TOOLS_PATH,
-  freeToolForPath,
-  isFreeToolsPath,
+  freeToolsPageForPath,
 } from '../services/marketing/freeTools';
+import { PUBLIC_APP_VIEWS } from '../services/auth/useAppAuth';
 import { LLMS_TXT, SITEMAP_XML } from '../worker/crawlDocuments';
 
 type JsonLdNode = { '@type': string; '@id'?: string; mainEntity?: unknown[]; itemListElement?: unknown[]; isAccessibleForFree?: boolean };
@@ -25,12 +25,15 @@ describe('free tools pages', () => {
     for (const path of ALL_PATHS) {
       expect(resolveAppView(path, ''), path).toBe(AppView.FREE_TOOLS);
       expect(resolveAppView(`${path}/`, ''), path).toBe(AppView.FREE_TOOLS);
-      expect(isFreeToolsPath(path)).toBe(true);
     }
-    for (const tool of FREE_TOOLS) expect(freeToolForPath(`${tool.path}/`)).toBe(tool);
-    expect(freeToolForPath(FREE_TOOLS_PATH)).toBeNull();
+    expect(freeToolsPageForPath(FREE_TOOLS_PATH)).toEqual({ tool: null });
+    for (const tool of FREE_TOOLS) expect(freeToolsPageForPath(`${tool.path}/`)).toEqual({ tool });
     expect(resolveAppView('/free-tools/unknown', '')).toBe(AppView.NOT_FOUND);
-    expect(isFreeToolsPath('/free-tools/unknown')).toBe(false);
+    // A stray #FREE_TOOLS hash on / resolves the view but has no page, so App renders Not Found.
+    expect(freeToolsPageForPath('/')).toBeNull();
+    expect(freeToolsPageForPath('/free-tools/unknown')).toBeNull();
+    // Guests reach these pages only because the view is public.
+    expect(PUBLIC_APP_VIEWS.has(AppView.FREE_TOOLS)).toBe(true);
     expect(marketingPageForPath('/free-tools/unknown')).toBeNull();
   });
 
@@ -67,15 +70,24 @@ describe('free tools pages', () => {
     expect(copy).not.toMatch(/\$\d|A\$|per month|\/mo\b/);
   });
 
-  it('renders the hub and each tool page', () => {
-    const hub = renderToStaticMarkup(createElement(FreeToolPage, { tool: null, onCheckSite: () => undefined }));
+  it('renders the hub and each tool page with its output and the live check', () => {
+    const hub = renderToStaticMarkup(createElement(FreeToolPage, { tool: null, onFullAudit: () => undefined }));
     expect(hub).toContain(FREE_TOOLS_HUB.h1);
+    expect(hub).toContain('id="free-tools-domain"');
     for (const tool of FREE_TOOLS) expect(hub).toContain(`href="${tool.path}"`);
 
+    // The first lines of each tool's generated output, as rendered (HTML-escaped) in the output panel.
+    const OUTPUT: Record<string, string> = {
+      'serp-preview': '&lt;title&gt;Hawthorn real estate agent',
+      'robots-txt-generator': 'User-agent: *',
+      'llms-txt-generator': '# Example Realty',
+      'schema-generator': '&lt;script type=&quot;application/ld+json&quot;&gt;',
+    };
     for (const tool of FREE_TOOLS) {
-      const html = renderToStaticMarkup(createElement(FreeToolPage, { tool, onCheckSite: () => undefined }));
+      const html = renderToStaticMarkup(createElement(FreeToolPage, { tool, onFullAudit: () => undefined }));
       expect(html, tool.id).toContain(tool.h1);
-      expect(html, tool.id).toContain('Copy');
+      expect(html, tool.id).toContain(OUTPUT[tool.id]);
+      expect(html, tool.id).toContain('id="free-tools-domain"');
       expect(html, tool.id).not.toContain(`href="${tool.path}"`);
     }
   });

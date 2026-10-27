@@ -235,12 +235,12 @@ textarea.lx-field { resize: vertical; }
   transition: border-color 0.2s ease, color 0.2s ease, background-color 0.2s ease;
 }
 .lx-chip:hover { color: var(--color-ink); border-color: rgb(252 246 186 / 0.45); }
-.lx-chip[aria-checked='true'], .lx-chip[aria-pressed='true'] {
+.lx-chip[aria-checked='true'], .lx-chip:has(input:checked) {
   color: var(--color-accent-ink);
   border-color: var(--color-accent);
   background: var(--color-accent);
 }
-.lx-chip:focus-visible { outline: 2px solid var(--gold-light); outline-offset: 2px; }
+.lx-chip:focus-visible, .lx-chip:has(input:focus-visible) { outline: 2px solid var(--gold-light); outline-offset: 2px; }
 .lx-code {
   max-height: 24rem;
   overflow: auto;

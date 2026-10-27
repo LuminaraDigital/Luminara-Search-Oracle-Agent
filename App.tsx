@@ -113,6 +113,8 @@ const MARKETING_VIEWS = new Set<AppView>([
   AppView.METHODOLOGY,
   AppView.SAMPLE_REPORT,
 ]);
+/** Views whose page comes from the pathname: /compare/*, /best/*, /free-tools/*. */
+const PATH_DRIVEN_VIEWS = new Set<AppView>([AppView.COMPARE, AppView.FREE_TOOLS]);
 
 interface SendOptions {
   /** Short text to show in the user bubble instead of the full prompt. */
@@ -131,7 +133,7 @@ import {
 } from './utils/marketingRoutes';
 import { applyDocumentMetaForView } from './services/marketing/documentMeta';
 import { hubPageForPath } from './services/marketing/seoHubPages';
-import { freeToolForPath, isFreeToolsPath } from './services/marketing/freeTools';
+import { freeToolsPageForPath } from './services/marketing/freeTools';
 
 const viewFromLocation = (): AppView | null => {
   if (typeof window === 'undefined') return null;
@@ -266,8 +268,7 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const path = (window.location.pathname || '/').replace(/\/+$/, '') || '/';
-    const perPath = view === AppView.COMPARE || view === AppView.FREE_TOOLS;
-    productTelemetry.trackPageView(perPath ? `${view}:${path}` : view);
+    productTelemetry.trackPageView(PATH_DRIVEN_VIEWS.has(view) ? `${view}:${path}` : view);
     applyDocumentMetaForView(view);
   }, [view]);
 
@@ -928,14 +929,10 @@ const App: React.FC = () => {
   const introOverlay = showIntro ? <Suspense fallback={null}><AppIntroOverlay onComplete={completeIntro} /></Suspense> : null;
 
   const hubPage = view === AppView.COMPARE ? hubPageForPath(window.location.pathname) : null;
-  const onFreeToolsPath = view === AppView.FREE_TOOLS && isFreeToolsPath(window.location.pathname);
+  const freeToolsPage = view === AppView.FREE_TOOLS ? freeToolsPageForPath(window.location.pathname) : null;
 
-  // A COMPARE or FREE_TOOLS view without its path (e.g. a stray #compare hash) is Not Found, never a blank page.
-  if (
-    view === AppView.NOT_FOUND ||
-    (view === AppView.COMPARE && !hubPage) ||
-    (view === AppView.FREE_TOOLS && !onFreeToolsPath)
-  ) {
+  // A path-driven view without its page (e.g. a stray #compare hash) is Not Found, never a blank page.
+  if (view === AppView.NOT_FOUND || (PATH_DRIVEN_VIEWS.has(view) && !hubPage && !freeToolsPage)) {
     return (
       <Suspense fallback={null}>
         <NotFoundPage onHome={() => setView(AppView.LANDING)} />
@@ -1139,12 +1136,16 @@ const App: React.FC = () => {
     );
   }
 
-  if (onFreeToolsPath) {
+  if (freeToolsPage) {
     return (
       <MarketingChromeContext.Provider value={marketingChrome}>
       <Suspense fallback={<ViewLoader label="Loading" />}>
         {introOverlay}
-        <FreeToolPage tool={freeToolForPath(window.location.pathname)} onCheckSite={() => enterInstantAudit()} />
+        <FreeToolPage
+          tool={freeToolsPage.tool}
+          isAuthenticated={appAuth.authenticated}
+          onFullAudit={(handoff) => (appAuth.authenticated ? enterInstantAudit(handoff) : openLoginWall('signup', handoff))}
+        />
         {marketingOverlays}
       </Suspense>
       </MarketingChromeContext.Provider>

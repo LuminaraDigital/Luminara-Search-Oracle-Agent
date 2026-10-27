@@ -22,9 +22,9 @@ const VERDICT_TEXT: Record<LengthVerdict, string> = {
   truncated: 'Google will likely cut this.',
 };
 
-const Counter: React.FC<{ check: SerpFieldCheck }> = ({ check }) => (
+const Counter: React.FC<{ check: SerpFieldCheck; scope: string }> = ({ check, scope }) => (
   <span className={check.verdict === 'truncated' ? 'text-[var(--gold-light)]' : undefined}>
-    {check.chars} characters · about {check.px} of {check.maxPx} px. {VERDICT_TEXT[check.verdict]}
+    {check.chars} characters · about {check.px} of {check.maxPx} px {scope}. {VERDICT_TEXT[check.verdict]}
   </span>
 );
 
@@ -47,13 +47,18 @@ export const SerpPreviewTool: React.FC<{ onCopied: () => void }> = ({ onCopied }
       <div className="space-y-5">
         <ToolField label="Page URL" value={url} onChange={setUrl} inputMode="url" />
         <ToolField label="Site name" value={siteName} onChange={setSiteName} />
-        <ToolField label="Title tag" value={title} onChange={setTitle} hint={<Counter check={titleCheck} />} />
+        <ToolField
+          label="Title tag"
+          value={title}
+          onChange={setTitle}
+          hint={<Counter check={titleCheck} scope="on desktop" />}
+        />
         <ToolField
           label="Meta description"
           value={description}
           onChange={setDescription}
           multiline
-          hint={<Counter check={descriptionCheck} />}
+          hint={<Counter check={descriptionCheck} scope={`on ${device}`} />}
         />
       </div>
 

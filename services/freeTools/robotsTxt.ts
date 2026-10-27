@@ -1,12 +1,14 @@
 /**
  * Free robots.txt generator with a switch per AI crawler.
- * The crawler list is the one the audit checks (LLM_CRAWLER_BOTS), plus the common
- * training-only crawlers, so a generated file reads the same way in our own audit.
+ * The crawler list is the one the audit checks (LLM_CRAWLER_BOTS) plus a few the audit does not.
+ * The audit fails any block of a crawler on its list, training-only ones included, so the
+ * "answers yes, training no" preset shows as blocked there. The preset note says so.
  */
 import { LLM_CRAWLER_BOTS } from '../audit/llmCrawlerReadiness';
 import { toHttpUrl } from './httpUrl';
 
-export type BotPurpose = 'search' | 'user' | 'training';
+/** `training_and_answers`: one token covers both, so "answers yes, training no" leaves it allowed. */
+export type BotPurpose = 'search' | 'user' | 'training' | 'training_and_answers';
 
 export interface AiBot {
   agent: string;
@@ -22,11 +24,14 @@ const AUDITED_BOTS: Record<(typeof LLM_CRAWLER_BOTS)[number], Omit<AiBot, 'agent
   'Claude-SearchBot': { operator: 'Anthropic', purpose: 'search' },
   PerplexityBot: { operator: 'Perplexity', purpose: 'search' },
   'Perplexity-User': { operator: 'Perplexity', purpose: 'user' },
-  'Google-Extended': { operator: 'Google', purpose: 'training' },
+  // Google: Gemini training and grounding in the Gemini app. Not Google Search.
+  'Google-Extended': { operator: 'Google', purpose: 'training_and_answers' },
   'Applebot-Extended': { operator: 'Apple', purpose: 'training' },
 };
 
-const TRAINING_ONLY_BOTS: AiBot[] = [
+/** Crawlers the audit does not check but site owners ask about. */
+const EXTRA_BOTS: AiBot[] = [
+  { agent: 'Claude-User', operator: 'Anthropic', purpose: 'user' },
   { agent: 'CCBot', operator: 'Common Crawl', purpose: 'training' },
   { agent: 'Meta-ExternalAgent', operator: 'Meta', purpose: 'training' },
   { agent: 'Bytespider', operator: 'ByteDance', purpose: 'training' },
@@ -34,25 +39,30 @@ const TRAINING_ONLY_BOTS: AiBot[] = [
 
 export const AI_BOTS: readonly AiBot[] = [
   ...LLM_CRAWLER_BOTS.map((agent) => ({ agent, ...AUDITED_BOTS[agent] })),
-  ...TRAINING_ONLY_BOTS,
+  ...EXTRA_BOTS,
 ];
 
 export const BOT_PURPOSE_LABEL: Record<BotPurpose, string> = {
   search: 'Answer search',
   user: 'Fetches a page a user asked about',
   training: 'Model training',
+  training_and_answers: 'Gemini training and answers',
 };
 
 export type RobotsPreset = 'allow_all' | 'answers_not_training' | 'block_all_ai';
 
 export const ROBOTS_PRESETS: ReadonlyArray<{ id: RobotsPreset; label: string; note: string }> = [
-  { id: 'allow_all', label: 'Allow every AI crawler', note: 'Best chance to be cited and trained on.' },
+  { id: 'allow_all', label: 'Allow every AI crawler', note: 'Best chance to be read, cited, and trained on.' },
   {
     id: 'answers_not_training',
     label: 'Answers yes, training no',
-    note: 'AI search can cite you. Training crawlers are blocked.',
+    note: 'AI search crawlers can still read and cite you. Training crawlers are blocked, and Instant Audit lists them as blocked.',
   },
-  { id: 'block_all_ai', label: 'Block every AI crawler', note: 'AI answers can no longer read your pages.' },
+  {
+    id: 'block_all_ai',
+    label: 'Block these AI crawlers',
+    note: 'These crawlers can no longer read your pages. Google AI Overviews use Googlebot and are not affected, and crawlers that fetch a page for a user may ignore robots.txt.',
+  },
 ];
 
 /** Agent name to blocked flag for a preset. */
@@ -65,6 +75,15 @@ export function presetBlocks(preset: RobotsPreset): Record<string, boolean> {
   );
 }
 
+/** The preset the switches currently match, or null once a single crawler was flipped. */
+export function matchingPreset(blocked: Record<string, boolean>): RobotsPreset | null {
+  const match = ROBOTS_PRESETS.find((preset) => {
+    const want = presetBlocks(preset.id);
+    return AI_BOTS.every((bot) => Boolean(blocked[bot.agent]) === want[bot.agent]);
+  });
+  return match?.id ?? null;
+}
+
 export interface RobotsOptions {
   /** Agent name to true when that crawler is blocked from the whole site. */
   blocked: Record<string, boolean>;
@@ -73,10 +92,25 @@ export interface RobotsOptions {
   sitemapUrl: string;
 }
 
+/**
+ * A private path, or null. A pasted URL keeps only its path and query, `#` starts a robots.txt
+ * comment so it is cut, and `/` or `/*` is refused: it would block the whole site for crawlers
+ * the switches show as allowed.
+ */
 function cleanPath(raw: string): string | null {
-  const path = raw.trim();
-  if (!path || /\s/.test(path)) return null;
-  return path.startsWith('/') ? path : `/${path}`;
+  const value = raw.split('#')[0].trim();
+  if (!value || /\s/.test(value)) return null;
+  let path = value;
+  if (/^https?:\/\//i.test(value)) {
+    try {
+      const url = new URL(value);
+      path = `${url.pathname}${url.search}`;
+    } catch {
+      return null;
+    }
+  }
+  if (!path.startsWith('/')) path = `/${path}`;
+  return path === '/' || path === '/*' ? null : path;
 }
 
 export function buildRobotsTxt(options: RobotsOptions): string {

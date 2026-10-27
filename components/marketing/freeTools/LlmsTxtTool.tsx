@@ -1,13 +1,16 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { buildLlmsTxt, type LlmsLink } from '../../../services/freeTools/llmsTxt';
 import { ToolField, ToolOutput } from './toolFields';
 
 const MAX_LINKS = 12;
 
-const STARTER_LINKS: LlmsLink[] = [
-  { title: 'Sell with us', url: 'https://www.example.com.au/sell', note: 'How we sell, our fees, and how to book an appraisal' },
-  { title: 'Hawthorn suburb guide', url: 'https://www.example.com.au/suburbs/hawthorn', note: 'Recent sales, schools and transport' },
-  { title: 'Contact', url: 'https://www.example.com.au/contact', note: 'Office address, phone and opening hours' },
+/** A page row. `id` keeps React keys stable when a row is removed. */
+type PageRow = LlmsLink & { id: number };
+
+const STARTER_LINKS: PageRow[] = [
+  { id: 0, title: 'Sell with us', url: 'https://www.example.com.au/sell', note: 'How we sell, our fees, and how to book an appraisal' },
+  { id: 1, title: 'Hawthorn suburb guide', url: 'https://www.example.com.au/suburbs/hawthorn', note: 'Recent sales, schools and transport' },
+  { id: 2, title: 'Contact', url: 'https://www.example.com.au/contact', note: 'Office address, phone and opening hours' },
 ];
 
 export const LlmsTxtTool: React.FC<{ onCopied: () => void }> = ({ onCopied }) => {
@@ -15,10 +18,11 @@ export const LlmsTxtTool: React.FC<{ onCopied: () => void }> = ({ onCopied }) =>
   const [summary, setSummary] = useState('Independent real estate agency selling and leasing homes in Hawthorn, Kew and Camberwell.');
   const [details, setDetails] = useState('Family owned since 2004. We publish a suburb guide for every suburb we sell in.');
   const [heading, setHeading] = useState('Key pages');
-  const [links, setLinks] = useState<LlmsLink[]>(STARTER_LINKS);
+  const [links, setLinks] = useState<PageRow[]>(STARTER_LINKS);
+  const nextId = useRef(STARTER_LINKS.length);
 
-  const setLink = (index: number, patch: Partial<LlmsLink>) =>
-    setLinks((prev) => prev.map((link, i) => (i === index ? { ...link, ...patch } : link)));
+  const setLink = (id: number, patch: Partial<LlmsLink>) =>
+    setLinks((prev) => prev.map((link) => (link.id === id ? { ...link, ...patch } : link)));
 
   const output = buildLlmsTxt({ siteName, summary, details, sections: [{ heading, links }] });
 
@@ -33,27 +37,27 @@ export const LlmsTxtTool: React.FC<{ onCopied: () => void }> = ({ onCopied }) =>
         <fieldset className="space-y-4">
           <legend className="text-sm font-medium text-[var(--color-ink)]">Pages</legend>
           {links.map((link, index) => (
-            <div key={index} className="lx-glass space-y-3 rounded-2xl p-4">
+            <div key={link.id} className="lx-glass space-y-3 rounded-2xl p-4">
               <div className="flex items-center justify-between gap-3">
                 <p className="text-xs text-[var(--color-ink-2)]">Page {index + 1}</p>
                 <button
                   type="button"
-                  onClick={() => setLinks((prev) => prev.filter((_, i) => i !== index))}
+                  onClick={() => setLinks((prev) => prev.filter((row) => row.id !== link.id))}
                   className="lx-link text-xs"
                   aria-label={`Remove page ${index + 1}`}
                 >
                   Remove
                 </button>
               </div>
-              <ToolField label="Title" value={link.title} onChange={(title) => setLink(index, { title })} />
-              <ToolField label="URL" value={link.url} onChange={(url) => setLink(index, { url })} inputMode="url" />
-              <ToolField label="Short note" value={link.note} onChange={(note) => setLink(index, { note })} />
+              <ToolField label="Title" value={link.title} onChange={(title) => setLink(link.id, { title })} />
+              <ToolField label="URL" value={link.url} onChange={(url) => setLink(link.id, { url })} inputMode="url" />
+              <ToolField label="Short note" value={link.note} onChange={(note) => setLink(link.id, { note })} />
             </div>
           ))}
           {links.length < MAX_LINKS && (
             <button
               type="button"
-              onClick={() => setLinks((prev) => [...prev, { title: '', url: '', note: '' }])}
+              onClick={() => setLinks((prev) => [...prev, { id: nextId.current++, title: '', url: '', note: '' }])}
               className="lx-btn lx-btn-ghost"
             >
               Add a page

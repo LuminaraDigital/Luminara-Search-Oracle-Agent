@@ -119,6 +119,16 @@ const linkList = (links: readonly { label: string; href: string }[]) =>
 const faqHtml = (items: readonly { question: string; answer: string }[]) =>
   items.map((item) => `<h3>${esc(item.question)}</h3><p>${esc(item.answer)}</p>`).join('');
 
+function itemListNode(id: string, name: string, items: readonly { name: string; url: string }[]) {
+  return {
+    '@type': 'ItemList',
+    '@id': id,
+    name,
+    numberOfItems: items.length,
+    itemListElement: items.map((item, i) => ({ '@type': 'ListItem', position: i + 1, name: item.name, url: item.url })),
+  };
+}
+
 /** Static crawler HTML for a hub page. Same data as the React view. */
 function hubCrawlerBody(page: HubPage): string {
   const body = page.kind === 'compare'
@@ -149,13 +159,7 @@ function hubCrawlerBody(page: HubPage): string {
 function hubShell(page: HubPage): MarketingShellMeta {
   const url = `${MARKETING_ORIGIN}${page.path}`;
   const itemList = page.kind === 'best'
-    ? [{
-      '@type': 'ItemList',
-      '@id': `${url}#picks`,
-      name: page.h1,
-      numberOfItems: page.picks.length,
-      itemListElement: page.picks.map((pick, i) => ({ '@type': 'ListItem', position: i + 1, name: pick.name, url: pick.url })),
-    }]
+    ? [itemListNode(`${url}#picks`, page.h1, page.picks.map((pick) => ({ name: pick.name, url: pick.url })))]
     : [];
   return {
     path: page.path,
@@ -204,19 +208,12 @@ const FREE_TOOLS_HUB_SHELL: MarketingShellMeta = {
   title: `${FREE_TOOLS_HUB.label} | Luminara Suite`,
   description: FREE_TOOLS_HUB.description,
   jsonLd: graph(FREE_TOOLS_PATH, FREE_TOOLS_HUB.h1, FREE_TOOLS_HUB.description, false, [
-    {
-      '@type': 'ItemList',
-      '@id': `${MARKETING_ORIGIN}${FREE_TOOLS_PATH}#tools`,
-      name: FREE_TOOLS_HUB.h1,
-      numberOfItems: FREE_TOOLS.length,
-      itemListElement: FREE_TOOLS.map((tool, i) => ({
-        '@type': 'ListItem',
-        position: i + 1,
-        name: tool.label,
-        url: `${MARKETING_ORIGIN}${tool.path}`,
-      })),
-    },
-    buildFaqPageJsonLd([...FREE_TOOLS_HUB.faq], `${MARKETING_ORIGIN}${FREE_TOOLS_PATH}#faq`),
+    itemListNode(
+      `${MARKETING_ORIGIN}${FREE_TOOLS_PATH}#tools`,
+      FREE_TOOLS_HUB.h1,
+      FREE_TOOLS.map((tool) => ({ name: tool.label, url: `${MARKETING_ORIGIN}${tool.path}` })),
+    ),
+    buildFaqPageJsonLd(FREE_TOOLS_HUB.faq, `${MARKETING_ORIGIN}${FREE_TOOLS_PATH}#faq`),
   ]),
   crawlerBody: `
 <section>

@@ -4,6 +4,8 @@
  * widths (units per 1000 em) so the result is the same in the browser and in tests.
  * Google can rewrite or cut any snippet, so every figure here is an estimate.
  */
+import { escapeHtml } from '../../utils/html';
+import { toHttpUrl } from './httpUrl';
 
 /** Arial advance widths for printable ASCII, from space (32) to tilde (126). */
 const ARIAL_ASCII = [
@@ -24,9 +26,9 @@ export const DESCRIPTION_FONT_PX = 14;
 export const TITLE_MAX_PX = 600;
 /** Two snippet lines on desktop and on mobile. */
 export const DESCRIPTION_MAX_PX = { desktop: 920, mobile: 680 } as const;
-/** Ranges most guides give. Shown beside the pixel figure. */
-export const TITLE_CHAR_RANGE = { min: 30, max: 60 } as const;
-export const DESCRIPTION_CHAR_RANGE = { min: 70, max: 160 } as const;
+/** Below these lengths a field is flagged short. */
+const TITLE_MIN_CHARS = 30;
+const DESCRIPTION_MIN_CHARS = 70;
 
 export type SerpDevice = keyof typeof DESCRIPTION_MAX_PX;
 export type LengthVerdict = 'empty' | 'short' | 'good' | 'truncated';
@@ -70,6 +72,7 @@ function verdictFor(chars: number, truncated: boolean, minChars: number): Length
   return chars < minChars ? 'short' : 'good';
 }
 
+/** Desktop title cut. Mobile wraps titles over two lines, so the desktop width is the stricter limit. */
 export function checkTitle(title: string): SerpFieldCheck {
   const clean = title.replace(/\s+/g, ' ').trim();
   const cut = truncateToPx(clean, TITLE_FONT_PX, TITLE_MAX_PX);
@@ -77,7 +80,7 @@ export function checkTitle(title: string): SerpFieldCheck {
     chars: clean.length,
     px: textWidthPx(clean, TITLE_FONT_PX),
     maxPx: TITLE_MAX_PX,
-    verdict: verdictFor(clean.length, cut.truncated, TITLE_CHAR_RANGE.min),
+    verdict: verdictFor(clean.length, cut.truncated, TITLE_MIN_CHARS),
     shown: cut.text,
   };
 }
@@ -90,26 +93,25 @@ export function checkDescription(description: string, device: SerpDevice): SerpF
     chars: clean.length,
     px: textWidthPx(clean, DESCRIPTION_FONT_PX),
     maxPx,
-    verdict: verdictFor(clean.length, cut.truncated, DESCRIPTION_CHAR_RANGE.min),
+    verdict: verdictFor(clean.length, cut.truncated, DESCRIPTION_MIN_CHARS),
     shown: cut.text,
   };
 }
 
-/** Google's breadcrumb line: host, then path segments joined by " > ". */
-export function serpBreadcrumb(rawUrl: string): { site: string; crumbs: string[] } {
-  const trimmed = rawUrl.trim();
-  if (!trimmed) return { site: 'example.com', crumbs: [] };
+function decodeSegment(part: string): string {
   try {
-    const url = new URL(/^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`);
-    const crumbs = url.pathname.split('/').filter(Boolean).map((part) => decodeURIComponent(part));
-    return { site: url.hostname.replace(/^www\./i, ''), crumbs };
+    return decodeURIComponent(part);
   } catch {
-    return { site: trimmed.slice(0, 60), crumbs: [] };
+    return part;
   }
 }
 
-function escapeHtml(value: string): string {
-  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+/** Google's breadcrumb line: the full host, then path segments. Falls back to example.com for a non-web address. */
+export function serpBreadcrumb(rawUrl: string): { site: string; crumbs: string[] } {
+  const href = toHttpUrl(rawUrl);
+  if (!href) return { site: 'example.com', crumbs: [] };
+  const url = new URL(href);
+  return { site: url.hostname, crumbs: url.pathname.split('/').filter(Boolean).map(decodeSegment) };
 }
 
 /** The two head tags, ready to paste. */

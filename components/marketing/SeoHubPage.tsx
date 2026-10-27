@@ -1,15 +1,13 @@
 import React, { useEffect } from 'react';
-import { MarketingPageHeader, MarketingPageShell } from './MarketingPageShell';
+import { MARKETING_BODY as BODY, MARKETING_SECTION as SECTION, MarketingPageHeader, MarketingPageShell } from './MarketingPageShell';
 import { MarketingCompareTable } from './MarketingCompareTable';
+import { MarketingFaq } from './MarketingFaq';
 import { HUB_FAQ_HEADING, HUB_PAGES, HUB_REVIEWED, type BestPage, type ComparePage, type HubPage } from '../../services/marketing/seoHubPages';
 
 interface SeoHubPageProps {
   page: HubPage;
   onTerminal: () => void;
 }
-
-const SECTION = 'mt-16 border-t pt-16 lx-hairline';
-const BODY = 'text-[15px] leading-relaxed text-[var(--color-ink-2)]';
 
 const Bullets: React.FC<{ items: readonly string[] }> = ({ items }) => (
   <ul className={`mt-5 space-y-3 ${BODY}`}>
@@ -125,17 +123,7 @@ const SeoHubPage: React.FC<SeoHubPageProps> = ({ page, onTerminal }) => {
 
       {page.kind === 'compare' ? <CompareBody page={page} /> : <BestBody page={page} />}
 
-      <section aria-labelledby="hub-faq-heading" className={SECTION}>
-        <h2 id="hub-faq-heading" className="lx-display lx-h3 mb-8">{HUB_FAQ_HEADING}</h2>
-        <div className="max-w-3xl border-b lx-hairline">
-          {page.faq.map((item) => (
-            <details key={item.question} className="lx-faq group border-t lx-hairline">
-              <summary className="py-6 text-lg leading-snug text-[var(--color-ink)]">{item.question}</summary>
-              <p className={`-mt-1 max-w-2xl pb-7 ${BODY}`}>{item.answer}</p>
-            </details>
-          ))}
-        </div>
-      </section>
+      <MarketingFaq embedded className="mt-16" items={page.faq} heading={HUB_FAQ_HEADING} />
 
       <section aria-labelledby="sources-heading" className={SECTION}>
         <h2 id="sources-heading" className="lx-eyebrow">Sources, reviewed {HUB_REVIEWED}</h2>

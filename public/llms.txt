@@ -86,7 +86,7 @@ Competitor rows cite each vendor's public pages as of October 2026. No scores ar
 
 ## Free tools
 
-They run in the browser with no account. Nothing typed is sent to Luminara.
+They run in the browser with no account. Nothing typed into a tool is sent to Luminara.
 
 - All free tools: https://www.luminarasuite.com/free-tools
 - SERP snippet preview: https://www.luminarasuite.com/free-tools/serp-preview
