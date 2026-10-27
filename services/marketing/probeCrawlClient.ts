@@ -17,6 +17,7 @@ export type ProbeCrawlClientResult =
       /** Absent from an older Worker, so treat undefined as not read. */
       page?: HomepageHead | null;
       pageReason?: HomepageReadFailure | null;
+      checkedAt?: string;
     }
   | { ok: false; error: string; code?: string };
 

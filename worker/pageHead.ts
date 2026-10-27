@@ -1,26 +1,64 @@
 /**
- * Head fields of a fetched homepage for the free check's search snippet.
- * Returns short parsed strings only, never the page HTML. Regex-based like the rest of the
- * Worker's readers; JSON-LD uses the deploy readback scanner, which skips templates and SVG.
+ * Head fields of a fetched homepage for the free check: title, meta description, JSON-LD types,
+ * noindex. Returns short parsed strings only, never the page HTML. JSON-LD uses the deploy
+ * readback scanner, which skips templates and SVG.
+ *
+ * The page is hostile input up to 256 KB, parsed on the Worker's CPU, so every scan is linear:
+ * comments are cut with indexOf, tag openers stop at the next `<` (`[^<>]*`), closers are found
+ * with indexOf, and no text or tag longer than MAX_SPAN is matched, since output is MAX_TEXT long.
  */
-import { decodeEntities, stripTags } from '../utils/html';
+import { decodeEntities } from '../utils/html';
 import { jsonLdBlocks } from './deployReadback';
-import { isStagingCrawlHost, servesOwnHost } from './crawlDocuments';
-import { MARKETING_ORIGIN, MARKETING_SHELL_BY_PATH } from '../services/marketing/pageMeta';
-import { HOME_HERO } from '../services/marketing/marketingHeroCopy';
 import type { HomepageHead } from '../services/marketing/homepageSnippet';
 
 const MAX_TEXT = 300;
 const MAX_TYPES = 12;
+const MAX_SPAN = 1_000;
+const MAX_TAGS = 200;
+/** robots values that look like "name: value" but are directives, not a user agent prefix. */
+const ROBOTS_DIRECTIVES_WITH_COLON = /^(max-snippet|max-image-preview|max-video-preview|unavailable_after)\s*:/;
 
 function attr(tag: string, name: string): string | null {
-  const match = new RegExp(`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s"'>]+))`, 'i').exec(tag);
+  // Preceded by whitespace, so `name` does not match `data-name`.
+  const match = new RegExp(`\\s${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s"'>]+))`, 'i').exec(tag);
   return match ? (match[1] ?? match[2] ?? match[3] ?? '') : null;
 }
 
+/** Visible text of a fragment: tags become spaces, entities are decoded once. */
 function text(raw: string | null | undefined): string | null {
-  const clean = decodeEntities(stripTags(raw ?? '')).replace(/\s+/g, ' ').trim();
+  const clean = decodeEntities((raw ?? '').slice(0, MAX_SPAN).replace(/<[^<>]*>/g, ' '))
+    .replace(/\s+/g, ' ')
+    .trim();
   return clean ? clean.slice(0, MAX_TEXT) : null;
+}
+
+/** The HTML with comments removed, so a commented-out tag is never read. */
+function withoutComments(html: string): string {
+  const parts: string[] = [];
+  let at = 0;
+  for (;;) {
+    const open = html.indexOf('<!--', at);
+    if (open < 0) break;
+    parts.push(html.slice(at, open));
+    const close = html.indexOf('-->', open + 4);
+    if (close < 0) return parts.join('');
+    at = close + 3;
+  }
+  parts.push(html.slice(at));
+  return parts.join('');
+}
+
+/** Inner text of the first <title> or <h1>. A missing closer reads at most MAX_SPAN characters. */
+function elementText(html: string, lower: string, tag: 'title'): string | null {
+  const open = new RegExp(`<${tag}\\b[^<>]*>`, 'i').exec(html);
+  if (!open) return null;
+  const from = open.index + open[0].length;
+  const close = lower.indexOf(`</${tag}`, from);
+  return text(html.slice(from, close < 0 ? from + MAX_SPAN : Math.min(close, from + MAX_SPAN)));
+}
+
+function metaTags(html: string): string[] {
+  return (html.match(/<meta\b[^<>]*>/gi) ?? []).filter((tag) => tag.length <= MAX_SPAN).slice(0, MAX_TAGS);
 }
 
 /** Content of the first meta tag whose name or property is `key`. */
@@ -30,6 +68,26 @@ function meta(tags: string[], key: string): string | null {
     if (name === key) return attr(tag, 'content');
   }
   return null;
+}
+
+/**
+ * True when a robots meta value or X-Robots-Tag header says noindex (or none) for every crawler or
+ * for Googlebot. Directives are whole comma-separated tokens: `max-image-preview:none` is not
+ * noindex, and `otherbot: noindex` applies to another crawler.
+ */
+export function robotsSaysNoindex(value: string | null | undefined): boolean {
+  let agent: string | null = null;
+  for (const raw of String(value ?? '').toLowerCase().split(',')) {
+    let token = raw.trim();
+    const prefixed = /^([a-z0-9_-]+)\s*:\s*(.*)$/.exec(token);
+    if (prefixed && !ROBOTS_DIRECTIVES_WITH_COLON.test(token)) {
+      agent = prefixed[1];
+      token = prefixed[2].trim();
+    }
+    const appliesToGoogle = agent === null || agent === 'googlebot';
+    if (appliesToGoogle && (token === 'noindex' || token === 'none')) return true;
+  }
+  return false;
 }
 
 function collectTypes(node: unknown, into: Set<string>): void {
@@ -58,43 +116,17 @@ function jsonLdTypes(html: string): string[] {
   return [...types];
 }
 
-/**
- * Head of this Worker's own homepage, built from the same registry the Worker injects into the
- * page, for the free check run against luminarasuite.com from luminarasuite.com (fetch would 522).
- */
-export function servedHomepageHead(serveHost: string, targetHost: string): HomepageHead | null {
-  if (!servesOwnHost(serveHost, targetHost)) return null;
-  const shell = MARKETING_SHELL_BY_PATH['/'];
-  const graph = (shell.jsonLd['@graph'] as unknown[]) ?? [];
-  const types = new Set<string>();
-  collectTypes(graph, types);
+export function readPageHead(html: string): Omit<HomepageHead, 'finalUrl'> {
+  const page = withoutComments(html);
+  const lower = page.toLowerCase();
+  // Title and meta come from the head only, so an inline SVG <title> in the body never stands in.
+  const headEnd = lower.indexOf('</head');
+  const head = headEnd < 0 ? page : page.slice(0, headEnd);
+  const metas = metaTags(head);
   return {
-    status: 200,
-    finalUrl: `https://${targetHost.toLowerCase()}/`,
-    title: shell.title,
-    description: shell.description,
-    canonical: `${MARKETING_ORIGIN}/`,
-    h1: `${HOME_HERO.titleLead} ${HOME_HERO.titleEm}`,
-    ogImage: true,
-    jsonLdTypes: [...types],
-    // Staging answers with X-Robots-Tag: noindex (applyHostRobots).
-    noindex: isStagingCrawlHost(targetHost, undefined),
-  };
-}
-
-export function readPageHead(html: string): Omit<HomepageHead, 'status' | 'finalUrl'> {
-  const metas = html.match(/<meta\b[^>]*>/gi) ?? [];
-  const canonicalTag = (html.match(/<link\b[^>]*>/gi) ?? []).find((tag) =>
-    (attr(tag, 'rel') ?? '').toLowerCase().split(/\s+/).includes('canonical'),
-  );
-  const robots = `${meta(metas, 'robots') ?? ''} ${meta(metas, 'googlebot') ?? ''}`;
-  return {
-    title: text(/<title\b[^>]*>([\s\S]*?)<\/title>/i.exec(html)?.[1]),
+    title: elementText(head, headEnd < 0 ? lower : lower.slice(0, headEnd), 'title'),
     description: text(meta(metas, 'description')),
-    canonical: text(canonicalTag ? attr(canonicalTag, 'href') : null),
-    h1: text(/<h1\b[^>]*>([\s\S]*?)<\/h1>/i.exec(html)?.[1]),
-    ogImage: Boolean(meta(metas, 'og:image')?.trim()),
-    jsonLdTypes: jsonLdTypes(html),
-    noindex: /\b(noindex|none)\b/i.test(robots),
+    jsonLdTypes: jsonLdTypes(page),
+    noindex: robotsSaysNoindex(meta(metas, 'robots')) || robotsSaysNoindex(meta(metas, 'googlebot')),
   };
 }

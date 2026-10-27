@@ -6,10 +6,13 @@
  */
 import type { Env } from './env';
 import { json } from './workerUtils';
-import { defaultPortFetcher, fetchPublicUrl, safePublicHostname, type DohFetch } from './security';
+import { defaultPortFetcher, fetchPublicUrl, safePublicUrl, type DohFetch } from './security';
 import { loadCrawlerSnapshot } from './llmCrawlerRoute';
 import { readCapped } from './domainVerification';
-import { readPageHead, servedHomepageHead } from './pageHead';
+import { readPageHead, robotsSaysNoindex } from './pageHead';
+import { applyMarketingDocument } from './marketingShell';
+import { isStagingCrawlHost, servesOwnHost } from './crawlDocuments';
+import { MARKETING_ORIGIN, MARKETING_SHELL_BY_PATH } from '../services/marketing/pageMeta';
 import { safeLog } from './logRedaction';
 import { BLOCKED_CHECK, responseBlocked, type LlmCrawlerSnapshot } from '../services/audit/llmCrawlerReadiness';
 import type { HomepageHead, HomepageReadFailure } from '../services/marketing/homepageSnippet';
@@ -20,6 +23,8 @@ const HOMEPAGE_MAX_REDIRECTS = 3;
 const PROBE_UA = 'LuminaraProbe/1.0 (+https://www.luminarasuite.com/methodology)';
 /** Repeat checks of one host inside this window reuse the result, so a shared link cannot hammer the site. */
 const PROBE_CACHE_SECONDS = 120;
+/** Bot-wall vendors that answer a crawler with a 200 challenge page instead of the site. */
+const FIREWALL_MARKERS = /_incapsula_resource|sucuri_cloudproxy|awswaf|captcha-delivery\.com|datadome|ddos-guard|px-captcha/i;
 
 export type ProbeCrawlStatus = 'measured' | 'not_measured';
 
@@ -37,6 +42,8 @@ export type ProbeCrawlResult = {
   /** Head fields read from the homepage, or null with `pageReason`. */
   page: HomepageHead | null;
   pageReason: HomepageReadFailure | null;
+  /** When this result was read. A cached result keeps its original time. */
+  checkedAt: string;
 };
 
 type HomepageRead = { page: HomepageHead; pageReason: null } | { page: null; pageReason: HomepageReadFailure };
@@ -66,11 +73,14 @@ export async function readHomepage(pageUrl: string, fetcher: typeof fetch = fetc
     }
     if (!/html/i.test(res.headers.get('content-type') || '')) return failed('not_html');
     const html = await readCapped(res, HOMEPAGE_BYTES);
-    if (responseBlocked(res.status, html)) return failed('blocked');
+    if (responseBlocked(res.status, html) || FIREWALL_MARKERS.test(html.slice(0, 20_000))) return failed('blocked');
     const head = readPageHead(html);
-    const headerNoindex = /\b(noindex|none)\b/i.test(res.headers.get('x-robots-tag') || '');
+    const headerNoindex = robotsSaysNoindex(res.headers.get('x-robots-tag'));
+    // A bot wall often answers 200 with noindex and no title or description. Reporting that as the
+    // owner's own noindex would be a false finding, so it counts as blocked.
+    if ((head.noindex || headerNoindex) && !head.title && !head.description) return failed('blocked');
     return {
-      page: { status: res.status, finalUrl: fetched.finalUrl, ...head, noindex: head.noindex || headerNoindex },
+      page: { finalUrl: fetched.finalUrl, ...head, noindex: head.noindex || headerNoindex },
       pageReason: null,
     };
   } catch {
@@ -80,27 +90,46 @@ export async function readHomepage(pageUrl: string, fetcher: typeof fetch = fetc
   }
 }
 
-/** This Worker's own homepage is read from what it serves; any other host is fetched. */
-async function readOwnOrRemoteHomepage(serveHost: string, host: string, homepageUrl: string): Promise<HomepageRead> {
-  if (!host) return failed('unreachable');
-  const own = servedHomepageHead(serveHost, host);
-  return own ? { page: own, pageReason: null } : readHomepage(homepageUrl);
+/**
+ * This Worker's own homepage, parsed from the page it serves (assets plus the same meta injection a
+ * visitor gets), because a fetch of its own Custom Domain returns 522. Null for any other host.
+ */
+async function readOwnHomepage(env: Env, serveHost: string, host: string): Promise<HomepageRead | null> {
+  if (!servesOwnHost(serveHost, host) || !env.ASSETS) return null;
+  try {
+    const shell = await env.ASSETS.fetch(new Request(`https://${host}/`));
+    if (!shell.ok) return failed('http_error');
+    const head = readPageHead(applyMarketingDocument(await shell.text(), MARKETING_SHELL_BY_PATH['/']));
+    const staging = isStagingCrawlHost(host, undefined);
+    return {
+      page: {
+        finalUrl: staging ? `https://${host}/` : `${MARKETING_ORIGIN}/`,
+        ...head,
+        // Staging answers with X-Robots-Tag: noindex (applyHostRobots).
+        noindex: head.noindex || staging,
+      },
+      pageReason: null,
+    };
+  } catch {
+    return failed('unreachable');
+  }
 }
 
 function present(body: string | null | undefined, status: number | null | undefined): boolean {
   return status === 200 && typeof body === 'string' && body.trim().length > 0;
 }
 
+/** A null status means the fetch failed (timeout, TLS, refused redirect): Not measured, never "missing". */
 function fileNote(label: string, body: string | null | undefined, status: number | null | undefined): string {
   if (responseBlocked(status, body)) return `${label}: ${BLOCKED_CHECK}`;
   if (present(body, status)) return `${label} found`;
-  if (status == null || status === 404) return `${label} missing`;
+  if (status === 404) return `${label} missing`;
   return `${label}: Not measured`;
 }
 
 function fileSettled(body: string | null | undefined, status: number | null | undefined): boolean {
   if (responseBlocked(status, body)) return false;
-  return present(body, status) || status == null || status === 404;
+  return present(body, status) || status === 404;
 }
 
 export function summarizeProbeCrawl(
@@ -129,36 +158,38 @@ export function summarizeProbeCrawl(
   };
 }
 
-export async function handleProbeCrawlRoute(request: Request, _env: Env): Promise<Response> {
+export async function handleProbeCrawlRoute(request: Request, env: Env): Promise<Response> {
   if (request.method !== 'GET') return json({ ok: false, error: 'Method not allowed' }, 405);
   const url = new URL(request.url);
-  const target = url.searchParams.get('url') || '';
-  const hostHint = safePublicHostname(target);
-  if (!hostHint && !String(target || '').trim()) {
-    return json({ ok: false, error: 'Enter a domain or URL.', code: 'MISSING_URL' }, 400);
+  const target = String(url.searchParams.get('url') || '').trim();
+  if (!target) return json({ ok: false, error: 'Enter a domain or URL.', code: 'MISSING_URL' }, 400);
+  // One parse decides the host for every read, the cache key and the reply, so they always agree.
+  const page = safePublicUrl(/^https?:\/\//i.test(target) ? target : `https://${target}`);
+  if (!page) return json({ ok: false, error: 'URL is not a public http(s) host.', code: 'UNSAFE_URL' }, 400);
+  if (page.port) {
+    return json({ ok: false, error: "Use the site's normal address, without a port number.", code: 'UNSAFE_URL' }, 400);
   }
-  const host = safePublicHostname(target) || hostHint || '';
-  const cacheKey = host ? new Request(`https://probe-cache.invalid/v1/${encodeURIComponent(host)}`) : null;
-  if (cacheKey) {
-    try {
-      const hit = await caches.default.match(cacheKey);
-      if (hit) return hit;
-    } catch {
-      /* local tests have no Cache API */
-    }
+  const host = page.hostname;
+  const origin = `${page.protocol}//${host}`;
+
+  // One entry per serving host, scheme and target host; the typed path does not change what is read.
+  const cacheKey = new Request(
+    `https://probe-cache.invalid/v3/${url.hostname}/${page.protocol.slice(0, -1)}/${encodeURIComponent(host)}`,
+  );
+  try {
+    const hit = await caches.default.match(cacheKey);
+    // A cached Response has immutable headers; withCors must be able to set them.
+    if (hit) return new Response(hit.body, hit);
+  } catch {
+    /* local tests have no Cache API */
   }
 
-  const raw = String(target).trim();
-  const homepageUrl = `${raw.toLowerCase().startsWith('http://') ? 'http' : 'https'}://${host}/`;
   const [loaded, homepage] = await Promise.all([
-    loadCrawlerSnapshot(target, fetch, url.hostname),
-    readOwnOrRemoteHomepage(url.hostname, host, homepageUrl),
+    loadCrawlerSnapshot(origin, fetch, url.hostname),
+    readOwnHomepage(env, url.hostname, host).then((own) => own ?? readHomepage(`${origin}/`)),
   ]);
   if (!loaded.ok) {
     return json({ ok: false, error: loaded.error, code: loaded.code }, 400);
-  }
-  if (!host) {
-    return json({ ok: false, error: 'URL is not a public http(s) host.', code: 'UNSAFE_URL' }, 400);
   }
   // Outcome only, never the host: tells us what share of homepages the probe can read.
   safeLog('probe_homepage_read', { outcome: homepage.pageReason ?? 'read' });
@@ -174,9 +205,14 @@ export async function handleProbeCrawlRoute(request: Request, _env: Env): Promis
     },
     page: homepage.page,
     pageReason: homepage.pageReason,
+    checkedAt: new Date().toISOString(),
   };
-  const response = json(body, 200, { 'cache-control': `public, max-age=${PROBE_CACHE_SECONDS}` });
-  if (cacheKey) {
+  // A failed homepage read is not cached anywhere, so "try again" really tries again.
+  const cacheable = Boolean(homepage.page);
+  const response = json(body, 200, {
+    'cache-control': cacheable ? `public, max-age=${PROBE_CACHE_SECONDS}` : 'no-store',
+  });
+  if (cacheable) {
     try {
       await caches.default.put(cacheKey, response.clone());
     } catch {

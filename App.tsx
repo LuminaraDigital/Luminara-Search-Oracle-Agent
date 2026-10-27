@@ -125,6 +125,7 @@ interface SendOptions {
 
 import { parseUrlSwapRoute, type UrlSwapRouteParams } from './utils/urlSwapRouting';
 import {
+  isPathDeepLink,
   marketingViewFromHash,
   marketingViewFromPathname,
   pathForMarketingView,
@@ -250,17 +251,17 @@ const App: React.FC = () => {
     productTelemetry.trackPageView(next);
     haptic('light');
     const path = (window.location.pathname || '/').replace(/\/+$/, '') || '/';
-    const isPathDeepLink = /^\/(share|verify|reports)(\/|$)/i.test(path);
+    const onPathDeepLink = isPathDeepLink(path);
     const onMarketingPath = Boolean(marketingViewFromPathname(window.location.pathname));
     const nextIsMarketing = pathForMarketingView(next) != null;
     const target = urlForView(next, {
-      clearPathDeepLink: isPathDeepLink,
+      clearPathDeepLink: onPathDeepLink,
       leaveMarketingPath: onMarketingPath && !nextIsMarketing,
     });
     const marketingPath = pathForMarketingView(next);
     const alreadyThere = marketingPath
       ? path === (marketingPath === '/' ? '/' : marketingPath.replace(/\/+$/, '') || '/') && !window.location.hash
-      : window.location.hash.toLowerCase() === `#${next.toLowerCase()}` && path === '/' && !isPathDeepLink;
+      : window.location.hash.toLowerCase() === `#${next.toLowerCase()}` && path === '/' && !onPathDeepLink;
     if (!alreadyThere) {
       window.history.pushState(null, '', target);
     }

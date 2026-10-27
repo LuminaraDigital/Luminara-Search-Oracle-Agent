@@ -137,6 +137,14 @@ export function receiptIdFromLocation(pathname: string, hash: string): string {
   return fromHash?.[1] ? safeDecode(fromHash[1]) : '';
 }
 
+/**
+ * Paths that carry their own content: a shared report, a receipt, a shared free check.
+ * Leaving one for another view clears the path, so it never sticks to that view.
+ */
+export function isPathDeepLink(pathname: string): boolean {
+  return /^\/(share|verify|reports|check)(\/|$)/i.test(pathname);
+}
+
 /** Resolve the initial app view from pathname + hash (cold-load deep links). */
 export function resolveAppView(pathname: string, hash: string): AppView | null {
   const rawPath = pathname.replace(/^\/|\/$/g, '');

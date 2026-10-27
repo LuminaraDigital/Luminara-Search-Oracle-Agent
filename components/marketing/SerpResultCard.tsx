@@ -30,9 +30,11 @@ export const SerpResultCard: React.FC<SerpResultCardProps> = ({
   const shownDescription = checkDescription(description, device).shown;
   const name = siteName.trim() || crumb.site;
   return (
+    // A desktop title stays on one line, as on Google, and already carries Google's estimated cut;
+    // a card narrower than 600px scrolls rather than cutting it again with CSS.
     <figure
       aria-label={label}
-      className={`rounded-2xl bg-white p-4 text-left font-[Arial,Helvetica,sans-serif] ${device === 'mobile' ? 'max-w-[360px]' : ''}`}
+      className={`overflow-x-auto rounded-2xl bg-white p-4 text-left font-[Arial,Helvetica,sans-serif] ${device === 'mobile' ? 'max-w-[360px]' : ''}`}
     >
       <div className="flex items-center gap-3">
         <span aria-hidden className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[rgb(241,243,244)] text-xs text-[rgb(77,81,86)]">
@@ -41,22 +43,26 @@ export const SerpResultCard: React.FC<SerpResultCardProps> = ({
         <div className="min-w-0 leading-tight">
           <p className="truncate text-sm text-[rgb(32,33,36)]">{name}</p>
           <p className="truncate text-xs text-[rgb(77,81,86)]">
-            https://{crumb.site}
+            {url.toLowerCase().startsWith('http://') ? 'http' : 'https'}://{crumb.site}
             {crumb.crumbs.map((part) => ` › ${part}`).join('')}
           </p>
         </div>
       </div>
-      {/* Desktop titles stay on one line, as on Google; a card narrower than 600px ends them in an ellipsis. */}
       <p
         className={`mt-2 text-xl leading-snug text-[rgb(26,13,171)] ${
-          device === 'desktop' ? 'truncate' : '[overflow-wrap:anywhere]'
+          device === 'desktop' ? 'whitespace-nowrap' : '[overflow-wrap:anywhere]'
         }`}
       >
         {shownTitle || crumb.site}
       </p>
-      <p className="mt-1 text-sm leading-relaxed text-[rgb(77,81,86)] [overflow-wrap:anywhere]">
-        {shownDescription || 'Google picks text from the page when there is no description.'}
-      </p>
+      {shownDescription ? (
+        <p className="mt-1 text-sm leading-relaxed text-[rgb(77,81,86)] [overflow-wrap:anywhere]">{shownDescription}</p>
+      ) : (
+        // Our note, not the site's text, so it must not look like a snippet.
+        <p className="mt-1 text-sm italic text-[rgb(128,134,139)]">
+          (No description. Google picks text from the page.)
+        </p>
+      )}
     </figure>
   );
 };

@@ -11,6 +11,14 @@ export function escapeHtml(value: string): string {
     .replace(/'/g, '&#39;');
 }
 
+/** A numeric character reference as text, or the reference unchanged when it is not a valid code point. */
+function fromCodePoint(raw: string, radix: number): string | null {
+  const code = Number.parseInt(raw, radix);
+  return Number.isInteger(code) && code > 0 && code <= 0x10ffff && (code < 0xd800 || code > 0xdfff)
+    ? String.fromCodePoint(code)
+    : null;
+}
+
 export function decodeEntities(text: string): string {
   if (!text) return '';
   return text
@@ -19,6 +27,9 @@ export function decodeEntities(text: string): string {
     .replace(/&gt;/gi, '>')
     .replace(/&quot;/gi, '"')
     .replace(/&#0*39;|&#x0*27;|&apos;/gi, "'")
+    // Numeric references such as WordPress's &#8211; (en dash) and &#x2019; (apostrophe).
+    .replace(/&#x([0-9a-f]{1,6});/gi, (ref, hex: string) => fromCodePoint(hex, 16) ?? ref)
+    .replace(/&#([0-9]{1,7});/g, (ref, dec: string) => fromCodePoint(dec, 10) ?? ref)
     .replace(/&amp;/gi, '&');
 }
 

@@ -15,7 +15,7 @@ import { buildFaqPageJsonLd } from './marketingFaqContent';
 import { REAL_ESTATE_AUDIENCE } from './marketingHeroCopy';
 import { HUB_FAQ_HEADING, HUB_PAGES, HUB_REVIEWED, type HubPage } from './seoHubPages';
 import { FREE_TOOLS, FREE_TOOLS_CLOSING, FREE_TOOLS_HUB, FREE_TOOLS_PATH, type FreeTool } from './freeTools';
-import { checkHostFromPath } from './homepageSnippet';
+import { checkHostFromPath, checkPathForHost } from './homepageSnippet';
 import { CONTACT_CRAWLER, FAQ_CRAWLER } from '../help/helpPages';
 import { privacyCrawlerBody } from '../legal/privacyCrawler';
 
@@ -246,7 +246,7 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
   <h1>Be the answer AI gives.</h1>
   <p>${REAL_ESTATE_AUDIENCE} ${HONEST_VISIBILITY_PROMISE}</p>
   <p>Illustrative example, not a real agency and not a measurement: an independent agency, checked for a suburb question.</p>
-  <p>Free check of your homepage search snippet, robots.txt and llms.txt. No card. A full audit needs sign-in or your own keys. Every result is labeled Measured, Estimated or Not measured. No blended AI visibility score.</p>
+  <p>Free check of your homepage title and description, robots.txt and llms.txt. No card. A full audit needs sign-in or your own keys. Every result is labeled Measured, Estimated or Not measured. No blended AI visibility score.</p>
   <ul>
     <li><a href="/sample-report">Sample report</a></li>
     <li><a href="/methodology">Methodology</a></li>
@@ -477,9 +477,10 @@ export function perDomainShell(pathname: string): MarketingShellMeta | null {
 export function checkShell(pathname: string): MarketingShellMeta | null {
   const host = checkHostFromPath(pathname);
   if (!host) return null;
-  const clean = pathname.replace(/\/+$/, '');
+  // Built from the validated host, never the raw path, so percent-encoded junk cannot reach the meta.
+  const clean = checkPathForHost(host);
   const title = brandedTabTitle(`Free check: ${host}`);
-  const description = `A free live check of ${host}: its homepage search snippet, robots.txt and llms.txt. Run the same check on your site.`;
+  const description = `A free live check of ${host}: its homepage title and description, robots.txt and llms.txt. Run the same check on your site.`;
   return {
     path: clean,
     title,

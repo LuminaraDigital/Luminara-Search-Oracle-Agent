@@ -7,18 +7,14 @@
  */
 import { checkDescription, checkTitle } from '../freeTools/serpPreview';
 import { safePublicHostname } from '../security/publicHostname';
+import type { FreeTool } from './freeTools';
 
-/** Parsed head fields only. The page HTML itself is never returned or stored. */
+/** Parsed head fields only, each at most 300 characters. The page HTML is never returned or stored. */
 export interface HomepageHead {
-  status: number;
   /** Where the read ended after redirects. */
   finalUrl: string;
   title: string | null;
   description: string | null;
-  canonical: string | null;
-  h1: string | null;
-  /** True when an og:image tag is present. The image is never fetched or shown. */
-  ogImage: boolean;
   jsonLdTypes: string[];
   /** A robots meta tag or X-Robots-Tag header asks search engines not to index the page. */
   noindex: boolean;
@@ -28,27 +24,45 @@ export interface HomepageHead {
 export type HomepageReadFailure = 'unreachable' | 'blocked' | 'http_error' | 'not_html';
 
 export const HOMEPAGE_FAILURE_TEXT: Record<HomepageReadFailure, string> = {
-  unreachable: 'We could not reach your homepage just now.',
-  blocked: 'Your site blocked our check, so the homepage was not read.',
-  http_error: 'Your homepage answered with an error, so it was not read.',
-  not_html: 'Your homepage did not answer with a web page, so it was not read.',
+  unreachable: 'We could not read your homepage within 5 seconds. It may be slow or refusing automated checks. Try again in a minute.',
+  blocked:
+    "Your site's security turned our check away, so the homepage was not read. This is common and does not tell us whether Google can read it.",
+  http_error:
+    'Your homepage answered our check with an error. Some sites do this only for automated checks, so open it in your browser to be sure.',
+  not_html: 'Your homepage did not answer our check with a web page, so it was not read.',
 };
 
 export type SnippetCheckState = 'ok' | 'fix' | 'warn';
 
 export interface SnippetCheck {
-  id: 'title' | 'description' | 'noindex' | 'schema' | 'llms';
+  id: 'title' | 'description' | 'noindex' | 'schema';
   label: string;
   state: SnippetCheckState;
   text: string;
-  /** Free tool that fixes this gap, when there is one. */
-  fixPath?: string;
+  /** Free tool that writes the fix, when there is one. */
+  fixPath?: FreeTool['path'];
 }
 
-const SERP_TOOL = '/free-tools/serp-preview';
+const SERP_TOOL: FreeTool['path'] = '/free-tools/serp-preview';
+const SCHEMA_TOOL: FreeTool['path'] = '/free-tools/schema-generator';
+/** Types that say what a local agency is. Anything else (WebSite, Organization) leaves the business unnamed. */
+const LOCAL_BUSINESS_TYPES = new Set(['RealEstateAgent', 'LocalBusiness', 'ProfessionalService']);
 
-/** One line per field, in the order an owner should fix them. */
-export function snippetChecks(head: HomepageHead, llmsPresent: boolean): SnippetCheck[] {
+function lengthCheck(
+  id: 'title' | 'description',
+  label: string,
+  verdict: ReturnType<typeof checkTitle>['verdict'],
+  chars: number,
+  missing: string,
+): SnippetCheck {
+  if (verdict === 'empty') return { id, label, state: 'fix', text: missing, fixPath: SERP_TOOL };
+  if (verdict === 'truncated') return { id, label, state: 'fix', text: 'Too long. Google will likely cut it.', fixPath: SERP_TOOL };
+  if (verdict === 'short') return { id, label, state: 'warn', text: 'Short. Say what you do and where.', fixPath: SERP_TOOL };
+  return { id, label, state: 'ok', text: `${chars} characters. Should fit.` };
+}
+
+/** One line per field, in the order an owner should fix them. Lengths are estimates of Google's cut. */
+export function snippetChecks(head: HomepageHead): SnippetCheck[] {
   const checks: SnippetCheck[] = [];
   if (head.noindex) {
     checks.push({
@@ -60,46 +74,33 @@ export function snippetChecks(head: HomepageHead, llmsPresent: boolean): Snippet
   }
 
   const title = checkTitle(head.title ?? '');
-  checks.push(
-    title.verdict === 'empty'
-      ? { id: 'title', label: 'Title', state: 'fix', text: 'Missing. Google will write its own.', fixPath: SERP_TOOL }
-      : title.verdict === 'truncated'
-        ? { id: 'title', label: 'Title', state: 'fix', text: 'Too wide. Google will likely cut it.', fixPath: SERP_TOOL }
-        : { id: 'title', label: 'Title', state: 'ok', text: `${title.chars} characters. Fits.` },
-  );
-
+  checks.push(lengthCheck('title', 'Title', title.verdict, title.chars, 'No title tag in the homepage HTML. Google will write its own.'));
   const description = checkDescription(head.description ?? '', 'desktop');
   checks.push(
-    description.verdict === 'empty'
-      ? {
-        id: 'description',
-        label: 'Description',
-        state: 'fix',
-        text: 'Missing. Google picks text from the page instead.',
-        fixPath: SERP_TOOL,
-      }
-      : description.verdict === 'truncated'
-        ? { id: 'description', label: 'Description', state: 'fix', text: 'Too long. Google will likely cut it.', fixPath: SERP_TOOL }
-        : { id: 'description', label: 'Description', state: 'ok', text: `${description.chars} characters. Fits.` },
+    lengthCheck(
+      'description',
+      'Description',
+      description.verdict,
+      description.chars,
+      'No meta description in the homepage HTML. Google picks text from the page instead.',
+    ),
   );
 
-  checks.push(
-    head.jsonLdTypes.length
-      ? { id: 'schema', label: 'Structured data', state: 'ok', text: `Found: ${head.jsonLdTypes.join(', ')}.` }
-      : {
-        id: 'schema',
-        label: 'Structured data',
-        state: 'fix',
-        text: 'None found on the homepage.',
-        fixPath: '/free-tools/schema-generator',
-      },
-  );
+  const types = head.jsonLdTypes;
+  if (!types.length) {
+    checks.push({ id: 'schema', label: 'Structured data', state: 'fix', text: 'No JSON-LD found in the homepage HTML.', fixPath: SCHEMA_TOOL });
+  } else if (!types.some((type) => LOCAL_BUSINESS_TYPES.has(type))) {
+    checks.push({
+      id: 'schema',
+      label: 'Structured data',
+      state: 'warn',
+      text: `Found: ${types.join(', ')}. No RealEstateAgent or LocalBusiness type, so your business is not named.`,
+      fixPath: SCHEMA_TOOL,
+    });
+  } else {
+    checks.push({ id: 'schema', label: 'Structured data', state: 'ok', text: `Found: ${types.join(', ')}.` });
+  }
 
-  checks.push(
-    llmsPresent
-      ? { id: 'llms', label: 'llms.txt', state: 'ok', text: 'Found.' }
-      : { id: 'llms', label: 'llms.txt', state: 'fix', text: 'Missing.', fixPath: '/free-tools/llms-txt-generator' },
-  );
   return checks;
 }
 

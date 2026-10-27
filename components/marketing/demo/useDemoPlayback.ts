@@ -165,7 +165,11 @@ export function useDemoPlayback(): DemoPlayback {
         // `page` stays undefined when a Worker without the homepage read answers, which hides
         // the section instead of reporting a failed read.
         ...(crawl.ok
-          ? { page: crawl.page, pageReason: crawl.pageReason ?? null, llmsPresent: crawl.crawl.llmsPresent }
+          ? {
+            page: crawl.page,
+            pageReason: crawl.pageReason ?? null,
+            checkedAt: crawl.checkedAt,
+          }
           : {}),
       };
 

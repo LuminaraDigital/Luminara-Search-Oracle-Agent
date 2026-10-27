@@ -332,7 +332,8 @@ export async function resolvesToPublicAddress(host: string, fetcher: DohFetch = 
       });
       if (!res.ok) return null;
       const data = (await res.json()) as { Status?: number; Answer?: Array<{ type: number; data: string }> };
-      if (data.Status !== 0) return [];
+      if (data.Status === 3) return []; // NXDOMAIN: no records of this type
+      if (data.Status !== 0) return null; // SERVFAIL and the rest: unknown, not empty
       const want = type === 'A' ? 1 : 28;
       return (data.Answer || []).filter(a => a.type === want).map(a => a.data);
     } catch {
@@ -340,7 +341,9 @@ export async function resolvesToPublicAddress(host: string, fetcher: DohFetch = 
     }
   };
   const [a, aaaa] = await Promise.all([lookup('A'), lookup('AAAA')]);
-  if (a === null && aaaa === null) return false; // resolver unreachable: fail closed
+  // Either lookup failing fails closed: a public AAAA must not vouch for an A record we never saw,
+  // because the real fetch may connect over IPv4.
+  if (a === null || aaaa === null) return false;
   const addrs = [...(a || []), ...(aaaa || [])];
   if (addrs.length === 0) return false; // NXDOMAIN or no address records
   return addrs.every(ip => !isPrivateIp(ip));

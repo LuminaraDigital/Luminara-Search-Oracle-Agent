@@ -92,7 +92,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
   const chrome = useMarketingChrome();
   // A /check/<host> link opens the landing with the check already running on that host.
   const [sharedCheckHost] = useState(() =>
-    typeof window === 'undefined' ? null : checkHostFromPath(window.location.pathname),
+    typeof window === 'undefined' ? undefined : checkHostFromPath(window.location.pathname) ?? undefined,
   );
   const rootRef = useRef<HTMLDivElement>(null);
   const anchorsRef = useRef<Array<HTMLElement | null>>([]);
@@ -204,7 +204,6 @@ const LandingPage: React.FC<LandingPageProps> = ({
               isAuthenticated={isAuthenticated}
               onFullAudit={fullAudit}
               autoRunHost={sharedCheckHost}
-              surface={sharedCheckHost ? 'check_link' : 'landing_inline'}
             />
           </div>
           <p className="lx-enter-rise lx-d6 mt-5 text-sm text-[var(--color-ink-2)]">

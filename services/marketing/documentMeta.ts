@@ -102,8 +102,9 @@ const DEFAULT_APP_META = {
 
 function shellFor(pathname: string, view: AppView): MarketingShellMeta | undefined {
   const path = pathname || '/';
-  // A shared check renders the landing view but keeps its own noindex meta.
-  const sharedCheck = checkShell(path);
+  // A shared check renders the landing view with its own noindex meta. Any other view on that
+  // path (it is cleared on navigation, but a reload with a hash can land here) gets its own meta.
+  const sharedCheck = view === AppView.LANDING ? checkShell(path) : null;
   if (sharedCheck) return sharedCheck;
   // `/` plus a hash is a product view. A real path such as /compare/profound wins over the shared view.
   const key = path === '/' ? null : marketingShellKey(path);

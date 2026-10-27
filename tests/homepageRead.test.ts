@@ -1,10 +1,12 @@
+import { readFileSync } from 'node:fs';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { readPageHead, servedHomepageHead } from '../worker/pageHead';
-import { handleProbeCrawlRoute, readHomepage } from '../worker/probeCrawlRoute';
+import { readPageHead, robotsSaysNoindex } from '../worker/pageHead';
+import { handleProbeCrawlRoute, readHomepage, summarizeProbeCrawl } from '../worker/probeCrawlRoute';
 import { loadCrawlerSnapshot } from '../worker/llmCrawlerRoute';
 import { resolvesToPublicAddress } from '../worker/security';
+import { injectMarketingMeta } from '../worker/marketingShell';
 import {
   checkHostFromPath,
   checkPathForHost,
@@ -13,7 +15,7 @@ import {
 } from '../services/marketing/homepageSnippet';
 import { marketingPageForPath } from '../services/marketing/pageMeta';
 import { resolveDocumentTitle, resolveRobotsDirective } from '../services/marketing/documentMeta';
-import { resolveAppView } from '../utils/marketingRoutes';
+import { isPathDeepLink, resolveAppView, urlForView } from '../utils/marketingRoutes';
 import { HomepageSnippetResult } from '../components/marketing/HomepageSnippetResult';
 import { AppView } from '../types';
 import type { Env } from '../worker/env';
@@ -43,14 +45,18 @@ function fakeNet(page: (url: string) => Response) {
 const html = (body: string, headers: Record<string, string> = {}) =>
   new Response(body, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8', ...headers } });
 
+const pageUrls = (net: ReturnType<typeof fakeNet>) =>
+  net.mock.calls.map((call) => String(call[0])).filter((url) => !url.startsWith('https://cloudflare-dns.com/'));
+
+/** A WordPress-style head: numeric entities, a commented-out noindex, and an SVG title in the body. */
 const GOOD_PAGE = `<!doctype html><html><head>
-<title>Smith &amp; Co | Hawthorn real estate</title>
+<!-- <meta name="robots" content="noindex"> -->
+<title>Smith &amp; Co &#8211; Hawthorn real estate</title>
 <meta content="Sell your Hawthorn home with a local agent." name="description">
-<meta property='og:image' content='https://agency.com.au/og.png'>
-<link rel="alternate canonical" href="https://agency.com.au/">
+<meta name="robots" content="index, follow, max-image-preview:none">
 <script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"RealEstateAgent"},{"@type":["WebSite","Thing"]}]}</script>
 <script type="application/ld+json">{ not json </script>
-</head><body><h1>Sell with <em>Smith</em></h1></body></html>`;
+</head><body><svg><title>Menu</title></svg><h1>Sell with Smith</h1></body></html>`;
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -59,11 +65,8 @@ afterEach(() => {
 describe('readPageHead', () => {
   it('reads the head fields an owner sees in search', () => {
     expect(readPageHead(GOOD_PAGE)).toEqual({
-      title: 'Smith & Co | Hawthorn real estate',
+      title: 'Smith & Co – Hawthorn real estate',
       description: 'Sell your Hawthorn home with a local agent.',
-      canonical: 'https://agency.com.au/',
-      h1: 'Sell with Smith',
-      ogImage: true,
       jsonLdTypes: ['RealEstateAgent', 'WebSite', 'Thing'],
       noindex: false,
     });
@@ -73,18 +76,35 @@ describe('readPageHead', () => {
     expect(readPageHead('<html><body>Hello</body></html>')).toEqual({
       title: null,
       description: null,
-      canonical: null,
-      h1: null,
-      ogImage: false,
       jsonLdTypes: [],
       noindex: false,
     });
+    // An SVG title outside the head never stands in for the page title.
+    expect(readPageHead('<html><head></head><body><svg><title>Menu</title></svg></body></html>').title).toBeNull();
+    // Google does not use og:description as the meta description.
+    expect(readPageHead('<head><meta property="og:description" content="Social only"></head>').description).toBeNull();
   });
 
-  it('sees a robots noindex in either meta tag', () => {
-    expect(readPageHead('<meta name="robots" content="noindex, follow">').noindex).toBe(true);
-    expect(readPageHead('<meta name="googlebot" content="none">').noindex).toBe(true);
-    expect(readPageHead('<meta name="robots" content="index, follow">').noindex).toBe(false);
+  it('handles real-world markup without false readings', () => {
+    expect(readPageHead('<HEAD><TITLE>First</TITLE><TITLE>Second</TITLE><META NAME=description CONTENT=Plain></HEAD>')).toMatchObject({
+      title: 'First',
+      description: 'Plain',
+    });
+    expect(readPageHead('<head><meta data-name="description" content="no"><title>&amp;lt;b&amp;gt;</title></head>')).toMatchObject({
+      description: null,
+      title: '&lt;b&gt;',
+    });
+  });
+
+  it('matches robots directives as whole tokens, for every crawler or Googlebot', () => {
+    expect(robotsSaysNoindex('noindex, follow')).toBe(true);
+    expect(robotsSaysNoindex('NONE')).toBe(true);
+    expect(robotsSaysNoindex('googlebot: noindex')).toBe(true);
+    expect(robotsSaysNoindex('googlebot: nofollow, noindex')).toBe(true);
+    expect(robotsSaysNoindex('index, follow, max-image-preview:none')).toBe(false);
+    expect(robotsSaysNoindex('otherbot: noindex')).toBe(false);
+    expect(robotsSaysNoindex('noindexing-is-not-a-directive')).toBe(false);
+    expect(readPageHead('<head><meta name="googlebot" content="noindex"></head>').noindex).toBe(true);
   });
 });
 
@@ -98,7 +118,7 @@ describe('readHomepage', () => {
     const read = await readHomepage('https://agency.com.au/', net as unknown as typeof fetch);
     expect(read.pageReason).toBeNull();
     expect(read.page?.finalUrl).toBe('https://www.agency.com.au/');
-    expect(read.page?.title).toBe('Smith & Co | Hawthorn real estate');
+    expect(read.page?.title).toBe('Smith & Co – Hawthorn real estate');
     expect(JSON.stringify(read)).not.toContain('<');
     const sent = net.mock.calls.find((call) => String(call[0]) === 'https://agency.com.au/')?.[1] as RequestInit;
     expect(new Headers(sent.headers).get('user-agent')).toMatch(/^LuminaraProbe\/1\.0/);
@@ -113,7 +133,7 @@ describe('readHomepage', () => {
       );
       const read = await readHomepage('https://agency.com.au/', net as unknown as typeof fetch);
       expect(read, location).toEqual({ page: null, pageReason: 'unreachable' });
-      expect(net.mock.calls.some((call) => String(call[0]).startsWith(location)), location).toBe(false);
+      expect(pageUrls(net).some((url) => url.startsWith(location)), location).toBe(false);
     }
   });
 
@@ -135,13 +155,28 @@ describe('readHomepage', () => {
     });
   });
 
-  it('reads at most 256 KB, and takes noindex from the X-Robots-Tag header', async () => {
+  it('treats a bot wall as blocked, never as the owner noindexing their site', async () => {
+    const walls = [
+      html('<html><head><meta name="robots" content="noindex,nofollow"></head><body><script src="/_Incapsula_Resource?x"></script></body></html>'),
+      html('<html><head><meta name="robots" content="noindex"></head><body>Please wait</body></html>'),
+    ];
+    for (const wall of walls) {
+      const net = fakeNet(() => wall);
+      expect(await readHomepage('https://agency.com.au/', net as unknown as typeof fetch)).toEqual({ page: null, pageReason: 'blocked' });
+    }
+  });
+
+  it('reads at most 256 KB, and takes noindex from an X-Robots-Tag that applies to Google', async () => {
     const late = `<html><head><meta name="description" content="early"></head><body>${'x'.repeat(300_000)}<title>Too late</title></body></html>`;
-    const net = fakeNet(() => html(late, { 'x-robots-tag': 'noindex' }));
-    const read = await readHomepage('https://agency.com.au/', net as unknown as typeof fetch);
+    const read = await readHomepage('https://agency.com.au/', fakeNet(() => html(late, { 'x-robots-tag': 'noindex' })) as unknown as typeof fetch);
     expect(read.page?.description).toBe('early');
     expect(read.page?.title).toBeNull();
     expect(read.page?.noindex).toBe(true);
+    const other = await readHomepage(
+      'https://agency.com.au/',
+      fakeNet(() => html(GOOD_PAGE, { 'x-robots-tag': 'otherbot: noindex' })) as unknown as typeof fetch,
+    );
+    expect(other.page?.noindex).toBe(false);
   });
 });
 
@@ -157,6 +192,16 @@ describe('fetch guard hardening', () => {
     for (const signal of signals) expect(signal).toBeInstanceOf(AbortSignal);
   });
 
+  it('fails closed when either DNS lookup fails, even if the other is public', async () => {
+    const answer = (type: string, status: number, ok = true) =>
+      vi.fn(async (url: string) => {
+        if (url.includes(`type=${type}`)) return ok ? Response.json({ Status: status, Answer: [] }) : new Response('', { status: 502 });
+        return Response.json({ Status: 0, Answer: [{ type: 28, data: '2606:4700::1' }] });
+      });
+    expect(await resolvesToPublicAddress('agency.com.au', answer('A', 2))).toBe(false);
+    expect(await resolvesToPublicAddress('agency.com.au', answer('A', 0, false))).toBe(false);
+  });
+
   it('refuses a non-default port and does not follow a same-site redirect to one', async () => {
     const net = fakeNet((url) =>
       url === 'https://agency.com.au/robots.txt'
@@ -167,7 +212,6 @@ describe('fetch guard hardening', () => {
     expect(snapshot.ok && snapshot.snapshot.robotsHttpStatus).toBe(301);
     expect(snapshot.ok && snapshot.snapshot.robotsTxt).toBeNull();
     expect(net.mock.calls.some((call) => String(call[0]).includes(':8080'))).toBe(false);
-
     expect(await loadCrawlerSnapshot('agency.com.au:8080', net as unknown as typeof fetch)).toMatchObject({
       ok: false,
       code: 'UNSAFE_URL',
@@ -176,35 +220,79 @@ describe('fetch guard hardening', () => {
 });
 
 describe('probe-crawl route with the homepage read', () => {
-  it('returns the head fields beside the crawl files', async () => {
-    vi.stubGlobal('fetch', fakeNet((url) => (url.endsWith('/') ? html(GOOD_PAGE) : new Response('', { status: 404 }))));
-    const res = await handleProbeCrawlRoute(
-      new Request('https://www.luminarasuite.com/api/visibility/probe-crawl?url=agency.com.au'),
-      {} as Env,
+  const probe = (url: string, env: Partial<Env> = {}) =>
+    handleProbeCrawlRoute(
+      new Request(`https://www.luminarasuite.com/api/visibility/probe-crawl?url=${encodeURIComponent(url)}`),
+      env as Env,
     );
-    const body = (await res.json()) as { page: HomepageHead; pageReason: null; crawl: { llmsPresent: boolean } };
+
+  it('returns the head fields beside the crawl files, with a read time', async () => {
+    vi.stubGlobal('fetch', fakeNet((url) => (url.endsWith('/') ? html(GOOD_PAGE) : new Response('', { status: 404 }))));
+    const res = await probe('agency.com.au');
+    const body = (await res.json()) as { page: HomepageHead; pageReason: null; checkedAt: string };
     expect(res.status).toBe(200);
     expect(res.headers.get('cache-control')).toBe('public, max-age=120');
     expect(body.pageReason).toBeNull();
-    expect(body.page.title).toBe('Smith & Co | Hawthorn real estate');
-    expect(body.page.jsonLdTypes).toContain('RealEstateAgent');
-    expect(body.crawl.llmsPresent).toBe(false);
+    expect(body.page.title).toBe('Smith & Co – Hawthorn real estate');
+    expect(Number.isNaN(Date.parse(body.checkedAt))).toBe(false);
   });
 
-  it("reads this Worker's own homepage from what it serves, without fetching it", async () => {
+  it('rejects a port before reading anything', async () => {
+    const net = fakeNet(() => html(GOOD_PAGE));
+    vi.stubGlobal('fetch', net);
+    const res = await probe('agency.com.au:8080');
+    expect(res.status).toBe(400);
+    expect(net).not.toHaveBeenCalled();
+  });
+
+  it('reads every file from the one host it reports, whatever the URL parsers make of the input', async () => {
+    const net = fakeNet((url) => (url.endsWith('/') ? html(GOOD_PAGE) : new Response('', { status: 404 })));
+    vi.stubGlobal('fetch', net);
+    const body = (await (await probe('other-site.com\\@agency.com.au')).json()) as { host: string };
+    const hosts = new Set(pageUrls(net).map((url) => new URL(url).hostname));
+    expect([...hosts]).toEqual([body.host]);
+  });
+
+  it("parses this Worker's own homepage from the page it serves, without fetching it", async () => {
     const net = fakeNet(() => new Response('error code: 522', { status: 522 }));
     vi.stubGlobal('fetch', net);
-    const res = await handleProbeCrawlRoute(
-      new Request('https://www.luminarasuite.com/api/visibility/probe-crawl?url=luminarasuite.com'),
-      {} as Env,
-    );
-    const body = (await res.json()) as { page: HomepageHead };
-    expect(body.page).toEqual(servedHomepageHead('www.luminarasuite.com', 'luminarasuite.com'));
-    expect(body.page.title).toContain('Luminara Suite');
+    const indexHtml = readFileSync('index.html', 'utf8');
+    const ASSETS = { fetch: vi.fn(async () => html(indexHtml)) } as unknown as Env['ASSETS'];
+    const body = (await (await probe('luminarasuite.com', { ASSETS })).json()) as { page: HomepageHead };
+    expect(body.page.finalUrl).toBe('https://www.luminarasuite.com/');
+    expect(body.page.title).toBe(marketingPageForPath('/')?.title);
+    expect(body.page.description).toBe(marketingPageForPath('/')?.description.slice(0, 300));
+    expect(body.page.jsonLdTypes).toContain('Organization');
     expect(body.page.noindex).toBe(false);
-    expect(net.mock.calls.some((call) => /^https:\/\/(www\.)?luminarasuite\.com\/$/.test(String(call[0])))).toBe(false);
-    expect(servedHomepageHead('staging.luminarasuite.com', 'staging.luminarasuite.com')?.noindex).toBe(true);
-    expect(servedHomepageHead('www.luminarasuite.com', 'agency.com.au')).toBeNull();
+    expect(pageUrls(net).some((url) => /^https:\/\/(www\.)?luminarasuite\.com\/$/.test(url))).toBe(false);
+  });
+
+  it('caches a good read per host, never a failed one, and serves a hit with settable headers', async () => {
+    const store = new Map<string, Response>();
+    vi.stubGlobal('caches', {
+      default: {
+        match: async (req: Request) => {
+          const hit = store.get(req.url)?.clone();
+          // workerd hands back immutable headers on a cache hit.
+          if (hit) Object.defineProperty(hit.headers, 'set', { value: () => { throw new TypeError('immutable'); } });
+          return hit;
+        },
+        put: async (req: Request, res: Response) => void store.set(req.url, res),
+      },
+    });
+    const net = fakeNet((url) => (url.endsWith('/') ? html(GOOD_PAGE) : new Response('', { status: 404 })));
+    vi.stubGlobal('fetch', net);
+    await probe('agency.com.au');
+    const calls = net.mock.calls.length;
+    const hit = await probe('https://agency.com.au/some/path');
+    expect(net.mock.calls.length).toBe(calls);
+    expect(() => hit.headers.set('access-control-allow-origin', 'https://www.luminarasuite.com')).not.toThrow();
+    expect(store.size).toBe(1);
+
+    vi.stubGlobal('fetch', fakeNet((url) => (url.endsWith('/') ? new Response('down', { status: 503 }) : new Response('', { status: 404 }))));
+    const failed = await probe('other-site.com');
+    expect(failed.headers.get('cache-control')).toBe('no-store');
+    expect(store.size).toBe(1);
   });
 });
 
@@ -219,72 +307,124 @@ describe('/check/<host> share links', () => {
     }
   });
 
-  it('serves a noindex shell that names the host, on the Worker and in the browser', () => {
-    const shell = marketingPageForPath('/check/agency.com.au');
+  it('serves a noindex shell built from the validated host, on the Worker and in the browser', () => {
+    const shell = marketingPageForPath("/check/$'ZZTEXT%40agency.com.au");
+    expect(shell?.path).toBe('/check/agency.com.au');
     expect(shell?.robots).toBe('noindex, nofollow');
     expect(shell?.title).toBe('Free check: agency.com.au | Luminara Suite');
-    expect(shell?.crawlerBody).toContain('agency.com.au');
     expect(resolveRobotsDirective('/check/agency.com.au', AppView.LANDING)).toBe('noindex, nofollow');
     expect(resolveDocumentTitle('/check/agency.com.au', AppView.LANDING)).toBe(shell?.title);
-    expect(resolveRobotsDirective('/', AppView.LANDING)).toBeNull();
+  });
+
+  it('does not stick to the next view: the path is cleared and its meta is not reused', () => {
+    expect(isPathDeepLink('/check/agency.com.au')).toBe(true);
+    expect(urlForView(AppView.INSTANT_AUDIT, { clearPathDeepLink: true })).toBe('/#instant_audit');
+    expect(resolveDocumentTitle('/check/agency.com.au', AppView.INSTANT_AUDIT)).not.toContain('Free check');
+    expect(resolveRobotsDirective('/check/agency.com.au', AppView.INSTANT_AUDIT)).not.toBe('noindex, nofollow');
+  });
+
+  it('never reads "$" in a page value as a replacement pattern', () => {
+    const doc = '<html><head><title>x</title><link rel="canonical" href="/"></head><body><div id="root"></div></body></html>';
+    const out = injectMarketingMeta(doc, { ...marketingPageForPath('/check/agency.com.au')!, title: "A $' and $& B" });
+    expect(out.match(/<\/html>/g)).toHaveLength(1);
+    expect(out).toContain("<title>A $' and $&amp; B</title>");
   });
 });
 
 describe('HomepageSnippetResult', () => {
   const page: HomepageHead = {
-    status: 200,
     finalUrl: 'https://www.agency.com.au/',
     title: 'Smith & Co | Hawthorn real estate agents',
     description: null,
-    canonical: null,
-    h1: null,
-    ogImage: false,
     jsonLdTypes: [],
     noindex: false,
   };
 
-  it('shows the snippet as read from the page, with a free fix for each gap', () => {
-    const html = renderToStaticMarkup(createElement(HomepageSnippetResult, { page, pageReason: null, llmsPresent: false }));
-    expect(html).toContain('Read from your homepage');
-    expect(html).toContain('Google can rewrite titles and snippets');
+  it('labels page facts Measured with a read time, and the Google preview Estimated', () => {
+    const html = renderToStaticMarkup(
+      createElement(HomepageSnippetResult, { page, pageReason: null, checkedAt: '2026-10-28T03:41:00Z' }),
+    );
+    expect(html).toMatch(/Measured · read from your homepage at \d/);
+    expect(html).toContain('Estimated preview');
+    expect(html).toContain('We did not check Google.');
     expect(html).toContain('Smith &amp; Co | Hawthorn real estate agents');
-    expect(html).toContain('href="/free-tools/serp-preview"');
+    expect(html).toContain('(No description. Google picks text from the page.)');
+    expect(html).toContain('aria-label="Write the fix (free): description"');
     expect(html).toContain('href="/free-tools/schema-generator"');
-    expect(html).toContain('href="/free-tools/llms-txt-generator"');
     expect(html).not.toMatch(/Google[^.]{0,40}Measured/);
   });
 
-  it('says plainly when the homepage could not be read', () => {
-    const html = renderToStaticMarkup(createElement(HomepageSnippetResult, { page: null, pageReason: 'blocked', llmsPresent: true }));
-    expect(html).toContain('Your site blocked our check, so the homepage was not read.');
-    expect(html).toContain('Not measured');
-    expect(html).not.toContain('Read from your homepage');
+  it('says plainly, without alarm, when the homepage could not be read', () => {
+    const html = renderToStaticMarkup(createElement(HomepageSnippetResult, { page: null, pageReason: 'blocked' }));
+    expect(html).toContain('Not measured.');
+    expect(html).toContain('does not tell us whether Google can read it');
+    expect(html).not.toContain('read from your homepage');
   });
 });
 
 describe('snippetChecks', () => {
   const head: HomepageHead = {
-    status: 200,
     finalUrl: 'https://agency.com.au/',
     title: 'Smith & Co | Hawthorn real estate agents',
     description: 'Sell your Hawthorn home with a local agent who knows the street and the buyers.',
-    canonical: null,
-    h1: null,
-    ogImage: false,
     jsonLdTypes: ['RealEstateAgent'],
     noindex: false,
   };
 
-  it('passes a complete head and links each gap to the tool that fixes it', () => {
-    expect(snippetChecks(head, true).every((check) => check.state === 'ok')).toBe(true);
-    const gaps = snippetChecks({ ...head, title: null, description: null, jsonLdTypes: [], noindex: true }, false);
+  it('passes a complete head and links each gap to the tool that writes the fix', () => {
+    const checks = snippetChecks(head);
+    expect(checks.every((check) => check.state === 'ok')).toBe(true);
+    expect(checks.find((check) => check.id === 'title')?.text).toBe('40 characters. Should fit.');
+    const gaps = snippetChecks({ ...head, title: null, description: null, jsonLdTypes: [], noindex: true });
     expect(gaps[0]).toMatchObject({ id: 'noindex', state: 'warn' });
     expect(Object.fromEntries(gaps.map((check) => [check.id, check.fixPath]))).toEqual({
       noindex: undefined,
       title: '/free-tools/serp-preview',
       description: '/free-tools/serp-preview',
       schema: '/free-tools/schema-generator',
-      llms: '/free-tools/llms-txt-generator',
     });
+    expect(gaps.find((check) => check.id === 'title')?.text).toBe('No title tag in the homepage HTML. Google will write its own.');
+  });
+
+  it('flags a short title and a schema that does not name the business', () => {
+    const checks = snippetChecks({ ...head, title: 'Home', jsonLdTypes: ['WebSite', 'Organization'] });
+    expect(checks.find((check) => check.id === 'title')).toMatchObject({ state: 'warn', text: 'Short. Say what you do and where.' });
+    expect(checks.find((check) => check.id === 'schema')).toMatchObject({ state: 'warn', fixPath: '/free-tools/schema-generator' });
+  });
+});
+
+describe('honest edges of the free check', () => {
+  it('reports a failed crawl-file fetch as Not measured, not missing', () => {
+    const crawl = summarizeProbeCrawl('agency.com.au', {
+      robotsTxt: null,
+      robotsHttpStatus: null,
+      llmsTxt: '',
+      llmsHttpStatus: 404,
+    });
+    expect(crawl.status).toBe('not_measured');
+    expect(crawl.note).toContain('robots.txt: Not measured');
+    expect(crawl.note).toContain('llms.txt missing');
+  });
+});
+
+describe('security review fixes', () => {
+  it('parses a hostile 256 KB page in linear time', () => {
+    const size = 256_000;
+    const payloads = [
+      `<title>${'<'.repeat(size)}</title>`,
+      `<meta name="description" content="${'<'.repeat(size)}">`,
+      `<head><title>${'x'.repeat(size)}`,
+      `<meta ${'a'.repeat(size)}`,
+      `<!--${'-'.repeat(size)}`,
+      '<!--'.repeat(size / 4),
+      '<meta content="'.repeat(size / 16),
+      '<title>'.repeat(size / 7),
+    ];
+    for (const page of payloads) {
+      const started = performance.now();
+      readPageHead(page);
+      // The quadratic version took seconds on these inputs; linear parsing takes a few milliseconds.
+      expect(performance.now() - started, page.slice(0, 20)).toBeLessThan(500);
+    }
   });
 });

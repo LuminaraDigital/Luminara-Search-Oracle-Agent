@@ -2,7 +2,7 @@
  * Runs the anonymous live check (homepage head, robots.txt, llms.txt) on this page, keeps the
  * engines labeled Not measured, then hands off to the full audit.
  */
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useEffectEvent, useRef, useState } from 'react';
 import { useDemoPlayback } from './demo/useDemoPlayback';
 import { normalizeDemoUrl, visibleProbeHost } from './demo/demoFixtures';
 import { EngineStatusChip } from './EvidenceGlyph';
@@ -11,16 +11,17 @@ import { productTelemetry } from '../../services/analytics/productTelemetry';
 import type { AuditHandoff } from '../../services/activation/auditHandoff';
 import { GUEST_FULL_AUDIT_CTA } from '../../services/audit/hostedScoutRail';
 import { checkPathForHost } from '../../services/marketing/homepageSnippet';
+import { copyToClipboard } from '../../utils/clipboard';
 
 interface DomainCheckProps {
   inputId: string;
   isAuthenticated?: boolean;
   /** Guests go to sign-up with the handoff; signed-in users go straight to the audit. */
   onFullAudit: (handoff?: AuditHandoff) => void;
-  /** Where the check ran, for `probe_completed`. */
+  /** Where the check ran, for `probe_completed`. A check started from a shared link reports `check_link`. */
   surface?: string;
-  /** From a /check/<host> link: run the check on this host once, on first render. */
-  autoRunHost?: string | null;
+  /** From a /check/<host> link: run the check on this host on first render. */
+  autoRunHost?: string;
 }
 
 export const DomainCheck: React.FC<DomainCheckProps> = ({
@@ -28,34 +29,32 @@ export const DomainCheck: React.FC<DomainCheckProps> = ({
   isAuthenticated,
   onFullAudit,
   surface = 'landing_inline',
-  autoRunHost = null,
+  autoRunHost,
 }) => {
   const demo = useDemoPlayback();
   const [error, setError] = useState<string | null>(null);
-  const [linkCopied, setLinkCopied] = useState(false);
+  // Tied to the host it was copied for, so a new check shows the plain button again.
+  // 'manual': the copy failed (some in-app browsers), so the link is shown to copy by hand.
+  const [share, setShare] = useState<{ host: string; state: 'copied' | 'manual' } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const running = demo.phase === 'analyzing';
+  const resultHost = demo.fixture?.domain ?? '';
+  const shareState = !running && share && share.host === resultHost ? share.state : 'idle';
+  // Only the run the shared link started counts as a check_link check; later typed checks do not.
+  const runSurface = autoRunHost && resultHost === autoRunHost ? 'check_link' : surface;
 
+  // A remount (React StrictMode in development) cancels the first run in useDemoPlayback's
+  // cleanup, so this starts it again on every mount rather than once per component.
+  const runShared = useEffectEvent((host: string) => demo.runSample(host));
   useEffect(() => {
-    if (running) setLinkCopied(false);
-  }, [running]);
-
-  // Runs once per host. No "already ran" flag: a remount (React StrictMode in development)
-  // cancels the first run in useDemoPlayback's cleanup, and this effect must start it again.
-  useEffect(() => {
-    if (autoRunHost) demo.runSample(autoRunHost);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (autoRunHost) runShared(autoRunHost);
   }, [autoRunHost]);
 
+  const checkLink = (domain: string) => `${window.location.origin}${checkPathForHost(domain)}`;
+
   const copyCheckLink = (domain: string) => {
-    if (!navigator.clipboard) return;
-    navigator.clipboard
-      .writeText(`${window.location.origin}${checkPathForHost(domain)}`)
-      .then(() => {
-        setLinkCopied(true);
-        productTelemetry.track('share_clicked', { channel: 'check_link', surface });
-      })
-      .catch(() => undefined);
+    productTelemetry.track('share_clicked', { channel: 'check_link', surface: runSurface });
+    void copyToClipboard(checkLink(domain)).then((ok) => setShare({ host: domain, state: ok ? 'copied' : 'manual' }));
   };
 
   // Count a check only once it has finished, with how it ended.
@@ -64,10 +63,10 @@ export const DomainCheck: React.FC<DomainCheckProps> = ({
     productTelemetry.track('probe_completed', {
       domain: demo.fixture.domain,
       focus: 'AEO',
-      surface,
+      surface: runSurface,
       resultKind: demo.resultKind,
     });
-  }, [demo.phase, demo.fixture, demo.resultKind, surface]);
+  }, [demo.phase, demo.fixture, demo.resultKind, runSurface]);
 
   const handoffFor = (raw: string): AuditHandoff | undefined => {
     const parsed = normalizeDemoUrl(raw);
@@ -88,7 +87,10 @@ export const DomainCheck: React.FC<DomainCheckProps> = ({
 
   const showResult = running || demo.phase === 'results_sample';
   const crawl = demo.engines.find((r) => r.id === 'crawl_readiness');
-  const engines = demo.engines.filter((r) => r.id !== 'crawl_readiness');
+  // One chip per label: several engines share "AI answers", and repeated chips read as a bug.
+  const engines = demo.engines
+    .filter((r) => r.id !== 'crawl_readiness')
+    .filter((row, i, rows) => rows.findIndex((other) => other.label === row.label) === i);
   const host = demo.fixture?.domain ?? demo.url;
   const message = error || demo.error;
 
@@ -153,7 +155,18 @@ export const DomainCheck: React.FC<DomainCheckProps> = ({
             </button>
           </div>
 
-          <ul className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-5 list-none m-0 p-0">
+          {/* The homepage read is the first value, so it leads; the engine chips follow it. */}
+          {demo.fixture && demo.resultKind === 'live_crawl' && demo.fixture.page !== undefined && (
+            <div className="mt-4">
+              <HomepageSnippetResult
+                page={demo.fixture.page}
+                pageReason={demo.fixture.pageReason ?? null}
+                checkedAt={demo.fixture.checkedAt}
+              />
+            </div>
+          )}
+
+          <ul className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4 list-none m-0 p-0">
             {crawl && (
               <li className="col-span-2 sm:col-span-1 min-w-0">
                 <p className="text-[13px] text-[var(--color-ink)]">Crawl access</p>
@@ -172,14 +185,6 @@ export const DomainCheck: React.FC<DomainCheckProps> = ({
             <p className="mt-4 text-sm text-[var(--color-ink-2)]">{demo.stageLabel}</p>
           )}
 
-          {demo.fixture && demo.resultKind === 'live_crawl' && demo.fixture.page !== undefined && (
-            <HomepageSnippetResult
-              page={demo.fixture.page}
-              pageReason={demo.fixture.pageReason ?? null}
-              llmsPresent={Boolean(demo.fixture.llmsPresent)}
-            />
-          )}
-
           {demo.fixture && (
             <div className="mt-5 border-t border-[var(--color-rule)] pt-4">
               <p className="text-sm leading-relaxed text-[var(--color-ink-2)]">
@@ -187,6 +192,14 @@ export const DomainCheck: React.FC<DomainCheckProps> = ({
                   ? crawl?.note
                   : 'We could not reach the site for a live crawl just now. Try again, or run the full audit.'}
               </p>
+              {demo.resultKind === 'live_crawl' && (
+                <p className="mt-2 text-xs text-[var(--color-ink-2)]">
+                  Free generators:{' '}
+                  <a href="/free-tools/robots-txt-generator" className="lx-link">robots.txt</a>
+                  {' · '}
+                  <a href="/free-tools/llms-txt-generator" className="lx-link">llms.txt</a>
+                </p>
+              )}
               <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
                 <button
                   type="button"
@@ -201,8 +214,19 @@ export const DomainCheck: React.FC<DomainCheckProps> = ({
                     onClick={() => copyCheckLink(demo.fixture?.domain || '')}
                     className="lx-link text-sm"
                   >
-                    {linkCopied ? 'Link copied' : 'Copy link to this check'}
+                    {shareState === 'copied' ? 'Link copied. Opening it runs the check again.' : 'Copy link to this check'}
                   </button>
+                )}
+                {shareState === 'manual' && demo.fixture && (
+                  <label className="block w-full text-xs text-[var(--color-ink-2)]">
+                    Copy this link. Opening it runs the check again.
+                    <input
+                      readOnly
+                      value={checkLink(demo.fixture.domain)}
+                      onFocus={(e) => e.currentTarget.select()}
+                      className="lx-field mt-1"
+                    />
+                  </label>
                 )}
                 {!isAuthenticated && (
                   <span className="text-xs text-[var(--color-ink-2)]">Hosted engines stay off until you sign in or add your own keys.</span>
