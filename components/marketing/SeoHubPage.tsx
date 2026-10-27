@@ -103,7 +103,7 @@ const SeoHubPage: React.FC<SeoHubPageProps> = ({ page, onTerminal }) => {
             Check your own site <span className="italic lx-gold-text pr-[0.08em]">for free.</span>
           </>
         ),
-        body: 'The live crawl check reads your robots.txt and llms.txt with no card and no account. Results are labeled Measured, Estimated, or Not measured.',
+        body: 'The free check reads your homepage search snippet, robots.txt and llms.txt with no card and no account. Results are labeled Measured, Estimated, or Not measured.',
         cta: { label: 'Run the free crawl check', onClick: onTerminal },
       }}
     >

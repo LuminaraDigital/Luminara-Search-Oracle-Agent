@@ -1,8 +1,8 @@
 /**
  * Bounded fetch of /robots.txt, /llms.txt, and optional /ai.txt for an Instant Audit target.
  * Open to guests on purpose (the guest Instant Audit reads it); only a signed-in caller gets a
- * scout receipt. Private hosts are refused. A same-site 301/302/303/307/308 is followed
- * after the next host is checked again. A redirect to another site is not followed.
+ * scout receipt. Private hosts and non-default ports are refused. A same-site 301/302/303/307/308
+ * is followed after the next URL and host are checked again. A redirect to another site is not followed.
  * Crawl files on this Worker's own Custom Domains are read in-process (same-zone fetch returns 522).
  */
 import type { Env } from './env';
@@ -54,13 +54,15 @@ async function fetchOne(
         if (!loc || hop === MAX_REDIRECTS || !FOLLOW_REDIRECT.has(res.status)) {
           return { status: res.status, body: null };
         }
-        let next: URL;
+        let resolved: URL;
         try {
-          next = new URL(loc, current);
+          resolved = new URL(loc, current);
         } catch {
           return { status: res.status, body: null };
         }
-        if ((next.protocol !== 'http:' && next.protocol !== 'https:') || !sameSiteHost(originHost, next.hostname)) {
+        // Same rules as the first hop: public http(s), no credentials, default port, same site.
+        const next = safePublicUrl(resolved.toString());
+        if (!next || next.port || !sameSiteHost(originHost, next.hostname)) {
           return { status: res.status, body: null };
         }
         if (!(await resolvesToPublicAddress(next.hostname, fetcher as DohFetch))) {
@@ -90,6 +92,7 @@ export async function loadCrawlerSnapshot(
   const withScheme = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
   const page = safePublicUrl(withScheme);
   if (!page) return { ok: false, error: 'URL is not a public http(s) host.', code: 'UNSAFE_URL' };
+  if (page.port) return { ok: false, error: "Use the site's normal address, without a port number.", code: 'UNSAFE_URL' };
   const publicHost = await resolvesToPublicAddress(page.hostname, fetcher as DohFetch);
   if (!publicHost) {
     return { ok: false, error: 'Host did not resolve to a public address.', code: 'UNSAFE_HOST' };

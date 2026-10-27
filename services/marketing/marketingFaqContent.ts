@@ -14,7 +14,7 @@ export const MARKETING_FAQ: MarketingFaqItem[] = [
   {
     question: 'What is the difference between the live crawl check and the full audit?',
     answer:
-      'The live crawl check on this page reads robots.txt and llms.txt and leaves the answer engines as Not measured. A signed-in audit also checks your site and live web search. Guests can also bring their own AI keys.',
+      'The free check on this page reads your homepage title, description and structured data, plus robots.txt and llms.txt, and leaves the answer engines as Not measured. A signed-in audit also checks your site and live web search. Guests can also bring their own AI keys.',
   },
   {
     question: 'Do I need a credit card to try it?',

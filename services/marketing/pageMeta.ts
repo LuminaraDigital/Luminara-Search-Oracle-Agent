@@ -15,6 +15,7 @@ import { buildFaqPageJsonLd } from './marketingFaqContent';
 import { REAL_ESTATE_AUDIENCE } from './marketingHeroCopy';
 import { HUB_FAQ_HEADING, HUB_PAGES, HUB_REVIEWED, type HubPage } from './seoHubPages';
 import { FREE_TOOLS, FREE_TOOLS_CLOSING, FREE_TOOLS_HUB, FREE_TOOLS_PATH, type FreeTool } from './freeTools';
+import { checkHostFromPath } from './homepageSnippet';
 import { CONTACT_CRAWLER, FAQ_CRAWLER } from '../help/helpPages';
 import { privacyCrawlerBody } from '../legal/privacyCrawler';
 
@@ -245,7 +246,7 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
   <h1>Be the answer AI gives.</h1>
   <p>${REAL_ESTATE_AUDIENCE} ${HONEST_VISIBILITY_PROMISE}</p>
   <p>Illustrative example, not a real agency and not a measurement: an independent agency, checked for a suburb question.</p>
-  <p>Free check of robots.txt and llms.txt. No card. A full audit needs sign-in or your own keys. Every result is labeled Measured, Estimated or Not measured. No blended AI visibility score.</p>
+  <p>Free check of your homepage search snippet, robots.txt and llms.txt. No card. A full audit needs sign-in or your own keys. Every result is labeled Measured, Estimated or Not measured. No blended AI visibility score.</p>
   <ul>
     <li><a href="/sample-report">Sample report</a></li>
     <li><a href="/methodology">Methodology</a></li>
@@ -469,9 +470,34 @@ export function perDomainShell(pathname: string): MarketingShellMeta | null {
   };
 }
 
-/** Marketing shell, or a per-domain audit shell. Null for app paths the SPA shell serves as-is. */
+/**
+ * A shared free check (/check/<host>). Not indexed: one page per typed host would be thin
+ * near-duplicates. The title names the host so a pasted link previews what it checks.
+ */
+export function checkShell(pathname: string): MarketingShellMeta | null {
+  const host = checkHostFromPath(pathname);
+  if (!host) return null;
+  const clean = pathname.replace(/\/+$/, '');
+  const title = brandedTabTitle(`Free check: ${host}`);
+  const description = `A free live check of ${host}: its homepage search snippet, robots.txt and llms.txt. Run the same check on your site.`;
+  return {
+    path: clean,
+    title,
+    description,
+    robots: 'noindex, nofollow',
+    jsonLd: graph(clean, title, description),
+    crawlerBody: `
+<section>
+  <h1>Free check: ${esc(host)}</h1>
+  <p>${esc(description)}</p>
+  <p><a href="/">Run the free check</a></p>
+</section>`,
+  };
+}
+
+/** Marketing shell, or a per-domain audit or check shell. Null for app paths the SPA shell serves as-is. */
 export function marketingPageForPath(pathname: string): MarketingShellMeta | null {
   const key = marketingShellKey(pathname);
   if (key) return MARKETING_SHELL_BY_PATH[key] ?? null;
-  return perDomainShell(pathname);
+  return perDomainShell(pathname) ?? checkShell(pathname);
 }

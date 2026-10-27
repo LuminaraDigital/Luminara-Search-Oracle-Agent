@@ -30,7 +30,7 @@ export const FREE_TOOLS_PATH = '/free-tools';
 /** Closing call to action on every free tools page, and the last crawler paragraph. */
 export const FREE_TOOLS_CLOSING = {
   eyebrow: 'Free crawl check',
-  body: `The free crawl check reads your current robots.txt and llms.txt with no card and no account. Instant Audit then checks your site and live web search and gives you one fix to ship. ${LIVE_ANSWER_CHECKS}`,
+  body: `The free check reads your homepage title, description and structured data, plus robots.txt and llms.txt, with no card and no account. Instant Audit then checks your site and live web search and gives you one fix to ship. ${LIVE_ANSWER_CHECKS}`,
 } as const;
 
 /** Added to each generator's last step: most agency owners hand files to whoever runs their site. */
@@ -52,12 +52,12 @@ export const FREE_TOOLS_HUB = {
     {
       question: 'Do you store what I type?',
       answer:
-        'No. The tools run on this page and send nothing you type to our servers. The crawl check at the bottom is separate: it sends the domain you enter so we can read its robots.txt and llms.txt.',
+        'No. The tools run on this page and send nothing you type to our servers. The check at the bottom is separate: it sends the domain you enter so we can read its homepage, robots.txt and llms.txt.',
     },
     {
       question: 'Which tool should I start with?',
       answer:
-        'Start with the free crawl check at the bottom of this page. It shows whether your robots.txt and llms.txt are there. Instant Audit shows which AI crawlers they block, and the robots.txt generator writes rules that let them in.',
+        'Start with the free check at the bottom of this page. It shows your homepage as a search result and whether your robots.txt and llms.txt are there. Instant Audit shows which AI crawlers they block, and the robots.txt generator writes rules that let them in.',
     },
   ] satisfies MarketingFaqItem[],
 } as const;

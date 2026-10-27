@@ -27,6 +27,7 @@ import {
 import type { AuditHandoff } from '../services/activation/auditHandoff';
 import { GUEST_HERO_NOTE, GUEST_REPORT_NOTE } from '../services/audit/hostedScoutRail';
 import { HOME_HERO } from '../services/marketing/marketingHeroCopy';
+import { checkHostFromPath } from '../services/marketing/homepageSnippet';
 
 interface LandingPageProps {
   onNavigateAudit: (handoff?: AuditHandoff) => void;
@@ -89,6 +90,10 @@ const LandingPage: React.FC<LandingPageProps> = ({
   onSignUpClick,
 }) => {
   const chrome = useMarketingChrome();
+  // A /check/<host> link opens the landing with the check already running on that host.
+  const [sharedCheckHost] = useState(() =>
+    typeof window === 'undefined' ? null : checkHostFromPath(window.location.pathname),
+  );
   const rootRef = useRef<HTMLDivElement>(null);
   const anchorsRef = useRef<Array<HTMLElement | null>>([]);
   const [chapter, setChapter] = useState(-1);
@@ -194,7 +199,13 @@ const LandingPage: React.FC<LandingPageProps> = ({
             {HOME_HERO.lede}
           </p>
           <div className="lx-enter-rise lx-d5 mt-9 w-full">
-            <DomainCheck inputId="hero-domain" isAuthenticated={isAuthenticated} onFullAudit={fullAudit} />
+            <DomainCheck
+              inputId="hero-domain"
+              isAuthenticated={isAuthenticated}
+              onFullAudit={fullAudit}
+              autoRunHost={sharedCheckHost}
+              surface={sharedCheckHost ? 'check_link' : 'landing_inline'}
+            />
           </div>
           <p className="lx-enter-rise lx-d6 mt-5 text-sm text-[var(--color-ink-2)]">
             {GUEST_HERO_NOTE}{' '}

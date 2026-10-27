@@ -8,6 +8,7 @@ import {
   instantAuditTabTitle,
   marketingShellKey,
   perDomainShell,
+  checkShell,
   type MarketingShellMeta,
 } from './pageMeta';
 import { HONEST_VISIBILITY_PROMISE } from './engineCoverage';
@@ -101,6 +102,9 @@ const DEFAULT_APP_META = {
 
 function shellFor(pathname: string, view: AppView): MarketingShellMeta | undefined {
   const path = pathname || '/';
+  // A shared check renders the landing view but keeps its own noindex meta.
+  const sharedCheck = checkShell(path);
+  if (sharedCheck) return sharedCheck;
   // `/` plus a hash is a product view. A real path such as /compare/profound wins over the shared view.
   const key = path === '/' ? null : marketingShellKey(path);
   const shellPath = key ?? VIEW_TO_SHELL[view];

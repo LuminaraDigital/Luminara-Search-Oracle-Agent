@@ -453,7 +453,7 @@ const BEST_PAGES: BestPage[] = [
       {
         question: 'Can I check my agency for free?',
         answer:
-          'Yes. The Luminara live crawl check reads your robots.txt and llms.txt with no card and no account.',
+          'Yes. The Luminara free check reads your homepage search snippet, robots.txt and llms.txt with no card and no account.',
       },
     ],
     sources: [
@@ -521,7 +521,7 @@ const BEST_PAGES: BestPage[] = [
       {
         question: 'What is the cheapest way to start an AEO audit?',
         answer:
-          'Run a free live crawl check first. Luminara reads robots.txt and llms.txt with no card and no account, then a free account runs a fuller audit on a daily allowance.',
+          'Run a free live crawl check first. Luminara reads your homepage search snippet, robots.txt and llms.txt with no card and no account, then a free account runs a fuller audit on a daily allowance.',
       },
       {
         question: 'Do I need an SEO suite for AEO?',

@@ -3,6 +3,7 @@
  * Fixtures only. Never invent live SEO metrics. Never mark engines Measured.
  */
 import { EMPTY_SITE_INPUT_MESSAGE } from '../../../services/audit/auditTargetUrl';
+import type { HomepageHead, HomepageReadFailure } from '../../../services/marketing/homepageSnippet';
 export type DemoPhase =
   | 'empty'
   | 'typing'
@@ -29,6 +30,10 @@ export interface DemoFixture {
   verdict: string;
   shipAction: string;
   engines: DemoEngineRow[];
+  /** Live homepage read. Undefined for a sample, null with a reason when it could not be read. */
+  page?: HomepageHead | null;
+  pageReason?: HomepageReadFailure | null;
+  llmsPresent?: boolean;
 }
 
 export const DEMO_PRESETS = ['luminarasuite.com', 'example.com', 'yourbrand.com'] as const;
@@ -69,7 +74,7 @@ export const SAMPLE_FIXTURE: DemoFixture = {
 };
 
 /** What the anonymous check really does: it reads crawl files. It never asks an answer engine. */
-export const ANALYZE_STAGES = ['Reading robots.txt…', 'Reading llms.txt and ai.txt…'] as const;
+export const ANALYZE_STAGES = ['Reading your homepage…', 'Reading robots.txt…', 'Reading llms.txt and ai.txt…'] as const;
 
 /** Drop a repeated scheme so the probe prefix is not shown twice. */
 export function visibleProbeHost(raw: string): string {

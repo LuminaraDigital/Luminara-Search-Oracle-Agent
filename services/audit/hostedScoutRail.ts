@@ -8,9 +8,9 @@ import { draftPersistenceService, DRAFT_KEYS } from '../state/draftPersistenceSe
 
 export type HostedScoutRail = 'tma_hosted' | 'signed_in_hosted' | 'byok_or_signin';
 
-/** Homepage probe is crawl files only. A full audit is a different product. */
+/** Homepage probe reads the homepage head and the crawl files only. A full audit is a different product. */
 export const GUEST_HERO_NOTE =
-  'Free check of robots.txt and llms.txt. No card. A full audit needs sign-in or your own keys.';
+  'Free check of your homepage search snippet, robots.txt and llms.txt. No card. A full audit needs sign-in or your own keys.';
 
 export const GUEST_REPORT_NOTE =
   'No 40-page PDF and no made-up score. A full verdict needs sign-in or your own keys.';

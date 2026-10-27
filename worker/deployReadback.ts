@@ -24,7 +24,7 @@
  * into a larger `@graph`, or adds an `@id`, reads as not found.
  */
 import type { Env } from './env';
-import { MAX_SMALL_BODY_BYTES, clientIp, fetchPublicUrl, readBody, safePublicUrl } from './security';
+import { MAX_SMALL_BODY_BYTES, clientIp, defaultPortFetcher, fetchPublicUrl, readBody, safePublicUrl } from './security';
 import { enforceDualRateLimit } from './securityHardening';
 import { billingId, identify, json } from './workerUtils';
 
@@ -161,7 +161,7 @@ const isJsonLdType = (type: string | null) => (type ?? '').split(';')[0].trim().
  * character is stepped over once. Anything left open at the end of the page swallows the rest.
  * A script inside a template, inline SVG or MathML is not counted.
  */
-function jsonLdBlocks(html: string): string[] {
+export function jsonLdBlocks(html: string): string[] {
   const out: string[] = [];
   let templateDepth = 0;
   let foreignDepth = 0;
@@ -279,12 +279,6 @@ async function readCapped(res: Response, maxBytes: number): Promise<{ text: stri
  */
 const notRead = () => json({ ok: false, error: 'The page could not be read.', code: 'PAGE_NOT_READ' }, 422);
 
-/** Fetches only on the standard web ports. fetchPublicUrl calls this for the first hop and every redirect. */
-async function fetchOnDefaultPort(input: string, init?: RequestInit): Promise<Response> {
-  if (new URL(input).port) throw new Error('non-default port');
-  return fetch(input, init);
-}
-
 export async function handleDeployReadbackRoute(request: Request, env: Env): Promise<Response> {
   if (request.method !== 'POST') return json({ ok: false, error: 'Method not allowed' }, 405);
 
@@ -349,7 +343,7 @@ export async function handleDeployReadbackRoute(request: Request, env: Env): Pro
       },
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     },
-    { fetcher: fetchOnDefaultPort, dohFetcher: (dohUrl, dohInit) => fetch(dohUrl, dohInit) },
+    { fetcher: defaultPortFetcher(), dohFetcher: (dohUrl, dohInit) => fetch(dohUrl, dohInit) },
   );
   if (!fetched.ok) return notRead();
   // Only an HTML page can carry a script element. The same markup served as text/plain, or with

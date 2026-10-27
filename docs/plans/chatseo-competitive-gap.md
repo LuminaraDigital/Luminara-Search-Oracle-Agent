@@ -105,6 +105,8 @@ One `ComparePage` entry in `services/marketing/seoHubPages.ts`. The registry alr
 
 ## 4a. G1c and the share link (next PR, branched from this one)
 
+Status 2026-10-28: built on `feat/g1c-homepage-snippet`, stacked on the G1 PR. Design record: `specs/0029-homepage-snippet-check.md`. The honesty plan carries the dated amendment. Live reads that day: luminara.digital, jelliscraig.com.au and chatseo.app read in 0.2 to 2 seconds; raywhite.com answers bots with 403 and shows as "blocked".
+
 The single biggest activation gap: ChatSEO shows a site its own search snippet in its first screen; our free check shows two file names. Split out because:
 
 - `docs/plans/conversion-honesty-ship.md` rules that the landing probe never labels a Google or AI engine row Measured and never becomes an HTML proxy. G1c returns parsed head fields only, never page HTML, and labels the snippet "as your page writes it", Measured from the page fetch, with "Google can rewrite it" beside it. Google stays Not measured. That plan's line needs an explicit amendment in the same PR.

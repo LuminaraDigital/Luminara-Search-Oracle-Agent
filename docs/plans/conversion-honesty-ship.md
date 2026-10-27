@@ -65,6 +65,8 @@ Visitor types domain
 
 Rate limit: tighter than crawler-files (suggest 10/min/IP dual). Cache same host 5 minutes optional. No auth required; no scout receipt that implies engine Measured.
 
+**Amendment, 2026-10-28 (G1c, `docs/plans/chatseo-competitive-gap.md` section 4a; `specs/0029-homepage-snippet-check.md`).** The probe also reads the homepage once and returns parsed head fields only: title, meta description, canonical, first H1, whether an og:image is set, JSON-LD `@type` names, and noindex. It never returns or stores page HTML, so it is still not an HTML proxy. The landing labels those fields as read from the page ("As your page writes it. Google can rewrite titles and snippets"), and Google, AI Overviews, ChatGPT and Perplexity stay Not measured. The fetch goes through `fetchPublicUrl` with default ports only, a DNS check with a 3 second timeout on every hop, 5 seconds for the whole read, 256 KB, and HTML only. One host's result is cached for 2 minutes.
+
 Existing `/visibility/crawler-files` stays **AUTH_REQUIRED** for Instant Audit.
 
 ## Phases
