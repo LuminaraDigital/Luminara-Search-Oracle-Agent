@@ -41,7 +41,8 @@ export const DomainCheck: React.FC<DomainCheckProps> = ({
   const resultHost = demo.fixture?.domain ?? '';
   const shareState = !running && share && share.host === resultHost ? share.state : 'idle';
   // Only the run the shared link started counts as a check_link check; later typed checks do not.
-  const runSurface = autoRunHost && resultHost === autoRunHost ? 'check_link' : surface;
+  const sharedHost = autoRunHost ? normalizeDemoUrl(autoRunHost) : null;
+  const runSurface = sharedHost?.ok && resultHost === sharedHost.host ? 'check_link' : surface;
 
   // A remount (React StrictMode in development) cancels the first run in useDemoPlayback's
   // cleanup, so this starts it again on every mount rather than once per component.

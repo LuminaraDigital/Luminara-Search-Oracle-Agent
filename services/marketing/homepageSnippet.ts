@@ -5,7 +5,7 @@
  * Honesty: these fields are read from the page, so they are Measured as page facts. They are not
  * what Google shows; Google can rewrite titles and snippets, and Google stays Not measured here.
  */
-import { checkDescription, checkTitle } from '../freeTools/serpPreview';
+import { checkDescription, checkTitle, type SerpDevice } from '../freeTools/serpPreview';
 import { safePublicHostname } from '../security/publicHostname';
 import type { FreeTool } from './freeTools';
 
@@ -24,7 +24,7 @@ export interface HomepageHead {
 export type HomepageReadFailure = 'unreachable' | 'blocked' | 'http_error' | 'not_html';
 
 export const HOMEPAGE_FAILURE_TEXT: Record<HomepageReadFailure, string> = {
-  unreachable: 'We could not read your homepage within 5 seconds. It may be slow or refusing automated checks. Try again in a minute.',
+  unreachable: 'We could not read your homepage. It may be slow, down, or refusing automated checks. Try again in a minute.',
   blocked:
     "Your site's security turned our check away, so the homepage was not read. This is common and does not tell us whether Google can read it.",
   http_error:
@@ -45,8 +45,18 @@ export interface SnippetCheck {
 
 const SERP_TOOL: FreeTool['path'] = '/free-tools/serp-preview';
 const SCHEMA_TOOL: FreeTool['path'] = '/free-tools/schema-generator';
-/** Types that say what a local agency is. Anything else (WebSite, Organization) leaves the business unnamed. */
-const LOCAL_BUSINESS_TYPES = new Set(['RealEstateAgent', 'LocalBusiness', 'ProfessionalService']);
+/**
+ * LocalBusiness and its direct schema.org subtypes: what tells Google a business serves a place.
+ * WebSite or Organization alone does not, so the check suggests the schema generator.
+ */
+const LOCAL_BUSINESS_TYPES = new Set([
+  'LocalBusiness', 'RealEstateAgent', 'ProfessionalService', 'AnimalShelter', 'ArchiveOrganization',
+  'AutomotiveBusiness', 'ChildCare', 'Dentist', 'DryCleaningOrLaundry', 'EmergencyService', 'EmploymentAgency',
+  'EntertainmentBusiness', 'FinancialService', 'FoodEstablishment', 'GovernmentOffice', 'HealthAndBeautyBusiness',
+  'HomeAndConstructionBusiness', 'InternetCafe', 'LegalService', 'Library', 'LodgingBusiness', 'MedicalBusiness',
+  'RadioStation', 'RecyclingCenter', 'SelfStorage', 'ShoppingCenter', 'SportsActivityLocation', 'Store',
+  'TelevisionStation', 'TouristInformationCenter', 'TravelAgency',
+]);
 
 function lengthCheck(
   id: 'title' | 'description',
@@ -61,8 +71,11 @@ function lengthCheck(
   return { id, label, state: 'ok', text: `${chars} characters. Should fit.` };
 }
 
-/** One line per field, in the order an owner should fix them. Lengths are estimates of Google's cut. */
-export function snippetChecks(head: HomepageHead): SnippetCheck[] {
+/**
+ * One line per field, in the order an owner should fix them. Lengths are estimates of Google's cut;
+ * the description is judged for the same device the preview card shows.
+ */
+export function snippetChecks(head: HomepageHead, device: SerpDevice = 'desktop'): SnippetCheck[] {
   const checks: SnippetCheck[] = [];
   if (head.noindex) {
     checks.push({
@@ -75,7 +88,7 @@ export function snippetChecks(head: HomepageHead): SnippetCheck[] {
 
   const title = checkTitle(head.title ?? '');
   checks.push(lengthCheck('title', 'Title', title.verdict, title.chars, 'No title tag in the homepage HTML. Google will write its own.'));
-  const description = checkDescription(head.description ?? '', 'desktop');
+  const description = checkDescription(head.description ?? '', device);
   checks.push(
     lengthCheck(
       'description',
@@ -94,7 +107,7 @@ export function snippetChecks(head: HomepageHead): SnippetCheck[] {
       id: 'schema',
       label: 'Structured data',
       state: 'warn',
-      text: `Found: ${types.join(', ')}. No RealEstateAgent or LocalBusiness type, so your business is not named.`,
+      text: `Found: ${types.join(', ')}. No LocalBusiness-type schema found, such as RealEstateAgent.`,
       fixPath: SCHEMA_TOOL,
     });
   } else {

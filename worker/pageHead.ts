@@ -20,7 +20,8 @@ const ROBOTS_DIRECTIVES_WITH_COLON = /^(max-snippet|max-image-preview|max-video-
 
 function attr(tag: string, name: string): string | null {
   // Preceded by whitespace, so `name` does not match `data-name`.
-  const match = new RegExp(`\\s${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s"'>]+))`, 'i').exec(tag);
+  // A quote left open by the MAX_SPAN cut runs to the end of the cut tag.
+  const match = new RegExp(`\\s${name}\\s*=\\s*(?:"([^"]*)(?:"|$)|'([^']*)(?:'|$)|([^\\s"'>]+))`, 'i').exec(tag);
   return match ? (match[1] ?? match[2] ?? match[3] ?? '') : null;
 }
 
@@ -40,7 +41,8 @@ function withoutComments(html: string): string {
     const open = html.indexOf('<!--', at);
     if (open < 0) break;
     parts.push(html.slice(at, open));
-    const close = html.indexOf('-->', open + 4);
+    // From open + 2, so the empty comments <!--> and <!---> close where HTML closes them.
+    const close = html.indexOf('-->', open + 2);
     if (close < 0) return parts.join('');
     at = close + 3;
   }
@@ -48,7 +50,7 @@ function withoutComments(html: string): string {
   return parts.join('');
 }
 
-/** Inner text of the first <title> or <h1>. A missing closer reads at most MAX_SPAN characters. */
+/** Inner text of the first <title>. A missing closer reads at most MAX_SPAN characters. */
 function elementText(html: string, lower: string, tag: 'title'): string | null {
   const open = new RegExp(`<${tag}\\b[^<>]*>`, 'i').exec(html);
   if (!open) return null;
@@ -58,7 +60,8 @@ function elementText(html: string, lower: string, tag: 'title'): string | null {
 }
 
 function metaTags(html: string): string[] {
-  return (html.match(/<meta\b[^<>]*>/gi) ?? []).filter((tag) => tag.length <= MAX_SPAN).slice(0, MAX_TAGS);
+  // A tag longer than MAX_SPAN is cut, not dropped: a very long description still reads as too long.
+  return (html.match(/<meta\b[^<>]*>/gi) ?? []).slice(0, MAX_TAGS).map((tag) => tag.slice(0, MAX_SPAN));
 }
 
 /** Content of the first meta tag whose name or property is `key`. */
@@ -90,10 +93,13 @@ export function robotsSaysNoindex(value: string | null | undefined): boolean {
   return false;
 }
 
-function collectTypes(node: unknown, into: Set<string>): void {
-  if (into.size >= MAX_TYPES || !node || typeof node !== 'object') return;
+/** Nested entities (a publisher, an address) are read this deep, enough for real pages and bounded for hostile ones. */
+const MAX_DEPTH = 6;
+
+function collectTypes(node: unknown, into: Set<string>, depth = 0): void {
+  if (into.size >= MAX_TYPES || depth > MAX_DEPTH || !node || typeof node !== 'object') return;
   if (Array.isArray(node)) {
-    node.forEach((item) => collectTypes(item, into));
+    node.forEach((item) => collectTypes(item, into, depth + 1));
     return;
   }
   const record = node as Record<string, unknown>;
@@ -101,7 +107,9 @@ function collectTypes(node: unknown, into: Set<string>): void {
   for (const value of Array.isArray(type) ? type : [type]) {
     if (typeof value === 'string' && value.trim() && into.size < MAX_TYPES) into.add(value.trim().slice(0, 60));
   }
-  if (record['@graph']) collectTypes(record['@graph'], into);
+  for (const [key, value] of Object.entries(record)) {
+    if (key !== '@type' && value && typeof value === 'object') collectTypes(value, into, depth + 1);
+  }
 }
 
 function jsonLdTypes(html: string): string[] {
@@ -120,11 +128,14 @@ export function readPageHead(html: string): Omit<HomepageHead, 'finalUrl'> {
   const page = withoutComments(html);
   const lower = page.toLowerCase();
   // Title and meta come from the head only, so an inline SVG <title> in the body never stands in.
-  const headEnd = lower.indexOf('</head');
-  const head = headEnd < 0 ? page : page.slice(0, headEnd);
+  // </head> is optional in HTML, so the start of <body> also ends it.
+  const closeHead = lower.indexOf('</head');
+  const openBody = lower.indexOf('<body');
+  const headEnd = closeHead >= 0 ? closeHead : openBody >= 0 ? openBody : page.length;
+  const head = page.slice(0, headEnd);
   const metas = metaTags(head);
   return {
-    title: elementText(head, headEnd < 0 ? lower : lower.slice(0, headEnd), 'title'),
+    title: elementText(head, lower.slice(0, headEnd), 'title'),
     description: text(meta(metas, 'description')),
     jsonLdTypes: jsonLdTypes(page),
     noindex: robotsSaysNoindex(meta(metas, 'robots')) || robotsSaysNoindex(meta(metas, 'googlebot')),

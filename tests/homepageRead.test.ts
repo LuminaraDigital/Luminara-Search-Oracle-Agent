@@ -94,6 +94,22 @@ describe('readPageHead', () => {
       description: null,
       title: '&lt;b&gt;',
     });
+    // One decoding pass: a numeric "&" never starts a second entity.
+    expect(readPageHead('<title>&#x26;#60;b&#38;amp;</title>').title).toBe('&#60;b&amp;');
+    // Empty comments close where HTML closes them, and <body> ends a head with no </head>.
+    expect(readPageHead('<!--><title>After empty comment</title>').title).toBe('After empty comment');
+    expect(readPageHead('<html><head><meta name="description" content="d"><body><svg><title>Menu</title></svg>')).toMatchObject({
+      title: null,
+      description: 'd',
+    });
+    // A description tag too long to match whole is still read, so it is judged too long, not missing.
+    const long = readPageHead(`<head><meta name="description" content="${'Long. '.repeat(400)}"></head>`).description;
+    expect(long?.length).toBe(300);
+  });
+
+  it('finds business types nested inside other entities', () => {
+    const nested = '<script type="application/ld+json">{"@type":"WebSite","publisher":{"@type":"RealEstateAgent","address":{"@type":"PostalAddress"}}}</script>';
+    expect(readPageHead(nested).jsonLdTypes).toEqual(['WebSite', 'RealEstateAgent', 'PostalAddress']);
   });
 
   it('matches robots directives as whole tokens, for every crawler or Googlebot', () => {
@@ -164,6 +180,10 @@ describe('readHomepage', () => {
       const net = fakeNet(() => wall);
       expect(await readHomepage('https://agency.com.au/', net as unknown as typeof fetch)).toEqual({ page: null, pageReason: 'blocked' });
     }
+    // A normal page that only loads a bot-protection script is still read.
+    const protectedPage = html('<html><head><title>Smith &amp; Co agents</title><script src="https://js.datadome.co/tags.js"></script></head></html>');
+    const read = await readHomepage('https://agency.com.au/', fakeNet(() => protectedPage) as unknown as typeof fetch);
+    expect(read.page?.title).toBe('Smith & Co agents');
   });
 
   it('reads at most 256 KB, and takes noindex from an X-Robots-Tag that applies to Google', async () => {
@@ -289,10 +309,24 @@ describe('probe-crawl route with the homepage read', () => {
     expect(() => hit.headers.set('access-control-allow-origin', 'https://www.luminarasuite.com')).not.toThrow();
     expect(store.size).toBe(1);
 
+    // A site that turned the check away is reused briefly; an unreachable one is never cached.
     vi.stubGlobal('fetch', fakeNet((url) => (url.endsWith('/') ? new Response('down', { status: 503 }) : new Response('', { status: 404 }))));
-    const failed = await probe('other-site.com');
-    expect(failed.headers.get('cache-control')).toBe('no-store');
-    expect(store.size).toBe(1);
+    const walled = await probe('other-site.com');
+    expect(walled.headers.get('cache-control')).toBe('public, max-age=30');
+    expect(store.size).toBe(2);
+    vi.stubGlobal('fetch', fakeNet((url) => {
+      if (url.endsWith('/')) throw new TypeError('connection reset');
+      return new Response('', { status: 404 });
+    }));
+    const unreachable = await probe('www.agency.com.au');
+    expect(((await unreachable.json()) as { pageReason: string }).pageReason).toBe('unreachable');
+    expect(unreachable.headers.get('cache-control')).toBe('no-store');
+    expect(store.size).toBe(2);
+  });
+
+  it('reports a trailing-dot host as the same site', async () => {
+    vi.stubGlobal('fetch', fakeNet((url) => (url.endsWith('/') ? html(GOOD_PAGE) : new Response('', { status: 404 }))));
+    expect(((await (await probe('agency.com.au.')).json()) as { host: string }).host).toBe('agency.com.au');
   });
 });
 
@@ -386,10 +420,18 @@ describe('snippetChecks', () => {
     expect(gaps.find((check) => check.id === 'title')?.text).toBe('No title tag in the homepage HTML. Google will write its own.');
   });
 
-  it('flags a short title and a schema that does not name the business', () => {
+  it('flags a short title and a schema with no local business type', () => {
     const checks = snippetChecks({ ...head, title: 'Home', jsonLdTypes: ['WebSite', 'Organization'] });
     expect(checks.find((check) => check.id === 'title')).toMatchObject({ state: 'warn', text: 'Short. Say what you do and where.' });
     expect(checks.find((check) => check.id === 'schema')).toMatchObject({ state: 'warn', fixPath: '/free-tools/schema-generator' });
+    // Any LocalBusiness subtype counts.
+    expect(snippetChecks({ ...head, jsonLdTypes: ['WebSite', 'LegalService'] }).find((check) => check.id === 'schema')?.state).toBe('ok');
+  });
+
+  it('judges the description for the device the preview shows', () => {
+    const description = 'An independent agency selling and leasing homes in Hawthorn, Kew and Camberwell, with suburb guides and recent sales.';
+    expect(snippetChecks({ ...head, description }, 'desktop').find((check) => check.id === 'description')?.state).toBe('ok');
+    expect(snippetChecks({ ...head, description }, 'mobile').find((check) => check.id === 'description')?.state).toBe('fix');
   });
 });
 

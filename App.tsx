@@ -264,6 +264,9 @@ const App: React.FC = () => {
       : window.location.hash.toLowerCase() === `#${next.toLowerCase()}` && path === '/' && !onPathDeepLink;
     if (!alreadyThere) {
       window.history.pushState(null, '', target);
+      // Leaving a deep link for the same view (Home from /check/<host>) does not change `view`,
+      // so the meta effect would not run and the old title and noindex would stay.
+      if (onPathDeepLink) applyDocumentMetaForView(next);
     }
   }, [applyContinuumForView]);
 

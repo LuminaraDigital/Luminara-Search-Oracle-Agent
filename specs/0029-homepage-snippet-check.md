@@ -12,7 +12,7 @@ A competitor shows a site its own search snippet in its first screen; our free c
 
 ## Invariants
 
-- The response carries parsed fields only, never page HTML. Each field is capped at 300 characters. Comments are ignored, and title and meta are read from the `<head>` only.
+- The response carries parsed fields only, never page HTML. Each text field is capped at 300 characters. Comments are ignored, and title and meta are read from the `<head>` only.
 - The fields are page facts, labeled "Measured · read from your homepage at <time>". The Google-style card and its length verdicts ("Should fit", "Short") are labeled Estimated, with "We did not check Google" beside them. Google and AI engine rows stay Not measured. This amends `docs/plans/conversion-honesty-ship.md` (dated amendment there).
 - Parsing is linear in the page size (no regex that can backtrack across a 256 KB hostile page), with a test.
 - The homepage fetch uses `fetchPublicUrl` with `defaultPortFetcher`: public host and default port on every hop, DNS lookups capped at 3 seconds each that fail closed when either the A or AAAA lookup fails, 5 seconds for the page read including the body, 256 KB, HTML only, a `LuminaraProbe/1.0` user agent, no cookies.
@@ -20,7 +20,7 @@ A competitor shows a site its own search snippet in its first screen; our free c
 - The crawl-file fetch re-runs `safePublicUrl` on every redirect hop and refuses non-default ports.
 - A failed read returns `page: null` and one coarse `pageReason` (`unreachable`, `blocked`, `http_error`, `not_html`), never a raw error. A bot-wall page (known firewall markers, or noindex with no title and no description) counts as `blocked`, never as the owner's noindex. A crawl file whose fetch failed is Not measured, never "missing". The Worker logs the outcome only, never the host.
 - This Worker's own homepage is parsed from the page it serves (assets plus the same meta injection), because a fetch of its own Custom Domain returns 522.
-- A successful result is cached for 2 minutes per serving host, scheme and target host, so a widely shared `/check/` link reads the site at most once per Cloudflare location every 2 minutes. A failed read is not cached. The per-IP rate limit is unchanged.
+- Results are cached per serving host, scheme and target host. A successful read is cached for 2 minutes per Cloudflare location. A site that turned the check away (blocked, or an error answer) is cached for 30 seconds, so a shared link to it is not refetched on every view. An unreachable read is not cached. A widely shared `/check/` link therefore reads the site at most once per Cloudflare location every 2 minutes (30 seconds for a walled site). The per-IP rate limit is unchanged.
 - `/check/<host>` pages are `noindex, nofollow`, their meta is built from the validated host, and an invalid host is Not Found. The path is cleared when the visitor moves to another view.
 
 ## Alternatives considered

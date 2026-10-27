@@ -19,18 +19,22 @@ function fromCodePoint(raw: string, radix: number): string | null {
     : null;
 }
 
+const NAMED_ENTITIES: Record<string, string> = { nbsp: ' ', lt: '<', gt: '>', quot: '"', apos: "'", amp: '&' };
+
+/**
+ * Decodes the common named entities and every numeric reference (WordPress's &#8211; en dash,
+ * &#x2019; apostrophe) in one pass, so a decoded "&" never starts a second entity.
+ */
 export function decodeEntities(text: string): string {
   if (!text) return '';
-  return text
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/&quot;/gi, '"')
-    .replace(/&#0*39;|&#x0*27;|&apos;/gi, "'")
-    // Numeric references such as WordPress's &#8211; (en dash) and &#x2019; (apostrophe).
-    .replace(/&#x([0-9a-f]{1,6});/gi, (ref, hex: string) => fromCodePoint(hex, 16) ?? ref)
-    .replace(/&#([0-9]{1,7});/g, (ref, dec: string) => fromCodePoint(dec, 10) ?? ref)
-    .replace(/&amp;/gi, '&');
+  return text.replace(
+    /&(?:#x([0-9a-f]{1,6})|#([0-9]{1,7})|(nbsp|lt|gt|quot|apos|amp));/gi,
+    (ref, hex: string | undefined, dec: string | undefined, name: string | undefined) => {
+      if (hex) return fromCodePoint(hex, 16) ?? ref;
+      if (dec) return fromCodePoint(dec, 10) ?? ref;
+      return NAMED_ENTITIES[(name ?? '').toLowerCase()] ?? ref;
+    },
+  );
 }
 
 export function stripTags(html: string): string {

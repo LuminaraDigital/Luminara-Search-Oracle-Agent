@@ -23,8 +23,12 @@ const HOMEPAGE_MAX_REDIRECTS = 3;
 const PROBE_UA = 'LuminaraProbe/1.0 (+https://www.luminarasuite.com/methodology)';
 /** Repeat checks of one host inside this window reuse the result, so a shared link cannot hammer the site. */
 const PROBE_CACHE_SECONDS = 120;
-/** Bot-wall vendors that answer a crawler with a 200 challenge page instead of the site. */
-const FIREWALL_MARKERS = /_incapsula_resource|sucuri_cloudproxy|awswaf|captcha-delivery\.com|datadome|ddos-guard|px-captcha/i;
+/** Seen only on a challenge page served instead of the site. */
+const CHALLENGE_MARKERS = /sucuri_cloudproxy|captcha-delivery\.com|px-captcha/i;
+/** Bot-wall vendors whose scripts also sit in normal pages: a sign of a wall only on a page with no title or description. */
+const FIREWALL_VENDORS = /_incapsula_resource|awswaf|datadome|ddos-guard/i;
+/** Failed reads the edge may reuse briefly, so a widely shared link to a walled site is not refetched on every view. */
+const PROBE_FAILURE_CACHE_SECONDS = 30;
 
 export type ProbeCrawlStatus = 'measured' | 'not_measured';
 
@@ -73,12 +77,14 @@ export async function readHomepage(pageUrl: string, fetcher: typeof fetch = fetc
     }
     if (!/html/i.test(res.headers.get('content-type') || '')) return failed('not_html');
     const html = await readCapped(res, HOMEPAGE_BYTES);
-    if (responseBlocked(res.status, html) || FIREWALL_MARKERS.test(html.slice(0, 20_000))) return failed('blocked');
+    const sample = html.slice(0, 20_000);
+    if (responseBlocked(res.status, html) || CHALLENGE_MARKERS.test(sample)) return failed('blocked');
     const head = readPageHead(html);
     const headerNoindex = robotsSaysNoindex(res.headers.get('x-robots-tag'));
-    // A bot wall often answers 200 with noindex and no title or description. Reporting that as the
-    // owner's own noindex would be a false finding, so it counts as blocked.
-    if ((head.noindex || headerNoindex) && !head.title && !head.description) return failed('blocked');
+    // A bot wall answers 200 with no title or description, often with noindex or a vendor script.
+    // Reporting that as the owner's own page (or own noindex) would be a false finding.
+    const bare = !head.title && !head.description;
+    if (bare && (head.noindex || headerNoindex || FIREWALL_VENDORS.test(sample))) return failed('blocked');
     return {
       page: { finalUrl: fetched.finalUrl, ...head, noindex: head.noindex || headerNoindex },
       pageReason: null,
@@ -169,7 +175,8 @@ export async function handleProbeCrawlRoute(request: Request, env: Env): Promise
   if (page.port) {
     return json({ ok: false, error: "Use the site's normal address, without a port number.", code: 'UNSAFE_URL' }, 400);
   }
-  const host = page.hostname;
+  // A trailing dot names the same site; dropping it keeps one cache entry and one reported host.
+  const host = page.hostname.replace(/\.$/, '');
   const origin = `${page.protocol}//${host}`;
 
   // One entry per serving host, scheme and target host; the typed path does not change what is read.
@@ -207,12 +214,16 @@ export async function handleProbeCrawlRoute(request: Request, env: Env): Promise
     pageReason: homepage.pageReason,
     checkedAt: new Date().toISOString(),
   };
-  // A failed homepage read is not cached anywhere, so "try again" really tries again.
-  const cacheable = Boolean(homepage.page);
-  const response = json(body, 200, {
-    'cache-control': cacheable ? `public, max-age=${PROBE_CACHE_SECONDS}` : 'no-store',
-  });
-  if (cacheable) {
+  // A good read is reused for 2 minutes. A site that turned the check away (blocked, error) is
+  // reused for 30 seconds, so a shared link to it is not refetched on every view. An unreachable
+  // read is never cached, so "try again" really tries again.
+  const seconds = homepage.page
+    ? PROBE_CACHE_SECONDS
+    : homepage.pageReason === 'blocked' || homepage.pageReason === 'http_error'
+      ? PROBE_FAILURE_CACHE_SECONDS
+      : 0;
+  const response = json(body, 200, { 'cache-control': seconds ? `public, max-age=${seconds}` : 'no-store' });
+  if (seconds) {
     try {
       await caches.default.put(cacheKey, response.clone());
     } catch {

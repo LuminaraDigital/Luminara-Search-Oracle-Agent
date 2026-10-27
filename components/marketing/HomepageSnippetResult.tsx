@@ -75,7 +75,7 @@ export const HomepageSnippetResult: React.FC<HomepageSnippetResultProps> = ({ pa
         Google can rewrite titles and snippets, so your real result may differ. We did not check Google.
       </p>
       <ul className="mt-4 m-0 list-none space-y-2 p-0">
-        {snippetChecks(page).map((check) => (
+        {snippetChecks(page, narrow ? 'mobile' : 'desktop').map((check) => (
           <li key={check.id} className="grid grid-cols-[5.5rem_1fr] items-baseline gap-x-2 text-sm">
             <span
               className={`text-xs font-medium ${

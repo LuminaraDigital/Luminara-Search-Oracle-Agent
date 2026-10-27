@@ -57,7 +57,7 @@ export const FREE_TOOLS_HUB = {
     {
       question: 'Which tool should I start with?',
       answer:
-        'Start with the free check at the bottom of this page. It shows your homepage as a search result and whether your robots.txt and llms.txt are there. Instant Audit shows which AI crawlers they block, and the robots.txt generator writes rules that let them in.',
+        'Start with the free check at the bottom of this page. It reads your homepage title and description, shows an estimated preview of the Google result they make, and checks whether your robots.txt and llms.txt are there. Instant Audit shows which AI crawlers they block, and the robots.txt generator writes rules that let them in.',
     },
   ] satisfies MarketingFaqItem[],
 } as const;
