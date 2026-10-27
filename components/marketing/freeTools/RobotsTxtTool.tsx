@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useId, useState } from 'react';
 import {
   AI_BOTS,
   BOT_PURPOSE_LABEL,
@@ -10,6 +10,7 @@ import {
 import { ToolField, ToolOutput, ToolSegmented } from './toolFields';
 
 export const RobotsTxtTool: React.FC<{ onCopied: () => void }> = ({ onCopied }) => {
+  const idBase = useId();
   const [blocked, setBlocked] = useState<Record<string, boolean>>(() => presetBlocks('allow_all'));
   const [paths, setPaths] = useState('/admin/');
   const [sitemap, setSitemap] = useState('https://www.example.com.au/sitemap.xml');
@@ -37,10 +38,12 @@ export const RobotsTxtTool: React.FC<{ onCopied: () => void }> = ({ onCopied }) 
           <ul className="mt-3 divide-y divide-[rgb(252_246_186_/_0.08)] list-none m-0 p-0">
             {AI_BOTS.map((bot) => {
               const allowed = !blocked[bot.agent];
+              // The visible crawler name labels the switch, so voice control can say what it sees.
+              const nameId = `${idBase}-${bot.agent}`;
               return (
                 <li key={bot.agent} className="flex items-center justify-between gap-4 py-2.5">
                   <div className="min-w-0">
-                    <p className="text-sm text-[var(--color-ink)]">{bot.agent}</p>
+                    <p id={nameId} className="text-sm text-[var(--color-ink)]">{bot.agent}</p>
                     <p className="text-xs text-[var(--color-ink-2)]">
                       {bot.operator} · {BOT_PURPOSE_LABEL[bot.purpose]}
                     </p>
@@ -49,7 +52,7 @@ export const RobotsTxtTool: React.FC<{ onCopied: () => void }> = ({ onCopied }) 
                     type="button"
                     role="switch"
                     aria-checked={allowed}
-                    aria-label={`Allow ${bot.agent}`}
+                    aria-labelledby={nameId}
                     onClick={() => setBlocked((prev) => ({ ...prev, [bot.agent]: !prev[bot.agent] }))}
                     className="lx-chip shrink-0"
                   >

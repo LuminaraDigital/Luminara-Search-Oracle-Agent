@@ -27,11 +27,14 @@ function oneLine(value: string): string {
   return value.replace(/\s+/g, ' ').replace(/[[\]]/g, '').trim();
 }
 
-/** Details are plain paragraphs: a leading `#` would add a heading the layout does not allow. */
+/**
+ * Details are plain paragraphs: a Markdown heading (`#` to `######` then a space) would add a
+ * heading the layout does not allow. "#1 agency in Kew" is not a heading and stays as typed.
+ */
 function plainDetails(value: string): string {
   return value
     .split('\n')
-    .map((line) => line.replace(/^\s*#+\s*/, ''))
+    .map((line) => line.replace(/^ {0,3}#{1,6}(?=\s|$)\s*/, ''))
     .join('\n')
     .trim();
 }

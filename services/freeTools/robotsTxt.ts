@@ -56,12 +56,12 @@ export const ROBOTS_PRESETS: ReadonlyArray<{ id: RobotsPreset; label: string; no
   {
     id: 'answers_not_training',
     label: 'Answers yes, training no',
-    note: 'AI search crawlers can still read and cite you. Training crawlers are blocked, and Instant Audit lists them as blocked.',
+    note: 'AI search crawlers can still read and cite you. Training crawlers are asked to stay out, and Instant Audit marks that as a failed crawler check.',
   },
   {
     id: 'block_all_ai',
     label: 'Block these AI crawlers',
-    note: 'These crawlers can no longer read your pages. Google AI Overviews use Googlebot and are not affected, and crawlers that fetch a page for a user may ignore robots.txt.',
+    note: 'These crawlers are asked not to read your pages. Google AI Overviews use Googlebot and are not affected, and crawlers that fetch a page for a user may ignore robots.txt.',
   },
 ];
 

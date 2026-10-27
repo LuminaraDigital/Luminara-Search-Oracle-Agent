@@ -57,7 +57,7 @@ export const FREE_TOOLS_HUB = {
     {
       question: 'Which tool should I start with?',
       answer:
-        'Start with the free crawl check at the bottom of this page. It reads your current robots.txt and llms.txt. If AI crawlers are blocked, the robots.txt generator writes rules that let them in.',
+        'Start with the free crawl check at the bottom of this page. It shows whether your robots.txt and llms.txt are there. Instant Audit shows which AI crawlers they block, and the robots.txt generator writes rules that let them in.',
     },
   ] satisfies MarketingFaqItem[],
 } as const;
@@ -114,7 +114,7 @@ export const FREE_TOOLS: readonly FreeTool[] = [
     h1: 'Robots.txt generator for AI crawlers',
     lede: 'Choose which AI crawlers may read your site. Allow the ones that cite you in answers, and block the ones that only train models if you prefer.',
     steps: [
-      'Pick a starting point: allow every AI crawler, allow answers but not training, or block them all.',
+      'Pick a starting point: allow every AI crawler, allow answers but not training, or ask them all to stay out.',
       'Flip any single crawler on or off.',
       'Add private paths, such as /admin/, and your sitemap URL.',
       `Copy the result. If you already have a robots.txt, add these lines to it instead of replacing it. ${HAND_OFF}`,

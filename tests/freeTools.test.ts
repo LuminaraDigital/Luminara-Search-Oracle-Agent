@@ -202,9 +202,9 @@ describe('llms.txt generator', () => {
   });
 
   it('keeps details as plain paragraphs', () => {
-    const txt = buildLlmsTxt({ ...options, details: '# Not a heading\n## Nor this\nPlain line', sections: [] });
+    const txt = buildLlmsTxt({ ...options, details: '# Not a heading\n## Nor this\n#1 agency in Kew\nPlain line', sections: [] });
     expect(txt).toBe(
-      '# Smith & Co Real Estate\n\n> Independent agency selling homes in Hawthorn and Kew.\n\nNot a heading\nNor this\nPlain line\n',
+      '# Smith & Co Real Estate\n\n> Independent agency selling homes in Hawthorn and Kew.\n\nNot a heading\nNor this\n#1 agency in Kew\nPlain line\n',
     );
   });
 });

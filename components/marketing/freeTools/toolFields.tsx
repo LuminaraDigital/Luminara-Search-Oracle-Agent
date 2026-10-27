@@ -106,7 +106,7 @@ export function ToolSegmented<T extends string>({
 
 type CopyState = 'idle' | 'copied' | 'failed';
 
-const COPY_LABEL: Record<CopyState, string> = { idle: 'Copy', copied: 'Copied', failed: 'Select and copy' };
+const COPY_LABEL: Record<CopyState, string> = { idle: 'Copy', copied: 'Copied', failed: 'Text selected' };
 
 /** Read-only output with a copy button. `onCopied` fires once per successful copy. */
 export const ToolOutput: React.FC<{ label: string; text: string; onCopied: () => void }> = ({
@@ -160,7 +160,7 @@ export const ToolOutput: React.FC<{ label: string; text: string; onCopied: () =>
         {text}
       </pre>
       <p aria-live="polite" className="sr-only">
-        {state === 'copied' ? `${label} copied` : state === 'failed' ? `${label} selected. Copy it with your keyboard.` : ''}
+        {state === 'copied' ? `${label} copied` : state === 'failed' ? `${label} selected. Copy it now.` : ''}
       </p>
     </div>
   );
