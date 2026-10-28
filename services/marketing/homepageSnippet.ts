@@ -5,7 +5,7 @@
  * Honesty: these fields are read from the page, so they are Measured as page facts. They are not
  * what Google shows; Google can rewrite titles and snippets, and Google stays Not measured here.
  */
-import { checkDescription, checkTitle, type SerpDevice } from '../freeTools/serpPreview';
+import { checkDescription, checkTitle } from '../freeTools/serpPreview';
 import { safePublicHostname } from '../security/publicHostname';
 import type { FreeTool } from './freeTools';
 
@@ -24,12 +24,12 @@ export interface HomepageHead {
 export type HomepageReadFailure = 'unreachable' | 'blocked' | 'http_error' | 'not_html';
 
 export const HOMEPAGE_FAILURE_TEXT: Record<HomepageReadFailure, string> = {
-  unreachable: 'We could not read your homepage. It may be slow, down, or refusing automated checks. Try again in a minute.',
+  unreachable: 'We could not read this homepage. The site may be slow, down, or refusing automated checks. Try again in a minute.',
   blocked:
-    "Your site's security turned our check away, so the homepage was not read. This is common and does not tell us whether Google can read it.",
+    "The site's security turned our check away, so the homepage was not read. This is common and does not tell us whether Google can read it.",
   http_error:
-    'Your homepage answered our check with an error. Some sites do this only for automated checks, so open it in your browser to be sure.',
-  not_html: 'Your homepage did not answer our check with a web page, so it was not read.',
+    'This homepage answered our check with an error. Some sites do this only for automated checks, so open it in a browser to be sure.',
+  not_html: 'This homepage did not answer our check with a web page, so it was not read.',
 };
 
 export type SnippetCheckState = 'ok' | 'fix' | 'warn';
@@ -58,6 +58,12 @@ const LOCAL_BUSINESS_TYPES = new Set([
   'TelevisionStation', 'TouristInformationCenter', 'TravelAgency',
 ]);
 
+/** The first few types (the page's own entities come first), then a count: helper types such as PostalAddress add noise. */
+function typeSummary(types: string[]): string {
+  const shown = types.slice(0, 3).join(', ');
+  return types.length > 3 ? `${shown} and ${types.length - 3} more` : shown;
+}
+
 function lengthCheck(
   id: 'title' | 'description',
   label: string,
@@ -72,23 +78,24 @@ function lengthCheck(
 }
 
 /**
- * One line per field, in the order an owner should fix them. Lengths are estimates of Google's cut;
- * the description is judged for the same device the preview card shows.
+ * One line per field, in the order an owner should fix them. Lengths are estimates of Google's
+ * desktop cut. Phones show less, but a description that fits on desktop is not a fault, so the
+ * verdict never changes with the visitor's screen (the preview card follows the same rule).
  */
-export function snippetChecks(head: HomepageHead, device: SerpDevice = 'desktop'): SnippetCheck[] {
+export function snippetChecks(head: HomepageHead): SnippetCheck[] {
   const checks: SnippetCheck[] = [];
   if (head.noindex) {
     checks.push({
       id: 'noindex',
       label: 'Indexing',
       state: 'warn',
-      text: 'Your homepage asks search engines not to index it. Remove the noindex rule if you want it found.',
+      text: 'This homepage asks search engines not to index it. Remove the noindex rule if you want it found.',
     });
   }
 
   const title = checkTitle(head.title ?? '');
   checks.push(lengthCheck('title', 'Title', title.verdict, title.chars, 'No title tag in the homepage HTML. Google will write its own.'));
-  const description = checkDescription(head.description ?? '', device);
+  const description = checkDescription(head.description ?? '', 'desktop');
   checks.push(
     lengthCheck(
       'description',
@@ -107,11 +114,11 @@ export function snippetChecks(head: HomepageHead, device: SerpDevice = 'desktop'
       id: 'schema',
       label: 'Structured data',
       state: 'warn',
-      text: `Found: ${types.join(', ')}. No LocalBusiness-type schema found, such as RealEstateAgent.`,
+      text: `Found: ${typeSummary(types)}. No LocalBusiness-type schema found, such as RealEstateAgent.`,
       fixPath: SCHEMA_TOOL,
     });
   } else {
-    checks.push({ id: 'schema', label: 'Structured data', state: 'ok', text: `Found: ${types.join(', ')}.` });
+    checks.push({ id: 'schema', label: 'Structured data', state: 'ok', text: `Found: ${typeSummary(types)}.` });
   }
 
   return checks;

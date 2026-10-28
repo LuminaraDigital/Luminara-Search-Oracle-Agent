@@ -153,7 +153,7 @@ function hubCrawlerBody(page: HubPage): string {
   <h2>${HUB_FAQ_HEADING}</h2>${faq}
   <p>Reviewed ${HUB_REVIEWED}. Sources: ${sources}</p>
   <p>More comparisons: ${related}</p>
-  <p><a href="/">Run the free crawl check</a> · <a href="/methodology">Methodology</a> · <a href="/pricing">Pricing</a></p>
+  <p><a href="/">Run the free check</a> · <a href="/methodology">Methodology</a> · <a href="/pricing">Pricing</a></p>
 </section>`;
 }
 
@@ -199,7 +199,7 @@ function freeToolShell(tool: FreeTool): MarketingShellMeta {
   ${tool.why.map((block) => `<h2>${esc(block.heading)}</h2><p>${esc(block.body)}</p>`).join('')}
   <h2>Common questions</h2>${faqHtml(tool.faq)}
   <p>More free tools: ${toolLinks(FREE_TOOLS.filter((other) => other !== tool))}</p>
-  <p>${esc(FREE_TOOLS_CLOSING.body)} <a href="/">Run the free crawl check</a> · <a href="${FREE_TOOLS_PATH}">All free tools</a></p>
+  <p>${esc(FREE_TOOLS_CLOSING.body)} <a href="/">Run the free check</a> · <a href="${FREE_TOOLS_PATH}">All free tools</a></p>
 </section>`,
   };
 }
@@ -222,7 +222,7 @@ const FREE_TOOLS_HUB_SHELL: MarketingShellMeta = {
   <p>${esc(FREE_TOOLS_HUB.lede)}</p>
   <ul>${FREE_TOOLS.map((tool) => `<li><a href="${tool.path}">${esc(tool.label)}</a>: ${esc(tool.blurb)}</li>`).join('')}</ul>
   <h2>Common questions</h2>${faqHtml(FREE_TOOLS_HUB.faq)}
-  <p>${esc(FREE_TOOLS_CLOSING.body)} <a href="/">Run the free crawl check</a> · <a href="/pricing">Pricing</a></p>
+  <p>${esc(FREE_TOOLS_CLOSING.body)} <a href="/">Run the free check</a> · <a href="/pricing">Pricing</a></p>
 </section>`,
 };
 
@@ -278,7 +278,7 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
 <section>
   <h1>Methodology</h1>
   <p>Measured means live evidence. Estimated is directional only. Not measured means missing data is labeled, never invented.</p>
-  <p>The live crawl check on the landing page reads robots.txt, llms.txt and ai.txt. ${LIVE_ANSWER_CHECKS}</p>
+  <p>The free check on the landing page reads the homepage title and description, robots.txt, llms.txt and ai.txt. ${LIVE_ANSWER_CHECKS}</p>
   <p><a href="/sample-report">Sample report</a> · <a href="/pricing">Pricing</a> · <a href="/">Home</a></p>
 </section>`,
   },

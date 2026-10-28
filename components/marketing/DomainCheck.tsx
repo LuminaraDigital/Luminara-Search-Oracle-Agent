@@ -12,6 +12,7 @@ import type { AuditHandoff } from '../../services/activation/auditHandoff';
 import { GUEST_FULL_AUDIT_CTA } from '../../services/audit/hostedScoutRail';
 import { checkPathForHost } from '../../services/marketing/homepageSnippet';
 import { copyToClipboard } from '../../utils/clipboard';
+import { prefersReducedMotion } from './deviceCapability';
 
 interface DomainCheckProps {
   inputId: string;
@@ -87,6 +88,18 @@ export const DomainCheck: React.FC<DomainCheckProps> = ({
   };
 
   const showResult = running || demo.phase === 'results_sample';
+
+  // Someone opening a shared link came for the result, so bring it into view once it is ready.
+  // Not earlier: the check starts during page load, when the browser's own scroll restoration
+  // would undo the scroll.
+  const resultRef = useRef<HTMLDivElement>(null);
+  const scrolledToShared = useRef(false);
+  const sharedResultReady = runSurface === 'check_link' && demo.phase === 'results_sample';
+  useEffect(() => {
+    if (!sharedResultReady || scrolledToShared.current) return;
+    scrolledToShared.current = true;
+    resultRef.current?.scrollIntoView({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block: 'start' });
+  }, [sharedResultReady]);
   const crawl = demo.engines.find((r) => r.id === 'crawl_readiness');
   // One chip per label: several engines share "AI answers", and repeated chips read as a bug.
   const engines = demo.engines
@@ -138,7 +151,7 @@ export const DomainCheck: React.FC<DomainCheckProps> = ({
       )}
 
       {showResult && (
-        <div aria-live="polite" className="lx-glass mt-4 rounded-2xl p-5 text-left">
+        <div ref={resultRef} aria-live="polite" className="lx-glass mt-4 scroll-mt-28 rounded-2xl p-5 text-left">
           <div className="flex items-center justify-between gap-3">
             <p className="min-w-0 truncate text-sm text-[var(--color-ink)]">
               <span className="text-[var(--color-ink-2)]">{running ? 'Checking ' : 'Results for '}</span>

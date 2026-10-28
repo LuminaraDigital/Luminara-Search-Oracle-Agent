@@ -134,7 +134,7 @@ import {
 } from './utils/marketingRoutes';
 import { applyDocumentMetaForView } from './services/marketing/documentMeta';
 import { hubPageForPath } from './services/marketing/seoHubPages';
-import { freeToolsPageForPath } from './services/marketing/freeTools';
+import { FREE_TOOLS_PATH, freeToolsPageForPath } from './services/marketing/freeTools';
 
 const viewFromLocation = (): AppView | null => {
   if (typeof window === 'undefined') return null;
@@ -543,6 +543,8 @@ const App: React.FC = () => {
       { label: 'How it works', onClick: () => setView(AppView.INFRASTRUCTURE), current: view === AppView.INFRASTRUCTURE },
       { label: 'AI', onClick: () => setView(AppView.INTELLIGENCE), current: view === AppView.INTELLIGENCE },
       { label: 'Pricing', onClick: () => setView(AppView.PRICING), current: view === AppView.PRICING },
+      // Path-driven view: no single view URL, so the link loads /free-tools like the footer link does.
+      { label: 'Free tools', onClick: () => window.location.assign(FREE_TOOLS_PATH), current: view === AppView.FREE_TOOLS },
     ],
     primaryCta: navSignedIn
       ? { label: 'New audit', onClick: () => enterInstantAudit() }
@@ -933,6 +935,9 @@ const App: React.FC = () => {
   const introOverlay = showIntro ? <Suspense fallback={null}><AppIntroOverlay onComplete={completeIntro} /></Suspense> : null;
 
   const hubPage = view === AppView.COMPARE ? hubPageForPath(window.location.pathname) : null;
+  // The free check's "full audit" button on inner pages: guests sign up first, as on the landing.
+  const marketingFullAudit = (handoff?: AuditHandoff) =>
+    appAuth.authenticated ? enterInstantAudit(handoff) : openLoginWall('signup', handoff);
   const freeToolsPage = view === AppView.FREE_TOOLS ? freeToolsPageForPath(window.location.pathname) : null;
 
   // A path-driven view without its page (e.g. a stray #compare hash) is Not Found, never a blank page.
@@ -1133,7 +1138,7 @@ const App: React.FC = () => {
       <MarketingChromeContext.Provider value={marketingChrome}>
       <Suspense fallback={<ViewLoader label="Loading" />}>
         {introOverlay}
-        <SeoHubPage page={hubPage} onTerminal={() => enterInstantAudit()} />
+        <SeoHubPage page={hubPage} isAuthenticated={appAuth.authenticated} onFullAudit={marketingFullAudit} />
         {marketingOverlays}
       </Suspense>
       </MarketingChromeContext.Provider>
@@ -1148,7 +1153,7 @@ const App: React.FC = () => {
         <FreeToolPage
           tool={freeToolsPage.tool}
           isAuthenticated={appAuth.authenticated}
-          onFullAudit={(handoff) => (appAuth.authenticated ? enterInstantAudit(handoff) : openLoginWall('signup', handoff))}
+          onFullAudit={marketingFullAudit}
         />
         {marketingOverlays}
       </Suspense>

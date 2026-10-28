@@ -81,13 +81,17 @@ describe('SEO hub pages (/compare, /best)', () => {
 
   it('renders the verdict, matrix, and choose sections for humans', () => {
     const compare = HUB_PAGES.find((page) => page.kind === 'compare')!;
-    const html = renderToStaticMarkup(createElement(SeoHubPage, { page: compare, onTerminal: () => {} }));
+    const html = renderToStaticMarkup(createElement(SeoHubPage, { page: compare, onFullAudit: () => {} }));
     expect(html).toContain('Short answer');
     expect(html).toContain('When to choose Luminara Suite');
     const best = HUB_PAGES.find((page) => page.kind === 'best')!;
-    const bestHtml = renderToStaticMarkup(createElement(SeoHubPage, { page: best, onTerminal: () => {} }));
+    const bestHtml = renderToStaticMarkup(createElement(SeoHubPage, { page: best, onFullAudit: () => {} }));
     expect(bestHtml).toContain('Quick picks');
     expect(bestHtml).toContain('How we picked');
+    // The call to action runs the real free check on the page, never a sign-in wall first.
+    expect(html).toContain('Run the free check');
+    expect(html).toContain('id="hub-domain"');
+    expect(html).not.toContain('crawl check');
   });
 
   it('drafts an honest Prepare-mode comparison outline with FAQPage JSON-LD and no invented competitor claims', () => {

@@ -27,9 +27,14 @@ export interface FreeTool {
 
 export const FREE_TOOLS_PATH = '/free-tools';
 
-/** Closing call to action on every free tools page, and the last crawler paragraph. */
+/**
+ * Closing call to action on every free tools page. `lede` is the short line on the page; `body` is
+ * the full sentence for crawler HTML, where the honesty test wants the measurement limit beside any
+ * mention of AI products.
+ */
 export const FREE_TOOLS_CLOSING = {
-  eyebrow: 'Free crawl check',
+  eyebrow: 'Free check',
+  lede: 'Reads a homepage title and description, robots.txt and llms.txt. No card, no account.',
   body: `The free check reads your homepage title, description and structured data, plus robots.txt and llms.txt, with no card and no account. Instant Audit then checks your site and live web search and gives you one fix to ship. ${LIVE_ANSWER_CHECKS}`,
 } as const;
 

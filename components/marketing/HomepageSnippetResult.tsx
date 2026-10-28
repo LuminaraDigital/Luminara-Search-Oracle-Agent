@@ -25,7 +25,7 @@ function readTime(checkedAt?: string): string | null {
 }
 
 /**
- * "What your homepage tells Google" in the free check result: the page's own tags (Measured as
+ * "What this homepage tells Google" in the free check result: the page's own tags (Measured as
  * page facts), an Estimated preview of the result they make, then one line per field with the free
  * tool that writes the fix. Google itself is never read here and stays Not measured.
  */
@@ -33,7 +33,7 @@ export const HomepageSnippetResult: React.FC<HomepageSnippetResultProps> = ({ pa
   if (!page) {
     return (
       <div className="border-b border-[var(--color-rule)] pb-4">
-        <p className="lx-eyebrow">What your homepage tells Google</p>
+        <p className="lx-eyebrow">What this homepage tells Google</p>
         <p className="mt-2 flex items-start gap-1.5 text-sm text-[var(--color-ink-2)]">
           <span className="mt-[0.4em]">
             <EvidenceGlyph state="Not measured" />
@@ -47,15 +47,16 @@ export const HomepageSnippetResult: React.FC<HomepageSnippetResultProps> = ({ pa
   }
 
   const time = readTime(checkedAt);
-  // On a phone, show the mobile result Google would show there: it wraps the title instead of cutting it.
+  // On a phone the card is narrower than Google's 600px title, so the title wraps; the description
+  // keeps the desktop cut so the card never disagrees with the "Should fit" verdict below it.
   const narrow = typeof window !== 'undefined' && window.matchMedia?.('(max-width: 639px)').matches;
   return (
     <div className="border-b border-[var(--color-rule)] pb-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="lx-eyebrow">What your homepage tells Google</p>
+        <p className="lx-eyebrow">What this homepage tells Google</p>
         <p className="inline-flex items-center gap-1.5 text-[12px] text-gold-light">
           <EvidenceGlyph state="Measured" />
-          Measured · read from your homepage{time ? ` at ${time}` : ''}
+          Measured · read from the homepage{time ? ` at ${time}` : ''}
         </p>
       </div>
       <div className="mt-3">
@@ -67,15 +68,15 @@ export const HomepageSnippetResult: React.FC<HomepageSnippetResultProps> = ({ pa
           url={page.finalUrl}
           title={page.title ?? ''}
           description={page.description ?? ''}
-          device={narrow ? 'mobile' : 'desktop'}
-          label="Estimated Google result from your homepage tags"
+          wrapTitle={narrow}
+          label="Estimated Google result from the homepage tags"
         />
       </div>
       <p className="mt-2 text-xs text-[var(--color-ink-2)]">
-        Google can rewrite titles and snippets, so your real result may differ. We did not check Google.
+        Google can rewrite titles and snippets, so the real result may differ. We did not check Google.
       </p>
       <ul className="mt-4 m-0 list-none space-y-2 p-0">
-        {snippetChecks(page, narrow ? 'mobile' : 'desktop').map((check) => (
+        {snippetChecks(page).map((check) => (
           <li key={check.id} className="grid grid-cols-[5.5rem_1fr] items-baseline gap-x-2 text-sm">
             <span
               className={`text-xs font-medium ${

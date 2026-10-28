@@ -84,7 +84,7 @@ const US = {
 const SUITE_PICK_BASE: Pick<BestPick, 'name' | 'url' | 'pricing' | 'cons'> = {
   name: SUITE,
   url: SUITE_URL,
-  pricing: 'Free live crawl check. Paid plans are 30-day passes listed on the pricing page.',
+  pricing: 'Free check with no account. Paid plans are 30-day passes listed on the pricing page.',
   cons: [
     LIVE_ANSWER_CHECKS,
     'No large prompt-volume database or backlink index.',
@@ -480,7 +480,7 @@ const BEST_PAGES: BestPage[] = [
         pros: [
           'Plain-English verdict and one ranked fix.',
           'No blended score. Missing data is labeled Not measured.',
-          'Free live crawl check with no card.',
+          'Free check with no card.',
         ],
       },
       {
@@ -521,7 +521,7 @@ const BEST_PAGES: BestPage[] = [
       {
         question: 'What is the cheapest way to start an AEO audit?',
         answer:
-          'Run a free live crawl check first. Luminara reads your homepage title and description, robots.txt and llms.txt with no card and no account, then a free account runs a fuller audit on a daily allowance.',
+          'Run the free check first. Luminara reads your homepage title and description, robots.txt and llms.txt with no card and no account, then a free account runs a fuller audit on a daily allowance.',
       },
       {
         question: 'Do I need an SEO suite for AEO?',

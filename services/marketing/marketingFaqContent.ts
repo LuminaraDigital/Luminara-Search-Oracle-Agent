@@ -12,14 +12,14 @@ export const MARKETING_FAQ: MarketingFaqItem[] = [
       'Instant Audit checks your site and live web search, flags the citation and page leaks that cost you appraisal enquiries, and gives a plain-English verdict with one ready-to-paste fix. Each result is labeled Measured, Estimated, or Not measured.',
   },
   {
-    question: 'What is the difference between the live crawl check and the full audit?',
+    question: 'What is the difference between the free check and the full audit?',
     answer:
       'The free check on this page reads your homepage title, description and structured data, plus robots.txt and llms.txt, and leaves the answer engines as Not measured. A signed-in audit also checks your site and live web search. Guests can also bring their own AI keys.',
   },
   {
     question: 'Do I need a credit card to try it?',
     answer:
-      'No. The live crawl check needs no card and no account. Create a free account to run Instant Audit with a daily hosted allowance. A measured win can be shared on the free plan. Full branded share links and IDE access are part of the Growth and Agency plans.',
+      'No. The free check needs no card and no account. Create a free account to run Instant Audit with a daily hosted allowance. A measured win can be shared on the free plan. Full branded share links and IDE access are part of the Growth and Agency plans.',
   },
   {
     question: 'How is this different from Semrush or Ahrefs?',

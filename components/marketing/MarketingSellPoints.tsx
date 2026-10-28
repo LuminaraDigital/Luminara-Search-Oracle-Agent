@@ -13,7 +13,7 @@ export const MARKETING_SELL_POINTS = [
   },
   {
     title: 'One action you can ship',
-    body: 'Live crawl check to Instant Audit to a ready-to-paste page, review, or schema fix that helps win the enquiry. Growth adds shareable report links and IDE access.',
+    body: 'Free check to Instant Audit to a ready-to-paste page, review, or schema fix that helps win the enquiry. Growth adds shareable report links and IDE access.',
   },
 ] as const;
 

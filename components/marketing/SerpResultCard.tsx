@@ -8,6 +8,8 @@ interface SerpResultCardProps {
   /** Shown above the URL. Falls back to the host. */
   siteName?: string;
   device?: SerpDevice;
+  /** Wrap a desktop title instead of keeping it on one line (a card narrower than 600px). */
+  wrapTitle?: boolean;
   /** Accessible name of the card, which says whose estimate it is. */
   label: string;
 }
@@ -23,6 +25,7 @@ export const SerpResultCard: React.FC<SerpResultCardProps> = ({
   description,
   siteName = '',
   device = 'desktop',
+  wrapTitle = false,
   label,
 }) => {
   const crumb = serpBreadcrumb(url);
@@ -50,7 +53,7 @@ export const SerpResultCard: React.FC<SerpResultCardProps> = ({
       </div>
       <p
         className={`mt-2 text-xl leading-snug text-[rgb(26,13,171)] ${
-          device === 'desktop' ? 'whitespace-nowrap' : '[overflow-wrap:anywhere]'
+          device === 'desktop' && !wrapTitle ? 'whitespace-nowrap' : '[overflow-wrap:anywhere]'
         }`}
       >
         {shownTitle || crumb.site}

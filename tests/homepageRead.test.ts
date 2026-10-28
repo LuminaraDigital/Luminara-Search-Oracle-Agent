@@ -110,6 +110,17 @@ describe('readPageHead', () => {
   it('finds business types nested inside other entities', () => {
     const nested = '<script type="application/ld+json">{"@type":"WebSite","publisher":{"@type":"RealEstateAgent","address":{"@type":"PostalAddress"}}}</script>';
     expect(readPageHead(nested).jsonLdTypes).toEqual(['WebSite', 'RealEstateAgent', 'PostalAddress']);
+    // The page's own entities come before the helpers nested inside them.
+    const graph = JSON.stringify({
+      '@graph': [
+        { '@type': 'ProfessionalService', address: { '@type': 'PostalAddress' }, areaServed: { '@type': 'City' } },
+        { '@type': 'Person' },
+        { '@type': 'FAQPage', mainEntity: [{ '@type': 'Question', acceptedAnswer: { '@type': 'Answer' } }] },
+      ],
+    });
+    expect(readPageHead(`<script type="application/ld+json">${graph}</script>`).jsonLdTypes).toEqual([
+      'ProfessionalService', 'Person', 'FAQPage', 'PostalAddress', 'City', 'Question', 'Answer',
+    ]);
   });
 
   it('matches robots directives as whole tokens, for every crawler or Googlebot', () => {
@@ -378,7 +389,10 @@ describe('HomepageSnippetResult', () => {
     const html = renderToStaticMarkup(
       createElement(HomepageSnippetResult, { page, pageReason: null, checkedAt: '2026-10-28T03:41:00Z' }),
     );
-    expect(html).toMatch(/Measured · read from your homepage at \d/);
+    // Neutral wording: it reads right for the owner and for someone opening a shared link.
+    expect(html).toContain('What this homepage tells Google');
+    expect(html).toMatch(/Measured · read from the homepage at \d/);
+    expect(html).not.toMatch(/\byour\b/i);
     expect(html).toContain('Estimated preview');
     expect(html).toContain('We did not check Google.');
     expect(html).toContain('Smith &amp; Co | Hawthorn real estate agents');
@@ -392,7 +406,15 @@ describe('HomepageSnippetResult', () => {
     const html = renderToStaticMarkup(createElement(HomepageSnippetResult, { page: null, pageReason: 'blocked' }));
     expect(html).toContain('Not measured.');
     expect(html).toContain('does not tell us whether Google can read it');
-    expect(html).not.toContain('read from your homepage');
+    expect(html).not.toContain('read from the homepage');
+  });
+
+  it('keeps the description cut and the verdict in step on a phone', () => {
+    const description = 'An independent agency selling and leasing homes in Hawthorn, Kew and Camberwell, with suburb guides and recent sales.';
+    vi.stubGlobal('matchMedia', () => ({ matches: true }));
+    const html = renderToStaticMarkup(createElement(HomepageSnippetResult, { page: { ...page, description }, pageReason: null }));
+    expect(html).toContain(description);
+    expect(html).toContain(`${description.length} characters. Should fit.`);
   });
 });
 
@@ -428,10 +450,11 @@ describe('snippetChecks', () => {
     expect(snippetChecks({ ...head, jsonLdTypes: ['WebSite', 'LegalService'] }).find((check) => check.id === 'schema')?.state).toBe('ok');
   });
 
-  it('judges the description for the device the preview shows', () => {
-    const description = 'An independent agency selling and leasing homes in Hawthorn, Kew and Camberwell, with suburb guides and recent sales.';
-    expect(snippetChecks({ ...head, description }, 'desktop').find((check) => check.id === 'description')?.state).toBe('ok');
-    expect(snippetChecks({ ...head, description }, 'mobile').find((check) => check.id === 'description')?.state).toBe('fix');
+  it('names the main schema types and counts the rest', () => {
+    const types = ['ProfessionalService', 'Person', 'FAQPage', 'City', 'PostalAddress', 'Offer'];
+    expect(snippetChecks({ ...head, jsonLdTypes: types }).find((check) => check.id === 'schema')?.text).toBe(
+      'Found: ProfessionalService, Person, FAQPage and 3 more.',
+    );
   });
 });
 

@@ -95,20 +95,38 @@ export function robotsSaysNoindex(value: string | null | undefined): boolean {
 
 /** Nested entities (a publisher, an address) are read this deep, enough for real pages and bounded for hostile ones. */
 const MAX_DEPTH = 6;
+/** Objects visited per block, so a wide hostile document stays cheap. */
+const MAX_NODES = 2_000;
 
-function collectTypes(node: unknown, into: Set<string>, depth = 0): void {
-  if (into.size >= MAX_TYPES || depth > MAX_DEPTH || !node || typeof node !== 'object') return;
-  if (Array.isArray(node)) {
-    node.forEach((item) => collectTypes(item, into, depth + 1));
-    return;
-  }
-  const record = node as Record<string, unknown>;
-  const type = record['@type'];
-  for (const value of Array.isArray(type) ? type : [type]) {
-    if (typeof value === 'string' && value.trim() && into.size < MAX_TYPES) into.add(value.trim().slice(0, 60));
-  }
-  for (const [key, value] of Object.entries(record)) {
-    if (key !== '@type' && value && typeof value === 'object') collectTypes(value, into, depth + 1);
+/**
+ * Types breadth first: the page's own entities (top level and @graph) come before nested helpers
+ * such as PostalAddress, so the first few names are the ones worth showing.
+ */
+function collectTypes(root: unknown, into: Set<string>): void {
+  let level: unknown[] = [root];
+  let visited = 0;
+  for (let depth = 0; depth <= MAX_DEPTH && level.length && into.size < MAX_TYPES; depth++) {
+    const next: unknown[] = [];
+    for (const node of level) {
+      if (++visited > MAX_NODES || into.size >= MAX_TYPES) return;
+      if (!node || typeof node !== 'object') continue;
+      if (Array.isArray(node)) {
+        next.push(...node.slice(0, MAX_NODES));
+        continue;
+      }
+      const record = node as Record<string, unknown>;
+      const type = record['@type'];
+      for (const value of Array.isArray(type) ? type : [type]) {
+        if (typeof value === 'string' && value.trim() && into.size < MAX_TYPES) into.add(value.trim().slice(0, 60));
+      }
+      // @graph members are the page's own entities, so they stay on the same level as the root.
+      const graph = record['@graph'];
+      if (Array.isArray(graph)) level.push(...graph.slice(0, MAX_NODES));
+      for (const [key, value] of Object.entries(record)) {
+        if (key !== '@type' && key !== '@graph' && value && typeof value === 'object') next.push(value);
+      }
+    }
+    level = next;
   }
 }
 
