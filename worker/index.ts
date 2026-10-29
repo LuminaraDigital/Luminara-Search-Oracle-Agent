@@ -181,6 +181,7 @@ import { handleRequestOtp, handleVerifyOtp } from './authOtpSms';
 import { handleSignIn, handleSignUp } from './authCredentialGateway';
 import { settleFirebaseErase } from './accountDeletion';
 import { handleEmailUnsubscribe, runWithWaitUntil } from './welcomeEmail';
+import { handleEmailPreferences, runWeeklyEmailDigest } from './weeklyDigest';
 
 export { DailyQuota } from './dailyQuota';
 import { createProject, listProjects, getProject } from './projectService';
@@ -1474,6 +1475,22 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     return withCors(await handleFindingsRoute(request, env, path));
   }
 
+  if (path === '/email/preferences') {
+    const whoPrefs = await identify(request, env);
+    const dualPrefs = await enforceDualRateLimit(env, {
+      action: 'email_preferences',
+      accountId: whoPrefs.user ? billingId(whoPrefs.user) : null,
+      ip,
+      limitPerKey: 30,
+      windowSec: 60,
+    });
+    if (!dualPrefs.ok) return withCors(dualPrefs.response);
+    if (!whoPrefs.user) {
+      return withCors(json({ ok: false, error: whoPrefs.error || 'Unauthorized', code: 'AUTH_REQUIRED' }, 401));
+    }
+    return withCors(await handleEmailPreferences(request, env, whoPrefs.user));
+  }
+
   if (path === '/audits/history') {
     const whoHistory = await identify(request, env);
     const dualHistory = await enforceDualRateLimit(env, {
@@ -2444,6 +2461,13 @@ const handler = {
         sweepTonPendingOrders(env)
           .then(() => undefined)
           .catch((err) => console.error('[TON] pending-order sweep failed', err)),
+      );
+    }
+    if (jobs.includes('weekly_email_digest')) {
+      ctx.waitUntil(
+        runWeeklyEmailDigest(env, { scheduledAt: controller.scheduledTime })
+          .then(() => undefined)
+          .catch((err) => console.error('[WeeklyEmailDigest] run failed', err)),
       );
     }
     if (jobs.includes('recovery_campaign_sweep')) {

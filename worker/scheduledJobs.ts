@@ -18,7 +18,8 @@ export type ScheduledJobName =
   | 'rsi_skill_curator'
   | 'rsi_posting_reflection'
   | 'citation_watch'
-  | 'recovery_campaign_sweep';
+  | 'recovery_campaign_sweep'
+  | 'weekly_email_digest';
 
 export const ALL_SCHEDULED_JOBS: readonly ScheduledJobName[] = [
   'sentinel',
@@ -32,6 +33,7 @@ export const ALL_SCHEDULED_JOBS: readonly ScheduledJobName[] = [
   'rsi_posting_reflection',
   'citation_watch',
   'recovery_campaign_sweep',
+  'weekly_email_digest',
 ];
 
 /**
@@ -40,7 +42,9 @@ export const ALL_SCHEDULED_JOBS: readonly ScheduledJobName[] = [
  * Stars charge sweep (settles charges a webhook left undecided and retries refunds), and the TON
  * pending-order sweep (re-checks unpaid orders inside their 48 hours), the payment support
  * sweep, the weekly decision digest, the RSI jobs, and Citation Watch.
- * Citation Watch writes runs only when CITATION_WATCH_LIVE is "true".
+ * Citation Watch writes runs only when CITATION_WATCH_LIVE is "true". The weekly email digest
+ * runs every day and mails each opted-in user on their local Monday (spec 0031); it sends nothing
+ * unless WEEKLY_EMAIL_DIGEST_ENABLED is "true".
  * The RSI jobs are owned by this expression so the account does not gain a cron trigger.
  * scheduled() starts them only when the fire falls on Monday UTC.
  */
@@ -61,6 +65,7 @@ const CRON_JOBS: Record<string, readonly ScheduledJobName[]> = {
     'rsi_posting_reflection',
     'citation_watch',
     'recovery_campaign_sweep',
+    'weekly_email_digest',
   ],
 };
 

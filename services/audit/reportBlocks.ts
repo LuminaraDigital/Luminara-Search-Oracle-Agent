@@ -6,7 +6,8 @@ import { marked, type Token, type Tokens } from 'marked';
 import type { BoardFinding } from './findingBoardService';
 import { formatAuDate } from '../../utils/formatAuDate';
 import { stripUntrustedFences } from '../../utils/untrustedContent';
-import { healthChecklist, measuredCheckLine, parseMeasuredCheckLine, siteChecksRan } from '../agentCore/auditEvidenceGate';
+import { healthChecklist, measuredCheckLine, parseMeasuredCheckLine, scoreLine, siteChecksRan } from '../agentCore/auditEvidenceGate';
+import { isDowngradedFinding, pickPrimaryFinding, type RankedFinding } from './primaryFinding';
 import { organizationJsonLd } from './fixPackCopy';
 import { mentionedCount, plainCustomerReport, sentencesCiting, withoutContradictorySentences, type AuditTextScope } from './reportColumnGate';
 
@@ -217,45 +218,9 @@ export function reportScore(
   return scoreLine(markdown, measured);
 }
 
-/** The only score the page may print. A partial checklist stays visible. A clean pass needs measured=true. */
-export function scoreLine(markdown: string, measured: boolean): string {
-  const counts = parseMeasuredCheckLine(markdown);
-  if (!counts) return 'Not measured';
-  const olderOnly = !/\b\d+ of \d+ checks passed\b/i.test(markdown) && !/\bnot measured\b/i.test(markdown);
-  if (olderOnly && !measured) return 'Not measured';
-  if (counts.failed === 0 && counts.unmeasured === 0 && !measured) return 'Not measured';
-  return measuredCheckLine(counts);
-}
-
 export function recheckLabel(from = Date.now()): string {
   const when = formatAuDate(from + 14 * 24 * 60 * 60 * 1000);
   return when ? `Recheck on ${when}.` : 'Recheck in 14 days.';
-}
-
-const UNSUPPORTED_FINDING = 'Not measured. The evidence check did not support this finding.';
-
-export function isDowngradedFinding(finding: { id?: string; description?: string }): boolean {
-  if (typeof finding.id === 'string' && finding.id.endsWith('-unmeasured')) return true;
-  return finding.description?.trim() === UNSUPPORTED_FINDING;
-}
-
-type RankedFinding = {
-  id?: string;
-  description?: string;
-  severity?: string;
-  status?: string;
-};
-
-/** The open fix the report calls "Your next fix". Critical before high, then medium, then low. */
-export function pickPrimaryFinding<T extends RankedFinding>(findings: readonly T[]): T | null {
-  const eligible = findings.filter((finding) => !isDowngradedFinding(finding));
-  if (!eligible.length) return null;
-  const rank: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
-  const open = eligible.filter((finding) => finding.status === 'open' || finding.status === 'in_progress');
-  const pool = open.length ? open : eligible;
-  return [...pool].sort(
-    (a, b) => (rank[a.severity || ''] ?? 9) - (rank[b.severity || ''] ?? 9),
-  )[0] ?? null;
 }
 
 type MoveFinding = RankedFinding & {

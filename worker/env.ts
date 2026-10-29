@@ -83,8 +83,12 @@ export interface Env extends DataPlaneEnv {
   FIREBASE_WEB_API_KEY?: string;
   /** Soft daily cap on outbound password-reset / OTP emails (default 200). */
   OUTBOUND_EMAIL_DAILY_LIMIT?: string;
-  /** Resend API key (Worker secret). Welcome mail is skipped when it is unset. */
+  /** Resend API key (Worker secret). Welcome mail and the weekly digest are skipped when it is unset. */
   RESEND_API_KEY?: string;
+  /** "true" turns on the weekly email digest: the daily cron job and the Settings toggle (spec 0031). */
+  WEEKLY_EMAIL_DIGEST_ENABLED?: string;
+  /** Most digest emails one daily fire may try. Default 100. Separate from OUTBOUND_EMAIL_DAILY_LIMIT. */
+  WEEKLY_EMAIL_DIGEST_DAILY_LIMIT?: string;
   /**
    * When "true" and Twilio secrets are set, POST /api/auth/request-otp sends SMS.
    * Default off: route stays a rate-limited stub (501 OTP_NOT_ENABLED).

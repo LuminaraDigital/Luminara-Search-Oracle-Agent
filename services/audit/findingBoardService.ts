@@ -8,7 +8,7 @@ import { workerFetchWithAuthRetry, apiBase } from '../apiClient';
 import { noteWorkspaceDirty } from '../sync/workspaceSyncService';
 import { formatAuDay } from '../../utils/formatAuDate';
 
-export { pickPrimaryFinding } from './reportBlocks';
+export { pickPrimaryFinding } from './primaryFinding';
 
 const LOCAL_PREFIX = 'luminara_findings_v1_';
 /** One bag for every domain. The workspace save already pushes this key. A tick does not call the findings API. */

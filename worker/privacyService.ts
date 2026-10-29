@@ -407,14 +407,19 @@ async function softDeleteAccount(env: Env, accountId: string, deps?: DataPlaneDe
   await run('signed_audit_receipts', `DELETE FROM signed_audit_receipts WHERE account_id = ?`, accountId).catch((err) => {
     if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
   });
-  const drop = async (label: string, sql: string) => {
-    await run(label, sql, accountId).catch((err) => {
+  const drop = async (label: string, sql: string, binds: unknown[] = [accountId]) => {
+    await run(label, sql, ...binds).catch((err) => {
       if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
     });
   };
   await drop('audit_findings', `DELETE FROM audit_findings WHERE account_id = ?`);
   await drop('audit_runs', `DELETE FROM audit_runs WHERE account_id = ?`);
   await drop('audit_history', `DELETE FROM audit_history WHERE account_id = ?`);
+  await drop(
+    'email_digest_sends',
+    `DELETE FROM email_digest_sends WHERE user_id IN (SELECT id FROM users WHERE account_id = ? OR id = ?)`,
+    [accountId, accountId],
+  );
   await drop('outcome_stage_events', `DELETE FROM outcome_stage_events WHERE account_id = ?`);
   await drop('recovery_runs', `DELETE FROM recovery_runs WHERE account_id = ?`);
   await drop('appraisal_appointments', `DELETE FROM appraisal_appointments WHERE account_id = ?`);

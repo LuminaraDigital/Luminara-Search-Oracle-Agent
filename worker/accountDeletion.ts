@@ -19,7 +19,8 @@ export function authTimeIsRecent(authTime: number, nowSec = Math.floor(Date.now(
 
 type DeleteBody = { confirm?: unknown; idToken?: unknown; initData?: unknown };
 
-async function firebaseOwnsAccount(env: Env, user: HostedIdentity, uid: string): Promise<boolean> {
+/** True when this Firebase uid is the caller, or a login linked to the caller's account. */
+export async function firebaseOwnsAccount(env: Pick<Env, 'DB'>, user: HostedIdentity, uid: string): Promise<boolean> {
   if (user.id === `fb:${uid}`) return true;
   if (!env.DB) return false;
   const row = await env.DB.prepare(`SELECT account_id FROM users WHERE firebase_uid = ? LIMIT 1`)

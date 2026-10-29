@@ -17,7 +17,6 @@ import {
   findingFix,
   findingWhy,
   fixProgress,
-  isDowngradedFinding,
   parseAuditReport,
   progressSince,
   recheckLabel,
@@ -29,6 +28,7 @@ import {
   type ReportBlock,
   type ReportSection,
 } from '../../services/audit/reportBlocks';
+import { isDowngradedFinding } from '../../services/audit/primaryFinding';
 import { ReportPdfButton } from './ReportPdfButton';
 import { CompetitorMap } from './CompetitorMap';
 import { VisibilityRadar } from './VisibilityRadar';

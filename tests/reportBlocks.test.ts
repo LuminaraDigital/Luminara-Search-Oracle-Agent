@@ -11,11 +11,11 @@ import {
   progressSince,
   recheckLabel,
   reportScore,
-  scoreLine,
   showFixTally,
   stripUnsupportedFixClaims,
   withReportLead,
 } from '../services/audit/reportBlocks';
+import { scoreLine } from '../services/agentCore/auditEvidenceGate';
 import { gateReportText } from '../services/audit/reportColumnGate';
 import { formatAuDate } from '../utils/formatAuDate';
 

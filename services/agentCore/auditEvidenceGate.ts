@@ -131,6 +131,16 @@ export function measuredCheckLine(counts: {
   return tail.length ? `${head}, ${tail.join(', ')}` : head;
 }
 
+/** The only score the page may print. A partial checklist stays visible. A clean pass needs measured=true. */
+export function scoreLine(markdown: string, measured: boolean): string {
+  const counts = parseMeasuredCheckLine(markdown);
+  if (!counts) return 'Not measured';
+  const olderOnly = !/\b\d+ of \d+ checks passed\b/i.test(markdown) && !/\bnot measured\b/i.test(markdown);
+  if (olderOnly && !measured) return 'Not measured';
+  if (counts.failed === 0 && counts.unmeasured === 0 && !measured) return 'Not measured';
+  return measuredCheckLine(counts);
+}
+
 function pairOk(passed: number, total: number): boolean {
   return Number.isInteger(passed) && Number.isInteger(total) && total >= 1 && passed >= 0 && passed <= total;
 }
