@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { healthChecklist, measuredCheckLine } from '../services/agentCore/auditEvidenceGate';
+import { healthChecklist, measuredCheckLine, scoreLine } from '../services/agentCore/auditEvidenceGate';
 import { executiveTranslatorAgent } from '../services/agentCore/agents/executiveTranslatorAgent';
 import { reviewedHealth } from '../services/audit/jevVerifier';
-import { scoreLine } from '../services/audit/reportBlocks';
 import { measuredChecks } from '../services/share/winShare';
 
 const noop = () => {};

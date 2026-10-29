@@ -2,6 +2,7 @@
  * One welcome email per new account, sent through Resend.
  * The D1 claim is the idempotency guard. Retries and later sign-ins claim the same null
  * column, so a second send does not start. Resend's Idempotency-Key covers a lost response.
+ * The weekly digest (worker/weeklyDigest.ts) reuses the shell, the send and the unsubscribe here.
  */
 import type { D1Database } from '@cloudflare/workers-types';
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -64,13 +65,15 @@ export function freeChecksLine(limit: number): string {
   return `Free includes ${count} Instant Audit ${count === 1 ? 'check' : 'checks'} a day.`;
 }
 
-function appOrigin(env: WelcomeEnv): string {
+export function appOrigin(env: WelcomeEnv): string {
   const raw = (env.WEBAPP_URL || 'https://www.luminarasuite.com').trim().replace(/\/$/, '');
   return raw.startsWith('https://') ? raw : 'https://www.luminarasuite.com';
 }
 
-export function unsubscribeUrl(env: WelcomeEnv, token: string): string {
-  return `${appOrigin(env)}/api/email/unsubscribe?token=${encodeURIComponent(token)}`;
+/** `list: 'weekly'` stops only the weekly digest. Without it the link stops every Luminara Suite email. */
+export function unsubscribeUrl(env: WelcomeEnv, token: string, list?: 'weekly'): string {
+  const base = `${appOrigin(env)}/api/email/unsubscribe?token=${encodeURIComponent(token)}`;
+  return list ? `${base}&list=${list}` : base;
 }
 
 function esc(value: string): string {
@@ -96,27 +99,49 @@ function paragraphs(copy: WelcomeCopy): [string, string, string] {
   ];
 }
 
+/** A heading is a gold serif line, text is body copy, and a note is small muted copy. */
+export type EmailBlock = { kind: 'heading' | 'text' | 'note'; text: string };
+
+export type EmailShell = {
+  subject: string;
+  preheader: string;
+  heading: string;
+  blocks: EmailBlock[];
+  button: { label: string; href: string };
+  unsubscribeHref: string;
+};
+
+const BLOCK_STYLE: Record<EmailBlock['kind'], { cls: string; pad: number; css: string }> = {
+  heading: { cls: 'gold', pad: 28, css: "font-family:Georgia,'Times New Roman',Times,serif;font-size:20px;line-height:26px;font-style:italic;color:#f0d78c;" },
+  text: { cls: 'ink', pad: 16, css: 'font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:26px;color:#f7f3ea;' },
+  note: { cls: 'muted', pad: 16, css: 'font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:20px;color:#c8c2b4;' },
+};
+
+function blockRow(block: EmailBlock, index: number): string {
+  const style = BLOCK_STYLE[block.kind];
+  const pad = index === 0 ? 24 : style.pad;
+  return `<tr>
+<td class="${style.cls}" style="padding-top:${pad}px;padding-left:36px;padding-right:36px;${style.css}">
+${esc(block.text)}
+</td>
+</tr>`;
+}
+
 /** Table layout, inline CSS, and a style block only so dark mode does not invert the card. */
-export function renderWelcomeEmail(copy: WelcomeCopy): { html: string; text: string; subject: string } {
-  const [first, second, third] = paragraphs(copy);
-  const subject = 'Welcome to Luminara Suite';
-  const unsub = esc(copy.unsubscribeHref);
+export function renderEmailShell(shell: EmailShell): { html: string; text: string; subject: string } {
+  const { subject, button } = shell;
+  const unsub = esc(shell.unsubscribeHref);
   const text = [
     subject,
     '',
-    first,
-    '',
-    second,
-    '',
-    third,
-    '',
-    `Run your first audit: ${WELCOME_AUDIT_URL}`,
+    ...shell.blocks.flatMap((block) => [block.text, '']),
+    `${button.label}: ${button.href}`,
     '',
     'The Luminara Suite team',
     '',
     LEGAL_FOOTER,
     '',
-    `Unsubscribe: ${copy.unsubscribeHref}`,
+    `Unsubscribe: ${shell.unsubscribeHref}`,
     `Privacy: ${WELCOME_PRIVACY_URL}`,
     `Terms: ${WELCOME_TERMS_URL}`,
   ].join('\n');
@@ -144,7 +169,7 @@ export function renderWelcomeEmail(copy: WelcomeCopy): { html: string; text: str
 </style>
 </head>
 <body class="mail-bg" bgcolor="#f3efe6" style="margin:0;padding:0;background-color:#f3efe6;">
-<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">${esc(copy.checksLine)}</div>
+<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">${esc(shell.preheader)}</div>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="mail-bg" bgcolor="#f3efe6" style="background-color:#f3efe6;">
 <tr>
 <td align="center" style="padding-top:24px;padding-bottom:24px;padding-left:12px;padding-right:12px;">
@@ -165,35 +190,21 @@ Luminara Suite
 </tr>
 <tr>
 <td style="padding-top:28px;padding-bottom:0;padding-left:36px;padding-right:36px;">
-<p class="gold" style="margin:0;font-family:Georgia,'Times New Roman',Times,serif;font-size:40px;line-height:46px;font-style:italic;color:#f0d78c;">Welcome.</p>
+<p class="gold" style="margin:0;font-family:Georgia,'Times New Roman',Times,serif;font-size:40px;line-height:46px;font-style:italic;color:#f0d78c;">${esc(shell.heading)}</p>
 </td>
 </tr>
 <tr><td style="padding-top:16px;padding-left:36px;padding-right:36px;"><table role="presentation" width="72" cellpadding="0" cellspacing="0" border="0"><tr><td bgcolor="#bf953f" style="font-size:0;line-height:0;height:1px;background-color:#bf953f;">&nbsp;</td></tr></table></td></tr>
-<tr>
-<td class="ink" style="padding-top:24px;padding-left:36px;padding-right:36px;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:26px;color:#f7f3ea;">
-${esc(first)}
-</td>
-</tr>
-<tr>
-<td class="ink" style="padding-top:16px;padding-left:36px;padding-right:36px;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:26px;color:#f7f3ea;">
-${esc(second)}
-</td>
-</tr>
-<tr>
-<td class="ink" style="padding-top:16px;padding-left:36px;padding-right:36px;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:26px;color:#f7f3ea;">
-${esc(third)}
-</td>
-</tr>
+${shell.blocks.map(blockRow).join('\n')}
 <tr>
 <td align="left" style="padding-top:28px;padding-left:36px;padding-right:36px;">
 <!--[if mso]>
-<v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="${esc(WELCOME_AUDIT_URL)}" style="height:48px;v-text-anchor:middle;width:260px;" arcsize="8%" strokecolor="#bf953f" fillcolor="#bf953f">
+<v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="${esc(button.href)}" style="height:48px;v-text-anchor:middle;width:260px;" arcsize="8%" strokecolor="#bf953f" fillcolor="#bf953f">
 <w:anchorlock/>
-<center style="color:#0a0a0a;font-family:Arial,Helvetica,sans-serif;font-size:16px;font-weight:bold;">Run your first audit</center>
+<center style="color:#0a0a0a;font-family:Arial,Helvetica,sans-serif;font-size:16px;font-weight:bold;">${esc(button.label)}</center>
 </v:roundrect>
 <![endif]-->
 <!--[if !mso]><!-->
-<a class="btn" href="${esc(WELCOME_AUDIT_URL)}" style="display:inline-block;background-color:#bf953f;color:#0a0a0a;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:20px;font-weight:bold;text-decoration:none;padding-top:14px;padding-bottom:14px;padding-left:22px;padding-right:22px;border-radius:4px;">Run your first audit</a>
+<a class="btn" href="${esc(button.href)}" style="display:inline-block;background-color:#bf953f;color:#0a0a0a;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:20px;font-weight:bold;text-decoration:none;padding-top:14px;padding-bottom:14px;padding-left:22px;padding-right:22px;border-radius:4px;">${esc(button.label)}</a>
 <!--<![endif]-->
 </td>
 </tr>
@@ -226,7 +237,69 @@ ${LEGAL_FOOTER}
   return { html, text, subject };
 }
 
-function newUnsubToken(): string {
+export function renderWelcomeEmail(copy: WelcomeCopy): { html: string; text: string; subject: string } {
+  return renderEmailShell({
+    subject: 'Welcome to Luminara Suite',
+    preheader: copy.checksLine,
+    heading: 'Welcome.',
+    blocks: paragraphs(copy).map((text) => ({ kind: 'text', text })),
+    button: { label: 'Run your first audit', href: WELCOME_AUDIT_URL },
+    unsubscribeHref: copy.unsubscribeHref,
+  });
+}
+
+export type ResendMessage = {
+  to: string;
+  subject: string;
+  html: string;
+  text: string;
+  unsubscribeHref: string;
+  idempotencyKey: string;
+  /** Give up after this many milliseconds. The outcome is then unknown. */
+  timeoutMs?: number;
+};
+
+/**
+ * One POST to Resend with the one-click unsubscribe headers.
+ * `rejected`: a 4xx, so Resend did not send. `unknown`: no answer or a 5xx, so it may have sent.
+ * A 409 means Resend already holds a request with this key, so it counts as sent: a lost email
+ * beats a second one.
+ */
+export async function sendResendEmail(
+  env: WelcomeEnv,
+  message: ResendMessage,
+): Promise<{ outcome: 'sent' | 'rejected' | 'unknown'; status?: number }> {
+  let response: Response;
+  try {
+    response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${env.RESEND_API_KEY}`,
+        'Content-Type': 'application/json',
+        'Idempotency-Key': message.idempotencyKey.replace(/[^A-Za-z0-9_-]/g, '-').slice(0, 256),
+      },
+      body: JSON.stringify({
+        from: WELCOME_FROM,
+        to: [message.to],
+        reply_to: [WELCOME_REPLY_TO],
+        subject: message.subject,
+        html: message.html,
+        text: message.text,
+        headers: {
+          'List-Unsubscribe': `<${message.unsubscribeHref}>`,
+          'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+        },
+      }),
+      signal: message.timeoutMs ? AbortSignal.timeout(message.timeoutMs) : undefined,
+    });
+  } catch {
+    return { outcome: 'unknown' };
+  }
+  if (response.ok || response.status === 409) return { outcome: 'sent', status: response.status };
+  return { outcome: response.status >= 500 ? 'unknown' : 'rejected', status: response.status };
+}
+
+export function newUnsubToken(): string {
   const bytes = new Uint8Array(32);
   crypto.getRandomValues(bytes);
   let binary = '';
@@ -282,36 +355,18 @@ export async function deliverWelcome(env: WelcomeEnv, userId: string): Promise<v
     unsubscribeHref: unsubscribeUrl(env, claimed.email_unsub_token),
   };
   const rendered = renderWelcomeEmail(copy);
-  const unsub = copy.unsubscribeHref;
-  let response: Response;
-  try {
-    response = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${env.RESEND_API_KEY}`,
-        'Content-Type': 'application/json',
-        'Idempotency-Key': `welcome-${userId.replace(/[^A-Za-z0-9_-]/g, '-')}`.slice(0, 256),
-      },
-      body: JSON.stringify({
-        from: WELCOME_FROM,
-        to: [claimed.email],
-        reply_to: [WELCOME_REPLY_TO],
-        subject: rendered.subject,
-        html: rendered.html,
-        text: rendered.text,
-        headers: {
-          'List-Unsubscribe': `<${unsub}>`,
-          'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
-        },
-      }),
-    });
-  } catch {
-    console.warn(JSON.stringify({ event: 'welcome_email_failed', reason: 'network' }));
-    await releaseClaim(env, userId, claimedAt);
-    return;
-  }
-  if (response.ok || response.status === 409) return;
-  console.warn(JSON.stringify({ event: 'welcome_email_failed', status: response.status }));
+  const sent = await sendResendEmail(env, {
+    to: claimed.email,
+    subject: rendered.subject,
+    html: rendered.html,
+    text: rendered.text,
+    unsubscribeHref: copy.unsubscribeHref,
+    idempotencyKey: `welcome-${userId}`,
+  });
+  if (sent.outcome === 'sent') return;
+  console.warn(JSON.stringify(
+    sent.status ? { event: 'welcome_email_failed', status: sent.status } : { event: 'welcome_email_failed', reason: 'network' },
+  ));
   await releaseClaim(env, userId, claimedAt);
 }
 
@@ -350,7 +405,10 @@ function unsubscribePage(message: string, status: number): Response {
   });
 }
 
-/** GET is the link in the footer. POST is the one-click List-Unsubscribe action. */
+/**
+ * GET is the link in the footer. POST is the one-click List-Unsubscribe action.
+ * `list=weekly` clears only the digest opt-in. Without it every email stops, the digest included.
+ */
 export async function handleEmailUnsubscribe(request: Request, env: WelcomeEnv): Promise<Response | null> {
   const url = new URL(request.url);
   if (url.pathname !== '/api/email/unsubscribe') return null;
@@ -362,15 +420,24 @@ export async function handleEmailUnsubscribe(request: Request, env: WelcomeEnv):
   if (!env.DB) {
     return unsubscribePage('Unsubscribe is unavailable right now. Write to info@luminara.digital and we will stop these emails.', 503);
   }
+  const weeklyOnly = url.searchParams.get('list') === 'weekly';
   try {
-    const row = await env.DB.prepare(
-      `UPDATE users SET email_opt_out_at = COALESCE(email_opt_out_at, ?)
-       WHERE email_unsub_token = ? RETURNING id`,
-    ).bind(Date.now(), token).first<{ id: string }>();
+    const statement = weeklyOnly
+      ? env.DB.prepare(
+        `UPDATE users SET weekly_digest_opt_in_at = NULL WHERE email_unsub_token = ? RETURNING id`,
+      ).bind(token)
+      : env.DB.prepare(
+        `UPDATE users SET email_opt_out_at = COALESCE(email_opt_out_at, ?), weekly_digest_opt_in_at = NULL
+         WHERE email_unsub_token = ? RETURNING id`,
+      ).bind(Date.now(), token);
+    const row = await statement.first<{ id: string }>();
     if (!row?.id) return unsubscribePage('This unsubscribe link is not valid.', 400);
   } catch {
     console.warn(JSON.stringify({ event: 'welcome_unsubscribe_failed' }));
     return unsubscribePage('Unsubscribe is unavailable right now. Write to info@luminara.digital and we will stop these emails.', 503);
+  }
+  if (weeklyOnly) {
+    return unsubscribePage('You will not get the weekly digest. You can turn it back on in Settings.', 200);
   }
   return unsubscribePage('You are unsubscribed from Luminara Suite emails.', 200);
 }

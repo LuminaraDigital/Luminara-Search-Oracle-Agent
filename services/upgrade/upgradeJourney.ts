@@ -3,7 +3,7 @@
  * Prices are the published AUD card prices. No tax is added. A missing measurement stays "Not measured".
  */
 import type { BoardFinding } from '../audit/findingBoardService';
-import { isDowngradedFinding } from '../audit/reportBlocks';
+import { isDowngradedFinding } from '../audit/primaryFinding';
 import { PAID_PLAN_PRICES, type PaidPlanId } from '../../components/paywall/planPrices';
 import { entitlementsFor, PLAN_ENTITLEMENTS } from '../plans/planEntitlements';
 import { formatAuDay } from '../../utils/formatAuDate';

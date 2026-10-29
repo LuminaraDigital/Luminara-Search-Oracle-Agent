@@ -4,7 +4,7 @@ import { GUEST_FULL_AUDIT_CTA } from '../../services/audit/hostedScoutRail';
 import { renderMarkdown } from '../../utils/markdown';
 import { ActionableFixList } from '../retention/ActionableFixList';
 import { DailyStreakCard } from '../retention/DailyStreakCard';
-import { isDowngradedFinding } from '../../services/audit/reportBlocks';
+import { isDowngradedFinding } from '../../services/audit/primaryFinding';
 
 const SIGNAL_LABELS = ['Citation rate', 'Page health'];
 

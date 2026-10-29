@@ -7,7 +7,8 @@
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
 
-  // Daily Drift Sentinel at 08:00 UTC. RSI weekly work rides this trigger on Mondays.
+  // Daily Drift Sentinel at 08:00 UTC. RSI weekly work rides this trigger on Mondays, and the
+  // weekly email digest rides it every day (each user is mailed on their local Monday).
   // A second cron expression would exceed the account's Workers cron-trigger cap.
   "triggers": {
     "crons": ["0 8 * * *"]
@@ -131,6 +132,8 @@
     "TRUST_RECEIPTS_ENABLED": "false",
     // Citation Watch. The daily cron writes runs only when this is "true".
     "CITATION_WATCH_LIVE": "false",
+    // Weekly email digest (spec 0031). The daily cron mails opted-in users only when this is "true".
+    "WEEKLY_EMAIL_DIGEST_ENABLED": "false",
     "DOMAIN_VERIFY_ENABLED": "false",
     // Signed Audit Receipt minting. Owner and operator revoke stay available. Public verify stays on.
     // HMAC key is a secret (wrangler secret put AUDIT_RECEIPT_ACCOUNT_HMAC_KEY), not a var.
@@ -275,6 +278,8 @@
         "TRUST_RECEIPTS_ENABLED": "false",
         // Citation Watch. The daily cron writes runs only when this is "true".
         "CITATION_WATCH_LIVE": "false",
+        // Weekly email digest (spec 0031). The daily cron mails opted-in users only when this is "true".
+        "WEEKLY_EMAIL_DIGEST_ENABLED": "false",
         "DOMAIN_VERIFY_ENABLED": "false",
         "AUDIT_RECEIPTS_ENABLED": "false",
         // REPLACE with your funded TON testnet merchant (kQ/0Q) before staging soak.
@@ -390,6 +395,8 @@
         "TRUST_RECEIPTS_ENABLED": "false",
         // Citation Watch. The daily cron writes runs only when this is "true".
         "CITATION_WATCH_LIVE": "false",
+        // Weekly email digest (spec 0031). The daily cron mails opted-in users only when this is "true".
+        "WEEKLY_EMAIL_DIGEST_ENABLED": "false",
         "DOMAIN_VERIFY_ENABLED": "false",
         "AUDIT_RECEIPTS_ENABLED": "false",
         "TON_RECEIVING_ADDRESS": "UQC2rrXgl2W5GhkSJ7lpoUAUXsBsDLNI4CXXUDqEdtCZ176T",
