@@ -3,6 +3,7 @@ import { completeWeeklyMission } from '../../services/referrals/referralClient';
 import { brandNameFor } from '../../services/audit/brandName';
 import { plainCustomerReport } from '../../services/audit/reportColumnGate';
 import { comparisonOutlineDraft, llmsTxtDraft, organizationJsonLd } from '../../services/audit/fixPackCopy';
+import { ANSWER_CRAWLER_BOTS } from '../../services/audit/llmCrawlerReadiness';
 import { starterFixContradictsPass } from '../../services/audit/teaserFailureCodes';
 
 export interface ActionableFixInputFinding {
@@ -95,19 +96,10 @@ export const ActionableFixList: React.FC<ActionableFixListProps> = ({ domain, fi
       id: 'fix-robots-txt',
       title: 'Let crawlers read public pages in robots.txt',
       targetEngine: 'Crawler rules in robots.txt',
-      description: 'If robots.txt blocks a crawler, that crawler may not read public pages or suburb guides. The lines below name the crawlers to allow.',
+      description: 'If robots.txt blocks an AI answer crawler, that crawler may not read public pages or suburb guides. The lines below name the answer crawlers to allow. Training opt-outs such as GPTBot can stay as they are.',
       filename: '/robots.txt',
-      snippet: `# Allow these crawlers to read public pages
-User-agent: GPTBot
-Allow: /
-
-User-agent: PerplexityBot
-Allow: /
-
-User-agent: ClaudeBot
-Allow: /
-
-User-agent: Google-Extended
+      snippet: `# Allow AI answer crawlers to read public pages
+${ANSWER_CRAWLER_BOTS.map((bot) => `User-agent: ${bot}`).join('\n')}
 Allow: /
 
 Sitemap: https://${cleanDomain}/sitemap.xml

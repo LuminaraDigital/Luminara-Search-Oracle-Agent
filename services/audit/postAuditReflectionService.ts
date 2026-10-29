@@ -115,7 +115,7 @@ export class PostAuditReflectionService {
     } else if (textSnippet.includes('__next') || textSnippet.includes('_next/static')) {
       proceduralLessons.push({
         pattern: 'Next.js / React Hydration',
-        heuristic: 'Modern Next.js application. Ensure SSR/SSG pre-rendering is intact so AI answer crawlers (GPTBot, PerplexityBot) can index content without headless JS execution.',
+        heuristic: 'Modern Next.js application. Ensure SSR/SSG pre-rendering is intact so AI answer crawlers (OAI-SearchBot, PerplexityBot) can index content without headless JS execution.',
         severity: 'tip',
       });
     }

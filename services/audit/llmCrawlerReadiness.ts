@@ -47,20 +47,28 @@ export interface LlmCrawlerSnapshot {
   aiHttpStatus?: number | null;
 }
 
-/** Citation crawlers we treat as intentional allow/block signals. */
-export const LLM_CRAWLER_BOTS = [
-  'GPTBot',
+/**
+ * Search and user-asked fetchers that decide whether AI answers can read and cite a page.
+ * Blocked at / fails the crawler access check. Vendor sources: specs/0030-answer-vs-training-crawlers.md.
+ */
+export const ANSWER_CRAWLER_BOTS = [
   'OAI-SearchBot',
   'ChatGPT-User',
-  'ClaudeBot',
   'Claude-SearchBot',
+  'Claude-User',
   'PerplexityBot',
   'Perplexity-User',
-  'Google-Extended',
-  'Applebot-Extended',
 ] as const;
 
-/** Paths a citeable site should not hide from those crawlers. */
+export type AnswerCrawlerBot = (typeof ANSWER_CRAWLER_BOTS)[number];
+
+/** Training opt-out tokens. Blocking one is the owner's choice: an information line, never a fail. */
+export const TRAINING_CRAWLER_BOTS = ['GPTBot', 'ClaudeBot', 'Google-Extended', 'Applebot-Extended'] as const;
+
+/** Every crawler the audit names. */
+export const LLM_CRAWLER_BOTS = [...ANSWER_CRAWLER_BOTS, ...TRAINING_CRAWLER_BOTS] as const;
+
+/** Paths a citeable site should not hide from the answer crawlers. */
 export const LLM_CITE_PATHS = ['/', '/llms.txt', '/sitemap.xml'] as const;
 
 const CHECK_LABEL: Record<LlmCrawlerCheckId, string> = {
@@ -225,6 +233,14 @@ function evaluateLlmsStructure(snapshot: LlmCrawlerSnapshot, presence: LlmCrawle
   );
 }
 
+/** Information line for blocked training tokens. Google-Extended also covers Gemini app grounding, so it says so. */
+function trainingOptOutNote(optedOut: readonly string[]): string {
+  if (optedOut.length === 0) return '';
+  const note = `robots.txt blocks ${joinList(optedOut)}. You opted out of AI training; this does not stop AI answers citing you.`;
+  if (!optedOut.includes('Google-Extended')) return note;
+  return `${note} Google-Extended also covers grounding in Gemini apps. Google Search and AI Overviews do not use it.`;
+}
+
 function evaluateBotDirectives(snapshot: LlmCrawlerSnapshot): { check: LlmCrawlerCheck; groups: Map<string, RobotGroup> | null } {
   if (responseBlocked(snapshot.robotsHttpStatus, snapshot.robotsTxt)) {
     return { check: check('ai_bot_directives', 'not_measured', BLOCKED_CHECK), groups: null };
@@ -237,12 +253,11 @@ function evaluateBotDirectives(snapshot: LlmCrawlerSnapshot): { check: LlmCrawle
   }
   if (snapshot.robotsTxt && snapshot.robotsTxt.trim().length > 0) {
     const groups = parseRobots(snapshot.robotsTxt);
-    const blocked = LLM_CRAWLER_BOTS.filter((bot) => botBlocked(groups, bot));
+    const blocked = ANSWER_CRAWLER_BOTS.filter((bot) => botBlocked(groups, bot));
     if (blocked.length === 0) {
-      return {
-        check: check('ai_bot_directives', 'pass', `${joinList(LLM_CRAWLER_BOTS)} are not blocked at /.`),
-        groups,
-      };
+      const optedOut = TRAINING_CRAWLER_BOTS.filter((bot) => botBlocked(groups, bot));
+      const detail = `${joinList(ANSWER_CRAWLER_BOTS)} are not blocked at /. ${trainingOptOutNote(optedOut)}`.trim();
+      return { check: check('ai_bot_directives', 'pass', detail), groups };
     }
     return {
       check: check('ai_bot_directives', 'fail', `robots.txt blocks ${joinList(blocked)} at /.`),
@@ -270,13 +285,13 @@ function evaluateCitePaths(bots: LlmCrawlerCheck, groups: Map<string, RobotGroup
     return check('cite_paths', 'pass', 'No robots.txt was found. Homepage, /llms.txt and /sitemap.xml are not blocked by a robots rule.');
   }
   const hits: string[] = [];
-  for (const bot of LLM_CRAWLER_BOTS) {
+  for (const bot of ANSWER_CRAWLER_BOTS) {
     for (const path of LLM_CITE_PATHS) {
       if (pathBlocked(groups, bot, path)) hits.push(`${bot} at ${path}`);
     }
   }
   if (hits.length === 0) {
-    return check('cite_paths', 'pass', 'Homepage, /llms.txt and /sitemap.xml are not blocked for the named AI crawlers.');
+    return check('cite_paths', 'pass', 'Homepage, /llms.txt and /sitemap.xml are not blocked for the AI answer crawlers.');
   }
   const shown = hits.slice(0, 4);
   const extra = hits.length - shown.length;
