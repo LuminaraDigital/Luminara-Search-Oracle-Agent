@@ -18,16 +18,35 @@ describe('Luminara Audit Preflight Simulator', () => {
     const mockReport: LlmCrawlerReport = {
       checks: [
         { id: 'llms_txt', label: 'llms.txt', status: 'fail', detail: '404 Not Found' },
-        { id: 'ai_bot_directives', label: 'Directives', status: 'fail', detail: 'Disallow: GPTBot, PerplexityBot' },
+        { id: 'ai_bot_directives', label: 'Directives', status: 'fail', detail: 'robots.txt blocks OAI-SearchBot and PerplexityBot at /.' },
       ],
     };
 
     const res = evaluateCrawlerFlagsFromReport(mockReport);
     expect(res.hasLlmsTxt).toBe(false);
-    expect(res.gptBotAllowed).toBe(false);
+    expect(res.chatGptAllowed).toBe(false);
     expect(res.perplexityAllowed).toBe(false);
-    expect(res.claudeBotAllowed).toBe(true);
+    expect(res.claudeAllowed).toBe(true);
     expect(res.riskFlags.length).toBeGreaterThan(0);
+  });
+
+  it('keeps every vendor allowed when only training crawlers are opted out', async () => {
+    const mockFetcher = async (): Promise<LlmCrawlerReport> => ({
+      checks: [
+        { id: 'llms_txt', label: 'llms.txt', status: 'pass', detail: '200 OK' },
+        {
+          id: 'ai_bot_directives',
+          label: 'Directives',
+          status: 'pass',
+          detail: 'robots.txt blocks GPTBot, ClaudeBot and Google-Extended. You opted out of AI training; this does not stop AI answers citing you.',
+        },
+      ],
+    });
+
+    const simulation = await simulateAudit('example.com', 'aeo', mockFetcher);
+    expect(simulation.aiCrawlerStatus).toEqual({ chatGptAllowed: true, perplexityAllowed: true, claudeAllowed: true });
+    expect(simulation.predictedEvidenceYield).toBe('high');
+    expect(simulation.riskFlags).toEqual([]);
   });
 
   it('runs a preflight simulation predicting yield, cost, and duration', async () => {

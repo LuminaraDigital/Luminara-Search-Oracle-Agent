@@ -588,19 +588,33 @@ describe('LLM crawler readiness', () => {
     expect(JSON.stringify(report)).not.toMatch(/\d+%/);
   });
 
-  it('fails a blocked GPTBot rule and a missing llms.txt without inventing a score', () => {
+  it('fails a blocked OAI-SearchBot rule and a missing llms.txt without inventing a score', () => {
     const report = evaluateLlmCrawlerReadiness({
       llmsTxt: '',
       llmsHttpStatus: 404,
-      robotsTxt: 'User-agent: GPTBot\nDisallow: /\n\nUser-agent: *\nAllow: /\n',
+      robotsTxt: 'User-agent: OAI-SearchBot\nDisallow: /\n\nUser-agent: *\nAllow: /\n',
       robotsHttpStatus: 200,
     });
     expect(report.checks.find((check) => check.id === 'llms_txt')?.status).toBe('fail');
     expect(report.checks.find((check) => check.id === 'llms_structure')?.status).toBe('not_measured');
     expect(report.checks.find((check) => check.id === 'ai_bot_directives')?.status).toBe('fail');
     expect(report.checks.find((check) => check.id === 'cite_paths')?.status).toBe('fail');
-    expect(report.checks.find((check) => check.id === 'ai_bot_directives')?.detail).toContain('GPTBot');
+    expect(report.checks.find((check) => check.id === 'ai_bot_directives')?.detail).toBe('robots.txt blocks OAI-SearchBot at /.');
     expect(JSON.stringify(report)).not.toMatch(/\d+%/);
+  });
+
+  it('passes a GPTBot training opt-out with an information line, not a fail', () => {
+    const report = evaluateLlmCrawlerReadiness({
+      llmsTxt: '',
+      llmsHttpStatus: 404,
+      robotsTxt: 'User-agent: GPTBot\nDisallow: /\n\nUser-agent: *\nAllow: /\n',
+      robotsHttpStatus: 200,
+    });
+    const bots = report.checks.find((check) => check.id === 'ai_bot_directives');
+    expect(bots?.status).toBe('pass');
+    expect(bots?.detail).toContain('robots.txt blocks GPTBot.');
+    expect(bots?.detail).toContain('You opted out of AI training; this does not stop AI answers citing you.');
+    expect(report.checks.find((check) => check.id === 'cite_paths')?.status).toBe('pass');
   });
 
   it('stays not_measured when the files were not fetched', async () => {

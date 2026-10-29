@@ -6,7 +6,7 @@
  */
 
 import { probeLlmCrawlerReadiness } from './llmCrawlerProbe';
-import type { LlmCrawlerReport } from './llmCrawlerReadiness';
+import type { AnswerCrawlerBot, LlmCrawlerReport } from './llmCrawlerReadiness';
 
 export type AuditSimulationType = 'seo' | 'aeo' | 'geo' | 'multi_agent_crawl';
 
@@ -24,11 +24,11 @@ export interface PreflightSimulationResult {
   estimatedDurationSec: number;
   estimatedComputeUnits: number;
   pricing: PreflightSimulationPricing;
+  /** AI answer crawlers only. Training opt-outs such as GPTBot never mark a vendor as blocked. */
   aiCrawlerStatus: {
-    gptBotAllowed: boolean;
+    chatGptAllowed: boolean;
     perplexityAllowed: boolean;
-    claudeBotAllowed: boolean;
-    googleExtendedAllowed: boolean;
+    claudeAllowed: boolean;
   };
   hasLlmsTxt: boolean;
   predictedEvidenceYield: 'high' | 'medium' | 'low';
@@ -76,10 +76,9 @@ export function cleanTargetDomain(input: string): string {
 }
 
 export function evaluateCrawlerFlagsFromReport(report: LlmCrawlerReport): {
-  gptBotAllowed: boolean;
+  chatGptAllowed: boolean;
   perplexityAllowed: boolean;
-  claudeBotAllowed: boolean;
-  googleExtendedAllowed: boolean;
+  claudeAllowed: boolean;
   hasLlmsTxt: boolean;
   riskFlags: string[];
 } {
@@ -94,25 +93,24 @@ export function evaluateCrawlerFlagsFromReport(report: LlmCrawlerReport): {
   const botCheck = report.checks.find((c) => c.id === 'ai_bot_directives');
   const isBotFailed = botCheck?.status === 'fail';
 
-  let gptBotAllowed = true;
+  let chatGptAllowed = true;
   let perplexityAllowed = true;
-  let claudeBotAllowed = true;
-  let googleExtendedAllowed = true;
+  let claudeAllowed = true;
 
+  // A failed row names only the blocked answer crawlers. Training opt-outs never fail it.
   if (isBotFailed) {
     riskFlags.push('One or more AI search crawlers are restricted in robots.txt');
     const detail = (botCheck?.detail || '').toLowerCase();
-    if (detail.includes('gptbot') || detail.includes('oai-searchbot')) gptBotAllowed = false;
-    if (detail.includes('perplexitybot')) perplexityAllowed = false;
-    if (detail.includes('claudebot')) claudeBotAllowed = false;
-    if (detail.includes('google-extended')) googleExtendedAllowed = false;
+    const names = (...bots: AnswerCrawlerBot[]) => bots.some((bot) => detail.includes(bot.toLowerCase()));
+    chatGptAllowed = !names('OAI-SearchBot', 'ChatGPT-User');
+    claudeAllowed = !names('Claude-SearchBot', 'Claude-User');
+    perplexityAllowed = !names('PerplexityBot', 'Perplexity-User');
   }
 
   return {
-    gptBotAllowed,
+    chatGptAllowed,
     perplexityAllowed,
-    claudeBotAllowed,
-    googleExtendedAllowed,
+    claudeAllowed,
     hasLlmsTxt,
     riskFlags,
   };
@@ -139,10 +137,9 @@ export async function simulateAudit(
       estimatedComputeUnits: 0,
       pricing,
       aiCrawlerStatus: {
-        gptBotAllowed: false,
+        chatGptAllowed: false,
         perplexityAllowed: false,
-        claudeBotAllowed: false,
-        googleExtendedAllowed: false,
+        claudeAllowed: false,
       },
       hasLlmsTxt: false,
       predictedEvidenceYield: 'low',
@@ -164,19 +161,18 @@ export async function simulateAudit(
   }
 
   const {
-    gptBotAllowed,
+    chatGptAllowed,
     perplexityAllowed,
-    claudeBotAllowed,
-    googleExtendedAllowed,
+    claudeAllowed,
     hasLlmsTxt,
     riskFlags,
   } = evaluateCrawlerFlagsFromReport(crawlerReport);
 
   let predictedEvidenceYield: 'high' | 'medium' | 'low' = 'high';
-  if (!gptBotAllowed && !perplexityAllowed) {
+  if (!chatGptAllowed && !perplexityAllowed) {
     predictedEvidenceYield = 'low';
     riskFlags.push('Critical AI crawlers blocked. AI citation visibility may be suppressed.');
-  } else if (!hasLlmsTxt || !googleExtendedAllowed) {
+  } else if (!hasLlmsTxt) {
     predictedEvidenceYield = 'medium';
   }
 
@@ -195,10 +191,9 @@ export async function simulateAudit(
     estimatedComputeUnits,
     pricing,
     aiCrawlerStatus: {
-      gptBotAllowed,
+      chatGptAllowed,
       perplexityAllowed,
-      claudeBotAllowed,
-      googleExtendedAllowed,
+      claudeAllowed,
     },
     hasLlmsTxt,
     predictedEvidenceYield,

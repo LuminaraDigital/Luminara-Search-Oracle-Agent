@@ -64,13 +64,55 @@ describe('deeper LLM crawler lens', () => {
     const report = evaluateLlmCrawlerReadiness({
       llmsTxt: '# Product\n\n> A short summary that agents can quote from the file.\n',
       llmsHttpStatus: 200,
-      robotsTxt: 'User-agent: GPTBot\nDisallow: /\nAllow: /llms.txt\n\nUser-agent: *\nAllow: /\n',
+      robotsTxt: 'User-agent: PerplexityBot\nDisallow: /\nAllow: /llms.txt\n\nUser-agent: *\nAllow: /\n',
       robotsHttpStatus: 200,
     });
     const detail = report.checks.find((check) => check.id === 'cite_paths')?.detail || '';
-    expect(detail).toContain('GPTBot at /');
-    expect(detail).not.toContain('GPTBot at /llms.txt');
+    expect(detail).toContain('PerplexityBot at /');
+    expect(detail).not.toContain('PerplexityBot at /llms.txt');
     expect(report.checks.find((check) => check.id === 'ai_txt')?.status).toBe('not_measured');
+  });
+
+  it('passes when only training crawlers are blocked and says AI answers can still cite the site', () => {
+    const report = evaluateLlmCrawlerReadiness({
+      llmsTxt: '# Product\n\n> A short summary that agents can quote from the file.\n',
+      llmsHttpStatus: 200,
+      robotsTxt: [
+        'User-agent: GPTBot',
+        'User-agent: ClaudeBot',
+        'User-agent: Google-Extended',
+        'User-agent: Applebot-Extended',
+        'Disallow: /',
+        '',
+        'User-agent: *',
+        'Allow: /',
+      ].join('\n'),
+      robotsHttpStatus: 200,
+    });
+    const bots = report.checks.find((check) => check.id === 'ai_bot_directives');
+    expect(bots?.status).toBe('pass');
+    expect(bots?.detail).toBe(
+      'OAI-SearchBot, ChatGPT-User, Claude-SearchBot, Claude-User, PerplexityBot and Perplexity-User are not blocked at /. '
+        + 'robots.txt blocks GPTBot, ClaudeBot, Google-Extended and Applebot-Extended. '
+        + 'You opted out of AI training; this does not stop AI answers citing you. '
+        + 'Google-Extended also covers grounding in Gemini apps. Google Search and AI Overviews do not use it.',
+    );
+    expect(report.checks.find((check) => check.id === 'cite_paths')?.status).toBe('pass');
+    noScore(report);
+  });
+
+  it('fails when an answer crawler is blocked, even with training crawlers also blocked', () => {
+    const report = evaluateLlmCrawlerReadiness({
+      llmsTxt: null,
+      llmsHttpStatus: null,
+      robotsTxt: 'User-agent: GPTBot\nUser-agent: Claude-User\nDisallow: /\n\nUser-agent: *\nAllow: /\n',
+      robotsHttpStatus: 200,
+    });
+    expect(report.checks.find((check) => check.id === 'ai_bot_directives')).toMatchObject({
+      status: 'fail',
+      detail: 'robots.txt blocks Claude-User at /.',
+    });
+    expect(report.checks.find((check) => check.id === 'cite_paths')?.detail).not.toContain('GPTBot');
   });
 
   it('records a missing optional ai.txt as fail and a fetch error as not_measured', () => {
