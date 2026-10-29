@@ -4,6 +4,7 @@
  * 100% Privacy-First: All telemetry is stored locally in localStorage by default.
  * Zero external ad tracking or PII leakage.
  */
+import { clearFirstTouch, loadFirstTouch, rememberFirstTouch } from './firstTouch';
 
 export type TelemetryEventType =
   | 'session_started'
@@ -59,6 +60,9 @@ const STORAGE_KEY_EVENTS = 'luminara_telemetry_events';
 const STORAGE_KEY_SUMMARY = 'luminara_telemetry_summary';
 const SESSION_START_KEY = 'luminara_session_start_time';
 const MAX_STORED_EVENTS = 100;
+
+/** Funnel events that carry the visitor's first touch, so signups and checks can be counted by channel. */
+const ATTRIBUTED_EVENTS = new Set<TelemetryEventType>(['probe_completed', 'signup_completed']);
 
 class ProductTelemetryEngine {
   private summary: TelemetryMetricsSummary;
@@ -130,14 +134,16 @@ class ProductTelemetryEngine {
   private initSession(): void {
     this.summary.lastActiveTime = Date.now();
     this.saveSummary();
+    rememberFirstTouch();
   }
 
   public track(type: TelemetryEventType, data?: Record<string, any>): void {
+    const firstTouch = ATTRIBUTED_EVENTS.has(type) ? loadFirstTouch() : null;
     const event: TelemetryEvent = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       type,
       timestamp: Date.now(),
-      data,
+      data: firstTouch ? { ...data, firstTouch } : data,
     };
 
     // Store in local ring buffer
@@ -312,6 +318,7 @@ class ProductTelemetryEngine {
       lastActiveTime: Date.now(),
     };
     this.sessionStartTime = Date.now();
+    clearFirstTouch();
     try {
       if (typeof window !== 'undefined' && window.localStorage) {
         window.localStorage.removeItem(STORAGE_KEY_EVENTS);

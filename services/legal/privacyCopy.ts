@@ -4,7 +4,7 @@
  */
 import { OPERATOR_LINE, PUBLIC_CONTACT_LINE } from './consumerTerms';
 
-export const PRIVACY_UPDATED = '25 October 2026';
+export const PRIVACY_UPDATED = '29 October 2026';
 
 export const PUBLIC_PRIVACY_URL = 'https://www.luminarasuite.com/privacy';
 
@@ -53,6 +53,7 @@ export const PRIVACY_SECTIONS: PrivacySection[] = [
       'API keys you paste (Groq, NVIDIA, Gemini, Tavily, Firecrawl, Exa, OpenRouter, Ollama, and similar) stay on the device where you entered them. In a browser they stay in that browser. On the Android app, keys you save are stored encrypted on the device with Android Keystore AES-256-GCM. When a provider call needs your own key, the browser or the Android app may send it to our Worker in the x-provider-key header. The Worker forwards that key to the provider for the call and does not save it as an account key. If you are signed in on the website and turn on workspace sync, those keys are encrypted in that browser with AES-256-GCM before upload. The key is derived with PBKDF2-SHA-256 (100,000 iterations) from a secret stored in that browser. Another browser does not have that secret, so it cannot decrypt those keys. If encryption fails, the keys are uploaded without that encryption. Audits, chat, and other workspace content are stored as you saved them, without that encryption.',
       'Plan and billing: plan id, expiry, a Stripe checkout session id when you pay by card, Telegram Stars charge ids, TON order amount, memo, status, and transaction hash, daily free-quota counters, and Sentinel watch targets (owner id, domain, brand, Telegram chat id, keywords, and scores). Stripe is the card payment processor. We do not store card numbers.',
       'Logs: Cloudflare request logs, and the IP address used in memory for abuse limits. We do not set first-party marketing cookies.',
+      'Usage events: the product steps you complete (for example a free check, sign-up, audit, or payment), and how you first reached the site. That is the utm_source, utm_medium, and utm_campaign tags on the link you followed, or the referring site\'s domain, plus the first part of the page path you landed on. We do not record full referring URLs. Deleting the account deletes these events.',
     ],
   },
   {
@@ -72,6 +73,7 @@ export const PRIVACY_SECTIONS: PrivacySection[] = [
       'To relay blocked browser AI calls (for example NVIDIA NIM) without storing the key on that relay.',
       'To forward a key you send in the x-provider-key header to the provider for that call, without saving it as an account key.',
       'To keep the service secure, limit abuse, and fix outages.',
+      'To see which product steps and marketing channels lead people to a useful result, so we spend on the ones that work.',
       'To answer privacy, support, and security requests.',
     ],
   },
