@@ -12,7 +12,7 @@ import { sameSiteHost } from '../services/audit/sameSiteHost';
 import { mintScoutReceipt } from './referrals';
 import { readCapped } from './domainVerification';
 import { readServedCrawlFile } from './crawlDocuments';
-import type { LlmCrawlerSnapshot } from '../services/audit/llmCrawlerReadiness';
+import { servedWebPage, type LlmCrawlerSnapshot } from '../services/audit/llmCrawlerReadiness';
 
 const MAX_BYTES = 64_000;
 const FETCH_MS = 5_000;
@@ -121,7 +121,7 @@ export async function handleLlmCrawlerRoute(request: Request, env: Env): Promise
     return json({ ok: false, error: loaded.error, code: loaded.code, snapshot: null }, 400);
   }
   const sawFile = [loaded.snapshot.llmsTxt, loaded.snapshot.robotsTxt, loaded.snapshot.aiTxt].some(
-    (text) => typeof text === 'string' && text.trim().length > 0,
+    (text) => typeof text === 'string' && text.trim().length > 0 && !servedWebPage(text),
   );
   const host = safePublicHostname(target);
   let receipt: string | null = null;

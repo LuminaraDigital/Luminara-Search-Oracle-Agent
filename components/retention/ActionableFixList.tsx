@@ -3,7 +3,7 @@ import { completeWeeklyMission } from '../../services/referrals/referralClient';
 import { brandNameFor } from '../../services/audit/brandName';
 import { plainCustomerReport } from '../../services/audit/reportColumnGate';
 import { comparisonOutlineDraft, llmsTxtDraft, organizationJsonLd } from '../../services/audit/fixPackCopy';
-import { starterFixContradictsPass } from '../../services/audit/teaserFailureCodes';
+import { crawlerFixes, starterFixContradictsPass } from '../../services/audit/teaserFailureCodes';
 
 export interface ActionableFixInputFinding {
   id: string;
@@ -74,6 +74,22 @@ export const ActionableFixList: React.FC<ActionableFixListProps> = ({ domain, fi
     }
   });
 
+  const robotsSnippet = `# Allow these crawlers to read public pages
+User-agent: GPTBot
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+Sitemap: https://${cleanDomain}/sitemap.xml
+`;
+
   const defaultFixes: FixItem[] = [
     {
       id: 'fix-llms-txt',
@@ -97,21 +113,7 @@ export const ActionableFixList: React.FC<ActionableFixListProps> = ({ domain, fi
       targetEngine: 'Crawler rules in robots.txt',
       description: 'If robots.txt blocks a crawler, that crawler may not read public pages or suburb guides. The lines below name the crawlers to allow.',
       filename: '/robots.txt',
-      snippet: `# Allow these crawlers to read public pages
-User-agent: GPTBot
-Allow: /
-
-User-agent: PerplexityBot
-Allow: /
-
-User-agent: ClaudeBot
-Allow: /
-
-User-agent: Google-Extended
-Allow: /
-
-Sitemap: https://${cleanDomain}/sitemap.xml
-`,
+      snippet: robotsSnippet,
     },
   ];
 
@@ -130,8 +132,25 @@ Sitemap: https://${cleanDomain}/sitemap.xml
     snippet: snippetFor(f, cleanDomain, pageTitle, pageDescription),
   }));
 
+  // A failed crawler row is a fix even when the page findings do not name that file.
+  const FILE_PATTERN: Record<string, RegExp> = { 'fix-llms-txt': /llms/i, 'fix-robots-txt': /robots/i, 'fix-ai-txt': /\bai\.txt\b/i };
+  const crawlerFixItems: FixItem[] = crawlerFixes(crawlerChecks)
+    .filter((fix) => !mappedFindings.some((item) => FILE_PATTERN[fix.id].test(`${item.id} ${item.title} ${item.filename}`)))
+    .map((fix) => ({
+      id: fix.id,
+      title: fix.title,
+      targetEngine: 'A page on your site',
+      description: fix.detail,
+      filename: fix.id === 'fix-llms-txt' ? '/llms.txt' : fix.id === 'fix-robots-txt' ? '/robots.txt' : '/ai.txt',
+      snippet: fix.id === 'fix-llms-txt'
+        ? llmsDraft(cleanDomain, pageTitle, pageDescription) || llmsTxtDraft(domain)
+        : fix.id === 'fix-robots-txt'
+          ? robotsSnippet
+          : `# AI use policy for ${cleanDomain}\nUser-agent: *\nAllow: /\n`,
+    }));
+
   const measuredRun = Array.isArray(findings);
-  const activeFixes: FixItem[] = (measuredRun ? mappedFindings : defaultFixes)
+  const activeFixes: FixItem[] = (measuredRun ? [...mappedFindings, ...crawlerFixItems] : defaultFixes)
     .filter((fix) => !starterFixContradictsPass(`${fix.id} ${fix.title}`, crawlerChecks));
   const isAuditDerived = measuredRun;
 

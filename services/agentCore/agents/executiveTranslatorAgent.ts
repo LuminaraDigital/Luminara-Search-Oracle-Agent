@@ -14,6 +14,7 @@ import { readableStem } from '../../audit/brandName';
 import { AgentActivityEvent, AuditFinding, CodeRemediationPatch } from '../types';
 import { BusinessDNA } from '../../../types';
 import { HEALTH_CHECKS, measuredCheckLine, resolveCheckCounts } from '../auditEvidenceGate';
+import { crawlerFixes } from '../../audit/teaserFailureCodes';
 
 /**
  * Counts of the live web search rows this run collected.
@@ -65,6 +66,7 @@ export class ExecutiveTranslatorAgent {
     dna: BusinessDNA | null | undefined,
     emit: (event: AgentActivityEvent) => void,
     displayName?: string | null,
+    crawlerChecks?: readonly { id: string; status: string }[] | null,
   ): Promise<string> {
     emit({
       id: `exec-start-${Date.now()}`,
@@ -98,11 +100,25 @@ export class ExecutiveTranslatorAgent {
         : citationKnown
           ? `Right now, your brand is ${mentionPhrase} this run collected. The site checks were not measured.`
           : 'Right now, the site checks and citation rate were not measured. Search or page providers did not return evidence for this run.';
+    // The AI file rows on the card are checks too. The brief counts them apart from the site checks,
+    // so "4 of 4 checks passed" never sits above a FAIL row with nothing said about it.
+    const crawlerRows = crawlerChecks || [];
+    const crawlerPassed = crawlerRows.filter((row) => row.status === 'pass').length;
+    const crawlerFailed = crawlerRows.filter((row) => row.status === 'fail').length;
+    const crawlerUnmeasured = crawlerRows.length - crawlerPassed - crawlerFailed;
+    const crawlerLine = crawlerRows.length === 0
+      ? ''
+      : crawlerUnmeasured === crawlerRows.length
+        ? ' AI file checks were not measured.'
+        : ` AI file checks: ${crawlerPassed} of ${crawlerRows.length} passed${crawlerFailed > 0 ? `, ${crawlerFailed} failed` : ''}${crawlerUnmeasured > 0 ? `, ${crawlerUnmeasured} not measured` : ''}.`;
+    const crawlerFailedNote = crawlerFailed > 0 ? ` ${crawlerFailed} AI file ${crawlerFailed === 1 ? 'check' : 'checks'} failed.` : '';
     const failedTakeaway = `${failed} ${failed === 1 ? 'check failed' : 'checks failed'}.${unchecked > 0 ? ` ${unchecked} ${unchecked === 1 ? 'check was' : 'checks were'} not measured.` : ''}`;
     const takeaway = criticalCount > 0
       ? `⚠️ **The Big Takeaway:** This run found ${criticalCount} critical ${criticalCount === 1 ? 'gap' : 'gaps'}: ${critical.map((f) => f.title).join('; ')}.`
       : healthKnown && failed > 0
-        ? `**The takeaway:** ${failedTakeaway}`
+        ? `**The takeaway:** ${failedTakeaway}${crawlerFailedNote}`
+        : crawlerFailed > 0
+          ? `**The takeaway:**${crawlerFailedNote}${healthKnown && unchecked > 0 ? ` ${unchecked} ${unchecked === 1 ? 'check was' : 'checks were'} not measured.` : ''}`
         : healthKnown && unchecked === 0
           ? `✅ **The Big Takeaway:** None of the checks this run made found a critical gap.`
           : healthKnown
@@ -117,7 +133,8 @@ export class ExecutiveTranslatorAgent {
         const evidence = finding?.howWeKnowItFailed?.trim();
         const step = STEP_FOR_FAILED_CHECK[check.findingId];
         return evidence ? `${step} ${evidence}` : step;
-      });
+      })
+      .concat(crawlerFixes(crawlerRows).map((fix) => `**${fix.title}:** ${fix.detail}`));
     const listedFix = findings.some((finding) => !finding.id.endsWith('-unmeasured'));
     const stepLines = steps.length > 0
       ? [
@@ -141,7 +158,7 @@ export class ExecutiveTranslatorAgent {
     const sections = [
       `### What This Means For ${brandName}`,
       '',
-      scoreLine,
+      `${scoreLine}${crawlerLine}`,
       '',
       takeaway,
       '',

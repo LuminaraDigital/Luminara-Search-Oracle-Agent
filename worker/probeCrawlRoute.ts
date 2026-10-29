@@ -6,7 +6,7 @@ import type { Env } from './env';
 import { json } from './workerUtils';
 import { safePublicHostname } from './security';
 import { loadCrawlerSnapshot } from './llmCrawlerRoute';
-import { BLOCKED_CHECK, responseBlocked, type LlmCrawlerSnapshot } from '../services/audit/llmCrawlerReadiness';
+import { BLOCKED_CHECK, responseBlocked, servedWebPage, type LlmCrawlerSnapshot } from '../services/audit/llmCrawlerReadiness';
 
 export type ProbeCrawlStatus = 'measured' | 'not_measured';
 
@@ -24,19 +24,24 @@ export type ProbeCrawlResult = {
 };
 
 function present(body: string | null | undefined, status: number | null | undefined): boolean {
-  return status === 200 && typeof body === 'string' && body.trim().length > 0;
+  return status === 200 && typeof body === 'string' && body.trim().length > 0 && !servedWebPage(body);
+}
+
+/** A 404, or a web page served where the text file should be. */
+function missing(body: string | null | undefined, status: number | null | undefined): boolean {
+  return status === 404 || (status === 200 && servedWebPage(body));
 }
 
 function fileNote(label: string, body: string | null | undefined, status: number | null | undefined): string {
   if (responseBlocked(status, body)) return `${label}: ${BLOCKED_CHECK}`;
   if (present(body, status)) return `${label} found`;
-  if (status == null || status === 404) return `${label} missing`;
+  if (status == null || missing(body, status)) return `${label} missing`;
   return `${label}: Not measured`;
 }
 
 function fileSettled(body: string | null | undefined, status: number | null | undefined): boolean {
   if (responseBlocked(status, body)) return false;
-  return present(body, status) || status == null || status === 404;
+  return present(body, status) || status == null || missing(body, status);
 }
 
 export function summarizeProbeCrawl(
@@ -50,12 +55,13 @@ export function summarizeProbeCrawl(
   parts.push(fileNote('robots.txt', snapshot.robotsTxt, snapshot.robotsHttpStatus));
   parts.push(fileNote('llms.txt', snapshot.llmsTxt, snapshot.llmsHttpStatus));
   const aiStatus = snapshot.aiHttpStatus;
-  if (aiTxtPresent || (aiStatus != null && aiStatus !== 404)) {
+  const aiMissing = missing(snapshot.aiTxt, aiStatus);
+  if (aiTxtPresent || (aiStatus != null && !aiMissing)) {
     parts.push(fileNote('ai.txt', snapshot.aiTxt, aiStatus));
   }
   const settled = fileSettled(snapshot.robotsTxt, snapshot.robotsHttpStatus)
     && fileSettled(snapshot.llmsTxt, snapshot.llmsHttpStatus)
-    && (aiStatus == null || aiStatus === 404 || aiTxtPresent || fileSettled(snapshot.aiTxt, aiStatus));
+    && (aiStatus == null || aiMissing || aiTxtPresent || fileSettled(snapshot.aiTxt, aiStatus));
   return {
     status: settled ? 'measured' : 'not_measured',
     note: `Live crawl · ${parts.join('; ')}. Engines still need Instant Audit.`,
