@@ -204,18 +204,16 @@ describe('checkout honesty', () => {
       for (const line of planBullets(id)) expect(line.text).not.toMatch(/^[a-z]/);
     }
     expect(PAYWALL_HEADLINE.toLowerCase()).not.toContain('unlimited');
-    expect(planBullets('starter').filter((line) => !line.included).map((line) => line.text)).toEqual([
-      'No IDE access (web app only)',
-      'No public share links',
-    ]);
+    expect(planBullets('starter').filter((line) => !line.included).map((line) => line.text)).toEqual([]);
+    expect(planBullets('starter').map((line) => line.text)).toContain('IDE access (Cursor / Claude / Codex), 300 MCP calls a day');
     expect(planBullets('growth').find((line) => line.text.startsWith('IDE access'))?.included).toBe(true);
     const html = renderToStaticMarkup(createElement(PaywallModal, { isOpen: true, onClose: () => {} }));
     expect(html).toContain(PAYWALL_HEADLINE);
     expect(html).toContain(PAYWALL_SUBLINE);
     expect(html).not.toContain('See the caps on each plan');
     expect(html.toLowerCase()).not.toContain('unlimited');
-    expect(html).toContain('Not included: </span>No IDE access (web app only)');
-    expect(html).toContain('Not included: </span>No public share links');
+    expect(html).not.toContain('No IDE access');
+    expect(html).not.toContain('No public share links');
     expect(html).not.toContain('✓</span>No IDE access');
     expect(html).not.toContain('✓</span>No public share links');
     expect(html).toContain('✓');

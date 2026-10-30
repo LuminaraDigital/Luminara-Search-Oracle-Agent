@@ -88,8 +88,8 @@ export const PLANS: Record<string, PlanMeta> = {
     agencyClientLimit: 0,
     scheduledReaudit: 'monthly',
     apiAccess: false,
-    shareLinks: false,
-    mcpAccess: false,
+    shareLinks: true,
+    mcpAccess: true,
   },
   growth: {
     title: 'Luminara Growth',
@@ -127,8 +127,8 @@ export const PLANS: Record<string, PlanMeta> = {
     agencyClientLimit: 0,
     scheduledReaudit: 'none',
     apiAccess: false,
-    shareLinks: false,
-    mcpAccess: false,
+    shareLinks: true,
+    mcpAccess: true,
   },
   multi_agent_crawl: {
     title: '24-hour pass',
@@ -140,8 +140,8 @@ export const PLANS: Record<string, PlanMeta> = {
     agencyClientLimit: 0,
     scheduledReaudit: 'none',
     apiAccess: false,
-    shareLinks: false,
-    mcpAccess: false,
+    shareLinks: true,
+    mcpAccess: true,
   },
 };
 
@@ -152,8 +152,8 @@ export const FREE_PLAN_CAPS = {
   agencyClientLimit: 0,
   scheduledReaudit: 'none' as const,
   apiAccess: false,
-  shareLinks: false,
-  mcpAccess: false,
+  shareLinks: true,
+  mcpAccess: true,
 };
 
 /** Already-issued 75-Star invoices still credit. New invoices and the bot list do not offer it. */

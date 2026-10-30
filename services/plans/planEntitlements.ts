@@ -5,6 +5,10 @@
 
 export type PlanId = 'free' | 'starter' | 'growth' | 'agency';
 
+/** Daily caps that keep free sharing and MCP cheap to give away. */
+export const FREE_SHARE_DAILY_LIMIT = 3;
+export const FREE_MCP_DAILY_CALL_LIMIT = 100;
+
 export interface PlanEntitlements {
   id: PlanId;
   title: string;
@@ -16,11 +20,15 @@ export interface PlanEntitlements {
   scheduledReaudit: 'none' | 'monthly' | 'weekly' | 'daily';
   apiAccess: boolean;
   whiteLabelPdf: boolean;
-  /** Full branded public report URLs. Growth+. Redacted scout teasers are a separate free artifact. */
+  /** Public report URLs, every plan. Custom branding needs whiteLabelPdf. Redacted scout teasers are a separate artifact. */
   shareLinks: boolean;
-  /** MCP free tools (projects, context, reports). Growth+. */
+  /** MCP free tools (projects, context, reports), every plan. Paid research stays Agency or BYOK. */
   mcpAccess: boolean;
   teamSeats: number;
+  /** New share links per UTC day. 0 = unlimited. */
+  shareDailyLimit: number;
+  /** MCP tool calls per UTC day. 0 = unlimited. */
+  mcpDailyCallLimit: number;
 }
 
 export const PLAN_ENTITLEMENTS: Record<PlanId, PlanEntitlements> = {
@@ -35,9 +43,11 @@ export const PLAN_ENTITLEMENTS: Record<PlanId, PlanEntitlements> = {
     scheduledReaudit: 'none',
     apiAccess: false,
     whiteLabelPdf: false,
-    shareLinks: false,
-    mcpAccess: false,
+    shareLinks: true,
+    mcpAccess: true,
     teamSeats: 1,
+    shareDailyLimit: FREE_SHARE_DAILY_LIMIT,
+    mcpDailyCallLimit: FREE_MCP_DAILY_CALL_LIMIT,
   },
   starter: {
     id: 'starter',
@@ -50,9 +60,11 @@ export const PLAN_ENTITLEMENTS: Record<PlanId, PlanEntitlements> = {
     scheduledReaudit: 'monthly',
     apiAccess: false,
     whiteLabelPdf: true,
-    shareLinks: false,
-    mcpAccess: false,
+    shareLinks: true,
+    mcpAccess: true,
     teamSeats: 1,
+    shareDailyLimit: 10,
+    mcpDailyCallLimit: 300,
   },
   growth: {
     id: 'growth',
@@ -68,6 +80,8 @@ export const PLAN_ENTITLEMENTS: Record<PlanId, PlanEntitlements> = {
     shareLinks: true,
     mcpAccess: true,
     teamSeats: 3,
+    shareDailyLimit: 0,
+    mcpDailyCallLimit: 0,
   },
   agency: {
     id: 'agency',
@@ -83,6 +97,8 @@ export const PLAN_ENTITLEMENTS: Record<PlanId, PlanEntitlements> = {
     shareLinks: true,
     mcpAccess: true,
     teamSeats: 10,
+    shareDailyLimit: 0,
+    mcpDailyCallLimit: 0,
   },
 };
 

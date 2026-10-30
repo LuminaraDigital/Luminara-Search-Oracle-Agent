@@ -8,7 +8,7 @@ import { writeCachedFirebaseIdToken } from '../services/auth/firebaseIdToken';
 import { canCreateShareLinks } from '../services/share/shareReportClient';
 import { paidBootQuota, signInWithBootQuota } from './helpers/quotaBoot';
 
-const FREE_WIN = 'A measured win can be shared on the free plan.';
+const FREE_WIN = 'Share links are free on every plan.';
 const UNLIMITED = new Headers({ 'x-quota-limit': 'unlimited', 'x-quota-remaining': 'unlimited' });
 const EXPIRES = Date.now() + 30 * 86_400_000;
 
@@ -27,7 +27,7 @@ afterEach(() => {
 });
 
 describe('free share call to action', () => {
-  it('keeps the free-win sentence and hides the paywalled copy-share button', async () => {
+  it('shows the free-share sentence and the copy-share button on every signed-in plan', async () => {
     vi.stubGlobal('localStorage', {
       getItem: () => null,
       setItem: () => undefined,
@@ -37,23 +37,23 @@ describe('free share call to action', () => {
     await signInWithBootQuota({ limit: 3, used: 1, remaining: 2, resetSec: 600, isUnlimited: false, plan: 'free' });
     const free = reportHtml();
     expect(free).toContain(FREE_WIN);
-    expect(free).not.toContain('Copy share link');
-    expect(canCreateShareLinks()).toBe(false);
+    expect(free).toContain('Copy share link');
+    expect(canCreateShareLinks()).toBe(true);
 
     await signInWithBootQuota(paidBootQuota('starter', EXPIRES));
     updateQuotaFromHeaders(UNLIMITED);
     const starter = reportHtml();
     expect(starter).toContain(FREE_WIN);
-    expect(starter).not.toContain('Copy share link');
-    expect(canCreateShareLinks()).toBe(false);
+    expect(starter).toContain('Copy share link');
+    expect(canCreateShareLinks()).toBe(true);
 
-    // A free account can still receive an unlimited daily-cap header. That is not Growth.
+    // A free account with an unlimited daily-cap header still shares under the Worker's share cap.
     await signInWithBootQuota({ limit: 3, used: 0, remaining: 3, resetSec: 600, isUnlimited: false, plan: 'free' });
     updateQuotaFromHeaders(UNLIMITED);
     const unlimitedCap = reportHtml();
     expect(unlimitedCap).toContain(FREE_WIN);
-    expect(unlimitedCap).not.toContain('Copy share link');
-    expect(canCreateShareLinks()).toBe(false);
+    expect(unlimitedCap).toContain('Copy share link');
+    expect(canCreateShareLinks()).toBe(true);
 
     await signInWithBootQuota(paidBootQuota('growth', EXPIRES));
     updateQuotaFromHeaders(UNLIMITED);

@@ -1866,7 +1866,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     return withCors(json({ error: 'Method not allowed' }, 405));
   }
 
-  // APS: MCP (Growth+ mcpAccess; session, lm_live_* API key, or mcp_* OAuth token)
+  // APS: MCP (mcpAccess on every plan, daily cap below Growth; session, lm_live_* API key, or mcp_* OAuth token)
   if (path === '/mcp' || path.startsWith('/mcp/')) {
     const resolved = await resolveMcpUser(request, env);
     if ('response' in resolved) return withCors(resolved.response);

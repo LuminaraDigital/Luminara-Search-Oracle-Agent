@@ -47,7 +47,7 @@ Every agent, Cursor included, follows this (owner decision, 2026-10-26). Agent m
 
 See `docs/plans/agent-mcp-product-surface.md`.
 
-1. Free MCP tools (Growth+): `whoami`, projects, project context, agent reports.
+1. Free MCP tools (every plan): `whoami`, projects, project context, agent reports.
 2. Paid research tools need Agency `apiAccess` or BYOK DataForSEO.
 3. Callers must `get_project_context` before paid calls; check research log within 30 days.
 4. Chat returns verdict + one action + report link, not full HTML novels.

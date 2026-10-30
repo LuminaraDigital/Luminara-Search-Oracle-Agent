@@ -52,9 +52,10 @@ export interface SharedReportResponse {
   passwordRequired?: boolean;
 }
 
-/** Branded report URLs. Growth and Agency only. An unlimited daily cap is not a share link. */
+/** Public report URLs for any signed-in plan. The Worker caps Free and Starter per day. */
 export function canCreateShareLinks(): boolean {
-  return entitlementsFor(getCurrentQuotaSync()?.plan).shareLinks;
+  const quota = getCurrentQuotaSync();
+  return Boolean(quota) && entitlementsFor(quota?.plan).shareLinks;
 }
 
 export async function createShareReport(input: CreateShareReportInput): Promise<CreateShareReportResult> {

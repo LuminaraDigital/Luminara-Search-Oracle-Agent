@@ -246,10 +246,10 @@ describe('teaser share entitlement', () => {
     }
   });
 
-  it('lets a free Telegram user mint a teaser and still blocks full share links', async () => {
+  it('lets a free Telegram user mint both a teaser and a full share link', async () => {
     const env = makeEnv();
     const initData = freeInit();
-    const denied = await handleShareRoute(
+    const full = await handleShareRoute(
       new Request('https://luminarasuite.com/api/share/reports', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-telegram-init-data': initData },
@@ -258,9 +258,7 @@ describe('teaser share entitlement', () => {
       env,
       '/share/reports',
     );
-    expect(denied.status).toBe(403);
-    const deniedBody = (await denied.json()) as { code?: string };
-    expect(deniedBody.code).toBe('SHARE_ENTITLEMENT_REQUIRED');
+    expect(full.status).toBe(200);
 
     const createdRes = await worker.fetch(
       new Request('https://luminarasuite.com/api/share/teasers', {

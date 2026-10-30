@@ -45,8 +45,8 @@ export function freePlanLines(): PlanBullet[] {
     { included: true, text: `${free.domainLimit} monitored domain` },
     { included: true, text: 'On-demand audits' },
     { included: true, text: '3 hosted Instant Audit checks a day' },
-    { included: false, text: 'No IDE access (web app only)' },
-    { included: false, text: 'No public share links' },
+    { included: true, text: `IDE access (Cursor / Claude / Codex), ${free.mcpDailyCallLimit} MCP calls a day` },
+    { included: true, text: `${free.shareDailyLimit} public share links a day, with a Luminara badge` },
   ];
 }
 
@@ -62,11 +62,13 @@ export function planBullets(id: PaidPlanId): PlanBullet[] {
     { included: e.whiteLabelPdf, text: e.whiteLabelPdf ? 'White-label PDF exports' : 'No white-label PDF' },
     {
       included: e.mcpAccess,
-      text: e.mcpAccess ? 'IDE access (Cursor / Claude / Codex)' : 'No IDE access (web app only)',
+      text: e.mcpDailyCallLimit
+        ? `IDE access (Cursor / Claude / Codex), ${e.mcpDailyCallLimit} MCP calls a day`
+        : 'IDE access (Cursor / Claude / Codex), no daily MCP cap',
     },
     {
       included: e.shareLinks,
-      text: e.shareLinks ? 'Public share links' : 'No public share links',
+      text: e.shareDailyLimit ? `${e.shareDailyLimit} public share links a day` : 'Public share links, no daily cap',
     },
   ];
   if (e.apiAccess) lines.push({ included: true, text: 'Paid research API (Agency plan or your own DataForSEO login)' });
@@ -87,7 +89,7 @@ export const pricingTiers: Array<{
     priceLabel: PAID_PLAN_PRICES.starter.audLabel,
     stars: PAID_PLAN_PRICES.starter.starsLabel,
     ton: PAID_PLAN_PRICES.starter.tonLabel,
-    blurb: 'Web audits for up to 2 sites. No IDE connectors or public share links.',
+    blurb: 'Web audits for up to 2 sites, your own branding on share links, and higher daily caps on share links and MCP.',
     highlight: false,
   },
   {
@@ -95,7 +97,7 @@ export const pricingTiers: Array<{
     priceLabel: PAID_PLAN_PRICES.growth.audLabel,
     stars: PAID_PLAN_PRICES.growth.starsLabel,
     ton: PAID_PLAN_PRICES.growth.tonLabel,
-    blurb: 'IDE access, shareable reports, and weekly re-audit reminders in Telegram.',
+    blurb: 'IDE access and share links with no daily cap, plus weekly re-audit reminders in Telegram.',
     highlight: true,
   },
   {

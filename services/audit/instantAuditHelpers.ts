@@ -6,7 +6,6 @@ import {
   ensureHostedProviderReady,
   getCurrentQuotaSync,
   getServerHealthSync,
-  hasActivePaidPlanSync,
 } from '../apiClient';
 import { geminiService } from '../geminiService';
 import type { BusinessDNA, ReportFocus } from '../../types';
@@ -52,9 +51,9 @@ export function instantAuditPersistHint(
   }
   if (!signedIn) {
     if (outcome === 'unmeasured') {
-      return 'Instant Audit finished. Use the summary above. This run did not measure the site, so no full report was generated. Sign in to save a project. Full branded share links stay on Growth and Agency.';
+      return 'Instant Audit finished. Use the summary above. This run did not measure the site, so no full report was generated. Sign in to save a project. Share links are free with an account.';
     }
-    return 'Instant Audit finished. Use the summary above. Sign in to save a project. Full branded share links stay on Growth and Agency.';
+    return 'Instant Audit finished. Use the summary above. Sign in to save a project. Share links are free with an account.';
   }
   if (outcome === 'unmeasured') {
     return 'Instant Audit finished. Use the summary above. This run did not measure the site, so no full report was generated. Strategy was not saved. Retry, or check Settings → provider status.';
@@ -236,12 +235,6 @@ export function summaryFromCrew(crew: AuditStateGraphContext, hostedRail: Hosted
 export function canMintMcpKeys(): boolean {
   const quota = getCurrentQuotaSync();
   if (!quota) return false;
-  const plan = quota.plan || 'free';
-  if (plan !== 'free' && plan !== 'active') {
-    return entitlementsFor(plan).mcpAccess;
-  }
-  if (hasActivePaidPlanSync()) {
-    return entitlementsFor('growth').mcpAccess;
-  }
-  return false;
+  // Every signed-in plan can mint; the Worker caps MCP calls per day below Growth.
+  return entitlementsFor(quota.plan).mcpAccess;
 }
