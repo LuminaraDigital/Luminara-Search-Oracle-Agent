@@ -25,7 +25,8 @@ export interface DemoPlayback {
   resultKind: ProbeResultKind;
   setUrl: (v: string) => void;
   setFocus: (f: DemoFocus) => void;
-  runSample: () => void;
+  /** Runs the check on `host` when given (a shared link), else on the typed URL. */
+  runSample: (host?: string) => void;
   reset: () => void;
 }
 
@@ -91,9 +92,11 @@ export function useDemoPlayback(): DemoPlayback {
     setResultKind('sample');
   }, [clearTimers]);
 
-  const runSample = useCallback(() => {
+  const runSample = useCallback((host?: string) => {
     clearTimers();
-    const parsed = normalizeDemoUrl(url);
+    if (host !== undefined) setUrlState(host);
+    // A shared link's host, or what the visitor typed. Never a sample domain.
+    const parsed = host !== undefined ? normalizeDemoUrl(host) : normalizeDemoUrl(url);
     if (!parsed.ok) {
       setError(parsed.error);
       setPhase('error');
@@ -159,6 +162,15 @@ export function useDemoPlayback(): DemoPlayback {
         verdict,
         shipAction,
         engines: [crawlRow, ...engineRows],
+        // `page` stays undefined when a Worker without the homepage read answers, which hides
+        // the section instead of reporting a failed read.
+        ...(crawl.ok
+          ? {
+            page: crawl.page,
+            pageReason: crawl.pageReason ?? null,
+            checkedAt: crawl.checkedAt,
+          }
+          : {}),
       };
 
       // Let each crawl stage show for a beat, but never wait longer than the request itself.

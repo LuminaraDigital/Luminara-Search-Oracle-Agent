@@ -130,7 +130,9 @@ export const MarketingPageShell: React.FC<MarketingPageShellProps> = ({
         {children}
       </main>
       {closing ? (
-        <div className="relative overflow-hidden border-t lx-hairline">
+        // clip, not hidden: the horizon is wider than the page, and a hidden box can still be
+        // scrolled sideways by a centring scroll (scroll-to-text links), shifting the closing.
+        <div className="relative overflow-clip border-t lx-hairline">
           <section aria-labelledby="closing-heading" className="relative z-10 px-5 pb-12 pt-24 text-center sm:px-8 sm:pt-32">
             <div data-reveal>
               <p className="lx-eyebrow">{closing.eyebrow}</p>

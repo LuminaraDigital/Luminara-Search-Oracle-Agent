@@ -304,6 +304,17 @@ Disallow: /oauth/
 `;
 
 /**
+ * True when a request served on `serveHost` targets this same Worker (production pair or staging).
+ * A fetch() of such a host returns Cloudflare 522, so callers read what the Worker serves instead.
+ */
+export function servesOwnHost(serveHost: string, targetHost: string): boolean {
+  const serve = serveHost.toLowerCase().split(':')[0];
+  const target = targetHost.toLowerCase().split(':')[0];
+  return (PRODUCTION_CRAWL_HOSTS.has(serve) && PRODUCTION_CRAWL_HOSTS.has(target))
+    || (serve === STAGING_CRAWL_HOST && target === STAGING_CRAWL_HOST);
+}
+
+/**
  * Crawl file this Worker would serve for one of its own Custom Domains.
  * A fetch() of that hostname returns Cloudflare 522, so callers read these bytes instead.
  * Returns null when `serveHost` does not serve `fileUrl` (another host, or not a crawl file).
@@ -315,11 +326,8 @@ export function readServedCrawlFile(serveHost: string, fileUrl: string): { statu
   } catch {
     return null;
   }
-  const serve = serveHost.toLowerCase().split(':')[0];
   const target = parsed.hostname.toLowerCase();
-  const ownProduction = PRODUCTION_CRAWL_HOSTS.has(serve) && PRODUCTION_CRAWL_HOSTS.has(target);
-  const ownStaging = serve === STAGING_CRAWL_HOST && target === STAGING_CRAWL_HOST;
-  if (!ownProduction && !ownStaging) return null;
+  if (!servesOwnHost(serveHost, target)) return null;
   if (parsed.pathname === '/robots.txt') return { status: 200, body: robotsTxtForHost(target, undefined) };
   if (parsed.pathname === '/llms.txt') return { status: 200, body: LLMS_TXT };
   if (parsed.pathname === '/ai.txt') return { status: 200, body: AI_TXT };

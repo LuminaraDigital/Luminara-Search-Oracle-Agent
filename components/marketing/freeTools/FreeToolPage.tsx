@@ -97,7 +97,7 @@ const FreeToolPage: React.FC<FreeToolPageProps> = ({ tool, isAuthenticated, onFu
             Now check your <span className="italic lx-gold-text pr-[0.08em]">own site.</span>
           </>
         ),
-        body: FREE_TOOLS_CLOSING.body,
+        body: FREE_TOOLS_CLOSING.lede,
         // The same live check as the landing hero, so the one gold action runs on this page.
         form: (
           <DomainCheck

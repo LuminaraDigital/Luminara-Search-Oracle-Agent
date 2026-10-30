@@ -2,12 +2,12 @@ import React, { useState } from 'react';
 import {
   checkDescription,
   checkTitle,
-  serpBreadcrumb,
   serpHeadHtml,
   type LengthVerdict,
   type SerpDevice,
   type SerpFieldCheck,
 } from '../../../services/freeTools/serpPreview';
+import { SerpResultCard } from '../SerpResultCard';
 import { ToolField, ToolOutput, ToolSegmented } from './toolFields';
 
 const DEVICES = [
@@ -39,7 +39,6 @@ export const SerpPreviewTool: React.FC<{ onCopied: () => void }> = ({ onCopied }
 
   const titleCheck = checkTitle(title);
   const descriptionCheck = checkDescription(description, device);
-  const crumb = serpBreadcrumb(url);
 
   return (
     // The preview column gets 3/5 of the row so a 600px desktop title fits on one line, as on Google.
@@ -67,34 +66,14 @@ export const SerpPreviewTool: React.FC<{ onCopied: () => void }> = ({ onCopied }
           <p className="lx-eyebrow">Estimated preview</p>
           <ToolSegmented label="Device" options={DEVICES} value={device} onChange={setDevice} />
         </div>
-        {/* A light card, because Google results are light. Colours follow Google's light theme. */}
-        <figure
-          aria-label="Estimated Google result"
-          className={`overflow-x-auto rounded-2xl bg-white p-4 font-[Arial,Helvetica,sans-serif] ${device === 'mobile' ? 'max-w-[360px]' : ''}`}
-        >
-          <div className="flex items-center gap-3">
-            <span aria-hidden className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[rgb(241,243,244)] text-xs text-[rgb(77,81,86)]">
-              {(siteName.trim() || crumb.site).slice(0, 1).toUpperCase()}
-            </span>
-            <div className="min-w-0 leading-tight">
-              <p className="truncate text-sm text-[rgb(32,33,36)]">{siteName.trim() || crumb.site}</p>
-              <p className="truncate text-xs text-[rgb(77,81,86)]">
-                https://{crumb.site}
-                {crumb.crumbs.map((part) => ` › ${part}`).join('')}
-              </p>
-            </div>
-          </div>
-          <p
-            className={`mt-2 text-xl leading-snug text-[rgb(26,13,171)] ${
-              device === 'desktop' ? 'whitespace-nowrap' : '[overflow-wrap:anywhere]'
-            }`}
-          >
-            {titleCheck.shown || crumb.site}
-          </p>
-          <p className="mt-1 text-sm leading-relaxed text-[rgb(77,81,86)] [overflow-wrap:anywhere]">
-            {descriptionCheck.shown || 'Google picks text from the page when there is no description.'}
-          </p>
-        </figure>
+        <SerpResultCard
+          url={url}
+          siteName={siteName}
+          title={title}
+          description={description}
+          device={device}
+          label="Estimated Google result"
+        />
         <p className="text-xs text-[var(--color-ink-2)]">
           An estimate from your tags. Google can rewrite a title or choose a different snippet.
         </p>

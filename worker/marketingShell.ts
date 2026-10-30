@@ -77,7 +77,11 @@ export function escapeHtml(value: string): string {
     .replace(/"/g, '&quot;');
 }
 
-/** Inject per-path title, description, canonical, OG tags and JSON-LD into the SPA shell. */
+/**
+ * Inject per-path title, description, canonical, OG tags and JSON-LD into the SPA shell.
+ * Every replacement is a function, so a `$` in a value ("$'", "$&") is inserted literally
+ * instead of being read as a replacement pattern.
+ */
 export function injectMarketingMeta(html: string, page: MarketingShellMeta): string {
   const url = page.path === '/' ? `${MARKETING_ORIGIN}/` : `${MARKETING_ORIGIN}${page.path}`;
   const title = escapeHtml(page.title);
@@ -87,84 +91,84 @@ export function injectMarketingMeta(html: string, page: MarketingShellMeta): str
   const jsonLd = JSON.stringify(page.jsonLd).replace(/</g, '\\u003c');
 
   let out = html;
-  out = out.replace(/<title>[^<]*<\/title>/i, `<title>${title}</title>`);
+  out = out.replace(/<title>[^<]*<\/title>/i, () => `<title>${title}</title>`);
   out = out.replace(
     /<meta\s+name="description"\s+content="[^"]*"\s*>/i,
-    `<meta name="description" content="${description}">`,
+    () => `<meta name="description" content="${description}">`,
   );
   if (/<meta\s+property="og:title"/i.test(out)) {
     out = out.replace(
       /<meta\s+property="og:title"\s+content="[^"]*"\s*>/i,
-      `<meta property="og:title" content="${title}">`,
+      () => `<meta property="og:title" content="${title}">`,
     );
   } else {
-    out = out.replace(/<\/head>/i, `  <meta property="og:title" content="${title}">\n</head>`);
+    out = out.replace(/<\/head>/i, () => `  <meta property="og:title" content="${title}">\n</head>`);
   }
 
   if (/<meta\s+property="og:description"/i.test(out)) {
     out = out.replace(
       /<meta\s+property="og:description"\s+content="[^"]*"\s*>/i,
-      `<meta property="og:description" content="${description}">`,
+      () => `<meta property="og:description" content="${description}">`,
     );
   } else {
-    out = out.replace(/<\/head>/i, `  <meta property="og:description" content="${description}">\n</head>`);
+    out = out.replace(/<\/head>/i, () => `  <meta property="og:description" content="${description}">\n</head>`);
   }
 
   if (/<meta\s+property="og:url"/i.test(out)) {
     out = out.replace(
       /<meta\s+property="og:url"\s+content="[^"]*"\s*>/i,
-      `<meta property="og:url" content="${canonical}">`,
+      () => `<meta property="og:url" content="${canonical}">`,
     );
   } else {
-    out = out.replace(/<\/head>/i, `  <meta property="og:url" content="${canonical}">\n</head>`);
+    out = out.replace(/<\/head>/i, () => `  <meta property="og:url" content="${canonical}">\n</head>`);
   }
 
   if (/<meta\s+property="og:image"/i.test(out)) {
     out = out.replace(
       /<meta\s+property="og:image"\s+content="[^"]*"\s*>/i,
-      `<meta property="og:image" content="${image}">`,
+      () => `<meta property="og:image" content="${image}">`,
     );
   } else {
-    out = out.replace(/<\/head>/i, `  <meta property="og:image" content="${image}">\n</head>`);
+    out = out.replace(/<\/head>/i, () => `  <meta property="og:image" content="${image}">\n</head>`);
   }
   out = out.replace(
     /<meta\s+name="twitter:card"\s+content="[^"]*"\s*>/i,
-    '<meta name="twitter:card" content="summary_large_image">',
+    () => '<meta name="twitter:card" content="summary_large_image">',
   );
   out = out.replace(
     /<meta\s+name="twitter:title"\s+content="[^"]*"\s*>/i,
-    `<meta name="twitter:title" content="${title}">`,
+    () => `<meta name="twitter:title" content="${title}">`,
   );
   out = out.replace(
     /<meta\s+name="twitter:description"\s+content="[^"]*"\s*>/i,
-    `<meta name="twitter:description" content="${description}">`,
+    () => `<meta name="twitter:description" content="${description}">`,
   );
   out = out.replace(
     /<meta\s+name="twitter:image"\s+content="[^"]*"\s*>/i,
-    `<meta name="twitter:image" content="${image}">`,
+    () => `<meta name="twitter:image" content="${image}">`,
   );
 
   if (/<script type="application\/ld\+json" id="luminara-(?:static|marketing)-jsonld">[\s\S]*?<\/script>/i.test(out)) {
     out = out.replace(
       /<script type="application\/ld\+json" id="luminara-(?:static|marketing)-jsonld">[\s\S]*?<\/script>/i,
-      `<script type="application/ld+json" id="luminara-marketing-jsonld">${jsonLd}</script>`,
+      () => `<script type="application/ld+json" id="luminara-marketing-jsonld">${jsonLd}</script>`,
     );
   } else if (!/id="luminara-marketing-jsonld"/i.test(out)) {
     out = out.replace(
       /<\/head>/i,
-      `  <script type="application/ld+json" id="luminara-marketing-jsonld">${jsonLd}</script>\n</head>`,
+      () => `  <script type="application/ld+json" id="luminara-marketing-jsonld">${jsonLd}</script>\n</head>`,
     );
   }
 
   if (!/<link\s+rel="canonical"/i.test(out)) {
     out = out.replace(
       /<\/head>/i,
-      `  <link rel="canonical" href="${canonical}">\n</head>`,
+      () => `  <link rel="canonical" href="${canonical}">\n</head>`,
     );
   } else {
     out = out.replace(
       /<link\s+rel="canonical"\s+href="[^"]*"\s*>/i,
-      `<link rel="canonical" href="${canonical}">`,
+      () => `<link rel="canonical" href="${canonical}">`,
     );
   }
 
@@ -173,18 +177,18 @@ export function injectMarketingMeta(html: string, page: MarketingShellMeta): str
     if (/<meta\s+name="robots"/i.test(out)) {
       out = out.replace(
         /<meta\s+name="robots"\s+content="[^"]*"\s*>/i,
-        `<meta name="robots" content="${robots}">`,
+        () => `<meta name="robots" content="${robots}">`,
       );
     } else {
-      out = out.replace(/<\/head>/i, `  <meta name="robots" content="${robots}">\n</head>`);
+      out = out.replace(/<\/head>/i, () => `  <meta name="robots" content="${robots}">\n</head>`);
     }
   }
 
   const crawlerBlock = `<noscript id="luminara-crawler-body">${page.crawlerBody.trim()}</noscript>`;
   if (/id="luminara-crawler-body"/i.test(out)) {
-    out = out.replace(/<noscript id="luminara-crawler-body">[\s\S]*?<\/noscript>/i, crawlerBlock);
+    out = out.replace(/<noscript id="luminara-crawler-body">[\s\S]*?<\/noscript>/i, () => crawlerBlock);
   } else {
-    out = out.replace(/<\/body>/i, `  ${crawlerBlock}\n</body>`);
+    out = out.replace(/<\/body>/i, () => `  ${crawlerBlock}\n</body>`);
   }
 
   return out;
