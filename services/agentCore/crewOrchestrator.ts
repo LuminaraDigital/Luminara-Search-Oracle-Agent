@@ -463,6 +463,7 @@ export class CrewOrchestrator {
         ctx.dna,
         emit,
         ctx.displayName,
+        ctx.llmCrawlerReadiness?.checks,
       );
       return { plainEnglishBrief };
     });

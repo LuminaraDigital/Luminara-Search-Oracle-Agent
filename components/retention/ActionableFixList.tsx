@@ -4,6 +4,7 @@ import { brandNameFor } from '../../services/audit/brandName';
 import { plainCustomerReport } from '../../services/audit/reportColumnGate';
 import { comparisonOutlineDraft, llmsTxtDraft, organizationJsonLd } from '../../services/audit/fixPackCopy';
 import { starterFixContradictsPass } from '../../services/audit/teaserFailureCodes';
+import { crawlerFixes } from '../../services/audit/crawlerFixes';
 
 export interface ActionableFixInputFinding {
   id: string;
@@ -60,6 +61,24 @@ function snippetFor(finding: ActionableFixInputFinding, domain: string, pageTitl
   return '';
 }
 
+function robotsSnippet(domain: string): string {
+  return `# Allow these crawlers to read public pages
+User-agent: GPTBot
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+Sitemap: https://${domain}/sitemap.xml
+`;
+}
+
 export const ActionableFixList: React.FC<ActionableFixListProps> = ({ domain, findings, crawlerChecks, pageTitle, pageDescription, onFixCompleted }) => {
   const cleanDomain = domain.replace(/^https?:\/\//i, '').replace(/\/.*$/, '').replace(/^www\./i, '') || 'yourdomain.com';
 
@@ -97,21 +116,7 @@ export const ActionableFixList: React.FC<ActionableFixListProps> = ({ domain, fi
       targetEngine: 'Crawler rules in robots.txt',
       description: 'If robots.txt blocks a crawler, that crawler may not read public pages or suburb guides. The lines below name the crawlers to allow.',
       filename: '/robots.txt',
-      snippet: `# Allow these crawlers to read public pages
-User-agent: GPTBot
-Allow: /
-
-User-agent: PerplexityBot
-Allow: /
-
-User-agent: ClaudeBot
-Allow: /
-
-User-agent: Google-Extended
-Allow: /
-
-Sitemap: https://${cleanDomain}/sitemap.xml
-`,
+      snippet: robotsSnippet(cleanDomain),
     },
   ];
 
@@ -130,8 +135,23 @@ Sitemap: https://${cleanDomain}/sitemap.xml
     snippet: snippetFor(f, cleanDomain, pageTitle, pageDescription),
   }));
 
+  // A failed crawler row is a fix even when the page findings do not name that file.
+  // ai.txt has no snippet: its policy is the owner's call, not a draft we can write.
+  const crawlerFixItems: FixItem[] = crawlerFixes(crawlerChecks)
+    .filter((fix) => !mappedFindings.some((item) => item.id === fix.id))
+    .map((fix) => ({
+      id: fix.id,
+      title: fix.title,
+      targetEngine: 'A page on your site',
+      description: fix.detail,
+      filename: fix.filename,
+      snippet: fix.id === 'fix-llms-txt'
+        ? llmsDraft(cleanDomain, pageTitle, pageDescription) || llmsTxtDraft(domain)
+        : fix.id === 'fix-robots-txt' ? robotsSnippet(cleanDomain) : '',
+    }));
+
   const measuredRun = Array.isArray(findings);
-  const activeFixes: FixItem[] = (measuredRun ? mappedFindings : defaultFixes)
+  const activeFixes: FixItem[] = (measuredRun ? [...mappedFindings, ...crawlerFixItems] : defaultFixes)
     .filter((fix) => !starterFixContradictsPass(`${fix.id} ${fix.title}`, crawlerChecks));
   const isAuditDerived = measuredRun;
 

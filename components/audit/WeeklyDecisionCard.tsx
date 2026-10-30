@@ -192,10 +192,11 @@ export const WeeklyDecisionCard: React.FC<WeeklyDecisionCardProps> = ({
     setVerificationNote(null);
     try {
       const report = await probeLlmCrawlerReadiness(`https://${cleanDomain}`);
+      // Only a served llms.txt proves the fix pack is live. A robots.txt that blocks nothing
+      // (or no robots.txt at all) also passes, so it cannot mark the fix done.
       const llmsPass = report.checks.some((c) => c.id === 'llms_txt' && c.status === 'pass');
-      const anyDirective = report.checks.some((c) => (c.id === 'ai_bot_directives' || c.id === 'llms_structure') && c.status === 'pass');
 
-      if (llmsPass || anyDirective) {
+      if (llmsPass) {
         setVerificationStatus('measured');
         setVerificationNote(`Verified live on ${cleanDomain}: measured crawler evidence detected.`);
         if (primary) {

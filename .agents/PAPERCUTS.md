@@ -60,3 +60,4 @@ Do not log secrets, tokens, or PII.
 - 2026-10-07: Worker gives no way to re-read DNS/file/meta instructions for a pending domain after the start response; the UI offers "New token" (re-issues) instead (trust)
 
 - 2026-10-07: Local `.env` VITE_* provider keys leak into vitest via import.meta.env and fail 14 tests (unifiedScraper, localSidecarGate, etc.). CI is clean. Tests should stub import.meta.env or vitest should not load .env. Also hostedProviderReady 'awaits...' test flakes under full-suite load, passes alone.
+- 2026-10-30: Crawler soft-404 detection (worker/llmCrawlerRoute.ts servedWebPage) catches pages and JSON errors, but a plain-text "Page not found" served with 200 at /llms.txt still reads as present; llms_structure then fails, so the customer gets "give /llms.txt a title" instead of "add it" (audit)
