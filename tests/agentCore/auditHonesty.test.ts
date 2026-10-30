@@ -449,6 +449,28 @@ describe('Instant Audit honesty on empty evidence', () => {
     expect(result.healthScore).toBe(85);
   });
 
+  it('counts crawler fixes on the auditor card with the same words as the brief', async () => {
+    const events: { message: string }[] = [];
+    await playbookAuditorAgent.execute('AEO', [livePage()], [liveSerp()], null, (event) => events.push(event), {
+      checks: [
+        { id: 'ai_bot_directives', label: 'AI crawlers', status: 'fail', detail: 'Blocked.' },
+        { id: 'llms_txt', label: 'llms.txt', status: 'fail', detail: 'Missing.' },
+        { id: 'ai_txt', label: 'ai.txt', status: 'fail', detail: 'Missing.' },
+      ],
+    });
+    const text = events.at(-1)?.message ?? '';
+    expect(text).toContain('2 AI crawler fixes are needed, plus 1 optional.');
+    expect(text).not.toContain('No issues were found');
+  });
+
+  it('keeps the auditor card quiet when only optional ai.txt failed', async () => {
+    const events: { message: string }[] = [];
+    await playbookAuditorAgent.execute('AEO', [livePage()], [liveSerp()], null, (event) => events.push(event), {
+      checks: [{ id: 'ai_txt', label: 'ai.txt', status: 'fail', detail: 'Missing.' }],
+    });
+    expect(events.at(-1)?.message).not.toContain('AI crawler');
+  });
+
   it('still applies a real schema penalty when live scrape and live search are both present', async () => {
     const events: { message: string }[] = [];
     const result = await playbookAuditorAgent.execute(

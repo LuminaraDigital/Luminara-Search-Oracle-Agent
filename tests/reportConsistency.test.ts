@@ -96,6 +96,18 @@ describe('report copy that stays', () => {
     expect(plainCustomerReport('Trust signals such as ai.txt help.')).toContain('ai.txt help');
   });
 
+  it('reads as a sentence after any verb that names the header', () => {
+    expect(plainCustomerReport('Ensure CSP blocks unwanted third-party code.')).toContain(
+      'Ensure the header that controls which scripts can load (CSP) blocks unwanted third-party code.',
+    );
+    expect(plainCustomerReport('Make sure a CSP header is set.')).toContain(
+      'Make sure the header that controls which scripts can load (CSP) is set.',
+    );
+    expect(plainCustomerReport('Confirm that HSTS is on.')).toContain(
+      'Confirm the header that forces the secure version of the site (HSTS) is on.',
+    );
+  });
+
   it('keeps the case of verify mid-sentence', () => {
     expect(plainCustomerReport('Ask your host to verify HSTS is on.')).toContain('to verify the header that forces');
   });
