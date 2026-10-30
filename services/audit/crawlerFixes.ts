@@ -52,3 +52,11 @@ export function crawlerFixes(checks: readonly CrawlerCheckRow[] | null | undefin
   }
   return fixes;
 }
+
+/** The sentence that counts crawler fixes. Empty when none is needed, because optional ai.txt alone is not a problem. */
+export function crawlerFixNote(fixes: readonly CrawlerFix[]): string {
+  const needed = fixes.filter((fix) => !fix.optional).length;
+  if (needed === 0) return '';
+  const optional = fixes.length - needed;
+  return ` ${needed} AI crawler ${needed === 1 ? 'fix is' : 'fixes are'} needed${optional > 0 ? `, plus ${optional} optional` : ''}.`;
+}

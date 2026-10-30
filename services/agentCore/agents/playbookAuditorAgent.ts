@@ -11,11 +11,10 @@ import { AgentActivityEvent, AuditFinding, ScrapedPageEvidence, SerpEvidenceItem
 import { ReportFocus, BusinessDNA } from '../../../types';
 import {
   BLOCKED_CHECK,
-  evaluateLlmCrawlerReadiness,
   unevaluatedLlmCrawlerReport,
   type LlmCrawlerReport,
-  type LlmCrawlerSnapshot,
 } from '../../audit/llmCrawlerReadiness';
+import { crawlerFixes, crawlerFixNote } from '../../audit/crawlerFixes';
 import {
   healthChecklist,
   healthScoreFromFindings,
@@ -40,12 +39,6 @@ export function pageList(urls: readonly string[]): string {
 }
 
 /** The page checks can all pass while crawler files fail, so the card says which checks it means. */
-function crawlerFailNote(report: LlmCrawlerReport): string {
-  const failed = report.checks.filter((check) => check.status === 'fail').length;
-  if (failed === 0) return '';
-  return ` ${failed} AI crawler ${failed === 1 ? 'check' : 'checks'} failed, listed in the report.`;
-}
-
 export class PlaybookAuditorAgent {
   public readonly name = 'Playbook Auditor';
   public readonly role = 'playbook_auditor';
@@ -56,7 +49,7 @@ export class PlaybookAuditorAgent {
     serpEvidence: SerpEvidenceItem[],
     dna: BusinessDNA | null | undefined,
     emit: (event: AgentActivityEvent) => void,
-    crawlerSnapshot?: LlmCrawlerSnapshot | null,
+    llmCrawler: LlmCrawlerReport = unevaluatedLlmCrawlerReport(),
   ): Promise<{ findings: AuditFinding[]; healthScore: number | null; llmCrawler: LlmCrawlerReport }> {
     emit({
       id: `auditor-start-${Date.now()}`,
@@ -69,9 +62,6 @@ export class PlaybookAuditorAgent {
     });
 
     const findings: AuditFinding[] = [];
-    const llmCrawler = crawlerSnapshot
-      ? evaluateLlmCrawlerReadiness(crawlerSnapshot)
-      : unevaluatedLlmCrawlerReport();
     const livePages = scrapedPages.filter(pageSupportsHealthScore);
     const liveSerp = liveSearchRows(serpEvidence);
 
@@ -217,6 +207,10 @@ export class PlaybookAuditorAgent {
     // It is kept for the code that reads it. What a founder is told is the count of checks.
     const healthScore = healthScoreFromFindings(findings);
     const checklist = healthChecklist(findings, { citationRateKnown: liveSerp.length > 0 });
+    // The crawler files are counted apart, so an empty list only speaks for the pages.
+    const pageSummary = findings.length > 0
+      ? findingSummary(findings.map((finding) => finding.title))
+      : 'No page issues were found.';
 
     emit({
       id: `auditor-done-${Date.now()}`,
@@ -224,7 +218,7 @@ export class PlaybookAuditorAgent {
       agentRole: 'playbook_auditor',
       agentName: this.name,
       phase: 'audit_complete',
-      message: `Finished the page checks. ${findingSummary(findings.map((finding) => finding.title))} ${measuredCheckLine(checklist)}.${crawlerFailNote(llmCrawler)}`,
+      message: `Finished the page checks. ${pageSummary} ${measuredCheckLine(checklist)}.${crawlerFixNote(crawlerFixes(llmCrawler.checks))}`,
       status: 'completed',
       confidenceScore: 0.92,
     });
