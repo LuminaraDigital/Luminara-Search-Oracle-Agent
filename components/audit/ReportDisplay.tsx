@@ -73,6 +73,8 @@ interface ReportDisplayProps {
   boardFindings?: BoardFinding[];
   /** Hide PDF / share / deploy chrome (public share pages). */
   hideAgencyActions?: boolean;
+  /** AI crawler rows from this run, so the written report and the fix list name the same fixes. */
+  crawlerChecks?: ReadonlyArray<{ id: string; status: string }>;
   /** Crew said this run was not measured. Hide numeric citation, share of voice, and health. */
   suppressLiveMetrics?: boolean;
   /** Instant Audit rail. When omitted, a live session still avoids a sign-in CTA. */
@@ -119,6 +121,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
   rlmTrajectory,
   boardFindings: boardFindingsProp,
   hideAgencyActions = false,
+  crawlerChecks,
   suppressLiveMetrics = false,
   hostedRail,
   healthSite = false,
@@ -326,6 +329,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
         sources={sources}
         citationEvidence={hideLiveNumbers ? undefined : empiricalSummary?.evidenceList}
         citationLine={citationLine}
+        crawlerChecks={crawlerChecks}
         auditedAt={empiricalSummary?.lastAudited}
         showActions={!hideAgencyActions}
         citationRateKnown={empiricalSummary ? typeof empiricalSummary.citationRatePercent === 'number' : undefined}

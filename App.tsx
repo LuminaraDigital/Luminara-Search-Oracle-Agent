@@ -1171,6 +1171,7 @@ const App: React.FC = () => {
           onNavigateInfrastructure={() => setView(AppView.INFRASTRUCTURE)}
           onNavigateSampleReport={() => setView(AppView.SAMPLE_REPORT)}
           onSignUpClick={() => (appAuth.authenticated ? enterInstantAudit() : openLoginWall('signup'))}
+          isAuthenticated={appAuth.authenticated}
         />
         {marketingOverlays}
       </Suspense>

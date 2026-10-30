@@ -582,6 +582,15 @@ function spaceAfterStop(line: string): string {
   });
 }
 
+/** No check measures this. A sentence saying a file or header lifts AI citation trust is dropped. */
+function dropInventedTrustClaim(line: string): string {
+  if (!/\btrust signals?\b/i.test(line) || /^\s*(?:\||[-*]\s)/.test(line)) return line;
+  return line
+    .split(/(?<=[.!?])\s+/)
+    .filter((sentence) => !(/\btrust signals?\b/i.test(sentence) && /\b(?:AI|citation)\b/.test(sentence)))
+    .join(' ');
+}
+
 const HSTS_GLOSS = "doesn't force the secure version of the site (HSTS)";
 const CSP_GLOSS = "doesn't control which scripts can load (CSP)";
 
@@ -741,6 +750,9 @@ function scrubCustomerLine(line: string): string {
     .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]/g, '-')
     .replace(/\[\[([^[\]]+)\]\]/g, '$1');
   const next = normalized
+    // After "Verify" the term names the header, so neither the title nor the gloss reads as a sentence.
+    .replace(/\b(Verify|verify)\s+[`*]*(?:the\s+)?[`*]*HSTS[`*]*(?:\s+header)?/g, '$1 the header that forces the secure version of the site (HSTS)')
+    .replace(/\b(Verify|verify)\s+[`*]*(?:the\s+)?[`*]*CSP[`*]*(?:\s+header)?/g, '$1 the header that controls which scripts can load (CSP)')
     .replace(/\b(?:Implement|Add(?: an)?)\s+(?:an?\s+)?HTTP Strict[-\s]+Transport[-\s]+Security(?:\s*\(HSTS\))?(?:\s+header)?\b/gi, HSTS_TITLE)
     .replace(/\b(?:(?:a|an|the)\s+)?(?:Add(?: an?)?\s+)?HSTS header\b/gi, HSTS_TITLE)
     .replace(/HTTP Strict[-\s]+Transport[-\s]+Security(?:\s*\(HSTS\))?/gi, HSTS_TITLE)
@@ -769,7 +781,7 @@ function scrubCustomerLine(line: string): string {
     .replace(WEB_SEARCH_SOURCE, '(web search)')
     .replace(/\(untrusted enrichment block\)/gi, '(security and public records)')
     .replace(/\buntrusted enrichment block\b/gi, 'security and public records');
-  return finishSentences(unwrapDoubleParens(collapseRepeated(glossSecurity(next))));
+  return finishSentences(unwrapDoubleParens(collapseRepeated(glossSecurity(dropInventedTrustClaim(next)))));
 }
 
 function modelSourceLine(line: string): string {

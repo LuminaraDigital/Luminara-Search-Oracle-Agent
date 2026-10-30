@@ -1,0 +1,14 @@
+---
+description: Release flow. Never touch main; merge into staging only when no staging-to-main release PR is open.
+alwaysApply: true
+---
+
+# Release flow
+
+Owner decision, 2026-10-26. Your merges and pull requests run under the owner's GitHub login, so branch protection cannot tell you apart from the owner.
+
+- Before merging anything into `staging`, run `gh pr list --base main --head staging`. If it lists a pull request, do not merge: anything merged into `staging` while a release PR is open ships with that release.
+- Never open, mark ready or merge a pull request into `main`, and never push to `main`. The owner opens and merges `staging` to `main` release PRs, or names the agent that does.
+- Keep a pull request a draft until it is ready to merge: the owner merges open non-draft PRs in batches.
+
+Full release steps and checks: `docs/runbooks/release-checklist.md`. Same rule in `AGENTS.md` under "Releases".

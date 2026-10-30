@@ -34,6 +34,15 @@ npm run build
 
 CI runs the same gates. `main` requires a pull request and a green CI check.
 
+## Releases
+
+Every agent, Cursor included, follows this (owner decision, 2026-10-26). Agent merges and release PRs run under the owner's GitHub login, so branch protection cannot tell them apart.
+
+- Merge into `staging` only when `gh pr list --base main --head staging` is empty. Anything merged into `staging` while a release PR is open ships with that release.
+- Never open, mark ready or merge a pull request into `main`. The owner opens and merges `staging` to `main` release PRs, or names the agent that does.
+- Keep a pull request a draft until it is ready to merge: the owner merges open non-draft PRs in batches.
+- Release steps, checks and rollback: `docs/runbooks/release-checklist.md`.
+
 ## Product invariants (APS)
 
 See `docs/plans/agent-mcp-product-surface.md`.
