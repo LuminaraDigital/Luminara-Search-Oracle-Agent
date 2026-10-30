@@ -84,7 +84,7 @@ const US = {
 const SUITE_PICK_BASE: Pick<BestPick, 'name' | 'url' | 'pricing' | 'cons'> = {
   name: SUITE,
   url: SUITE_URL,
-  pricing: 'Free live crawl check. Paid plans are 30-day passes listed on the pricing page.',
+  pricing: 'Free check with no account. Paid plans are 30-day passes listed on the pricing page.',
   cons: [
     LIVE_ANSWER_CHECKS,
     'No large prompt-volume database or backlink index.',
@@ -328,6 +328,58 @@ const COMPARE_PAGES: ComparePage[] = [
     ],
     sources: [{ label: 'Semrush knowledge base: AI Visibility Toolkit', url: 'https://www.semrush.com/kb/1493-ai-visibility-toolkit' }, { label: 'Semrush pricing', url: 'https://www.semrush.com/prices/' }, SUITE_SOURCE],
   },
+  {
+    kind: 'compare',
+    path: '/compare/chatseo',
+    label: 'Luminara vs ChatSEO',
+    competitor: 'ChatSEO',
+    description:
+      'Luminara Suite vs ChatSEO: an AI SEO assistant built on Search Console and content writing versus labeled evidence and one fix for real estate agencies.',
+    h1: 'Luminara Suite vs ChatSEO',
+    verdict:
+      'Choose ChatSEO if you want an AI SEO assistant that answers from your Search Console data, writes articles, and publishes them to your CMS. Choose Luminara Suite if you run a real estate agency or small team and want one ranked fix at a time, with every result labeled Measured, Estimated, or Not measured.',
+    rows: [
+      { label: 'Built for', them: 'Website owners, founders, consultants, agencies, and online stores', us: US.audience },
+      { label: 'Headline metrics', them: 'Search Console clicks and impressions, plus Ahrefs Domain Rating for you and your competitors in onboarding', us: US.metrics },
+      { label: 'Coverage', them: 'Search Console on every plan, Google Analytics on higher plans, plus keyword, SERP, and backlink data', us: US.engines },
+      { label: 'Output', them: 'Chat answers and action plans from 12 SEO agents, an AI article writer, and CMS publishing', us: US.output },
+      { label: 'Developer access', them: 'API and MCP from the second plan up', us: US.access },
+      { label: 'Pricing model', them: 'Free to start, then monthly or annual plans with message credits and a 7-day money-back guarantee', us: US.pricing },
+    ],
+    chooseThem: [
+      'You want to ask SEO questions in chat and get answers from your own Search Console data.',
+      'You want articles written and published to WordPress or Shopify for you.',
+      'You want keyword, backlink, and competitor research in one subscription.',
+    ],
+    chooseUs: [
+      'You want every result labeled Measured, Estimated, or Not measured, with no blended score.',
+      'You run a real estate agency and want suburb answers, agent schema, and an Enquiry Desk.',
+      'You prefer a 30-day pass that does not renew over a monthly credit plan.',
+    ],
+    faq: [
+      {
+        question: 'Is Luminara Suite an alternative to ChatSEO?',
+        answer:
+          'For AI answer readiness, yes. ChatSEO is a broad SEO assistant built on Search Console data and content writing, and says it also looks at what AI assistants see. Luminara is built for real estate agencies and labels every result Measured, Estimated, or Not measured.',
+      },
+      {
+        question: 'Does Luminara Suite connect to Google Search Console?',
+        answer:
+          'Not directly. Instant Audit can show clicks, impressions, CTR, and position from a Search Console CSV export that you upload. ChatSEO connects to Search Console directly and builds its chat on that data.',
+      },
+      {
+        question: 'Can I use ChatSEO and Luminara Suite together?',
+        answer:
+          'Yes. Use ChatSEO for content writing and keyword research, and Luminara for crawler access, llms.txt and schema fix packs, and one labeled fix at a time.',
+      },
+    ],
+    sources: [
+      { label: 'ChatSEO home page', url: 'https://chatseo.app/' },
+      { label: 'ChatSEO pricing', url: 'https://chatseo.app/pricing' },
+      { label: 'Where ChatSEO numbers come from', url: 'https://chatseo.app/help/where-chatseo-numbers-come-from' },
+      SUITE_SOURCE,
+    ],
+  },
 ];
 
 const BEST_METHODOLOGY = [
@@ -401,7 +453,7 @@ const BEST_PAGES: BestPage[] = [
       {
         question: 'Can I check my agency for free?',
         answer:
-          'Yes. The Luminara live crawl check reads your robots.txt and llms.txt with no card and no account.',
+          'Yes. The Luminara free check reads your homepage title and description, robots.txt and llms.txt with no card and no account.',
       },
     ],
     sources: [
@@ -428,7 +480,7 @@ const BEST_PAGES: BestPage[] = [
         pros: [
           'Plain-English verdict and one ranked fix.',
           'No blended score. Missing data is labeled Not measured.',
-          'Free live crawl check with no card.',
+          'Free check with no card.',
         ],
       },
       {
@@ -469,7 +521,7 @@ const BEST_PAGES: BestPage[] = [
       {
         question: 'What is the cheapest way to start an AEO audit?',
         answer:
-          'Run a free live crawl check first. Luminara reads robots.txt and llms.txt with no card and no account, then a free account runs a fuller audit on a daily allowance.',
+          'Run the free check first. Luminara reads your homepage title and description, robots.txt and llms.txt with no card and no account, then a free account runs a fuller audit on a daily allowance.',
       },
       {
         question: 'Do I need an SEO suite for AEO?',

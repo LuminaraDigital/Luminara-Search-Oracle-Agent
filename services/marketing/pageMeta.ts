@@ -14,6 +14,8 @@ import { HONEST_VISIBILITY_PROMISE, LIVE_ANSWER_CHECKS } from './engineCoverage'
 import { buildFaqPageJsonLd } from './marketingFaqContent';
 import { REAL_ESTATE_AUDIENCE } from './marketingHeroCopy';
 import { HUB_FAQ_HEADING, HUB_PAGES, HUB_REVIEWED, type HubPage } from './seoHubPages';
+import { FREE_TOOLS, FREE_TOOLS_CLOSING, FREE_TOOLS_HUB, FREE_TOOLS_PATH, type FreeTool } from './freeTools';
+import { checkHostFromPath, checkPathForHost } from './homepageSnippet';
 import { CONTACT_CRAWLER, FAQ_CRAWLER } from '../help/helpPages';
 import { privacyCrawlerBody } from '../legal/privacyCrawler';
 
@@ -115,6 +117,19 @@ const listItems = (items: readonly string[]) => items.map((item) => `<li>${esc(i
 const linkList = (links: readonly { label: string; href: string }[]) =>
   links.map((link) => `<a href="${esc(link.href)}">${esc(link.label)}</a>`).join(' · ');
 
+const faqHtml = (items: readonly { question: string; answer: string }[]) =>
+  items.map((item) => `<h3>${esc(item.question)}</h3><p>${esc(item.answer)}</p>`).join('');
+
+function itemListNode(id: string, name: string, items: readonly { name: string; url: string }[]) {
+  return {
+    '@type': 'ItemList',
+    '@id': id,
+    name,
+    numberOfItems: items.length,
+    itemListElement: items.map((item, i) => ({ '@type': 'ListItem', position: i + 1, name: item.name, url: item.url })),
+  };
+}
+
 /** Static crawler HTML for a hub page. Same data as the React view. */
 function hubCrawlerBody(page: HubPage): string {
   const body = page.kind === 'compare'
@@ -127,7 +142,7 @@ function hubCrawlerBody(page: HubPage): string {
       .map((pick) => `<li><h2>${esc(pick.name)}: ${esc(pick.bestFor)}</h2><p>${esc(pick.icp)}</p><p>Pros:</p><ul>${listItems(pick.pros)}</ul><p>Cons:</p><ul>${listItems(pick.cons)}</ul><p>${esc(pick.pricing)}</p></li>`)
       .join('')}</ol>
   <h2>How we picked</h2><ul>${listItems(page.methodology)}</ul>`;
-  const faq = page.faq.map((item) => `<h3>${esc(item.question)}</h3><p>${esc(item.answer)}</p>`).join('');
+  const faq = faqHtml(page.faq);
   const sources = linkList(page.sources.map((source) => ({ label: source.label, href: source.url })));
   const related = linkList(HUB_PAGES.filter((other) => other !== page).map((other) => ({ label: other.label, href: other.path })));
   return `
@@ -138,20 +153,14 @@ function hubCrawlerBody(page: HubPage): string {
   <h2>${HUB_FAQ_HEADING}</h2>${faq}
   <p>Reviewed ${HUB_REVIEWED}. Sources: ${sources}</p>
   <p>More comparisons: ${related}</p>
-  <p><a href="/">Run the free crawl check</a> · <a href="/methodology">Methodology</a> · <a href="/pricing">Pricing</a></p>
+  <p><a href="/">Run the free check</a> · <a href="/methodology">Methodology</a> · <a href="/pricing">Pricing</a></p>
 </section>`;
 }
 
 function hubShell(page: HubPage): MarketingShellMeta {
   const url = `${MARKETING_ORIGIN}${page.path}`;
   const itemList = page.kind === 'best'
-    ? [{
-      '@type': 'ItemList',
-      '@id': `${url}#picks`,
-      name: page.h1,
-      numberOfItems: page.picks.length,
-      itemListElement: page.picks.map((pick, i) => ({ '@type': 'ListItem', position: i + 1, name: pick.name, url: pick.url })),
-    }]
+    ? [itemListNode(`${url}#picks`, page.h1, page.picks.map((pick) => ({ name: pick.name, url: pick.url })))]
     : [];
   return {
     path: page.path,
@@ -162,8 +171,65 @@ function hubShell(page: HubPage): MarketingShellMeta {
   };
 }
 
+const toolLinks = (tools: readonly FreeTool[]) => linkList(tools.map((tool) => ({ label: tool.label, href: tool.path })));
+
+/** Static crawler HTML for /free-tools/*. Same data as the React view; the tool itself needs JavaScript. */
+function freeToolShell(tool: FreeTool): MarketingShellMeta {
+  const url = `${MARKETING_ORIGIN}${tool.path}`;
+  const app = {
+    '@type': 'WebApplication',
+    '@id': `${url}#tool`,
+    name: tool.label,
+    url,
+    applicationCategory: 'BusinessApplication',
+    operatingSystem: 'Web',
+    isAccessibleForFree: true,
+    publisher: { '@id': `${MARKETING_ORIGIN}/#organization` },
+  };
+  return {
+    path: tool.path,
+    title: `${tool.label} | Luminara Suite`,
+    description: tool.description,
+    jsonLd: graph(tool.path, tool.h1, tool.description, false, [app, buildFaqPageJsonLd(tool.faq, `${url}#faq`)]),
+    crawlerBody: `
+<section>
+  <h1>${esc(tool.h1)}</h1>
+  <p>${esc(tool.lede)}</p>
+  <h2>How to use it</h2><ol>${listItems(tool.steps)}</ol>
+  ${tool.why.map((block) => `<h2>${esc(block.heading)}</h2><p>${esc(block.body)}</p>`).join('')}
+  <h2>Common questions</h2>${faqHtml(tool.faq)}
+  <p>More free tools: ${toolLinks(FREE_TOOLS.filter((other) => other !== tool))}</p>
+  <p>${esc(FREE_TOOLS_CLOSING.body)} <a href="/">Run the free check</a> · <a href="${FREE_TOOLS_PATH}">All free tools</a></p>
+</section>`,
+  };
+}
+
+const FREE_TOOLS_HUB_SHELL: MarketingShellMeta = {
+  path: FREE_TOOLS_PATH,
+  title: `${FREE_TOOLS_HUB.label} | Luminara Suite`,
+  description: FREE_TOOLS_HUB.description,
+  jsonLd: graph(FREE_TOOLS_PATH, FREE_TOOLS_HUB.h1, FREE_TOOLS_HUB.description, false, [
+    itemListNode(
+      `${MARKETING_ORIGIN}${FREE_TOOLS_PATH}#tools`,
+      FREE_TOOLS_HUB.h1,
+      FREE_TOOLS.map((tool) => ({ name: tool.label, url: `${MARKETING_ORIGIN}${tool.path}` })),
+    ),
+    buildFaqPageJsonLd(FREE_TOOLS_HUB.faq, `${MARKETING_ORIGIN}${FREE_TOOLS_PATH}#faq`),
+  ]),
+  crawlerBody: `
+<section>
+  <h1>${esc(FREE_TOOLS_HUB.h1)}</h1>
+  <p>${esc(FREE_TOOLS_HUB.lede)}</p>
+  <ul>${FREE_TOOLS.map((tool) => `<li><a href="${tool.path}">${esc(tool.label)}</a>: ${esc(tool.blurb)}</li>`).join('')}</ul>
+  <h2>Common questions</h2>${faqHtml(FREE_TOOLS_HUB.faq)}
+  <p>${esc(FREE_TOOLS_CLOSING.body)} <a href="/">Run the free check</a> · <a href="/pricing">Pricing</a></p>
+</section>`,
+};
+
 export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
   ...Object.fromEntries(HUB_PAGES.map((page) => [page.path, hubShell(page)])),
+  [FREE_TOOLS_PATH]: FREE_TOOLS_HUB_SHELL,
+  ...Object.fromEntries(FREE_TOOLS.map((tool) => [tool.path, freeToolShell(tool)])),
   '/': {
     path: '/',
     title: 'AI visibility audit | Luminara Suite',
@@ -180,7 +246,7 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
   <h1>Be the answer AI gives.</h1>
   <p>${REAL_ESTATE_AUDIENCE} ${HONEST_VISIBILITY_PROMISE}</p>
   <p>Illustrative example, not a real agency and not a measurement: an independent agency, checked for a suburb question.</p>
-  <p>Free check of robots.txt and llms.txt. No card. A full audit needs sign-in or your own keys. Every result is labeled Measured, Estimated or Not measured. No blended AI visibility score.</p>
+  <p>Free check of your homepage title and description, robots.txt and llms.txt. No card. A full audit needs sign-in or your own keys. Every result is labeled Measured, Estimated or Not measured. No blended AI visibility score.</p>
   <ul>
     <li><a href="/sample-report">Sample report</a></li>
     <li><a href="/methodology">Methodology</a></li>
@@ -212,7 +278,7 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
 <section>
   <h1>Methodology</h1>
   <p>Measured means live evidence. Estimated is directional only. Not measured means missing data is labeled, never invented.</p>
-  <p>The live crawl check on the landing page reads robots.txt, llms.txt and ai.txt. ${LIVE_ANSWER_CHECKS}</p>
+  <p>The free check on the landing page reads the homepage title and description, robots.txt, llms.txt and ai.txt. ${LIVE_ANSWER_CHECKS}</p>
   <p><a href="/sample-report">Sample report</a> · <a href="/pricing">Pricing</a> · <a href="/">Home</a></p>
 </section>`,
   },
@@ -404,9 +470,35 @@ export function perDomainShell(pathname: string): MarketingShellMeta | null {
   };
 }
 
-/** Marketing shell, or a per-domain audit shell. Null for app paths the SPA shell serves as-is. */
+/**
+ * A shared free check (/check/<host>). Not indexed: one page per typed host would be thin
+ * near-duplicates. The title names the host so a pasted link previews what it checks.
+ */
+export function checkShell(pathname: string): MarketingShellMeta | null {
+  const host = checkHostFromPath(pathname);
+  if (!host) return null;
+  // Built from the validated host, never the raw path, so percent-encoded junk cannot reach the meta.
+  const clean = checkPathForHost(host);
+  const title = brandedTabTitle(`Free check: ${host}`);
+  const description = `A free live check of ${host}: its homepage title and description, robots.txt and llms.txt. Run the same check on your site.`;
+  return {
+    path: clean,
+    title,
+    description,
+    robots: 'noindex, nofollow',
+    jsonLd: graph(clean, title, description),
+    crawlerBody: `
+<section>
+  <h1>Free check: ${esc(host)}</h1>
+  <p>${esc(description)}</p>
+  <p><a href="/">Run the free check</a></p>
+</section>`,
+  };
+}
+
+/** Marketing shell, or a per-domain audit or check shell. Null for app paths the SPA shell serves as-is. */
 export function marketingPageForPath(pathname: string): MarketingShellMeta | null {
   const key = marketingShellKey(pathname);
   if (key) return MARKETING_SHELL_BY_PATH[key] ?? null;
-  return perDomainShell(pathname);
+  return perDomainShell(pathname) ?? checkShell(pathname);
 }

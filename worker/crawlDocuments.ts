@@ -7,6 +7,7 @@ import { PAID_PLAN_PRICES, type PaidPlanId } from '../components/paywall/planPri
 import { LIVE_ANSWER_CHECKS } from '../services/marketing/engineCoverage';
 import { REAL_ESTATE_AUDIENCE } from '../services/marketing/marketingHeroCopy';
 import { HUB_PAGES, HUB_REVIEWED } from '../services/marketing/seoHubPages';
+import { FREE_TOOLS, FREE_TOOLS_PATH } from '../services/marketing/freeTools';
 import { COMPANY_SERVICES_URL, COMPANY_SITE_URL } from '../services/legal/consumerTerms';
 import { PLAN_ENTITLEMENTS } from '../services/plans/planEntitlements';
 
@@ -134,6 +135,8 @@ export function buildSitemapXml(origin: string = 'https://www.luminarasuite.com'
   <url><loc>${base}/docs/what-is-aeo.html</loc></url>
   <url><loc>${base}/desktop</loc></url>
 ${HUB_PAGES.map((page) => `  <url><loc>${base}${page.path}</loc></url>`).join('\n')}
+  <url><loc>${base}${FREE_TOOLS_PATH}</loc></url>
+${FREE_TOOLS.map((tool) => `  <url><loc>${base}${tool.path}</loc></url>`).join('\n')}
   <url><loc>${base}/llms.txt</loc></url>
   <url><loc>${base}/ai.txt</loc></url>
 </urlset>
@@ -247,6 +250,13 @@ Competitor rows cite each vendor's public pages as of ${HUB_REVIEWED}. No scores
 
 ${HUB_PAGES.map((page) => `- ${page.label}: https://www.luminarasuite.com${page.path}`).join('\n')}
 
+## Free tools
+
+They run in the browser with no account. Nothing typed into a tool is sent to Luminara.
+
+- All free tools: https://www.luminarasuite.com${FREE_TOOLS_PATH}
+${FREE_TOOLS.map((tool) => `- ${tool.label}: https://www.luminarasuite.com${tool.path}`).join('\n')}
+
 ## Studio
 
 - Luminara Digital: ${COMPANY_SITE_URL}
@@ -294,6 +304,17 @@ Disallow: /oauth/
 `;
 
 /**
+ * True when a request served on `serveHost` targets this same Worker (production pair or staging).
+ * A fetch() of such a host returns Cloudflare 522, so callers read what the Worker serves instead.
+ */
+export function servesOwnHost(serveHost: string, targetHost: string): boolean {
+  const serve = serveHost.toLowerCase().split(':')[0];
+  const target = targetHost.toLowerCase().split(':')[0];
+  return (PRODUCTION_CRAWL_HOSTS.has(serve) && PRODUCTION_CRAWL_HOSTS.has(target))
+    || (serve === STAGING_CRAWL_HOST && target === STAGING_CRAWL_HOST);
+}
+
+/**
  * Crawl file this Worker would serve for one of its own Custom Domains.
  * A fetch() of that hostname returns Cloudflare 522, so callers read these bytes instead.
  * Returns null when `serveHost` does not serve `fileUrl` (another host, or not a crawl file).
@@ -305,11 +326,8 @@ export function readServedCrawlFile(serveHost: string, fileUrl: string): { statu
   } catch {
     return null;
   }
-  const serve = serveHost.toLowerCase().split(':')[0];
   const target = parsed.hostname.toLowerCase();
-  const ownProduction = PRODUCTION_CRAWL_HOSTS.has(serve) && PRODUCTION_CRAWL_HOSTS.has(target);
-  const ownStaging = serve === STAGING_CRAWL_HOST && target === STAGING_CRAWL_HOST;
-  if (!ownProduction && !ownStaging) return null;
+  if (!servesOwnHost(serveHost, target)) return null;
   if (parsed.pathname === '/robots.txt') return { status: 200, body: robotsTxtForHost(target, undefined) };
   if (parsed.pathname === '/llms.txt') return { status: 200, body: LLMS_TXT };
   if (parsed.pathname === '/ai.txt') return { status: 200, body: AI_TXT };

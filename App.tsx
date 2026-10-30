@@ -66,6 +66,7 @@ const InfrastructurePage = lazyWithReload(() => import('./components/Infrastruct
 const IntelligencePage = lazyWithReload(() => import('./components/IntelligencePage'));
 const WhyLuminaraPage = lazyWithReload(() => import('./components/WhyLuminaraPage'));
 const SeoHubPage = lazyWithReload(() => import('./components/marketing/SeoHubPage'));
+const FreeToolPage = lazyWithReload(() => import('./components/marketing/freeTools/FreeToolPage'));
 const PricingPage = lazyWithReload(() => import('./components/PricingPage'));
 const MethodologyPage = lazyWithReload(() => import('./components/MethodologyPage'));
 const SampleReportPage = lazyWithReload(() => import('./components/SampleReportPage'));
@@ -107,10 +108,13 @@ const MARKETING_VIEWS = new Set<AppView>([
   AppView.INTELLIGENCE,
   AppView.WHY_US,
   AppView.COMPARE,
+  AppView.FREE_TOOLS,
   AppView.PRICING,
   AppView.METHODOLOGY,
   AppView.SAMPLE_REPORT,
 ]);
+/** Views whose page comes from the pathname: /compare/*, /best/*, /free-tools/*. */
+const PATH_DRIVEN_VIEWS = new Set<AppView>([AppView.COMPARE, AppView.FREE_TOOLS]);
 
 interface SendOptions {
   /** Short text to show in the user bubble instead of the full prompt. */
@@ -121,6 +125,7 @@ interface SendOptions {
 
 import { parseUrlSwapRoute, type UrlSwapRouteParams } from './utils/urlSwapRouting';
 import {
+  isPathDeepLink,
   marketingViewFromHash,
   marketingViewFromPathname,
   pathForMarketingView,
@@ -129,6 +134,7 @@ import {
 } from './utils/marketingRoutes';
 import { applyDocumentMetaForView } from './services/marketing/documentMeta';
 import { hubPageForPath } from './services/marketing/seoHubPages';
+import { FREE_TOOLS_PATH, freeToolsPageForPath } from './services/marketing/freeTools';
 
 const viewFromLocation = (): AppView | null => {
   if (typeof window === 'undefined') return null;
@@ -245,25 +251,28 @@ const App: React.FC = () => {
     productTelemetry.trackPageView(next);
     haptic('light');
     const path = (window.location.pathname || '/').replace(/\/+$/, '') || '/';
-    const isPathDeepLink = /^\/(share|verify|reports)(\/|$)/i.test(path);
+    const onPathDeepLink = isPathDeepLink(path);
     const onMarketingPath = Boolean(marketingViewFromPathname(window.location.pathname));
     const nextIsMarketing = pathForMarketingView(next) != null;
     const target = urlForView(next, {
-      clearPathDeepLink: isPathDeepLink,
+      clearPathDeepLink: onPathDeepLink,
       leaveMarketingPath: onMarketingPath && !nextIsMarketing,
     });
     const marketingPath = pathForMarketingView(next);
     const alreadyThere = marketingPath
       ? path === (marketingPath === '/' ? '/' : marketingPath.replace(/\/+$/, '') || '/') && !window.location.hash
-      : window.location.hash.toLowerCase() === `#${next.toLowerCase()}` && path === '/' && !isPathDeepLink;
+      : window.location.hash.toLowerCase() === `#${next.toLowerCase()}` && path === '/' && !onPathDeepLink;
     if (!alreadyThere) {
       window.history.pushState(null, '', target);
+      // Leaving a deep link for the same view (Home from /check/<host>) does not change `view`,
+      // so the meta effect would not run and the old title and noindex would stay.
+      if (onPathDeepLink) applyDocumentMetaForView(next);
     }
   }, [applyContinuumForView]);
 
   useEffect(() => {
     const path = (window.location.pathname || '/').replace(/\/+$/, '') || '/';
-    productTelemetry.trackPageView(view === AppView.COMPARE ? `${view}:${path}` : view);
+    productTelemetry.trackPageView(PATH_DRIVEN_VIEWS.has(view) ? `${view}:${path}` : view);
     applyDocumentMetaForView(view);
   }, [view]);
 
@@ -534,6 +543,8 @@ const App: React.FC = () => {
       { label: 'How it works', onClick: () => setView(AppView.INFRASTRUCTURE), current: view === AppView.INFRASTRUCTURE },
       { label: 'AI', onClick: () => setView(AppView.INTELLIGENCE), current: view === AppView.INTELLIGENCE },
       { label: 'Pricing', onClick: () => setView(AppView.PRICING), current: view === AppView.PRICING },
+      // Path-driven view: no single view URL, so the link loads /free-tools like the footer link does.
+      { label: 'Free tools', onClick: () => window.location.assign(FREE_TOOLS_PATH), current: view === AppView.FREE_TOOLS },
     ],
     primaryCta: navSignedIn
       ? { label: 'New audit', onClick: () => enterInstantAudit() }
@@ -924,9 +935,13 @@ const App: React.FC = () => {
   const introOverlay = showIntro ? <Suspense fallback={null}><AppIntroOverlay onComplete={completeIntro} /></Suspense> : null;
 
   const hubPage = view === AppView.COMPARE ? hubPageForPath(window.location.pathname) : null;
+  // The free check's "full audit" button on inner pages: guests sign up first, as on the landing.
+  const marketingFullAudit = (handoff?: AuditHandoff) =>
+    appAuth.authenticated ? enterInstantAudit(handoff) : openLoginWall('signup', handoff);
+  const freeToolsPage = view === AppView.FREE_TOOLS ? freeToolsPageForPath(window.location.pathname) : null;
 
-  // A COMPARE view without a hub path (e.g. a stray #compare hash) is Not Found, never a blank page.
-  if (view === AppView.NOT_FOUND || (view === AppView.COMPARE && !hubPage)) {
+  // A path-driven view without its page (e.g. a stray #compare hash) is Not Found, never a blank page.
+  if (view === AppView.NOT_FOUND || (PATH_DRIVEN_VIEWS.has(view) && !hubPage && !freeToolsPage)) {
     return (
       <Suspense fallback={null}>
         <NotFoundPage onHome={() => setView(AppView.LANDING)} />
@@ -1123,7 +1138,23 @@ const App: React.FC = () => {
       <MarketingChromeContext.Provider value={marketingChrome}>
       <Suspense fallback={<ViewLoader label="Loading" />}>
         {introOverlay}
-        <SeoHubPage page={hubPage} onTerminal={() => enterInstantAudit()} />
+        <SeoHubPage page={hubPage} isAuthenticated={appAuth.authenticated} onFullAudit={marketingFullAudit} />
+        {marketingOverlays}
+      </Suspense>
+      </MarketingChromeContext.Provider>
+    );
+  }
+
+  if (freeToolsPage) {
+    return (
+      <MarketingChromeContext.Provider value={marketingChrome}>
+      <Suspense fallback={<ViewLoader label="Loading" />}>
+        {introOverlay}
+        <FreeToolPage
+          tool={freeToolsPage.tool}
+          isAuthenticated={appAuth.authenticated}
+          onFullAudit={marketingFullAudit}
+        />
         {marketingOverlays}
       </Suspense>
       </MarketingChromeContext.Provider>

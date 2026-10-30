@@ -27,6 +27,7 @@ import {
 import type { AuditHandoff } from '../services/activation/auditHandoff';
 import { GUEST_HERO_NOTE, GUEST_REPORT_NOTE } from '../services/audit/hostedScoutRail';
 import { HOME_HERO } from '../services/marketing/marketingHeroCopy';
+import { checkHostFromPath } from '../services/marketing/homepageSnippet';
 
 interface LandingPageProps {
   onNavigateAudit: (handoff?: AuditHandoff) => void;
@@ -89,6 +90,10 @@ const LandingPage: React.FC<LandingPageProps> = ({
   onSignUpClick,
 }) => {
   const chrome = useMarketingChrome();
+  // A /check/<host> link opens the landing with the check already running on that host.
+  const [sharedCheckHost] = useState(() =>
+    typeof window === 'undefined' ? undefined : checkHostFromPath(window.location.pathname) ?? undefined,
+  );
   const rootRef = useRef<HTMLDivElement>(null);
   const anchorsRef = useRef<Array<HTMLElement | null>>([]);
   const [chapter, setChapter] = useState(-1);
@@ -174,7 +179,8 @@ const LandingPage: React.FC<LandingPageProps> = ({
         <section
           ref={anchorRefs[0]}
           aria-labelledby="hero-heading"
-          className="relative z-10 flex min-h-[100svh] flex-col items-center px-5 pb-16 pt-[max(6.5rem,13svh)] text-center sm:px-8"
+          // Bottom room for the scroll arrow (5svh up, 3.5rem tall), so an open check result never runs under it.
+          className="relative z-10 flex min-h-[100svh] flex-col items-center px-5 pb-[calc(5svh+5.5rem)] pt-[max(6.5rem,13svh)] text-center sm:px-8"
         >
           <div
             aria-hidden
@@ -194,9 +200,15 @@ const LandingPage: React.FC<LandingPageProps> = ({
             {HOME_HERO.lede}
           </p>
           <div className="lx-enter-rise lx-d5 mt-9 w-full">
-            <DomainCheck inputId="hero-domain" isAuthenticated={isAuthenticated} onFullAudit={fullAudit} />
+            <DomainCheck
+              inputId="hero-domain"
+              isAuthenticated={isAuthenticated}
+              onFullAudit={fullAudit}
+              autoRunHost={sharedCheckHost}
+            />
           </div>
-          <p className="lx-enter-rise lx-d6 mt-5 text-sm text-[var(--color-ink-2)]">
+          {/* As wide as the field above, so it wraps clear of the planet's bright edge. */}
+          <p className="lx-enter-rise lx-d6 mx-auto mt-5 max-w-2xl text-sm text-[var(--color-ink-2)] [text-shadow:0_1px_10px_rgb(0_0_0/0.9)]">
             {GUEST_HERO_NOTE}{' '}
             <button type="button" onClick={onNavigateSampleReport} className="lx-link">
               See a sample report
@@ -454,7 +466,8 @@ const LandingPage: React.FC<LandingPageProps> = ({
       <MarketingFaq className="relative z-10" />
       </main>
 
-      <div className="relative overflow-hidden border-t lx-hairline">
+      {/* clip, not hidden: see MarketingPageShell. A hidden box can be scrolled sideways. */}
+      <div className="relative overflow-clip border-t lx-hairline">
         <div aria-hidden className="lx-stars absolute inset-0 opacity-80" />
         <div aria-hidden className="lx-horizon top-[34rem] sm:top-[33rem]" />
         <section aria-labelledby="closing-heading" className="relative z-10 px-5 pb-16 pt-28 text-center sm:px-8 sm:pt-36">
@@ -464,7 +477,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
               See what AI says <span className="italic lx-gold-text">about you.</span>
             </h2>
             <p className="lx-lede mx-auto mt-6 max-w-xl">
-              Run the live crawl check now. Create a free account to run the full audit and get your first fix, with every engine row labeled by how it was measured.
+              Run the free check now. Create a free account to run the full audit and get your first fix, with every engine row labeled by how it was measured.
             </p>
           </div>
           <div className="mt-10">

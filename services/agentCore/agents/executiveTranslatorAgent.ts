@@ -14,6 +14,7 @@ import { readableStem } from '../../audit/brandName';
 import { AgentActivityEvent, AuditFinding, CodeRemediationPatch } from '../types';
 import { BusinessDNA } from '../../../types';
 import { HEALTH_CHECKS, measuredCheckLine, resolveCheckCounts } from '../auditEvidenceGate';
+import { crawlerFixes, type CrawlerCheckRow } from '../../audit/crawlerFixes';
 
 /**
  * Counts of the live web search rows this run collected.
@@ -52,6 +53,25 @@ function validCount(count: number, total: number): boolean {
   return Number.isInteger(count) && Number.isInteger(total) && total > 0 && count >= 0 && count <= total;
 }
 
+/** " 1 check was not measured." style tail, or nothing when every check ran. */
+function notMeasuredNote(count: number): string {
+  return count > 0 ? ` ${count} ${count === 1 ? 'check was' : 'checks were'} not measured.` : '';
+}
+
+/**
+ * Counts the AI crawler rows on the card. It stays a separate sentence: shares and reports
+ * parse the "N of M checks passed" site-check sentence, so this one must not match it.
+ */
+function crawlerCountLine(rows: readonly CrawlerCheckRow[]): string {
+  if (rows.length === 0) return '';
+  const passed = rows.filter((row) => row.status === 'pass').length;
+  const failed = rows.filter((row) => row.status === 'fail').length;
+  const unmeasured = rows.length - passed - failed;
+  if (unmeasured === rows.length) return ' AI crawler checks were not measured.';
+  const tail = `${failed > 0 ? `, ${failed} failed` : ''}${unmeasured > 0 ? `, ${unmeasured} not measured` : ''}`;
+  return ` AI crawler checks: ${passed} of ${rows.length} passed${tail}.`;
+}
+
 export class ExecutiveTranslatorAgent {
   public readonly name = 'Executive Translator';
   public readonly role = 'executive_translator';
@@ -65,6 +85,7 @@ export class ExecutiveTranslatorAgent {
     dna: BusinessDNA | null | undefined,
     emit: (event: AgentActivityEvent) => void,
     displayName?: string | null,
+    crawlerChecks?: readonly CrawlerCheckRow[] | null,
   ): Promise<string> {
     emit({
       id: `exec-start-${Date.now()}`,
@@ -98,16 +119,23 @@ export class ExecutiveTranslatorAgent {
         : citationKnown
           ? `Right now, your brand is ${mentionPhrase} this run collected. The site checks were not measured.`
           : 'Right now, the site checks and citation rate were not measured. Search or page providers did not return evidence for this run.';
-    const failedTakeaway = `${failed} ${failed === 1 ? 'check failed' : 'checks failed'}.${unchecked > 0 ? ` ${unchecked} ${unchecked === 1 ? 'check was' : 'checks were'} not measured.` : ''}`;
+    // Failed AI crawler rows get a step and a takeaway, so "4 of 4 checks passed" never sits
+    // above a FAIL row with nothing to fix. Optional ai.txt gets a step but is never "needed".
+    const crawlerFixList = crawlerFixes(crawlerChecks);
+    const crawlerNeeded = crawlerFixList.filter((fix) => !fix.optional).length;
+    const crawlerNote = crawlerNeeded > 0 ? ` ${crawlerNeeded} AI crawler ${crawlerNeeded === 1 ? 'fix is' : 'fixes are'} needed.` : '';
+    const failedTakeaway = `${failed} ${failed === 1 ? 'check failed' : 'checks failed'}.${notMeasuredNote(unchecked)}`;
     const takeaway = criticalCount > 0
       ? `⚠️ **The Big Takeaway:** This run found ${criticalCount} critical ${criticalCount === 1 ? 'gap' : 'gaps'}: ${critical.map((f) => f.title).join('; ')}.`
       : healthKnown && failed > 0
-        ? `**The takeaway:** ${failedTakeaway}`
-        : healthKnown && unchecked === 0
-          ? `✅ **The Big Takeaway:** None of the checks this run made found a critical gap.`
-          : healthKnown
-            ? `**The takeaway:** ${unchecked} ${unchecked === 1 ? 'check was' : 'checks were'} not measured.`
-            : '**The takeaway:** This run did not measure enough page or search evidence to judge the site.';
+        ? `**The takeaway:** ${failedTakeaway}${crawlerNote}`
+        : crawlerNeeded > 0
+          ? `**The takeaway:**${crawlerNote}${notMeasuredNote(unchecked)}`
+          : healthKnown && unchecked === 0
+            ? `✅ **The Big Takeaway:** None of the checks this run made found a critical gap.`
+            : healthKnown
+              ? `**The takeaway:**${notMeasuredNote(unchecked)}`
+              : '**The takeaway:** This run did not measure enough page or search evidence to judge the site.';
 
     // Only the checks that failed get a step. A check that passed has nothing to fix.
     const steps = HEALTH_CHECKS
@@ -117,7 +145,8 @@ export class ExecutiveTranslatorAgent {
         const evidence = finding?.howWeKnowItFailed?.trim();
         const step = STEP_FOR_FAILED_CHECK[check.findingId];
         return evidence ? `${step} ${evidence}` : step;
-      });
+      })
+      .concat(crawlerFixList.map((fix) => `**${fix.title}:** ${fix.detail}`));
     const listedFix = findings.some((finding) => !finding.id.endsWith('-unmeasured'));
     const stepLines = steps.length > 0
       ? [
@@ -141,7 +170,7 @@ export class ExecutiveTranslatorAgent {
     const sections = [
       `### What This Means For ${brandName}`,
       '',
-      scoreLine,
+      `${scoreLine}${crawlerCountLine(crawlerChecks || [])}`,
       '',
       takeaway,
       '',

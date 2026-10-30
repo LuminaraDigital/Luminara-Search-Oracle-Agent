@@ -5,6 +5,7 @@ import { renderMarkdown } from '../../utils/markdown';
 import { ActionableFixList } from '../retention/ActionableFixList';
 import { DailyStreakCard } from '../retention/DailyStreakCard';
 import { isDowngradedFinding } from '../../services/audit/reportBlocks';
+import { teaserFailureLine } from '../../services/audit/teaserFailureCodes';
 
 const SIGNAL_LABELS = ['Citation rate', 'Page health'];
 
@@ -54,11 +55,17 @@ export const GuestScoutSummaryPanel: React.FC<GuestScoutSummaryPanelProps> = ({
       description: finding.description,
       remediationSnippet: finding.remediationSnippet,
     }))
-    : summary.failed.map((failText, idx) => ({
-      id: `finding-scout-${idx}`,
-      title: failText,
-      description: `Finding identified during scout: ${failText}`,
-    }));
+    // Crawler failures reach the fix list through crawlerChecks, so they are not listed twice.
+    : summary.failureCodes
+      .filter((code) => !code.startsWith('crawler_'))
+      .map((code, idx) => {
+        const failText = teaserFailureLine(code);
+        return {
+          id: `finding-scout-${idx}`,
+          title: failText,
+          description: `Finding identified during scout: ${failText}`,
+        };
+      });
   return (
     <section
       aria-label="Scout summary"
