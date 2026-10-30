@@ -750,9 +750,9 @@ function scrubCustomerLine(line: string): string {
     .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]/g, '-')
     .replace(/\[\[([^[\]]+)\]\]/g, '$1');
   const next = normalized
-    // After "Verify" the term names the header, so neither the title nor the gloss reads as a sentence.
-    .replace(/\b(Verify|verify)\s+[`*]*(?:the\s+)?[`*]*HSTS[`*]*(?:\s+header)?/g, '$1 the header that forces the secure version of the site (HSTS)')
-    .replace(/\b(Verify|verify)\s+[`*]*(?:the\s+)?[`*]*CSP[`*]*(?:\s+header)?/g, '$1 the header that controls which scripts can load (CSP)')
+    // After a checking verb the term names the header, so neither the title nor the gloss reads as a sentence.
+    .replace(/\b([Vv]erify|[Ee]nsure|[Cc]onfirm|[Cc]heck|[Mm]ake sure)\s+(?:that\s+)?[`*]*(?:(?:the|an?)\s+)?[`*]*HSTS[`*]*(?:\s+header)?/g, '$1 the header that forces the secure version of the site (HSTS)')
+    .replace(/\b([Vv]erify|[Ee]nsure|[Cc]onfirm|[Cc]heck|[Mm]ake sure)\s+(?:that\s+)?[`*]*(?:(?:the|an?)\s+)?[`*]*CSP[`*]*(?:\s+header)?/g, '$1 the header that controls which scripts can load (CSP)')
     .replace(/\b(?:Implement|Add(?: an)?)\s+(?:an?\s+)?HTTP Strict[-\s]+Transport[-\s]+Security(?:\s*\(HSTS\))?(?:\s+header)?\b/gi, HSTS_TITLE)
     .replace(/\b(?:(?:a|an|the)\s+)?(?:Add(?: an?)?\s+)?HSTS header\b/gi, HSTS_TITLE)
     .replace(/HTTP Strict[-\s]+Transport[-\s]+Security(?:\s*\(HSTS\))?/gi, HSTS_TITLE)

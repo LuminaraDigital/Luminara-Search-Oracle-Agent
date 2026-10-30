@@ -14,7 +14,7 @@ import { readableStem } from '../../audit/brandName';
 import { AgentActivityEvent, AuditFinding, CodeRemediationPatch } from '../types';
 import { BusinessDNA } from '../../../types';
 import { HEALTH_CHECKS, measuredCheckLine, resolveCheckCounts } from '../auditEvidenceGate';
-import { crawlerFixes, type CrawlerCheckRow } from '../../audit/crawlerFixes';
+import { crawlerFixes, crawlerFixNote, type CrawlerCheckRow } from '../../audit/crawlerFixes';
 
 /**
  * Counts of the live web search rows this run collected.
@@ -122,17 +122,13 @@ export class ExecutiveTranslatorAgent {
     // Failed AI crawler rows get a step and a takeaway, so "4 of 4 checks passed" never sits
     // above a FAIL row with nothing to fix. Optional ai.txt gets a step but is never "needed".
     const crawlerFixList = crawlerFixes(crawlerChecks);
-    const crawlerNeeded = crawlerFixList.filter((fix) => !fix.optional).length;
-    const crawlerOptional = crawlerFixList.length - crawlerNeeded;
-    const crawlerNote = crawlerNeeded > 0
-      ? ` ${crawlerNeeded} AI crawler ${crawlerNeeded === 1 ? 'fix is' : 'fixes are'} needed${crawlerOptional > 0 ? `, plus ${crawlerOptional} optional` : ''}.`
-      : '';
+    const crawlerNote = crawlerFixNote(crawlerFixList);
     const failedTakeaway = `${failed} ${failed === 1 ? 'check failed' : 'checks failed'}.${notMeasuredNote(unchecked)}`;
     const takeaway = criticalCount > 0
       ? `⚠️ **The Big Takeaway:** This run found ${criticalCount} critical ${criticalCount === 1 ? 'gap' : 'gaps'}: ${critical.map((f) => f.title).join('; ')}.`
       : healthKnown && failed > 0
         ? `**The takeaway:** ${failedTakeaway}${crawlerNote}`
-        : crawlerNeeded > 0
+        : crawlerNote
           ? `**The takeaway:**${crawlerNote}${notMeasuredNote(unchecked)}`
           : healthKnown && unchecked === 0
             ? `✅ **The Big Takeaway:** None of the checks this run made found a critical gap.`

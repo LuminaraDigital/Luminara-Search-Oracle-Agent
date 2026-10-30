@@ -336,6 +336,7 @@ export class CrewOrchestrator {
         ctx.serpEvidence,
         ctx.dna,
         emit,
+        llmCrawlerReadiness,
       );
       return {
         findings,
