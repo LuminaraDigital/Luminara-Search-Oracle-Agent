@@ -260,7 +260,7 @@ export function AuditReportArticle({
         auditedAt,
         mode,
       })
-    : markdown;
+    : reportMarkdown;
   const doc = parseAuditReport(shown, { domain, brand: clientName });
   const score = reportScore(`${markdown}\n${doc.verdict}`, measured, findings, citationRateKnown, checkLine);
   const note = unmeasuredNote(findings);

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
@@ -31,6 +32,14 @@ describe('the written report agrees with the top fix', () => {
     expect(next).toContain('Let crawlers read public pages in robots.txt');
     expect(next).not.toContain('security contact file');
     expect(next).toContain('## 2. Plain verdict');
+  });
+
+  it('matches the heading the way the rest of the report does', () => {
+    for (const heading of ['## One move this week', '### 1. One move this week:', '## 1. One move this week\r']) {
+      const next = withTopCrawlerMove(report.replace('## 1. One move this week', heading), crawlerFixes(failedCrawlerChecks), false);
+      expect(next).toContain('Let crawlers read public pages in robots.txt');
+      expect(next).not.toContain('security contact file');
+    }
   });
 
   it('keeps the one move when a page finding leads, and when only optional fixes exist', () => {
@@ -82,10 +91,28 @@ describe('report copy', () => {
   });
 });
 
+describe('report copy that stays', () => {
+  it('leaves a trust line alone when it only names a file', () => {
+    expect(plainCustomerReport('Trust signals such as ai.txt help.')).toContain('ai.txt help');
+  });
+
+  it('keeps the case of verify mid-sentence', () => {
+    expect(plainCustomerReport('Ask your host to verify HSTS is on.')).toContain('to verify the header that forces');
+  });
+});
+
 describe('Enquiry Desk', () => {
   it('opens empty, with no fake lead and no stage counted', () => {
     const html = renderToStaticMarkup(createElement(EnquiryDeskView));
     expect(html).not.toContain('Sarah Jenkins');
     expect(html).toContain('Load Sample');
+  });
+
+  it('stops every outward action for a sample', () => {
+    const source = readFileSync('components/suite/EnquiryDeskView.tsx', 'utf8');
+    for (const handler of ['handleToggleTakeover', 'handleApproveBooking', 'handleDeclineBooking', 'handleSendRecoveryStep', 'handleSyncTwenty', 'handleRecordStaffOutcome']) {
+      const body = source.slice(source.indexOf(`const ${handler} =`));
+      expect(body.split('\n')[1]).toContain('stopForSample');
+    }
   });
 });

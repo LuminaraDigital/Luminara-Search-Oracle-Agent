@@ -98,6 +98,8 @@ export const EnquiryDeskView: React.FC = () => {
     };
     if (typeof window === 'undefined') return fallback;
     try {
+      // Older builds counted the seeded sample, so those stored counts are not real.
+      if (localStorage.getItem(STORAGE_ENQUIRIES_KEY)?.includes(SAMPLE_ID_PREFIX)) return fallback;
       const raw = localStorage.getItem(STORAGE_STAGE_COUNTS_KEY);
       return raw ? { ...fallback, ...(JSON.parse(raw) as Record<OutcomeStage, number>) } : fallback;
     } catch {
@@ -191,6 +193,13 @@ export const EnquiryDeskView: React.FC = () => {
 
   const activeEnquiry = enquiries.find((e) => e.id === selectedId) || enquiries[0] || null;
 
+  /** A sample never reaches the Worker, a CRM, or the Outcomes Ledger. */
+  const stopForSample = (enquiryId: string | undefined): boolean => {
+    if (!enquiryId || !isSampleEnquiry(enquiryId)) return false;
+    setFeedbackBanner('This is a sample, so nothing was sent or recorded.');
+    return true;
+  };
+
   const handleCreateEnquiry = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorBanner(null);
@@ -279,6 +288,7 @@ export const EnquiryDeskView: React.FC = () => {
   const handleAppendTurn = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeEnquiry || !followUpText.trim()) return;
+    if (stopForSample(activeEnquiry.id)) return;
     const text = followUpText.trim();
     setFollowUpText('');
     const existingStrings: Record<string, string> = {};
@@ -363,6 +373,7 @@ export const EnquiryDeskView: React.FC = () => {
   };
 
   const handleToggleTakeover = (enquiryId: string) => {
+    if (stopForSample(enquiryId)) return;
     const target = enquiries.find((item) => item.id === enquiryId);
     const nextPaused = target ? !target.automationPaused : true;
     setEnquiries((prev) =>
@@ -376,6 +387,7 @@ export const EnquiryDeskView: React.FC = () => {
   };
 
   const handleApproveBooking = (enquiryId: string) => {
+    if (stopForSample(enquiryId)) return;
     const target = enquiries.find((item) => item.id === enquiryId);
     setEnquiries((prev) =>
       prev.map((item) =>
@@ -435,6 +447,7 @@ export const EnquiryDeskView: React.FC = () => {
   };
 
   const handleDeclineBooking = (enquiryId: string) => {
+    if (stopForSample(enquiryId)) return;
     const target = enquiries.find((item) => item.id === enquiryId);
     setEnquiries((prev) =>
       prev.map((item) =>
@@ -452,6 +465,7 @@ export const EnquiryDeskView: React.FC = () => {
   };
 
   const handleSendRecoveryStep = async (enquiryId: string) => {
+    if (stopForSample(enquiryId)) return;
     setErrorBanner(null);
     setFeedbackBanner('Consent-guarded recovery check dispatched.');
     if (typeof fetch === 'function') {
@@ -476,6 +490,7 @@ export const EnquiryDeskView: React.FC = () => {
   };
 
   const handleSyncTwenty = async (enquiryId: string) => {
+    if (stopForSample(enquiryId)) return;
     if (!twentyBaseUrl.trim() || !twentyApiKey.trim()) {
       setErrorBanner('Provide both a Twenty CRM HTTPS Base URL and API Key to sync.');
       return;
@@ -496,6 +511,7 @@ export const EnquiryDeskView: React.FC = () => {
   };
 
   const handleRecordStaffOutcome = (stage: 'attended_appraisal' | 'signed_listing') => {
+    if (stopForSample(activeEnquiry?.id)) return;
     setStageCounts((prev) => ({
       ...prev,
       [stage]: prev[stage] + 1,
