@@ -47,10 +47,17 @@ const STAGE_LABELS: Record<OutcomeStage, string> = {
   signed_listing: '6. Signed Listing',
 };
 
-function createInitialEnquiries(): LocalEnquiryItem[] {
+const SAMPLE_ID_PREFIX = 'enq_demo_';
+
+function isSampleEnquiry(id: string): boolean {
+  return id.startsWith(SAMPLE_ID_PREFIX);
+}
+
+/** Only ever loaded by a click on "Load Sample". A new account starts with an empty queue. */
+function createSampleEnquiries(): LocalEnquiryItem[] {
   return [
     {
-      id: 'enq_demo_seller_1',
+      id: `${SAMPLE_ID_PREFIX}seller_1`,
       fullName: 'Sarah Jenkins',
       contactDetail: '+61 412 555 019',
       propertyAddress: '42 Oceanview Parade, Mosman NSW 2088',
@@ -70,20 +77,21 @@ function createInitialEnquiries(): LocalEnquiryItem[] {
 
 export const EnquiryDeskView: React.FC = () => {
   const [enquiries, setEnquiries] = useState<LocalEnquiryItem[]>(() => {
-    if (typeof window === 'undefined') return createInitialEnquiries();
+    if (typeof window === 'undefined') return [];
     try {
       const raw = localStorage.getItem(STORAGE_ENQUIRIES_KEY);
-      return raw ? (JSON.parse(raw) as LocalEnquiryItem[]) : createInitialEnquiries();
+      // Older builds seeded the sample into storage, so it is dropped here, not shown as a lead.
+      return raw ? (JSON.parse(raw) as LocalEnquiryItem[]).filter((item) => !isSampleEnquiry(item.id)) : [];
     } catch {
-      return createInitialEnquiries();
+      return [];
     }
   });
 
   const [stageCounts, setStageCounts] = useState<Record<OutcomeStage, number>>(() => {
     const fallback: Record<OutcomeStage, number> = {
-      enquiry_received: 1,
-      two_way_conversation: 1,
-      qualified_opportunity: 1,
+      enquiry_received: 0,
+      two_way_conversation: 0,
+      qualified_opportunity: 0,
       agent_approved_booking: 0,
       attended_appraisal: 0,
       signed_listing: 0,
@@ -689,7 +697,7 @@ export const EnquiryDeskView: React.FC = () => {
                   setEnquiries([]);
                   setSelectedId('');
                 } else {
-                  const seeded = createInitialEnquiries();
+                  const seeded = createSampleEnquiries();
                   setEnquiries(seeded);
                   setSelectedId(seeded[0]?.id || '');
                 }
@@ -723,7 +731,10 @@ export const EnquiryDeskView: React.FC = () => {
                   }`}
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-bold text-white">{item.fullName}</span>
+                    <span className="text-xs font-bold text-white">
+                      {item.fullName}
+                      {isSampleEnquiry(item.id) && <span className="ml-2 text-[10px] font-mono text-gold-light">SAMPLE</span>}
+                    </span>
                     <span
                       className={`px-2 py-0.5 rounded text-[10px] font-mono ${
                         item.automationPaused
@@ -773,6 +784,9 @@ export const EnquiryDeskView: React.FC = () => {
                 <div className="text-xs font-bold text-gold-light">
                   Evidence-Bound Opportunity Brief (ClaimLedger)
                 </div>
+                {isSampleEnquiry(activeEnquiry.id) && (
+                  <p className="text-xs text-gold-light">SAMPLE. This is not your data and this person is not a real lead.</p>
+                )}
                 <p className="text-xs text-gray-300">{activeBrief.summaryVerdict}</p>
                 <ul className="space-y-1.5 pt-1">
                   {activeBrief.claims.map((claim) => (
@@ -783,12 +797,12 @@ export const EnquiryDeskView: React.FC = () => {
                       <span className="text-gray-200">{claim.text}</span>
                       <span
                         className={`px-1.5 py-0.5 rounded text-[10px] ${
-                          claim.status === 'measured'
+                          claim.status === 'measured' && !isSampleEnquiry(activeEnquiry.id)
                             ? 'bg-success-500/20 text-success-300'
                             : 'bg-white/10 text-gray-400'
                         }`}
                       >
-                        [{claim.status}]
+                        [{isSampleEnquiry(activeEnquiry.id) ? 'sample' : claim.status}]
                       </span>
                     </li>
                   ))}
@@ -922,7 +936,7 @@ export const EnquiryDeskView: React.FC = () => {
               <button
                 type="button"
                 onClick={() => {
-                  const seeded = createInitialEnquiries();
+                  const seeded = createSampleEnquiries();
                   setEnquiries(seeded);
                   setSelectedId(seeded[0]?.id || '');
                 }}

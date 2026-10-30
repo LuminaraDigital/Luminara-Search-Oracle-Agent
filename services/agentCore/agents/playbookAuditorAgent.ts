@@ -39,6 +39,13 @@ export function pageList(urls: readonly string[]): string {
   return `${first}, ${second} and ${rest} more ${rest === 1 ? 'page' : 'pages'}`;
 }
 
+/** The page checks can all pass while crawler files fail, so the card says which checks it means. */
+function crawlerFailNote(report: LlmCrawlerReport): string {
+  const failed = report.checks.filter((check) => check.status === 'fail').length;
+  if (failed === 0) return '';
+  return ` ${failed} AI crawler ${failed === 1 ? 'check' : 'checks'} failed, listed in the report.`;
+}
+
 export class PlaybookAuditorAgent {
   public readonly name = 'Playbook Auditor';
   public readonly role = 'playbook_auditor';
@@ -217,7 +224,7 @@ export class PlaybookAuditorAgent {
       agentRole: 'playbook_auditor',
       agentName: this.name,
       phase: 'audit_complete',
-      message: `Finished the check. ${findingSummary(findings.map((finding) => finding.title))} ${measuredCheckLine(checklist)}.`,
+      message: `Finished the page checks. ${findingSummary(findings.map((finding) => finding.title))} ${measuredCheckLine(checklist)}.${crawlerFailNote(llmCrawler)}`,
       status: 'completed',
       confidenceScore: 0.92,
     });

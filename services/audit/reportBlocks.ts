@@ -736,6 +736,26 @@ export function showFixTally(score: string): boolean {
   return !/^(?:Passed )?\d+ of \d+/.test(score);
 }
 
+const ONE_MOVE_HEADING = /^##\s*1\.\s*One move this week\s*$/im;
+
+/**
+ * The written report picks its own one move, which can differ from the top fix on the card.
+ * With no page finding, the first needed crawler fix is the top fix, so it replaces that section.
+ */
+export function withTopCrawlerMove(
+  markdown: string,
+  fixes: ReadonlyArray<{ title: string; detail: string; optional: boolean }>,
+  hasPageFindings: boolean,
+): string {
+  const top = hasPageFindings ? undefined : fixes.find((fix) => !fix.optional);
+  const heading = top && markdown.match(ONE_MOVE_HEADING);
+  if (!top || !heading || heading.index === undefined) return markdown;
+  const bodyStart = heading.index + heading[0].length;
+  const next = markdown.slice(bodyStart).search(/^##\s/m);
+  const tail = next < 0 ? '' : markdown.slice(bodyStart + next);
+  return `${markdown.slice(0, bodyStart)}\n\n${top.title}. ${top.detail}\n\n${tail}`;
+}
+
 export const SAVED_AUDIT_CHECK_COPY = 'Checking saved audits for this account.';
 
 export function fixProgress(findings: ReadonlyArray<{ id?: string; status: string }>): { done: number; total: number; label: string } {

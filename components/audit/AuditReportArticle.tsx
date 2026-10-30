@@ -7,6 +7,7 @@ import { workspaceHistoryReady } from '../../services/sync/workspaceSyncService'
 import { visibleGroundingSources } from '../../services/audit/unmeasuredClaimGuard';
 import { parseMeasuredCheckLine } from '../../services/agentCore/auditEvidenceGate';
 import { customerSourceLine, sourceReadKind } from '../../services/audit/reportColumnGate';
+import { crawlerFixes, type CrawlerCheckRow } from '../../services/audit/crawlerFixes';
 import { formatAuDate } from '../../utils/formatAuDate';
 import { isWebUrl } from '../../utils/webUrl';
 import {
@@ -25,6 +26,7 @@ import {
   SAVED_AUDIT_CHECK_COPY,
   showFixTally,
   unmeasuredNote,
+  withTopCrawlerMove,
   type Inline,
   type ReportBlock,
   type ReportSection,
@@ -207,6 +209,7 @@ export function AuditReportArticle({
   checkLine,
   citationEvidence,
   citationLine,
+  crawlerChecks,
   auditedAt,
   mode = 'Instant Audit',
   onShare,
@@ -227,6 +230,8 @@ export function AuditReportArticle({
   citationEvidence?: ReadonlyArray<{ query: string; brandCited: boolean; intent?: string; competitorsCited?: string[] }>;
   /** Sentence already built from mentionCounts. Omitted when citation was not measured. */
   citationLine?: string | null;
+  /** AI crawler rows from this run. Their fixes are shown here, not only in the fix list above. */
+  crawlerChecks?: readonly CrawlerCheckRow[];
   auditedAt?: number | Date;
   mode?: string;
   onShare?: () => void;
@@ -242,8 +247,11 @@ export function AuditReportArticle({
       window.removeEventListener(AUDIT_ACTIVITY_EVENT, refresh);
     };
   }, []);
+  const fixes = findings.filter((finding) => !isDowngradedFinding(finding));
+  const crawlerFixItems = crawlerFixes(crawlerChecks);
+  const reportMarkdown = withTopCrawlerMove(markdown, crawlerFixItems, fixes.length > 0);
   const shown = domain
-    ? groundCustomerReport(markdown, {
+    ? groundCustomerReport(reportMarkdown, {
         domain,
         brand: clientName,
         findings,
@@ -255,9 +263,11 @@ export function AuditReportArticle({
     : markdown;
   const doc = parseAuditReport(shown, { domain, brand: clientName });
   const score = reportScore(`${markdown}\n${doc.verdict}`, measured, findings, citationRateKnown, checkLine);
-  const fixes = findings.filter((finding) => !isDowngradedFinding(finding));
   const note = unmeasuredNote(findings);
   const progress = fixProgress(fixes);
+  const tallyLabel = progress.total === 0 && crawlerFixItems.length > 0
+    ? `${crawlerFixItems.length} AI crawler ${crawlerFixItems.length === 1 ? 'fix' : 'fixes'} below`
+    : progress.label;
   const next = pickPrimaryFinding(fixes);
   const diff = domain ? diffSince(domain) : { before: null, metrics: [] };
   // Re-read after a workspace pull. The number itself is only a refresh signal.
@@ -306,7 +316,7 @@ export function AuditReportArticle({
           <h2 className="mt-2 font-serif-editorial text-4xl leading-tight text-white">{score}</h2>
           <p className="mt-3 max-w-[70ch] text-base leading-relaxed text-gray-100">{verdict}</p>
           {dated ? <p className="mt-4 text-sm text-gray-200">Date: {dated} · Mode: {mode}</p> : null}
-          <p className="mt-4 text-sm text-gray-200">{tally ? progress.label : 'The score above is the only pass count for the site checks.'}</p>
+          <p className="mt-4 text-sm text-gray-200">{tally ? tallyLabel : 'The score above is the only pass count for the site checks.'}</p>
           {tally && (
             <div
               role="progressbar"
@@ -329,7 +339,7 @@ export function AuditReportArticle({
                 </button>
               )}
               <ReportPdfButton
-                markdownText={markdown}
+                markdownText={reportMarkdown}
                 domain={domain}
                 clientName={clientName}
                 measured={measured}
@@ -341,7 +351,13 @@ export function AuditReportArticle({
 
         <section id="audit-fixes" aria-label="Fixes" className="mt-6 space-y-3">
           <h2 className="text-xl font-semibold text-white">Fixes</h2>
-          {fixes.length === 0 && <p className="text-base leading-relaxed text-gray-200">No fixes were recorded for this audit.</p>}
+          {fixes.length === 0 && crawlerFixItems.length === 0 && <p className="text-base leading-relaxed text-gray-200">No fixes were recorded for this audit.</p>}
+          {crawlerFixItems.map((fix) => (
+            <article key={fix.id} className="rounded-2xl border border-white/15 bg-black px-4 py-4">
+              <h3 className="text-lg font-semibold text-white">{fix.title}</h3>
+              <p className="mt-2 text-base leading-relaxed text-gray-100">{fix.detail}</p>
+            </article>
+          ))}
           {fixes.map((finding) => {
             const why = findingWhy(finding);
             const fix = findingFix(finding, why);

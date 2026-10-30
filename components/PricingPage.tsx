@@ -43,6 +43,7 @@ interface PricingPageProps {
   onNavigateWhy?: () => void;
   onNavigateSampleReport?: () => void;
   onSignUpClick?: () => void;
+  isAuthenticated?: boolean;
 }
 
 /** The line the paywall opens with when a plan is chosen here. TON is named only while its checkout is open. */
@@ -199,6 +200,7 @@ const PricingPage: React.FC<PricingPageProps> = ({
   onNavigateInfrastructure,
   onNavigateSampleReport,
   onSignUpClick,
+  isAuthenticated = false,
 }) => {
   const [busyPlan, setBusyPlan] = useState<PaidPlanId | null>(null);
   const [cardNote, setCardNote] = useState<string | null>(null);
@@ -267,10 +269,12 @@ const PricingPage: React.FC<PricingPageProps> = ({
         }
         lede={PRICING_HERO.lede}
       >
-        <button type="button" onClick={handleSignUp} className="lx-btn lx-btn-gold">
-          Create free account
-        </button>
-        <button type="button" onClick={onTerminal} className="lx-btn lx-btn-ghost">
+        {!isAuthenticated && (
+          <button type="button" onClick={handleSignUp} className="lx-btn lx-btn-gold">
+            Create free account
+          </button>
+        )}
+        <button type="button" onClick={onTerminal} className={isAuthenticated ? 'lx-btn lx-btn-gold' : 'lx-btn lx-btn-ghost'}>
           Open Instant Audit
         </button>
         <button type="button" onClick={handleSample} className="lx-link text-sm">
