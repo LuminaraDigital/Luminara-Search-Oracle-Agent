@@ -6,11 +6,13 @@ import { CHECKOUT_TERM_LINE, listPriceSummary } from '../components/paywall/plan
 import { PAID_PLAN_PRICES, type PaidPlanId } from '../components/paywall/planPrices';
 import { LIVE_ANSWER_CHECKS } from '../services/marketing/engineCoverage';
 import { REAL_ESTATE_AUDIENCE } from '../services/marketing/marketingHeroCopy';
+import { HUB_PAGES, HUB_REVIEWED } from '../services/marketing/seoHubPages';
+import { FREE_TOOLS, FREE_TOOLS_PATH } from '../services/marketing/freeTools';
 import { COMPANY_SERVICES_URL, COMPANY_SITE_URL } from '../services/legal/consumerTerms';
 import { PLAN_ENTITLEMENTS } from '../services/plans/planEntitlements';
 
 export const ROBOTS_TXT = `# Luminara Suite crawl policy
-# Public marketing pages, /llms.txt, and redacted /share/teaser/ cards are meant to be cited.
+# Public marketing pages, /llms.txt, /ai.txt, and redacted /share/teaser/ cards are meant to be cited.
 # Share URLs under /share/ are unlisted (not in the sitemap) and served noindex. They are
 # allowed here only so link unfurls can fetch the preview HTML.
 # Attestation verify, API, and OAuth stay disallowed.
@@ -39,9 +41,11 @@ Allow: /faq
 Allow: /contact
 Allow: /desktop
 Allow: /compare/
+Allow: /best/
 Allow: /docs/
 Allow: /docs/what-is-aeo.html
 Allow: /llms.txt
+Allow: /ai.txt
 Allow: /sitemap.xml
 Allow: /share/
 Allow: /share/teaser/
@@ -64,9 +68,11 @@ Allow: /faq
 Allow: /contact
 Allow: /desktop
 Allow: /compare/
+Allow: /best/
 Allow: /docs/
 Allow: /docs/what-is-aeo.html
 Allow: /llms.txt
+Allow: /ai.txt
 Allow: /sitemap.xml
 Allow: /share/
 Allow: /share/teaser/
@@ -128,11 +134,11 @@ export function buildSitemapXml(origin: string = 'https://www.luminarasuite.com'
   <url><loc>${base}/docs/mcp.html</loc></url>
   <url><loc>${base}/docs/what-is-aeo.html</loc></url>
   <url><loc>${base}/desktop</loc></url>
-  <url><loc>${base}/compare/profound</loc></url>
-  <url><loc>${base}/compare/ahrefs</loc></url>
-  <url><loc>${base}/compare/otterly</loc></url>
-  <url><loc>${base}/compare/peec</loc></url>
+${HUB_PAGES.map((page) => `  <url><loc>${base}${page.path}</loc></url>`).join('\n')}
+  <url><loc>${base}${FREE_TOOLS_PATH}</loc></url>
+${FREE_TOOLS.map((tool) => `  <url><loc>${base}${tool.path}</loc></url>`).join('\n')}
   <url><loc>${base}/llms.txt</loc></url>
+  <url><loc>${base}/ai.txt</loc></url>
 </urlset>
 `;
 }
@@ -237,10 +243,19 @@ ${llmsPaidPlanBlock()}
 - Why Luminara: https://www.luminarasuite.com/why
 - Pricing: https://www.luminarasuite.com/pricing
 - Windows desktop: https://www.luminarasuite.com/desktop
-- Profound comparison: https://www.luminarasuite.com/compare/profound
-- Ahrefs comparison: https://www.luminarasuite.com/compare/ahrefs
-- Otterly AI comparison: https://www.luminarasuite.com/compare/otterly
-- Peec AI comparison: https://www.luminarasuite.com/compare/peec
+
+## Comparisons and buyer's guides
+
+Competitor rows cite each vendor's public pages as of ${HUB_REVIEWED}. No scores are published for other products.
+
+${HUB_PAGES.map((page) => `- ${page.label}: https://www.luminarasuite.com${page.path}`).join('\n')}
+
+## Free tools
+
+They run in the browser with no account. Nothing typed into a tool is sent to Luminara.
+
+- All free tools: https://www.luminarasuite.com${FREE_TOOLS_PATH}
+${FREE_TOOLS.map((tool) => `- ${tool.label}: https://www.luminarasuite.com${tool.path}`).join('\n')}
 
 ## Studio
 
@@ -254,11 +269,55 @@ ${llmsPaidPlanBlock()}
 - Terms: https://www.luminarasuite.com/terms
 `;
 
+export const AI_TXT = `# Luminara Suite AI policy (ai.txt)
+# Public marketing pages, /llms.txt, /ai.txt, and redacted /share/teaser/ cards may be crawled and cited with attribution.
+# Unlisted full reports under /share/ are served noindex and are not for training or citation.
+# API, verification, report storage, and OAuth routes are disallowed.
+# Structured product context for answer engines lives at https://www.luminarasuite.com/llms.txt
+# Methodology and honesty glossary: https://www.luminarasuite.com/docs/what-is-aeo.html
+
+User-agent: *
+Allow: /
+Allow: /how-it-works
+Allow: /ai
+Allow: /why
+Allow: /pricing
+Allow: /methodology
+Allow: /sample-report
+Allow: /privacy
+Allow: /terms
+Allow: /faq
+Allow: /contact
+Allow: /desktop
+Allow: /compare/
+Allow: /best/
+Allow: /docs/
+Allow: /docs/what-is-aeo.html
+Allow: /llms.txt
+Allow: /ai.txt
+Allow: /sitemap.xml
+Allow: /share/teaser/
+Disallow: /api/
+Disallow: /verify/
+Disallow: /reports/
+Disallow: /oauth/
+`;
+
+/**
+ * True when a request served on `serveHost` targets this same Worker (production pair or staging).
+ * A fetch() of such a host returns Cloudflare 522, so callers read what the Worker serves instead.
+ */
+export function servesOwnHost(serveHost: string, targetHost: string): boolean {
+  const serve = serveHost.toLowerCase().split(':')[0];
+  const target = targetHost.toLowerCase().split(':')[0];
+  return (PRODUCTION_CRAWL_HOSTS.has(serve) && PRODUCTION_CRAWL_HOSTS.has(target))
+    || (serve === STAGING_CRAWL_HOST && target === STAGING_CRAWL_HOST);
+}
+
 /**
  * Crawl file this Worker would serve for one of its own Custom Domains.
  * A fetch() of that hostname returns Cloudflare 522, so callers read these bytes instead.
  * Returns null when `serveHost` does not serve `fileUrl` (another host, or not a crawl file).
- * shortcut: suite /ai.txt has no Worker route (a static miss is 404); add a branch if one is served.
  */
 export function readServedCrawlFile(serveHost: string, fileUrl: string): { status: number; body: string } | null {
   let parsed: URL;
@@ -267,13 +326,10 @@ export function readServedCrawlFile(serveHost: string, fileUrl: string): { statu
   } catch {
     return null;
   }
-  const serve = serveHost.toLowerCase().split(':')[0];
   const target = parsed.hostname.toLowerCase();
-  const ownProduction = PRODUCTION_CRAWL_HOSTS.has(serve) && PRODUCTION_CRAWL_HOSTS.has(target);
-  const ownStaging = serve === STAGING_CRAWL_HOST && target === STAGING_CRAWL_HOST;
-  if (!ownProduction && !ownStaging) return null;
+  if (!servesOwnHost(serveHost, target)) return null;
   if (parsed.pathname === '/robots.txt') return { status: 200, body: robotsTxtForHost(target, undefined) };
   if (parsed.pathname === '/llms.txt') return { status: 200, body: LLMS_TXT };
-  if (parsed.pathname === '/ai.txt') return { status: 404, body: '' };
+  if (parsed.pathname === '/ai.txt') return { status: 200, body: AI_TXT };
   return null;
 }

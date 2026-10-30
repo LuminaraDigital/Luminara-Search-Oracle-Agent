@@ -112,6 +112,15 @@ const CAPABILITIES: CapabilityItem[] = [
     badge: 'Automation',
   },
   {
+    id: 'enquiry-desk',
+    view: AppView.ENQUIRY_DESK,
+    title: 'Enquiry Desk & Outcomes Ledger',
+    tagline: 'Playbook qualification, statutory valuation guard, agent-approved bookings, and 6-stage conversion ledger.',
+    category: 'agent',
+    platforms: ['web', 'desktop', 'tma'],
+    badge: 'Conversion Spine',
+  },
+  {
     id: 'notebook',
     view: AppView.NOTEBOOK,
     title: 'Collaborative Notebook',

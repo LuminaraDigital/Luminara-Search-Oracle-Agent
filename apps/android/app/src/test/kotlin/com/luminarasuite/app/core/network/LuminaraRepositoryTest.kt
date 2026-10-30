@@ -6,6 +6,8 @@ import com.luminarasuite.app.core.database.FindingEntity
 import com.luminarasuite.app.core.database.LuminaraDao
 import com.luminarasuite.app.core.model.AccountDeleteRequest
 import com.luminarasuite.app.core.model.AccountDeleteResponse
+import com.luminarasuite.app.core.model.AuditFinding
+import com.luminarasuite.app.core.model.AuditHistoryEntry
 import com.luminarasuite.app.core.model.AuditHistoryListResponse
 import com.luminarasuite.app.core.model.AuditHistoryUpsertRequest
 import com.luminarasuite.app.core.model.AuditHistoryUpsertResponse
@@ -65,6 +67,10 @@ class FakeLuminaraDao : LuminaraDao {
         findingsState.value = map.values.sortedByDescending { it.updatedAt }
     }
 
+    override suspend fun deleteFindingsForDomain(domain: String) {
+        findingsState.value = findingsState.value.filterNot { it.domain == domain }
+    }
+
     override suspend fun updateFindingStatus(
         id: String,
         status: String,
@@ -86,6 +92,10 @@ class FakeLuminaraDao : LuminaraDao {
 }
 
 class FakeLuminaraApi : LuminaraApi {
+    val queriedFindingDomains = mutableListOf<String?>()
+    var lastPatchedFindingId: String? = null
+    var lastPatchedFindingStatus: String? = null
+    var remoteHistoryEntries: List<AuditHistoryEntry> = emptyList()
     var snapshotToReturn =
         CrawlerFilesSnapshot(
             llmsTxt = "",
@@ -121,29 +131,69 @@ class FakeLuminaraApi : LuminaraApi {
         ScoutRecheckResponse(
             ok = true,
             checkId = body.checkId,
-            label = "llms.txt present",
+            label = body.checkId,
             measured = true,
             passed = true,
-            detail = "Live /llms.txt returned HTTP 200.",
-            httpStatus = 200,
+            detail = "Live check passed.",
         )
 
     override suspend fun getAuditHistory(limit: Int): AuditHistoryListResponse =
-        AuditHistoryListResponse(ok = true, entries = emptyList())
+        AuditHistoryListResponse(ok = true, entries = remoteHistoryEntries)
 
     override suspend fun upsertAuditHistory(body: AuditHistoryUpsertRequest): AuditHistoryUpsertResponse =
         AuditHistoryUpsertResponse(ok = true, entry = body.entry)
 
-    override suspend fun getFindings(domain: String?): FindingsListResponse =
-        FindingsListResponse(ok = true, findings = emptyList())
+    override suspend fun getFindings(domain: String?): FindingsListResponse {
+        queriedFindingDomains.add(domain)
+        val findings =
+            if (domain.isNullOrBlank()) {
+                emptyList()
+            } else {
+                listOf(
+                    AuditFinding(
+                        id = "fnd_remote_$domain",
+                        auditRunId = "run-1",
+                        domain = domain,
+                        stableKey = "crawler::llms_txt",
+                        title = "Fix llms.txt present",
+                        description = "Add /llms.txt",
+                        status = "open",
+                        createdAt = 100L,
+                        updatedAt = 100L,
+                    ),
+                )
+            }
+        return FindingsListResponse(ok = true, findings = findings)
+    }
 
-    override suspend fun createFindingsBulk(body: FindingsBulkRequest): FindingsBulkResponse =
-        FindingsBulkResponse(ok = true, findings = emptyList())
+    override suspend fun createFindingsBulk(body: FindingsBulkRequest): FindingsBulkResponse {
+        val persisted =
+            body.findings.mapIndexed { index, item ->
+                AuditFinding(
+                    id = "fnd_server_${index + 1}",
+                    auditRunId = body.auditRunId.orEmpty(),
+                    domain = body.domain,
+                    stableKey = item.stableKey.orEmpty(),
+                    category = item.category,
+                    severity = item.severity,
+                    title = item.title,
+                    description = item.description,
+                    status = item.status,
+                    createdAt = 1730000000000L,
+                    updatedAt = 1730000000000L,
+                )
+            }
+        return FindingsBulkResponse(ok = true, findings = persisted)
+    }
 
     override suspend fun updateFindingStatus(
         id: String,
         body: FindingPatchRequest,
-    ): FindingPatchResponse = FindingPatchResponse(ok = true)
+    ): FindingPatchResponse {
+        lastPatchedFindingId = id
+        lastPatchedFindingStatus = body.status
+        return FindingPatchResponse(ok = true)
+    }
 
     override suspend fun signIn(body: AuthCredentialsRequest): AuthTokenResponse =
         AuthTokenResponse(
@@ -248,12 +298,87 @@ class LuminaraRepositoryTest {
             assertTrue(unauthedResult.isFailure)
 
             repo.saveByokKeys(ByokKeyBag(groqKey = "gsk_test_key"))
+            val groqOnlyResult = repo.askOracle("How do I fix llms.txt?")
+            assertTrue(groqOnlyResult.isSuccess)
+            assertEquals("not_measured", groqOnlyResult.getOrThrow().measurementStatus)
+
+            repo.saveByokKeys(ByokKeyBag(groqKey = "gsk_test_key", tavilyKey = "tvly_test_key"))
             val byokResult = repo.askOracle("How do I fix llms.txt?")
             assertTrue(byokResult.isSuccess)
             val turn = byokResult.getOrThrow()
             assertFalse(turn.verdict.contains("\u2014"))
             assertEquals("Groq LPU (BYOK)", turn.modelLabel)
             assertEquals("measured", turn.measurementStatus)
+        }
+
+    @Test
+    fun syncAuditToCloud_replacesLocalFindingIdsWithServerIdsAndUpdatesStatus() =
+        runTest {
+            val dao = FakeLuminaraDao()
+            val vault = InMemoryVaultStorage()
+            val api = FakeLuminaraApi()
+            val repo = DefaultLuminaraRepository(api = api, dao = dao, vault = vault)
+
+            repo.signIn("operator@luminarasuite.com", "password123")
+            repo.runInstantAudit("example.com")
+
+            val findings = repo.findingsFlow.first()
+            assertTrue(findings.all { it.id.startsWith("fnd_server_") })
+
+            val targetId = findings.first().id
+            repo.updateFindingStatus(targetId, "in_progress")
+            assertEquals(targetId, api.lastPatchedFindingId)
+            assertEquals("in_progress", api.lastPatchedFindingStatus)
+        }
+
+    @Test
+    fun recheckSingleCheck_evaluatesLiveCrawlerFilesForLlmsTxtAndDelegatesSchemaCheck() =
+        runTest {
+            val dao = FakeLuminaraDao()
+            val vault = InMemoryVaultStorage()
+            val api = FakeLuminaraApi()
+            api.snapshotToReturn =
+                CrawlerFilesSnapshot(
+                    llmsTxt = "# Brand\n> Summary\n- [Docs](https://example.com/docs)",
+                    llmsHttpStatus = 200,
+                    robotsTxt = "User-agent: *\nAllow: /",
+                    robotsHttpStatus = 200,
+                    aiTxt = "User-agent: *\nAllow: /",
+                    aiHttpStatus = 200,
+                )
+            val repo = DefaultLuminaraRepository(api = api, dao = dao, vault = vault)
+
+            val crawlerRecheck = repo.recheckSingleCheck("example.com", "llms_txt").getOrThrow()
+            assertEquals(true, crawlerRecheck.passed)
+            assertTrue(crawlerRecheck.measured)
+
+            val schemaRecheck = repo.recheckSingleCheck("example.com", "schema").getOrThrow()
+            assertEquals("schema", schemaRecheck.checkId)
+            assertEquals(true, schemaRecheck.passed)
+        }
+
+    @Test
+    fun refreshDashboard_queriesFindingsPerAuditDomain() =
+        runTest {
+            val dao = FakeLuminaraDao()
+            val vault = InMemoryVaultStorage()
+            val api = FakeLuminaraApi()
+            api.remoteHistoryEntries =
+                listOf(
+                    AuditHistoryEntry(
+                        id = "audit-1",
+                        domain = "luminarasuite.com",
+                        measuredAt = 1000L,
+                        title = "AEO audit",
+                        summary = "Summary",
+                    ),
+                )
+            val repo = DefaultLuminaraRepository(api = api, dao = dao, vault = vault)
+            repo.signIn("operator@luminarasuite.com", "password123")
+            api.queriedFindingDomains.clear()
+
+            repo.refreshDashboard()
+            assertEquals(listOf("luminarasuite.com"), api.queriedFindingDomains)
         }
 
     @Test

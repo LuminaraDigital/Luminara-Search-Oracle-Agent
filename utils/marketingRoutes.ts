@@ -1,4 +1,7 @@
 import { AppView } from '../types';
+import { HUB_PAGES } from '../services/marketing/seoHubPages';
+import { FREE_TOOLS, FREE_TOOLS_PATH } from '../services/marketing/freeTools';
+import { checkHostFromPath } from '../services/marketing/homepageSnippet';
 import { parseUrlSwapRoute } from './urlSwapRouting';
 
 /** Canonical public paths for crawlable marketing surfaces. */
@@ -49,11 +52,11 @@ const PATH_ALIASES: Record<string, AppView> = {
   labs: AppView.ECOSYSTEM_HUB,
   lab: AppView.ECOSYSTEM_HUB,
   onboarding: AppView.BUSINESS_DNA,
+  'enquiry-desk': AppView.ENQUIRY_DESK,
   desktop: AppView.LANDING,
-  'compare/profound': AppView.WHY_US,
-  'compare/ahrefs': AppView.WHY_US,
-  'compare/otterly': AppView.WHY_US,
-  'compare/peec': AppView.WHY_US,
+  ...Object.fromEntries(HUB_PAGES.map((page) => [page.path.slice(1), AppView.COMPARE])),
+  [FREE_TOOLS_PATH.slice(1)]: AppView.FREE_TOOLS,
+  ...Object.fromEntries(FREE_TOOLS.map((tool) => [tool.path.slice(1), AppView.FREE_TOOLS])),
 };
 
 /** Legacy hash fragments that used to drive marketing views. */
@@ -72,6 +75,7 @@ const HASH_TO_VIEW: Record<string, AppView> = {
   TOS: AppView.TERMS,
   LABS: AppView.ECOSYSTEM_HUB,
   ONBOARDING: AppView.BUSINESS_DNA,
+  'ENQUIRY-DESK': AppView.ENQUIRY_DESK,
 };
 
 /**
@@ -133,6 +137,14 @@ export function receiptIdFromLocation(pathname: string, hash: string): string {
   return fromHash?.[1] ? safeDecode(fromHash[1]) : '';
 }
 
+/**
+ * Paths that carry their own content: a shared report, a receipt, a shared free check.
+ * Leaving one for another view clears the path, so it never sticks to that view.
+ */
+export function isPathDeepLink(pathname: string): boolean {
+  return /^\/(share|verify|reports|check)(\/|$)/i.test(pathname);
+}
+
 /** Resolve the initial app view from pathname + hash (cold-load deep links). */
 export function resolveAppView(pathname: string, hash: string): AppView | null {
   const rawPath = pathname.replace(/^\/|\/$/g, '');
@@ -143,10 +155,12 @@ export function resolveAppView(pathname: string, hash: string): AppView | null {
   if (path.startsWith('verify/r/')) return AppView.VERIFY_RECEIPT;
   if (path.startsWith('verify/')) return AppView.VERIFY_ATTESTATION;
   if (path.startsWith('reports/')) return AppView.AGENT_REPORT;
-  if (path.startsWith('compare/')) return AppView.WHY_US;
 
   const swap = parseUrlSwapRoute(rawPath);
   if (swap) return swap.view;
+
+  // A shared free check: the landing, with the check running on that host. A bad host is Not Found.
+  if (path.startsWith('check/')) return checkHostFromPath(pathname) ? AppView.LANDING : AppView.NOT_FOUND;
 
   if (isRootPathname(pathname)) {
     const h = hash.replace(/^#/, '').toUpperCase();

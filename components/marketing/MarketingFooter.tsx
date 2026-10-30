@@ -12,6 +12,8 @@ const LINKS = [
   { label: 'Pricing', href: '/pricing' },
   { label: 'Methodology', href: '/methodology' },
   { label: 'Sample report', href: '/sample-report' },
+  { label: 'Best tools for real estate', href: '/best/ai-visibility-tools-for-real-estate-agencies' },
+  { label: 'Free tools', href: '/free-tools' },
   { label: 'What is AEO', href: '/docs/what-is-aeo.html' },
   { label: 'MCP', href: '/docs/mcp.html' },
   { label: 'Windows app', href: '/desktop' },

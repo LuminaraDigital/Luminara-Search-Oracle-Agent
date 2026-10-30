@@ -65,6 +65,8 @@ const AgentReportView = lazyWithReload(() => import('./components/audit/AgentRep
 const InfrastructurePage = lazyWithReload(() => import('./components/InfrastructurePage'));
 const IntelligencePage = lazyWithReload(() => import('./components/IntelligencePage'));
 const WhyLuminaraPage = lazyWithReload(() => import('./components/WhyLuminaraPage'));
+const SeoHubPage = lazyWithReload(() => import('./components/marketing/SeoHubPage'));
+const FreeToolPage = lazyWithReload(() => import('./components/marketing/freeTools/FreeToolPage'));
 const PricingPage = lazyWithReload(() => import('./components/PricingPage'));
 const MethodologyPage = lazyWithReload(() => import('./components/MethodologyPage'));
 const SampleReportPage = lazyWithReload(() => import('./components/SampleReportPage'));
@@ -82,6 +84,7 @@ const ResearchView = lazyWithReload(() => import('./components/suite/ResearchVie
 const VisionView = lazyWithReload(() => import('./components/suite/VisionView').then(m => ({ default: m.VisionView })));
 const TimesFMView = lazyWithReload(() => import('./components/suite/TimesFMView').then(m => ({ default: m.TimesFMView })));
 const OracleMindView = lazyWithReload(() => import('./components/suite/OracleMindView').then(m => ({ default: m.OracleMindView })));
+const EnquiryDeskView = lazyWithReload(() => import('./components/suite/EnquiryDeskView').then(m => ({ default: m.EnquiryDeskView })));
 const ArchyHarnessView = lazyWithReload(() => import('./components/harness/ArchyHarnessView').then(m => ({ default: m.ArchyHarnessView })));
 const OmnibarModal = lazyWithReload(() => import('./components/harness/OmnibarModal').then(m => ({ default: m.OmnibarModal })));
 const ApiKeyModal = lazyWithReload(() => import('./components/ApiKeyModal').then(m => ({ default: m.ApiKeyModal })));
@@ -104,10 +107,14 @@ const MARKETING_VIEWS = new Set<AppView>([
   AppView.INFRASTRUCTURE,
   AppView.INTELLIGENCE,
   AppView.WHY_US,
+  AppView.COMPARE,
+  AppView.FREE_TOOLS,
   AppView.PRICING,
   AppView.METHODOLOGY,
   AppView.SAMPLE_REPORT,
 ]);
+/** Views whose page comes from the pathname: /compare/*, /best/*, /free-tools/*. */
+const PATH_DRIVEN_VIEWS = new Set<AppView>([AppView.COMPARE, AppView.FREE_TOOLS]);
 
 interface SendOptions {
   /** Short text to show in the user bubble instead of the full prompt. */
@@ -118,6 +125,7 @@ interface SendOptions {
 
 import { parseUrlSwapRoute, type UrlSwapRouteParams } from './utils/urlSwapRouting';
 import {
+  isPathDeepLink,
   marketingViewFromHash,
   marketingViewFromPathname,
   pathForMarketingView,
@@ -125,6 +133,8 @@ import {
   urlForView,
 } from './utils/marketingRoutes';
 import { applyDocumentMetaForView } from './services/marketing/documentMeta';
+import { hubPageForPath } from './services/marketing/seoHubPages';
+import { FREE_TOOLS_PATH, freeToolsPageForPath } from './services/marketing/freeTools';
 
 const viewFromLocation = (): AppView | null => {
   if (typeof window === 'undefined') return null;
@@ -241,24 +251,28 @@ const App: React.FC = () => {
     productTelemetry.trackPageView(next);
     haptic('light');
     const path = (window.location.pathname || '/').replace(/\/+$/, '') || '/';
-    const isPathDeepLink = /^\/(share|verify|reports)(\/|$)/i.test(path);
+    const onPathDeepLink = isPathDeepLink(path);
     const onMarketingPath = Boolean(marketingViewFromPathname(window.location.pathname));
     const nextIsMarketing = pathForMarketingView(next) != null;
     const target = urlForView(next, {
-      clearPathDeepLink: isPathDeepLink,
+      clearPathDeepLink: onPathDeepLink,
       leaveMarketingPath: onMarketingPath && !nextIsMarketing,
     });
     const marketingPath = pathForMarketingView(next);
     const alreadyThere = marketingPath
       ? path === (marketingPath === '/' ? '/' : marketingPath.replace(/\/+$/, '') || '/') && !window.location.hash
-      : window.location.hash.toLowerCase() === `#${next.toLowerCase()}` && path === '/' && !isPathDeepLink;
+      : window.location.hash.toLowerCase() === `#${next.toLowerCase()}` && path === '/' && !onPathDeepLink;
     if (!alreadyThere) {
       window.history.pushState(null, '', target);
+      // Leaving a deep link for the same view (Home from /check/<host>) does not change `view`,
+      // so the meta effect would not run and the old title and noindex would stay.
+      if (onPathDeepLink) applyDocumentMetaForView(next);
     }
   }, [applyContinuumForView]);
 
   useEffect(() => {
-    productTelemetry.trackPageView(view);
+    const path = (window.location.pathname || '/').replace(/\/+$/, '') || '/';
+    productTelemetry.trackPageView(PATH_DRIVEN_VIEWS.has(view) ? `${view}:${path}` : view);
     applyDocumentMetaForView(view);
   }, [view]);
 
@@ -529,6 +543,8 @@ const App: React.FC = () => {
       { label: 'How it works', onClick: () => setView(AppView.INFRASTRUCTURE), current: view === AppView.INFRASTRUCTURE },
       { label: 'AI', onClick: () => setView(AppView.INTELLIGENCE), current: view === AppView.INTELLIGENCE },
       { label: 'Pricing', onClick: () => setView(AppView.PRICING), current: view === AppView.PRICING },
+      // Path-driven view: no single view URL, so the link loads /free-tools like the footer link does.
+      { label: 'Free tools', onClick: () => window.location.assign(FREE_TOOLS_PATH), current: view === AppView.FREE_TOOLS },
     ],
     primaryCta: navSignedIn
       ? { label: 'New audit', onClick: () => enterInstantAudit() }
@@ -918,7 +934,14 @@ const App: React.FC = () => {
 
   const introOverlay = showIntro ? <Suspense fallback={null}><AppIntroOverlay onComplete={completeIntro} /></Suspense> : null;
 
-  if (view === AppView.NOT_FOUND) {
+  const hubPage = view === AppView.COMPARE ? hubPageForPath(window.location.pathname) : null;
+  // The free check's "full audit" button on inner pages: guests sign up first, as on the landing.
+  const marketingFullAudit = (handoff?: AuditHandoff) =>
+    appAuth.authenticated ? enterInstantAudit(handoff) : openLoginWall('signup', handoff);
+  const freeToolsPage = view === AppView.FREE_TOOLS ? freeToolsPageForPath(window.location.pathname) : null;
+
+  // A path-driven view without its page (e.g. a stray #compare hash) is Not Found, never a blank page.
+  if (view === AppView.NOT_FOUND || (PATH_DRIVEN_VIEWS.has(view) && !hubPage && !freeToolsPage)) {
     return (
       <Suspense fallback={null}>
         <NotFoundPage onHome={() => setView(AppView.LANDING)} />
@@ -1061,6 +1084,10 @@ const App: React.FC = () => {
         <InfrastructurePage
           onTerminal={() => enterInstantAudit()}
           onNavigateMethodology={() => setView(AppView.METHODOLOGY)}
+          onNavigatePricing={() => setView(AppView.PRICING)}
+          onNavigateSampleReport={() => setView(AppView.SAMPLE_REPORT)}
+          onSignUpClick={() => (appAuth.authenticated ? enterInstantAudit() : openLoginWall('signup'))}
+          onNavigateEnquiryDesk={() => enterApp(AppView.ENQUIRY_DESK)}
         />
         {marketingOverlays}
       </Suspense>
@@ -1076,6 +1103,10 @@ const App: React.FC = () => {
         <IntelligencePage
           onTerminal={() => enterInstantAudit()}
           onNavigateInfrastructure={() => setView(AppView.INFRASTRUCTURE)}
+          onNavigatePricing={() => setView(AppView.PRICING)}
+          onNavigateSampleReport={() => setView(AppView.SAMPLE_REPORT)}
+          onSignUpClick={() => (appAuth.authenticated ? enterInstantAudit() : openLoginWall('signup'))}
+          onNavigateEnquiryDesk={() => enterApp(AppView.ENQUIRY_DESK)}
         />
         {marketingOverlays}
       </Suspense>
@@ -1091,6 +1122,38 @@ const App: React.FC = () => {
         <WhyLuminaraPage
           onTerminal={() => (appAuth.authenticated ? enterInstantAudit() : openLoginWall('signup'))}
           onNavigatePricing={() => setView(AppView.PRICING)}
+          onNavigateAudit={() => enterInstantAudit()}
+          onNavigateSampleReport={() => setView(AppView.SAMPLE_REPORT)}
+          onNavigateEnquiryDesk={() => enterApp(AppView.ENQUIRY_DESK)}
+          onNavigateHowItWorks={() => setView(AppView.INFRASTRUCTURE)}
+        />
+        {marketingOverlays}
+      </Suspense>
+      </MarketingChromeContext.Provider>
+    );
+  }
+
+  if (hubPage) {
+    return (
+      <MarketingChromeContext.Provider value={marketingChrome}>
+      <Suspense fallback={<ViewLoader label="Loading" />}>
+        {introOverlay}
+        <SeoHubPage page={hubPage} isAuthenticated={appAuth.authenticated} onFullAudit={marketingFullAudit} />
+        {marketingOverlays}
+      </Suspense>
+      </MarketingChromeContext.Provider>
+    );
+  }
+
+  if (freeToolsPage) {
+    return (
+      <MarketingChromeContext.Provider value={marketingChrome}>
+      <Suspense fallback={<ViewLoader label="Loading" />}>
+        {introOverlay}
+        <FreeToolPage
+          tool={freeToolsPage.tool}
+          isAuthenticated={appAuth.authenticated}
+          onFullAudit={marketingFullAudit}
         />
         {marketingOverlays}
       </Suspense>
@@ -1103,7 +1166,12 @@ const App: React.FC = () => {
       <MarketingChromeContext.Provider value={marketingChrome}>
       <Suspense fallback={<ViewLoader label="Loading pricing" />}>
         {introOverlay}
-        <PricingPage onTerminal={() => enterInstantAudit()} />
+        <PricingPage
+          onTerminal={() => enterInstantAudit()}
+          onNavigateInfrastructure={() => setView(AppView.INFRASTRUCTURE)}
+          onNavigateSampleReport={() => setView(AppView.SAMPLE_REPORT)}
+          onSignUpClick={() => (appAuth.authenticated ? enterInstantAudit() : openLoginWall('signup'))}
+        />
         {marketingOverlays}
       </Suspense>
       </MarketingChromeContext.Provider>
@@ -1272,9 +1340,9 @@ const App: React.FC = () => {
               data-header-item="more"
               aria-haspopup="menu"
               aria-expanded={showSuiteMenu}
-              aria-pressed={[AppView.DASHBOARD, AppView.NOTEBOOK, AppView.HARNESS, AppView.BUSINESS_DNA, AppView.STRESS_TEST, AppView.DATA_ANALYST, AppView.TIMESFM_FORECAST, AppView.ORACLE_MIND, AppView.ORGANIZER, AppView.RESEARCH, AppView.VISION, AppView.BRAND_MEMORY].includes(view)}
+              aria-pressed={[AppView.DASHBOARD, AppView.ENQUIRY_DESK, AppView.TRUST_CENTER, AppView.NOTEBOOK, AppView.HARNESS, AppView.BUSINESS_DNA, AppView.STRESS_TEST, AppView.DATA_ANALYST, AppView.TIMESFM_FORECAST, AppView.ORACLE_MIND, AppView.ORGANIZER, AppView.RESEARCH, AppView.VISION, AppView.BRAND_MEMORY].includes(view)}
               className={`px-2.5 sm:px-3 py-2 min-h-11 rounded text-[11px] shrink-0 whitespace-nowrap ${
-                [AppView.DASHBOARD, AppView.NOTEBOOK, AppView.HARNESS, AppView.BUSINESS_DNA, AppView.STRESS_TEST, AppView.DATA_ANALYST, AppView.TIMESFM_FORECAST, AppView.ORACLE_MIND, AppView.ORGANIZER, AppView.RESEARCH, AppView.VISION, AppView.BRAND_MEMORY].includes(view)
+                [AppView.DASHBOARD, AppView.ENQUIRY_DESK, AppView.TRUST_CENTER, AppView.NOTEBOOK, AppView.HARNESS, AppView.BUSINESS_DNA, AppView.STRESS_TEST, AppView.DATA_ANALYST, AppView.TIMESFM_FORECAST, AppView.ORACLE_MIND, AppView.ORGANIZER, AppView.RESEARCH, AppView.VISION, AppView.BRAND_MEMORY].includes(view)
                   ? 'bg-gold/20 text-gold-light hover:text-gold-light hover:bg-gold/20 border border-gold/40'
                   : ''
               }`}
@@ -1362,6 +1430,14 @@ const App: React.FC = () => {
                   >
                     <ICONS.DNA className="w-3.5 h-3.5 text-gold-light" />
                     <span>Business profile</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setView(AppView.ENQUIRY_DESK); setShowSuiteMenu(false); }}
+                    className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                  >
+                    <ICONS.Organizer className="w-3.5 h-3.5 text-gold-light" />
+                    <span>Enquiry Desk</span>
                   </button>
                   {advancedUi && (<>
                   <button
@@ -1775,6 +1851,11 @@ const App: React.FC = () => {
         {/* VIEW: Trust (domain verification + signed receipts) */}
         {view === AppView.TRUST_CENTER && (
           <TrustCenterView />
+        )}
+
+        {/* VIEW: Enquiry Desk & 6-Stage Outcomes Ledger */}
+        {view === AppView.ENQUIRY_DESK && (
+          <EnquiryDeskView />
         )}
 
         {/* VIEW: Ecosystem & Playbook Hub */}

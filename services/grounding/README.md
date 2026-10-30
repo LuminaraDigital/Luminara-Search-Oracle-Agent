@@ -36,8 +36,7 @@ replace DOM/Playwright tooling.
 - Live: protocol, scoring, gate, agentic zoom loop, seed dump, CLI, tests.
 - The PointerBench dataset itself is fetched on demand (`npm run grounding:fetch`,
   clone + `huggingface-cli download` into gitignored `tmp/`); nothing bundled.
-- No production agent path in the app calls the pointer yet; this is an
-  evaluation stack (specs/0006 is accepted, not a shipped feature).
+- DOM/accessibility-first automation (`services/browserAction/`) uses indexed DOM marks first and falls back to this PointerBench 1024x768 coordinate grounding stack via `services/browserAction/visionFallback.ts` (`resolvePointerBenchFallback`) when DOM targets are absent or stale (`target_not_found`, `stale_element`) after up to 2 DOM retries.
 
 ## Env vars
 

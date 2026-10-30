@@ -1,8 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { classifyCitationWatch } from '../services/citationWatch/classify';
 import { citationWatchThresholds, DEFAULT_CITATION_WATCH_THRESHOLDS } from '../services/citationWatch/thresholds';
 import type { MeasuredPoint } from '../services/citationWatch/types';
-import { handleCitationWatchRoute, runCitationWatchTick, type CitationProbe } from '../worker/citationWatch';
+import { defaultCitationProbe, handleCitationWatchRoute, runCitationWatchTick, type CitationProbe } from '../worker/citationWatch';
 import { createPrivacyJob } from '../worker/privacyService';
 import type { Env } from '../worker/env';
 import type { HostedIdentity } from '../worker/userTypes';
@@ -320,5 +320,51 @@ describe('citation watch routes and cron', () => {
     }
     const page = await runCitationWatchTick(env, { now: () => start, scheduledAt: start });
     expect(page.checked).toBe(11);
+  });
+
+  it('measures per-prompt citation flags via DataForSEO in defaultCitationProbe when credentials are present', async () => {
+    const { env } = makeEnv('agency', true);
+    env.DATAFORSEO_LOGIN = 'dfs_user';
+    env.DATAFORSEO_PASSWORD = 'dfs_password';
+
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn().mockImplementation(async (_url: string, init?: RequestInit) => {
+      const payload = init?.body ? JSON.parse(String(init.body)) : [];
+      const keyword = String(payload?.[0]?.keywords?.[0] || '');
+      const mentioned = keyword.includes('cited');
+      return new Response(
+        JSON.stringify({
+          tasks: [
+            {
+              result: [
+                {
+                  keyword,
+                  answer: mentioned ? 'Acme (acme.com) is recommended here.' : 'Other vendors only.',
+                  mentioned,
+                },
+              ],
+            },
+          ],
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    });
+
+    try {
+      const result = await defaultCitationProbe({
+        env,
+        engine: 'chatgpt',
+        domain: 'acme.com',
+        prompts: ['prompt cited 1', 'prompt absent 2', 'prompt cited 3'],
+      });
+      expect(result).toEqual({
+        status: 'measured',
+        method: 'dataforseo_llm_mentions',
+        modelId: 'chatgpt',
+        cited: [true, false, true],
+      });
+    } finally {
+      globalThis.fetch = origFetch;
+    }
   });
 });

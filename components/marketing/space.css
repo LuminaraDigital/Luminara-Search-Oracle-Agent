@@ -210,6 +210,49 @@
 
 .lx-hairline { border-color: rgb(252 246 186 / 0.12); }
 
+/* ---------- Free tool forms ---------- */
+.lx-field {
+  display: block;
+  width: 100%;
+  padding: 0.65rem 0.9rem;
+  border-radius: 0.75rem;
+  border: 1px solid rgb(252 246 186 / 0.18);
+  background: rgb(6 5 3 / 0.62);
+  color: var(--color-ink);
+  font-size: 0.95rem;
+  line-height: 1.5;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.lx-field::placeholder { color: rgb(242 240 233 / 0.4); }
+.lx-field:focus { outline: none; border-color: rgb(252 246 186 / 0.55); box-shadow: 0 0 0 3px rgb(191 149 63 / 0.18); }
+textarea.lx-field { resize: vertical; }
+.lx-chip {
+  padding: 0.4rem 0.9rem;
+  border-radius: 999px;
+  border: 1px solid rgb(252 246 186 / 0.2);
+  color: var(--color-ink-2);
+  font-size: 0.85rem;
+  transition: border-color 0.2s ease, color 0.2s ease, background-color 0.2s ease;
+}
+.lx-chip:hover { color: var(--color-ink); border-color: rgb(252 246 186 / 0.45); }
+.lx-chip[aria-checked='true'], .lx-chip:has(input:checked) {
+  color: var(--color-accent-ink);
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+}
+.lx-chip:focus-visible, .lx-chip:has(input:focus-visible) { outline: 2px solid var(--gold-light); outline-offset: 2px; }
+.lx-code {
+  max-height: 24rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+  line-height: 1.6;
+  color: var(--color-ink);
+}
+.lx-code:focus-visible { outline: 2px solid var(--gold-light); outline-offset: 2px; border-radius: 4px; }
+
 /* Headline lines stay in flow. Entrance classes do not hide or clip text. */
 .lx-enter-mask,
 .lx-enter-line { display: block; }

@@ -3,6 +3,7 @@ package com.luminarasuite.app
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.luminarasuite.app.core.auth.InMemoryVaultStorage
@@ -104,17 +105,24 @@ class LuminaraWorkbenchSmokeTest {
     val composeRule = createComposeRule()
 
     @Test
-    fun workbenchTabs_navigateAcrossAllFourSurfaces() {
+    fun workbenchTabs_navigateAndExecuteActionsAcrossAllFourSurfaces() {
         composeRule.setContent {
             LuminaraWorkbenchApp(repository = StubInstrumentationRepository())
         }
         composeRule.onNodeWithTag("nav_tab_audit").assertExists()
+        composeRule.onNodeWithTag("audit_domain_input").performTextInput("luminarasuite.com")
+        composeRule.onNodeWithTag("run_audit_button").performClick()
+        composeRule.onNodeWithTag("report_audit_button").assertExists().performClick()
+
         composeRule.onNodeWithTag("nav_tab_ask").performClick()
-        composeRule.onNodeWithTag("ask_submit_button").assertExists()
+        composeRule.onNodeWithTag("ask_prompt_input").performTextInput("Check llms.txt")
+        composeRule.onNodeWithTag("ask_submit_button").assertExists().performClick()
+
         composeRule.onNodeWithTag("nav_tab_dashboard").performClick()
-        composeRule.onNodeWithTag("dashboard_sync_button").assertExists()
+        composeRule.onNodeWithTag("dashboard_sync_button").assertExists().performClick()
+
         composeRule.onNodeWithTag("nav_tab_settings").performClick()
-        composeRule.onNodeWithTag("save_byok_button").assertExists()
+        composeRule.onNodeWithTag("save_byok_button").assertExists().performClick()
     }
 
     @Test

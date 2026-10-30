@@ -8,6 +8,7 @@ import { ThemingStudioPanel } from './ThemingStudioPanel';
 import { VfsStudioPanel } from './VfsStudioPanel';
 import { ContextGraphPanel } from './ContextGraphPanel';
 import { SwitchyardPanel } from './SwitchyardPanel';
+import { EnquiryDeskView } from '../suite/EnquiryDeskView';
 import { AppView, BusinessDNA } from '../../types';
 
 interface ArchyHarnessViewProps {
@@ -16,13 +17,14 @@ interface ArchyHarnessViewProps {
   onOpenOmnibar?: () => void;
 }
 
-type HarnessTab = 'agents' | 'switchyard' | 'graph' | 'vfs' | 'cli' | 'skills' | 'testing' | 'triage' | 'theming';
+type HarnessTab = 'agents' | 'enquiries' | 'switchyard' | 'graph' | 'vfs' | 'cli' | 'skills' | 'testing' | 'triage' | 'theming';
 
 const HARNESS_TAB_KEY = 'luminara_harness_tab';
 
 function readInitialTab(): HarnessTab {
   try {
     const hash = window.location.hash.toLowerCase();
+    if (hash.includes('enquiries')) return 'enquiries';
     if (hash.includes('switchyard')) return 'switchyard';
     if (hash.includes('graph')) return 'graph';
     if (hash.includes('vfs')) return 'vfs';
@@ -32,7 +34,7 @@ function readInitialTab(): HarnessTab {
     if (hash.includes('triage')) return 'triage';
     if (hash.includes('theming')) return 'theming';
     const t = sessionStorage.getItem(HARNESS_TAB_KEY) as HarnessTab | null;
-    if (t && ['agents', 'switchyard', 'graph', 'vfs', 'cli', 'skills', 'testing', 'triage', 'theming'].includes(t)) {
+    if (t && ['agents', 'enquiries', 'switchyard', 'graph', 'vfs', 'cli', 'skills', 'testing', 'triage', 'theming'].includes(t)) {
       return t;
     }
   } catch {
@@ -66,6 +68,7 @@ export const ArchyHarnessView: React.FC<ArchyHarnessViewProps> = ({
 
   const tabs: Array<{ id: HarnessTab; label: string; icon: string; badge?: string }> = [
     { id: 'agents', label: 'Agents & Quotas', icon: '⚡' },
+    { id: 'enquiries', label: 'Enquiry Desk', icon: '📥', badge: '6-Stage' },
     { id: 'switchyard', label: 'Switchyard Router', icon: '⮀', badge: 'NeMo' },
     { id: 'graph', label: 'Context Graph', icon: '◈', badge: 'KG' },
     { id: 'vfs', label: 'Context VFS (OpenViking)', icon: '🗂', badge: 'L0/L1/L2' },
@@ -141,6 +144,7 @@ export const ArchyHarnessView: React.FC<ArchyHarnessViewProps> = ({
 
       <div className="min-h-[500px]">
         {activeTab === 'agents' && <AgentMatrixPanel />}
+        {activeTab === 'enquiries' && <EnquiryDeskView />}
         {activeTab === 'switchyard' && <SwitchyardPanel />}
         {activeTab === 'graph' && <ContextGraphPanel />}
         {activeTab === 'vfs' && <VfsStudioPanel />}

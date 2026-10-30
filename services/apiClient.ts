@@ -1286,3 +1286,19 @@ export async function fetchAuditRun(
   };
 }
 
+export {
+  fetchEnquiryDesk,
+  ingestEnquiryApi,
+  appendEnquiryTurnApi,
+  setEnquiryTakeoverApi,
+  proposeBookingSlotsApi,
+  decideBookingAppointmentApi,
+  syncEnquiryToTwentyApi,
+  recordOutcomeStageApi,
+  sendRecoveryStepApi,
+  fetchCmsMcpCatalogApi,
+  classifyCmsRemediationApi,
+  prepareCmsMcpCallApi,
+} from './enquiries/enquiryApiClient';
+
+

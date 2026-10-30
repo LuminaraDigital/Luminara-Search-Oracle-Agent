@@ -61,11 +61,17 @@ export const PAID_TOOL_CATALOGUE: ToolDefinitionMeta[] = [
   {
     name: 'get_visibility_snapshot',
     description:
-      'Uses paid credits when live. AI visibility snapshot (ChatGPT / AIO / Perplexity). Returns not_measured until W4.',
+      'Uses paid credits when live. AI visibility snapshot (ChatGPT / AIO / Perplexity) with competitor missing-source discovery.',
     creditClass: 'paid',
     inputSchema: {
       type: 'object',
-      properties: { projectId: { type: 'string' }, domain: { type: 'string' } },
+      properties: {
+        projectId: { type: 'string' },
+        domain: { type: 'string' },
+        brand: { type: 'string' },
+        queries: { type: 'array', items: { type: 'string' } },
+        competitors: { type: 'array', items: { type: 'string' } },
+      },
       required: ['projectId'],
       additionalProperties: false,
     },

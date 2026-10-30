@@ -42,6 +42,8 @@ export const PUBLIC_APP_VIEWS = new Set([
   'INFRASTRUCTURE',
   'INTELLIGENCE',
   'WHY_US',
+  'COMPARE',
+  'FREE_TOOLS',
   'PRICING',
   'METHODOLOGY',
   'SAMPLE_REPORT',
@@ -55,6 +57,7 @@ export const PUBLIC_APP_VIEWS = new Set([
   'TRUST_CENTER',
   'LAUNCHPAD',
   'VISION',
+  'ENQUIRY_DESK',
 ]);
 
 /**

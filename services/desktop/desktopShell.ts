@@ -30,6 +30,26 @@ export type LuminaraDesktopBridge = {
   installUpdate: () => Promise<{ ok: boolean; reason?: string }>;
   retryConnection?: () => Promise<void>;
   onUpdateStatus: (callback: (payload: DesktopUpdateStatus) => void) => () => void;
+  getCoordinatorStatus?: () => Promise<Record<string, unknown>>;
+  checkCrawlerHealth?: () => Promise<{
+    healthy: boolean;
+    port: number;
+    pid: number | null;
+    lastCheckedAt: string | null;
+  }>;
+  superviseCrawler?: (opts?: { spawnIfDown?: boolean }) => Promise<{ healthy: boolean; port: number; pid: number | null }>;
+  resolveProfile?: (profileId: string) => Promise<{ profileId: string; profilePath: string }>;
+  resolveBrowserProfile?: (profileId: string) => Promise<{ profileId: string; profilePath: string }>;
+  listRoutines?: () => Promise<Array<Record<string, unknown>>>;
+  upsertRoutine?: (routine: Record<string, unknown>) => Promise<Record<string, unknown>>;
+  runRoutineOnce?: (routineId: string, simulatedResponse?: Record<string, unknown>) => Promise<Record<string, unknown>>;
+  validateMcpCall?: (payload: Record<string, unknown>) => Promise<{ allowed: boolean; reason: string | null }>;
+  validateMcpInvocation?: (payload: Record<string, unknown>) => Promise<{ allowed: boolean; reason: string | null }>;
+  storeSecret?: (
+    key: string,
+    plaintext: string,
+  ) => Promise<{ key?: string; stored: boolean; encrypted: boolean; encryptedWithOsKeychain?: boolean }>;
+  hasSecret?: (key: string) => Promise<boolean>;
 };
 
 declare global {

@@ -187,6 +187,62 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
     if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
     return [] as Record<string, unknown>[];
   });
+  const enquiries = await q<Record<string, unknown>>(
+    `SELECT id, project_id, contact_id, property_id, source_channel, intent_type, status, assigned_agent_id, sla_due_at, automation_paused, qualification_brief_json, conversation_json, attribution_audit_id, created_at, updated_at FROM enquiries WHERE account_id = ?`,
+    accountId,
+  ).catch((err) => {
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+    return [] as Record<string, unknown>[];
+  });
+  const crmContacts = await q<Record<string, unknown>>(
+    `SELECT id, project_id, full_name, email, phone_e164, preferred_channel, consent_status, consent_source, consent_recorded_at, dncr_checked_at, dncr_status, state_timezone, external_crm_id, created_at, updated_at FROM crm_contacts WHERE account_id = ?`,
+    accountId,
+  ).catch((err) => {
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+    return [] as Record<string, unknown>[];
+  });
+  const crmProperties = await q<Record<string, unknown>>(
+    `SELECT id, project_id, address_full, suburb, state, postcode, property_type, bedrooms, bathrooms, estimated_range_note, external_property_id, created_at, updated_at FROM crm_properties WHERE account_id = ?`,
+    accountId,
+  ).catch((err) => {
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+    return [] as Record<string, unknown>[];
+  });
+  const contactPropertyLinks = await q<Record<string, unknown>>(
+    `SELECT id, project_id, contact_id, property_id, relationship_role, created_at FROM contact_property_links WHERE account_id = ?`,
+    accountId,
+  ).catch((err) => {
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+    return [] as Record<string, unknown>[];
+  });
+  const appraisalAppointments = await q<Record<string, unknown>>(
+    `SELECT id, project_id, enquiry_id, contact_id, property_id, assigned_agent_id, proposed_slots_json, confirmed_start_at, confirmed_end_at, approval_status, approved_by_user_id, approved_at, calendar_external_id, created_at, updated_at FROM appraisal_appointments WHERE account_id = ?`,
+    accountId,
+  ).catch((err) => {
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+    return [] as Record<string, unknown>[];
+  });
+  const recoveryRuns = await q<Record<string, unknown>>(
+    `SELECT id, project_id, enquiry_id, contact_id, playbook_id, status, step_index, last_effect_key, next_wake_at, stop_reason, run_history_json, created_at, updated_at FROM recovery_runs WHERE account_id = ?`,
+    accountId,
+  ).catch((err) => {
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+    return [] as Record<string, unknown>[];
+  });
+  const outcomeStageEvents = await q<Record<string, unknown>>(
+    `SELECT id, project_id, enquiry_id, stage, evidence_type, evidence_ref, notes, recorded_by, created_at FROM outcome_stage_events WHERE account_id = ?`,
+    accountId,
+  ).catch((err) => {
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+    return [] as Record<string, unknown>[];
+  });
+  const externalEffects = await q<Record<string, unknown>>(
+    `SELECT effect_key, project_id, target_system, action_kind, payload_hash, status, result_json, created_at, updated_at FROM external_effects WHERE account_id = ?`,
+    accountId,
+  ).catch((err) => {
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+    return [] as Record<string, unknown>[];
+  });
   return {
     exportedAt: new Date().toISOString(),
     accountId,
@@ -216,6 +272,14 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
       'citation_watches',
       'citation_watch_runs',
       'signed_audit_receipts',
+      'enquiries',
+      'crm_contacts',
+      'crm_properties',
+      'contact_property_links',
+      'appraisal_appointments',
+      'recovery_runs',
+      'outcome_stage_events',
+      'external_effects',
     ],
     users,
     workspace: workspace.map((w) => ({
@@ -253,6 +317,14 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
     citationWatches,
     citationWatchRuns,
     signedAuditReceipts,
+    enquiries,
+    crmContacts,
+    crmProperties,
+    contactPropertyLinks,
+    appraisalAppointments,
+    recoveryRuns,
+    outcomeStageEvents,
+    externalEffects,
     note: 'Financial ledger rows may be retained in minimized form for legal obligations.',
   };
 }
@@ -343,6 +415,14 @@ async function softDeleteAccount(env: Env, accountId: string, deps?: DataPlaneDe
   await drop('audit_findings', `DELETE FROM audit_findings WHERE account_id = ?`);
   await drop('audit_runs', `DELETE FROM audit_runs WHERE account_id = ?`);
   await drop('audit_history', `DELETE FROM audit_history WHERE account_id = ?`);
+  await drop('outcome_stage_events', `DELETE FROM outcome_stage_events WHERE account_id = ?`);
+  await drop('recovery_runs', `DELETE FROM recovery_runs WHERE account_id = ?`);
+  await drop('appraisal_appointments', `DELETE FROM appraisal_appointments WHERE account_id = ?`);
+  await drop('enquiries', `DELETE FROM enquiries WHERE account_id = ?`);
+  await drop('contact_property_links', `DELETE FROM contact_property_links WHERE account_id = ?`);
+  await drop('crm_properties', `DELETE FROM crm_properties WHERE account_id = ?`);
+  await drop('crm_contacts', `DELETE FROM crm_contacts WHERE account_id = ?`);
+  await drop('external_effects', `DELETE FROM external_effects WHERE account_id = ?`);
   await drop('project_context_sections', `DELETE FROM project_context_sections WHERE project_id IN (SELECT id FROM projects WHERE account_id = ?)`);
   await drop('project_competitors', `DELETE FROM project_competitors WHERE project_id IN (SELECT id FROM projects WHERE account_id = ?)`);
   await drop('project_key_pages', `DELETE FROM project_key_pages WHERE project_id IN (SELECT id FROM projects WHERE account_id = ?)`);

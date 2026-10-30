@@ -313,10 +313,20 @@ export async function getVisibilitySnapshot(
   const queries = Array.isArray(args.queries)
     ? args.queries.filter((q): q is string => typeof q === 'string' && q.trim().length > 0).slice(0, 5)
     : [];
+  const explicitCompetitors = Array.isArray(args.competitors)
+    ? args.competitors.filter((c): c is string => typeof c === 'string' && c.trim().length > 0).slice(0, 10)
+    : [];
+  const competitors =
+    explicitCompetitors.length > 0
+      ? explicitCompetitors
+      : projectId && rt.getCompetitors
+        ? (await rt.getCompetitors(projectId)).slice(0, 10)
+        : [];
 
   const out = await runVisibilityRouter({
     domain,
     brand: typeof args.brand === 'string' ? args.brand : undefined,
+    competitors,
     queries,
     locationCode: Number(project?.default_location_code) || 2840,
     languageCode: project?.default_language_code || 'en',
@@ -339,6 +349,7 @@ export async function getVisibilitySnapshot(
       domain,
       aggregateCitationRatePercent: out.aggregateCitationRatePercent,
       engines: out.engines,
+      missingSources: out.missingSources,
       code: out.measurementStatus === 'measured' ? 'OK' : 'NOT_MEASURED',
     },
   };

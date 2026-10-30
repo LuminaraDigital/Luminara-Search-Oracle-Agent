@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { handleProbeCrawlRoute, summarizeProbeCrawl } from '../worker/probeCrawlRoute';
 import { loadCrawlerSnapshot } from '../worker/llmCrawlerRoute';
-import { ROBOTS_TXT, STAGING_ROBOTS_TXT } from '../worker/crawlDocuments';
+import { AI_TXT, ROBOTS_TXT, STAGING_ROBOTS_TXT } from '../worker/crawlDocuments';
 import type { Env } from '../worker/env';
 
 function dnsThen(file: (url: string) => Response): ReturnType<typeof vi.fn> {
@@ -114,10 +114,11 @@ describe('probe-crawl route honesty', () => {
       expect(body.crawl.status).toBe('measured');
       expect(body.crawl.robotsPresent).toBe(true);
       expect(body.crawl.llmsPresent).toBe(true);
-      expect(body.crawl.aiTxtPresent).toBe(false);
-      expect(body.snapshot).toEqual({ robotsHttpStatus: 200, llmsHttpStatus: 200, aiHttpStatus: 404 });
+      expect(body.crawl.aiTxtPresent).toBe(true);
+      expect(body.snapshot).toEqual({ robotsHttpStatus: 200, llmsHttpStatus: 200, aiHttpStatus: 200 });
       expect(body.crawl.note).toContain('robots.txt found');
       expect(body.crawl.note).toContain('llms.txt found');
+      expect(body.crawl.note).toContain('ai.txt found');
       expect(body.crawl.note).not.toContain('Not measured');
       const urls = fetchMock.mock.calls.map((call) => String(call[0]));
       expect(urls.some((url) => /\/(robots|llms|ai)\.txt/.test(url))).toBe(false);
@@ -131,6 +132,8 @@ describe('probe-crawl route honesty', () => {
       if (!own.ok) return;
       expect(own.snapshot.robotsTxt).toBe(ROBOTS_TXT);
       expect(own.snapshot.llmsTxt?.startsWith('# Luminara Suite')).toBe(true);
+      expect(own.snapshot.aiTxt).toBe(AI_TXT);
+      expect(own.snapshot.aiHttpStatus).toBe(200);
 
       const apex = await loadCrawlerSnapshot(
         'https://luminarasuite.com/',
@@ -152,7 +155,8 @@ describe('probe-crawl route honesty', () => {
       expect(staging.snapshot.robotsTxt).toBe(STAGING_ROBOTS_TXT);
       expect(staging.snapshot.llmsTxt).toContain('# Luminara Suite');
       expect(staging.snapshot.llmsHttpStatus).toBe(200);
-      expect(staging.snapshot.aiHttpStatus).toBe(404);
+      expect(staging.snapshot.aiTxt).toBe(AI_TXT);
+      expect(staging.snapshot.aiHttpStatus).toBe(200);
     } finally {
       vi.unstubAllGlobals();
     }

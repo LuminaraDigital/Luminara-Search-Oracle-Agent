@@ -88,6 +88,11 @@ export function buildPaidToolRuntime(opts: {
         default_language_code: p.defaultLanguageCode,
       };
     },
+    getCompetitors: async (projectId) => {
+      const ctx = await getProjectContext(env, accountId, projectId);
+      if (!ctx) return [];
+      return ctx.competitors.map((c) => (c.domain || c.name || '').trim()).filter(Boolean);
+    },
     getResearchLog: async (projectId) => {
       const ctx = await getProjectContext(env, accountId, projectId);
       if (!ctx) return [];

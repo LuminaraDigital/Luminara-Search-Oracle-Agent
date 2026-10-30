@@ -31,7 +31,7 @@ export const STORY_CHAPTERS: readonly StoryChapter[] = [
     step: '01',
     stage: 'Site crawl',
     title: 'Read your site the way AI does.',
-    body: 'Luminara checks whether search crawlers and AI bots can reach your pages, and whether robots.txt, llms.txt and your schema tell them who you are.',
+    body: 'Luminara checks whether search crawlers and AI bots can reach your pages, and whether robots.txt, llms.txt, schema and suburb pages give a clear answer and enquiry path.',
     focus: { lat: -30, lon: 140 },
   },
   {
@@ -55,7 +55,7 @@ export const STORY_CHAPTERS: readonly StoryChapter[] = [
     step: '04',
     stage: 'Next fix',
     title: 'Ship one fix, then check again.',
-    body: 'You get the single change most likely to help, with copy and schema ready to paste. Publish it, re-check in one click, and see what moved.',
+    body: 'You get the single change most likely to win the call, from direct suburb answers and review schema to a clearer appraisal path, ready to paste. Publish it, re-check in one click, and see what moved.',
     focus: { lat: -24, lon: 132 },
   },
 ];

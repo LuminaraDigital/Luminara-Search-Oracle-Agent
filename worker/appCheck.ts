@@ -207,10 +207,10 @@ function appCheckResponse(status: number, code: string, error: string): Response
   });
 }
 
-/** Health, robots.txt, llms.txt, and any path containing /webhook. */
+/** Health, robots.txt, llms.txt, ai.txt, and any path containing /webhook. */
 export function isAppCheckExempt(url: URL): boolean {
   const path = url.pathname.replace(/\/+$/, '') || '/';
-  if (path === '/robots.txt' || path === '/llms.txt' || path === '/api/health' || path === '/health') return true;
+  if (path === '/robots.txt' || path === '/llms.txt' || path === '/ai.txt' || path === '/api/health' || path === '/health') return true;
   return path.includes('/webhook');
 }
 

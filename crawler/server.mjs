@@ -23,6 +23,9 @@ import {
 import {
   ACTION_SNAPSHOT_SOURCE,
   RESOLVE_ACTION_TARGET_SOURCE,
+  classifyBotBlockPage,
+  isHardBannedAutonomousField,
+  sanitizeProfileSlug,
 } from './actionSnapshot.mjs';
 import { createSessionStore, MAX_SESSIONS } from './sessionStore.mjs';
 
@@ -258,6 +261,7 @@ async function observePage(page, { screenshot = false } = {}) {
     ...snapshot,
     fingerprint: fingerprintMarker(snapshot.marker),
   };
+  observe.botBlock = classifyBotBlockPage(observe);
   if (screenshot) {
     const buf = await page.screenshot({ type: 'jpeg', quality: 72, fullPage: false });
     observe.screenshot = Buffer.from(buf).toString('base64');
@@ -528,70 +532,44 @@ async function executeFastHttpSerp(query, { num = 10, hl = 'en', gl = 'us' } = {
   }
 }
 
+const STEALTH_UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36';
+
+function newStealthContext(browser, locale = 'en-US') {
+  return browser.newContext({
+    viewport: { width: 1920, height: 1080 },
+    userAgent: STEALTH_UA,
+    locale,
+    timezoneId: 'America/New_York',
+  });
+}
+
 /**
  * Stealth-path Patchright Chromium Google SERP request.
  */
 async function executePatchrightSerp(query, { num = 10, hl = 'en', gl = 'us', proxy, timeout = 25000, signal } = {}) {
   const pr = await getPatchright();
-  const chromium = pr.chromium;
-
-  const launchArgs = [
-    '--no-sandbox',
-    '--disable-setuid-sandbox',
-    '--disable-blink-features=AutomationControlled',
-    '--disable-infobars',
-    '--window-size=1920,1080',
-    '--disable-dev-shm-usage',
-  ];
-
-  const launchOptions = {
-    headless: true,
-    args: launchArgs,
-  };
-
-  if (proxy) {
-    launchOptions.proxy = { server: proxy };
-  }
+  const launchOptions = { headless: true, args: LAUNCH_ARGS };
+  if (proxy) launchOptions.proxy = { server: proxy };
 
   let browser = null;
   let context = null;
 
   try {
-    browser = await chromium.launch(launchOptions);
+    browser = await pr.chromium.launch(launchOptions);
     if (signal?.aborted) throw new Error('Client disconnected');
     signal?.addEventListener('abort', () => browser.close().catch(() => {}), { once: true });
-    context = await browser.newContext({
-      viewport: { width: 1920, height: 1080 },
-      userAgent:
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
-      locale: `${hl}-${gl.toUpperCase()}`,
-      timezoneId: 'America/New_York',
-    });
+    context = await newStealthContext(browser, `${hl}-${gl.toUpperCase()}`);
 
     await context.addCookies([
-      {
-        name: 'SOCS',
-        value: 'CAESHAgBEhJnd3NfMjAyNDA5MDMtMF9SQzIaAmVuIAEaBgiAoeq4Bg',
-        domain: '.google.com',
-        path: '/',
-      },
-      {
-        name: 'CONSENT',
-        value: 'PENDING+999',
-        domain: '.google.com',
-        path: '/',
-      },
+      { name: 'SOCS', value: 'CAESHAgBEhJnd3NfMjAyNDA5MDMtMF9SQzIaAmVuIAEaBgiAoeq4Bg', domain: '.google.com', path: '/' },
+      { name: 'CONSENT', value: 'PENDING+999', domain: '.google.com', path: '/' },
     ]);
 
     const page = await context.newPage();
     const targetUrl = `https://www.google.com/search?q=${encodeURIComponent(query)}&num=${num}&hl=${hl}&gl=${gl}&pws=0`;
+    await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout });
 
-    await page.goto(targetUrl, {
-      waitUntil: 'domcontentloaded',
-      timeout,
-    });
-
-    // Check if consent button appears and dismiss it if present
     try {
       const consentBtn = await page.$('button:has-text("Accept all"), button:has-text("I agree"), form[action*="consent"] button');
       if (consentBtn) {
@@ -600,11 +578,7 @@ async function executePatchrightSerp(query, { num = 10, hl = 'en', gl = 'us', pr
       }
     } catch {}
 
-    // Wait for search result settlement
     await page.waitForSelector('h3, div#search, [data-sokoban-container]', { timeout: 4000 }).catch(() => {});
-
-    const currentUrl = page.url();
-    const title = await page.title();
     const html = await page.content();
     const parsed = parseGoogleSerpHtml(html);
     console.log(`[SERP Patchright] Query: "${query}" | Extracted results: ${parsed.results?.length}`);
@@ -626,7 +600,6 @@ app.post('/scrape', heavyRoute(async (req, res, signal) => {
   if (!url || typeof url !== 'string' || url.length > 2048) {
     return res.status(400).json({ success: false, error: 'A valid "url" parameter is required' });
   }
-  // SSRF guard: public http(s) hosts only; loopback, RFC1918, link-local and metadata ranges are refused.
   const target = await assertPublicTarget(url);
   if (!target.ok) {
     return res.status(400).json({ success: false, url, error: target.error });
@@ -638,64 +611,16 @@ app.post('/scrape', heavyRoute(async (req, res, signal) => {
 
   try {
     const pr = await getPatchright();
-    const chromium = pr.chromium;
+    const launchOptions = { headless: true, args: LAUNCH_ARGS };
+    if (proxy) launchOptions.proxy = { server: proxy };
 
-    // Launch with stealth arguments
-    const launchArgs = [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-blink-features=AutomationControlled',
-      '--disable-infobars',
-      '--window-size=1920,1080',
-      '--disable-dev-shm-usage',
-    ];
-
-    const launchOptions = {
-      headless: true,
-      args: launchArgs,
-    };
-
-    if (proxy) {
-      launchOptions.proxy = { server: proxy };
-    }
-
-    browser = await chromium.launch(launchOptions);
-    // A disconnected client should not pin a browser slot until the navigation timeout.
+    browser = await pr.chromium.launch(launchOptions);
     if (signal.aborted) throw new Error('Client disconnected');
     signal.addEventListener('abort', () => browser.close().catch(() => {}), { once: true });
 
-    context = await browser.newContext({
-      viewport: { width: 1920, height: 1080 },
-      userAgent:
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
-      locale: 'en-US',
-      timezoneId: 'America/New_York',
-    });
+    context = await newStealthContext(browser);
 
-    // Redirects and subresources are checked too: a public page must not pull the browser onto a
-    // private host. Each distinct hostname is DNS-resolved (not just syntax-checked) so a redirect
-    // or subresource pointed at a rebinding domain (e.g. *.nip.io -> 127.0.0.1) is still refused.
-    const hostRoutableCache = new Map();
-    async function isRoutableTarget(reqUrl) {
-      if (/^(data|blob|about):/i.test(reqUrl)) return true;
-      let hostname;
-      try {
-        hostname = new URL(reqUrl).hostname.toLowerCase();
-      } catch {
-        return false;
-      }
-      const cached = hostRoutableCache.get(hostname);
-      if (cached && Date.now() - cached.time < 3000) return cached.verdict;
-      const verdict = (await assertPublicTarget(reqUrl)).ok;
-      hostRoutableCache.set(hostname, { verdict, time: Date.now() });
-      return verdict;
-    }
-    await context.route('**/*', async route => {
-      const reqUrl = route.request().url();
-      if (await isRoutableTarget(reqUrl)) return route.continue();
-      return route.abort('blockedbyclient');
-    });
-
+    await installPublicRouteGuard(context);
     const page = await context.newPage();
 
     // Navigate
@@ -824,6 +749,7 @@ app.post('/session', heavyRoute(async (req, res, signal, ctx) => {
   const body = req.body || {};
   const url = body.url;
   const accountKey = typeof body.accountKey === 'string' ? body.accountKey.trim().slice(0, 128) : undefined;
+  const profileSlug = sanitizeProfileSlug(body.profileSlug);
   const timeout = clampNumber(body.timeout, 25_000, 1_000, MAX_TIMEOUT_MS);
   const proxy = CRAWLER_PROXY || undefined;
 
@@ -854,13 +780,7 @@ app.post('/session', heavyRoute(async (req, res, signal, ctx) => {
     browser = await pr.chromium.launch(launchOptions);
     if (signal.aborted) throw new Error('Client disconnected');
 
-    context = await browser.newContext({
-      viewport: { width: 1920, height: 1080 },
-      userAgent:
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
-      locale: 'en-US',
-      timezoneId: 'America/New_York',
-    });
+    context = await newStealthContext(browser);
     await installPublicRouteGuard(context);
 
     const page = await context.newPage();
@@ -898,6 +818,7 @@ app.post('/session', heavyRoute(async (req, res, signal, ctx) => {
     return res.json({
       success: true,
       sessionId: created.session.id,
+      profileSlug,
       observe,
     });
   } catch (err) {
@@ -961,17 +882,57 @@ app.post('/session/:id/act', heavyRoute(async (req, res) => {
     });
   }
 
-  const action = (prior.actions || []).find(a => a.id === actionId);
-  if (!action) {
-    return res.status(400).json({
-      success: false,
-      error: `Unknown actionId "${actionId}" for the current observe`,
-    });
+  let action = null;
+  let pointerTarget = null;
+  if (actionId === 'POINTERBENCH_POINT') {
+    const pt = body.point;
+    if (!Array.isArray(pt) || pt.length !== 2 || typeof pt[0] !== 'number' || typeof pt[1] !== 'number') {
+      return res.status(400).json({ success: false, error: 'point must be a [x, y] number pair within 1024x768' });
+    }
+    const [px, py] = pt;
+    if (
+      !Number.isFinite(px) ||
+      !Number.isFinite(py) ||
+      px < 0 ||
+      px > 1024 ||
+      py < 0 ||
+      py > 768 ||
+      (px > 0 && px < 1 && py > 0 && py < 1)
+    ) {
+      return res.status(400).json({ success: false, error: 'point must be absolute pixel coordinates within 1024x768' });
+    }
+    pointerTarget = [px, py];
+    action = { id: 'POINTERBENCH_POINT', kind: 'click', label: `PointerBench (${px},${py})` };
+  } else {
+    action = (prior.actions || []).find((a) => a.id === actionId);
+    if (!action) {
+      return res.status(400).json({
+        success: false,
+        error: `Unknown actionId "${actionId}" for the current observe`,
+      });
+    }
+    if (isHardBannedAutonomousField(action) && body.humanTakeControl !== true) {
+      return res.status(403).json({
+        success: false,
+        code: 'HUMAN_TAKE_CONTROL_REQUIRED',
+        error: 'Password, payment, and MFA fields require human Take Control.',
+      });
+    }
   }
 
   try {
-    const result = await executeObservedAction(session.page, action, text);
-    // Brief settle then re-observe (never retry a mutation; only re-predict after observe).
+    let executed = 'click';
+    if (pointerTarget) {
+      const vw = Number(prior.w) > 0 ? Number(prior.w) : 1920;
+      const vh = Number(prior.h) > 0 ? Number(prior.h) : 1080;
+      await session.page.mouse.click(
+        Math.round((pointerTarget[0] / 1024) * vw),
+        Math.round((pointerTarget[1] / 768) * vh),
+      );
+    } else {
+      const result = await executeObservedAction(session.page, action, text);
+      executed = result.executed;
+    }
     await session.page.waitForTimeout(80);
     const observe = await observePage(session.page, { screenshot: false });
     if (!observe) {
@@ -983,7 +944,7 @@ app.post('/session/:id/act', heavyRoute(async (req, res) => {
           actionId: action.id,
           kind: action.kind,
           label: action.label,
-          executed: result.executed,
+          executed,
           text: action.kind === 'fill' ? '[redacted]' : undefined,
         },
       });
@@ -994,10 +955,9 @@ app.post('/session/:id/act', heavyRoute(async (req, res) => {
       actionId: action.id,
       kind: action.kind,
       label: action.label,
-      executed: result.executed,
+      executed,
       at: new Date().toISOString(),
     };
-    // Do not echo fill payloads that may contain secrets.
     if (action.kind === 'fill') historyEntry.hadText = typeof text === 'string';
 
     return res.json({

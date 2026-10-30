@@ -16,6 +16,11 @@ import {
 } from './schemaSafetyGate';
 import { validateCmsEndpoint } from './cmsEndpointValidator';
 import { apiBase, workerFetchWithAuthRetry } from '../apiClient';
+import {
+  classifyRemediationTier,
+  type RemediationFindingInput,
+  type RemediationTierDecision,
+} from './remediationTierRouter';
 
 export { validateCmsEndpoint, type CmsEndpointValidation } from './cmsEndpointValidator';
 
@@ -64,6 +69,7 @@ export interface DeploymentResult {
   timestamp: number;
   validationErrors?: SchemaSafetyIssue[];
   gateSeverity?: GateSeverity;
+  remediationTier?: RemediationTierDecision;
 }
 
 type SchemaReadBack =
@@ -181,6 +187,32 @@ export class CmsDeploymentService {
   /** Public alias for UI preflight checks. */
   public validatePayload(payload: RemediationPayload): SchemaSafetyResult {
     return this.assertSafeToDeploy(payload);
+  }
+
+  /**
+   * Classifies a deployment payload into the 3-Tier Remediation Router
+   * (Tier 1 Instant MCP, Tier 2 Guided Builder / Squarespace Injection, or Tier 3 Luminara Digital Brief).
+   */
+  public classifyPayloadTier(
+    payload: RemediationPayload,
+    opts?: {
+      cmsPlatform?: RemediationFindingInput['cmsPlatform'];
+      pageBuilderDetected?: RemediationFindingInput['pageBuilderDetected'];
+      previousDeployBlocked?: boolean;
+      findingCategory?: RemediationFindingInput['findingCategory'];
+    },
+  ): RemediationTierDecision {
+    return classifyRemediationTier(
+      {
+        domain: payload.domain,
+        summary: payload.title,
+        findingCategory: opts?.findingCategory ?? 'schema_jsonld',
+        cmsPlatform: opts?.cmsPlatform ?? 'unknown',
+        pageBuilderDetected: opts?.pageBuilderDetected ?? null,
+        previousDeployBlocked: Boolean(opts?.previousDeployBlocked),
+      },
+      payload.schemaJsonLd,
+    );
   }
 
   private gateBlockedResult(platform: CmsPlatform, gate: SchemaSafetyResult): DeploymentResult {

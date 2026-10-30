@@ -68,6 +68,10 @@ describe('Centralized Edge Auth Middleware & Route Guarding', () => {
       { path: '/api/sentinel/register', method: 'POST', body: JSON.stringify({ domain: 'test.com' }) },
       { path: '/api/oracle/chat', method: 'POST', body: '{}' },
       { path: '/api/audit/run', method: 'POST', body: '{}' },
+      { path: '/api/enquiries', method: 'GET' },
+      { path: '/api/outcomes', method: 'GET' },
+      { path: '/api/recovery/send-step', method: 'POST', body: '{}' },
+      { path: '/api/cms-mcp/catalog', method: 'GET' },
     ];
 
     for (const reqSpec of protectedRequests) {

@@ -233,7 +233,7 @@ export async function handleAuditScoutRun(request: Request, env: Env): Promise<R
   }
   const who = await identify(request, env);
   if (who.error || !who.user) return json({ ok: false, error: who.error || 'Sign in required.', code: 'AUTH_REQUIRED' }, 401);
-  let body: { domain?: unknown; token?: unknown; refund?: unknown; healthScore?: unknown; citationRate?: unknown; recheck?: unknown; checkId?: unknown; expect?: unknown };
+  let body: { domain?: unknown; token?: unknown; refund?: unknown; healthScore?: unknown; citationRate?: unknown; recheck?: unknown; checkId?: unknown; expect?: unknown; targetUrl?: unknown };
   try {
     body = (await request.json()) as typeof body;
   } catch {

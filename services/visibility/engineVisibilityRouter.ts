@@ -1,17 +1,26 @@
 /**
  * Hybrid AI visibility router (W4).
  */
-import type { EngineVisibilityResult, VisibilityEngineId, VisibilityMeasurementStatus } from './engineVisibilityTypes';
+import type {
+  EngineVisibilityResult,
+  MissingMentionSource,
+  VisibilityEngineId,
+  VisibilityMeasurementStatus,
+} from './engineVisibilityTypes';
 import {
   aggregateMeasuredCitationRate,
+  classifyOffSiteChannel,
+  extractSourceHost,
   notMeasuredEngine,
 } from './engineVisibilityTypes';
 import { fetchDataForSeoMentions, type DfsPostFn } from './dataForSeoMentionsService';
 import { probeLlmAnswers, type LlmGenerateFn } from './llmAnswerProbeService';
+import { isNamesakeHost } from '../audit/entityMatch';
 
 export type VisibilityRouterInput = {
   domain: string;
   brand?: string;
+  competitors?: string[];
   queries?: string[];
   locationCode?: number;
   languageCode?: string;
@@ -24,9 +33,97 @@ export type VisibilityRouterOutput = {
   /** Product KPI aggregate: measured DFS mentions only (excludes LLM probe estimates). */
   aggregateCitationRatePercent: number | null;
   measurementStatus: VisibilityMeasurementStatus;
+  /** Third-party sources cited in AI answers where the target brand is absent. */
+  missingSources: MissingMentionSource[];
 };
 
 const ENGINES: VisibilityEngineId[] = ['chatgpt', 'google_aio', 'perplexity'];
+
+function actionForChannel(channel: MissingMentionSource['channel'], host: string): string {
+  switch (channel) {
+    case 'editorial_pr':
+      return `Pitch a collaborative data study or reactive founder expert commentary to ${host}.`;
+    case 'roundup_listicle':
+      return `Send a drop-in product spec block and inclusion pitch to the roundup editor at ${host}.`;
+    case 'review_platform':
+      return `Launch a guideline-safe review request funnel and route verified customers to ${host}.`;
+    case 'community_forum':
+      return `Post a non-promotional, expertise-first answer in the cited thread on ${host}.`;
+  }
+}
+
+export function extractMissingMentionSources(
+  targetDomain: string,
+  engines: EngineVisibilityResult[],
+): MissingMentionSource[] {
+  const cleanTarget = extractSourceHost(targetDomain);
+  const byHost = new Map<
+    string,
+    {
+      sampleUrl?: string;
+      sampleCtx: string;
+      brandMentioned: boolean;
+      competitors: Set<string>;
+      competitorMentions: number;
+      prompts: Set<string>;
+      engines: Set<VisibilityEngineId>;
+    }
+  >();
+
+  for (const eng of engines) {
+    for (const ev of eng.evidence || []) {
+      for (const rawSrc of ev.sources || []) {
+        const host = extractSourceHost(rawSrc);
+        if (!host || host === cleanTarget || isNamesakeHost(host, cleanTarget)) continue;
+        let entry = byHost.get(host);
+        if (!entry) {
+          entry = {
+            sampleUrl: rawSrc,
+            sampleCtx: `${rawSrc} ${ev.answerSnippet || ''}`,
+            brandMentioned: false,
+            competitors: new Set(),
+            competitorMentions: 0,
+            prompts: new Set(),
+            engines: new Set(),
+          };
+          byHost.set(host, entry);
+        }
+        if (ev.cited) entry.brandMentioned = true;
+        entry.prompts.add(ev.query);
+        entry.engines.add(eng.engine);
+        for (const comp of ev.competitorsMentioned || []) {
+          entry.competitors.add(comp);
+          entry.competitorMentions += 1;
+        }
+      }
+    }
+  }
+
+  const missing: MissingMentionSource[] = [];
+  for (const [host, info] of byHost.entries()) {
+    if (info.brandMentioned) continue;
+    const channel = classifyOffSiteChannel(host, info.sampleCtx);
+    missing.push({
+      domain: host,
+      sampleUrl: info.sampleUrl,
+      channel,
+      competitorsMentioned: [...info.competitors],
+      competitorMentionCount: info.competitorMentions,
+      promptCount: info.prompts.size,
+      prompts: [...info.prompts],
+      engines: [...info.engines],
+      actionRecommendation: actionForChannel(channel, host),
+    });
+  }
+
+  missing.sort(
+    (a, b) =>
+      b.competitorMentionCount - a.competitorMentionCount ||
+      b.promptCount - a.promptCount ||
+      b.engines.length - a.engines.length,
+  );
+  return missing;
+}
 
 function statusRank(status: VisibilityMeasurementStatus): number {
   if (status === 'measured') return 3;
@@ -75,6 +172,7 @@ export async function runVisibilityRouter(
         dfsPost: input.dfsPost,
         domain,
         brand: input.brand,
+        competitors: input.competitors,
         queries: seedQueries,
         locationCode: input.locationCode,
         languageCode: input.languageCode,
@@ -96,6 +194,7 @@ export async function runVisibilityRouter(
         generate: input.llmGenerate,
         domain,
         brand: input.brand,
+        competitors: input.competitors,
         queries: seedQueries.length ? seedQueries : [domain],
       });
     } catch {
@@ -113,9 +212,11 @@ export async function runVisibilityRouter(
   }
 
   const aggregate = aggregateMeasuredCitationRate(engines);
+  const missingSources = extractMissingMentionSources(domain, engines);
   return {
     engines,
     aggregateCitationRatePercent: aggregate,
     measurementStatus: rollupStatus(engines),
+    missingSources,
   };
 }

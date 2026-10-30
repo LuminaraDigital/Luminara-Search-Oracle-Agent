@@ -82,7 +82,7 @@ data class GatewayExecuteOptions(
 data class GatewayExecuteResponse(
     val ok: Boolean = false,
     val taskId: String = "",
-    val runId: String = "",
+    val runId: String? = null,
     val targetDomain: String = "",
     val focus: String = "AEO",
     val state: String = "settled",
@@ -97,11 +97,6 @@ data class GatewayExecuteResponse(
 @Serializable
 data class GatewayEvidence(
     val measurementStatus: String = "not_measured",
-    val llmsHttpStatus: Int = 0,
-    val robotsHttpStatus: Int = 0,
-    val aiHttpStatus: Int = 0,
-    val passCount: Int = 0,
-    val failCount: Int = 0,
 )
 
 @Serializable
@@ -118,10 +113,15 @@ data class ScoutRecheckResponse(
     val checkId: String = "",
     val label: String = "",
     val measured: Boolean = false,
-    val passed: Boolean = false,
+    val passed: Boolean? = null,
     val detail: String = "",
-    val url: String = "",
-    val httpStatus: Int = 0,
+)
+
+@Serializable
+data class WorkerErrorPayload(
+    val ok: Boolean = false,
+    val error: String = "",
+    val code: String = "",
 )
 
 @Serializable

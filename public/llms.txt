@@ -69,10 +69,30 @@ Each paid plan lasts 30 days and starts as soon as payment is confirmed. It does
 - Why Luminara: https://www.luminarasuite.com/why
 - Pricing: https://www.luminarasuite.com/pricing
 - Windows desktop: https://www.luminarasuite.com/desktop
-- Profound comparison: https://www.luminarasuite.com/compare/profound
-- Ahrefs comparison: https://www.luminarasuite.com/compare/ahrefs
-- Otterly AI comparison: https://www.luminarasuite.com/compare/otterly
-- Peec AI comparison: https://www.luminarasuite.com/compare/peec
+
+## Comparisons and buyer's guides
+
+Competitor rows cite each vendor's public pages as of October 2026. No scores are published for other products.
+
+- Luminara vs Profound: https://www.luminarasuite.com/compare/profound
+- Luminara vs Ahrefs: https://www.luminarasuite.com/compare/ahrefs
+- Luminara vs Otterly: https://www.luminarasuite.com/compare/otterly
+- Luminara vs Peec: https://www.luminarasuite.com/compare/peec
+- Luminara vs Semrush: https://www.luminarasuite.com/compare/semrush
+- Luminara vs ChatSEO: https://www.luminarasuite.com/compare/chatseo
+- Best AI visibility tools for real estate: https://www.luminarasuite.com/best/ai-visibility-tools-for-real-estate-agencies
+- Best AEO audit tools for small business: https://www.luminarasuite.com/best/aeo-audit-tools-for-small-business
+- Best AI visibility tools with MCP: https://www.luminarasuite.com/best/ai-visibility-tools-with-mcp
+
+## Free tools
+
+They run in the browser with no account. Nothing typed into a tool is sent to Luminara.
+
+- All free tools: https://www.luminarasuite.com/free-tools
+- SERP snippet preview: https://www.luminarasuite.com/free-tools/serp-preview
+- Robots.txt generator for AI crawlers: https://www.luminarasuite.com/free-tools/robots-txt-generator
+- llms.txt generator: https://www.luminarasuite.com/free-tools/llms-txt-generator
+- Real estate schema generator: https://www.luminarasuite.com/free-tools/schema-generator
 
 ## Studio
 

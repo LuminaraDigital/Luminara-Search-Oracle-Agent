@@ -1,7 +1,6 @@
 /**
  * Citation Watch routes and the daily cron tick.
  * Runs are stored in D1. Counts stay null unless the probe measured every prompt.
- * shortcut: the built-in probe does not call an engine, upgrade when a per-prompt product adapter returns measured cited flags.
  */
 import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
@@ -23,6 +22,8 @@ import { entitlementsFor } from '../services/plans/planEntitlements';
 import { getActiveSubscription } from './quotaMiddleware';
 import { billingId, json } from './workerUtils';
 import { MAX_SMALL_BODY_BYTES, readBody, safePublicHostname } from './security';
+import { envHasDataForSeo } from '../services/config/runtimeKeys';
+import { dataForSeoPost, dfsFirstResult } from './dataForSeoClient';
 
 const PAGE = 25;
 /** shortcut: one cron fire stops after this many runs, the next daily fire continues */
@@ -73,16 +74,63 @@ export async function defaultCitationProbe(input: {
   domain: string;
   prompts: string[];
 }): Promise<CitationProbeResult> {
-  void input.engine;
-  void input.domain;
-  void input.prompts;
   if (String(input.env.CITATION_WATCH_LIVE || '') !== 'true') {
     return { status: 'not_measured', method: 'none', reason: 'Live probes are off. CITATION_WATCH_LIVE is not true.' };
   }
+  if (!envHasDataForSeo(input.env)) {
+    return {
+      status: 'not_measured',
+      method: 'none',
+      reason: 'No per-prompt product probe is connected for this engine. Citation share was not measured.',
+    };
+  }
+  const target = input.domain.replace(/^www\./i, '').toLowerCase();
+  const platform =
+    input.engine === 'chatgpt' ? 'chat_gpt' : input.engine === 'google_aio' ? 'google' : 'perplexity';
+  const cited: boolean[] = [];
+  for (const prompt of input.prompts) {
+    const res = await dataForSeoPost(
+      input.env,
+      '/v3/ai_optimization/llm_mentions/search_mentions/live',
+      [
+        {
+          keywords: [prompt],
+          location_code: 2840,
+          language_code: 'en',
+          platform,
+          filters: ['and', [['domain', '=', target]]],
+          limit: 5,
+        },
+      ],
+    );
+    if (!res.ok) {
+      return {
+        status: 'not_measured',
+        method: 'none',
+        reason: res.error || res.code || 'DataForSEO per-prompt probe failed.',
+      };
+    }
+    const first = dfsFirstResult(res.body);
+    if (first && typeof first === 'object' && (first as { _dfsTaskError?: boolean })._dfsTaskError) {
+      return {
+        status: 'not_measured',
+        method: 'none',
+        reason: 'DataForSEO task error during per-prompt probe.',
+      };
+    }
+    const rows = Array.isArray(first) ? first : [];
+    const hit = rows.some((row) => {
+      const r = row as Record<string, unknown>;
+      const snippet = String(r.answer || r.snippet || r.title || '').toLowerCase();
+      return snippet.includes(target) || Boolean(r.mentioned);
+    });
+    cited.push(hit);
+  }
   return {
-    status: 'not_measured',
-    method: 'none',
-    reason: 'No per-prompt product probe is connected for this engine. Citation share was not measured.',
+    status: 'measured',
+    method: 'dataforseo_llm_mentions',
+    modelId: input.engine,
+    cited,
   };
 }
 

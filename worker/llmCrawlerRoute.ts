@@ -1,8 +1,8 @@
 /**
  * Bounded fetch of /robots.txt, /llms.txt, and optional /ai.txt for an Instant Audit target.
  * Open to guests on purpose (the guest Instant Audit reads it); only a signed-in caller gets a
- * scout receipt. Private hosts are refused. A same-site 301/302/303/307/308 is followed
- * after the next host is checked again. A redirect to another site is not followed.
+ * scout receipt. Private hosts and non-default ports are refused. A same-site 301/302/303/307/308
+ * is followed after the next URL and host are checked again. A redirect to another site is not followed.
  * Crawl files on this Worker's own Custom Domains are read in-process (same-zone fetch returns 522).
  */
 import type { Env } from './env';
@@ -12,12 +12,23 @@ import { sameSiteHost } from '../services/audit/sameSiteHost';
 import { mintScoutReceipt } from './referrals';
 import { readCapped } from './domainVerification';
 import { readServedCrawlFile } from './crawlDocuments';
-import type { LlmCrawlerSnapshot } from '../services/audit/llmCrawlerReadiness';
+import { responseBlocked, type LlmCrawlerSnapshot } from '../services/audit/llmCrawlerReadiness';
 
 const MAX_BYTES = 64_000;
 const FETCH_MS = 5_000;
 const MAX_REDIRECTS = 3;
 const FOLLOW_REDIRECT = new Set([301, 302, 303, 307, 308]);
+
+/**
+ * A soft 404: the site answered with a web page or an API error (often its homepage,
+ * after a redirect) instead of the text file. A 200 alone is not proof the file exists.
+ * Crawler files are plain text and never open with a tag or a JSON object. The body
+ * decides, not the content type: servers often label real text files text/html.
+ */
+export function servedWebPage(body: string): boolean {
+  const text = body.trimStart().replace(/^(?:<!--[\s\S]*?-->\s*)+/, '');
+  return /^[<{]/.test(text);
+}
 
 async function fetchOne(
   url: string,
@@ -54,13 +65,15 @@ async function fetchOne(
         if (!loc || hop === MAX_REDIRECTS || !FOLLOW_REDIRECT.has(res.status)) {
           return { status: res.status, body: null };
         }
-        let next: URL;
+        let resolved: URL;
         try {
-          next = new URL(loc, current);
+          resolved = new URL(loc, current);
         } catch {
           return { status: res.status, body: null };
         }
-        if ((next.protocol !== 'http:' && next.protocol !== 'https:') || !sameSiteHost(originHost, next.hostname)) {
+        // Same rules as the first hop: public http(s), no credentials, default port, same site.
+        const next = safePublicUrl(resolved.toString());
+        if (!next || next.port || !sameSiteHost(originHost, next.hostname)) {
           return { status: res.status, body: null };
         }
         if (!(await resolvesToPublicAddress(next.hostname, fetcher as DohFetch))) {
@@ -71,7 +84,13 @@ async function fetchOne(
       }
       if (res.status === 404) return { status: 404, body: '' };
       if (!res.ok) return { status: res.status, body: null };
-      return { status: res.status, body: await readCapped(res, MAX_BYTES) };
+      const body = await readCapped(res, MAX_BYTES);
+      // A bot challenge stays as served, so readers report it as blocked. Any other web page is
+      // recorded as a 404 so every reader, including the Android client, sees the file as missing.
+      if (!responseBlocked(res.status, body) && servedWebPage(body)) {
+        return { status: 404, body: '' };
+      }
+      return { status: res.status, body };
     } catch {
       return { status: null, body: null };
     } finally {
@@ -90,6 +109,7 @@ export async function loadCrawlerSnapshot(
   const withScheme = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
   const page = safePublicUrl(withScheme);
   if (!page) return { ok: false, error: 'URL is not a public http(s) host.', code: 'UNSAFE_URL' };
+  if (page.port) return { ok: false, error: "Use the site's normal address, without a port number.", code: 'UNSAFE_URL' };
   const publicHost = await resolvesToPublicAddress(page.hostname, fetcher as DohFetch);
   if (!publicHost) {
     return { ok: false, error: 'Host did not resolve to a public address.', code: 'UNSAFE_HOST' };

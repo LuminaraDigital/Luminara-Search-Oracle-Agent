@@ -22,6 +22,10 @@ export enum AppView {
   INFRASTRUCTURE = 'INFRASTRUCTURE',
   INTELLIGENCE = 'INTELLIGENCE',
   WHY_US = 'WHY_US',
+  /** /compare/* and /best/* pages. The page comes from the pathname. */
+  COMPARE = 'COMPARE',
+  /** /free-tools and /free-tools/* pages. The tool comes from the pathname. */
+  FREE_TOOLS = 'FREE_TOOLS',
   PRICING = 'PRICING',
   METHODOLOGY = 'METHODOLOGY',
   SAMPLE_REPORT = 'SAMPLE_REPORT',
@@ -42,6 +46,7 @@ export enum AppView {
   VERIFY_RECEIPT = 'VERIFY_RECEIPT',
   VERIFY_AUDIT_RECEIPT = 'VERIFY_AUDIT_RECEIPT',
   ECOSYSTEM_HUB = 'ECOSYSTEM_HUB',
+  ENQUIRY_DESK = 'ENQUIRY_DESK',
   NOT_FOUND = 'NOT_FOUND',
 }
 

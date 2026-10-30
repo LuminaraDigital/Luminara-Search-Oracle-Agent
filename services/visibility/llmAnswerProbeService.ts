@@ -3,7 +3,11 @@
  * Results are estimated OpenRouter probes, not measured ChatGPT/Perplexity/AIO product KPIs.
  */
 import type { EngineVisibilityResult, VisibilityEngineId } from './engineVisibilityTypes';
-import { notMeasuredEngine } from './engineVisibilityTypes';
+import {
+  classifyBrandMentionStatus,
+  findMentionedCompetitors,
+  notMeasuredEngine,
+} from './engineVisibilityTypes';
 import { classifyMention } from '../audit/entityMatch';
 import { countPhrase } from '../audit/reportSentence';
 
@@ -24,10 +28,12 @@ export async function probeLlmAnswers(opts: {
   generate: LlmGenerateFn;
   domain: string;
   brand?: string;
+  competitors?: string[];
   queries: string[];
 }): Promise<EngineVisibilityResult[]> {
   const measuredAt = Date.now();
   const queries = opts.queries.slice(0, 3);
+  const competitors = (opts.competitors || []).map((c) => c.trim()).filter(Boolean);
   if (!queries.length) {
     return (['chatgpt', 'google_aio', 'perplexity'] as VisibilityEngineId[]).map((e) =>
       notMeasuredEngine(e, 'No queries for LLM probe', measuredAt),
@@ -42,10 +48,17 @@ export async function probeLlmAnswers(opts: {
       try {
         const prompt = `Answer briefly (under 120 words) as a helpful search assistant. Question: ${query}\nMention real brands/domains if relevant.`;
         const answer = await opts.generate(prompt, probe.model);
+        const cited = domainCited(answer, opts.domain, opts.brand);
+        const competitorsMentioned = findMentionedCompetitors(answer, competitors);
+        const urlMatches = [...answer.matchAll(/https?:\/\/[^\s)>\]"',]+/gi)].map((m) => m[0]);
+        const brandStatus = classifyBrandMentionStatus(cited, answer);
         evidence.push({
           query,
-          cited: domainCited(answer, opts.domain, opts.brand),
+          cited,
+          brandStatus,
+          competitorsMentioned: competitorsMentioned.length ? competitorsMentioned : undefined,
           answerSnippet: answer.slice(0, 400),
+          sources: urlMatches.length ? urlMatches : undefined,
         });
       } catch {
         failed += 1;

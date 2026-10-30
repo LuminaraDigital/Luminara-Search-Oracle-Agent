@@ -176,6 +176,7 @@ export type ActRequest = {
   actionId: string;
   fingerprint: string;
   text?: string;
+  point?: readonly [number, number];
 };
 
 export type ExecuteActFn = (request: ActRequest) => Promise<ObservePayload>;

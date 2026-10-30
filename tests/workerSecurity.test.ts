@@ -607,6 +607,17 @@ describe('crawl surfaces', () => {
     expect(text).not.toMatch(/\/mo\b|per month/i);
   });
 
+  it('serves ai.txt as plain text', async () => {
+    const res = await worker.fetch(req('/ai.txt'), makeEnv(), ctx);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('text/plain');
+    const text = await res.text();
+    expect(text).toContain('# Luminara Suite AI policy (ai.txt)');
+    expect(text).toContain('Allow: /llms.txt');
+    expect(text).toContain('Allow: /ai.txt');
+    expect(text).toContain('Disallow: /api/');
+  });
+
   it('injects pricing meta into the marketing shell HTML', async () => {
     const env = makeEnv({
       ASSETS: {

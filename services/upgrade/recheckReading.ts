@@ -3,9 +3,18 @@
  */
 import { evaluateRealEstateChecks, type RealEstateCheck } from '../audit/realEstateChecks';
 
-export type RecheckId = 'title' | 'schema' | 'nap' | 'agent_pages' | 'area_pages' | 'gbp' | 'reviews';
+export type RecheckId = 'title' | 'schema' | 'nap' | 'agent_pages' | 'area_pages' | 'gbp' | 'reviews' | 'brand_mention';
 
-const RECHECK_IDS: readonly RecheckId[] = ['title', 'schema', 'nap', 'agent_pages', 'area_pages', 'gbp', 'reviews'];
+const RECHECK_IDS: readonly RecheckId[] = [
+  'title',
+  'schema',
+  'nap',
+  'agent_pages',
+  'area_pages',
+  'gbp',
+  'reviews',
+  'brand_mention',
+];
 
 export function isRecheckId(value: string): value is RecheckId {
   return (RECHECK_IDS as readonly string[]).includes(value);
@@ -78,6 +87,23 @@ export function readRecheck(html: string, pageUrl: string, status: number, check
       measured: true,
       passed,
       detail: passed ? `Measured. The title includes "${needle}".` : `Measured. The title does not include "${needle}".`,
+    };
+  }
+  if (checkId === 'brand_mention') {
+    const needle = expect.trim();
+    if (!needle) return { measured: false, passed: null, detail: 'Not measured. A brand or domain needle is required.' };
+    const text = html
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!text) return { measured: false, passed: null, detail: 'Not measured. The page body text was empty.' };
+    const passed = text.toLowerCase().includes(needle.toLowerCase());
+    return {
+      measured: true,
+      passed,
+      detail: passed ? `Measured. The page mentions "${needle}".` : `Measured. The page does not mention "${needle}".`,
     };
   }
   const checks = evaluateRealEstateChecks([pageFromHtml(html, pageUrl, status)]);

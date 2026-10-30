@@ -100,11 +100,18 @@ export function easyFix(findings: readonly BoardFinding[]): BoardFinding | null 
 export function recheckTarget(
   finding: Pick<BoardFinding, 'title' | 'description' | 'category'>,
   brand: string | null,
-): { checkId: RecheckId; expect?: string } | null {
-  const blob = `${finding.title} ${finding.description}`.toLowerCase();
+): { checkId: RecheckId; expect?: string; targetUrl?: string } | null {
+  const raw = `${finding.title} ${finding.description}`;
+  const blob = raw.toLowerCase();
   if (/suburb|area page/.test(blob)) return { checkId: 'area_pages' };
   if (/agent profile|team page/.test(blob)) return { checkId: 'agent_pages' };
   if (/google business|\bgbp\b/.test(blob)) return { checkId: 'gbp' };
+  if (/brand mention|third-party mention|roundup|digital pr/.test(blob)) {
+    const expect = brand?.trim();
+    if (!expect) return null;
+    const urlMatch = raw.match(/https?:\/\/[^\s)>\]"',]+/i);
+    return { checkId: 'brand_mention', expect, ...(urlMatch ? { targetUrl: urlMatch[0] } : {}) };
+  }
   if (/review/.test(blob)) return { checkId: 'reviews' };
   if (/\bnap\b|phone|address/.test(blob)) return { checkId: 'nap' };
   if (/schema|json-ld|jsonld/.test(blob) || finding.category === 'schema') return { checkId: 'schema' };

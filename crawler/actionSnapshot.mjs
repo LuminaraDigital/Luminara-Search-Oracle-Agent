@@ -141,3 +141,53 @@ export const RESOLVE_ACTION_TARGET_SOURCE = `(action) => {
   }
   return { x, y };
 }`;
+
+export const BOT_BLOCK_SIGNATURES = [
+  'just a moment...',
+  'attention required! | cloudflare',
+  'cf-chl-bypass',
+  'verify you are human',
+  'checking if the site connection is secure',
+  'enable javascript and cookies to continue',
+  'g-recaptcha',
+  'h-captcha',
+  'access denied',
+  'ddos-guard',
+  'please complete the security check',
+];
+
+export function classifyBotBlockPage(page) {
+  const combined = `${page?.title || ''}\n${page?.text || ''}`.toLowerCase();
+  for (const sig of BOT_BLOCK_SIGNATURES) {
+    if (combined.includes(sig)) {
+      return {
+        blockedByBotProtection: true,
+        matchedSignature: sig,
+        reason: `Bot challenge or WAF wall detected (${sig}). Halting automated loop.`,
+      };
+    }
+  }
+  return {
+    blockedByBotProtection: false,
+    matchedSignature: null,
+    reason: null,
+  };
+}
+
+export function sanitizeProfileSlug(raw) {
+  if (typeof raw !== 'string') return null;
+  const cleaned = raw.trim().replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!cleaned || cleaned.length > 64) return null;
+  return cleaned;
+}
+
+export function isHardBannedAutonomousField(action) {
+  if (!action || action.kind !== 'fill') return false;
+  const label = `${action.label || ''} ${action.role || ''}`.toLowerCase();
+  if (/\bapplication\s+password\b/.test(label)) return false;
+  return (
+    /\b(password|passcode)\b/.test(label) ||
+    /\b(credit[-_\s]?card|card\s*number|cvv|cvc|expiry|iban|bank\s*account)\b/.test(label) ||
+    /\b(one[-_\s]?time\s*code|2fa|mfa|totp|verification\s*code)\b/.test(label)
+  );
+}

@@ -4,6 +4,12 @@ on:
   push:
     tags: [ 'v*.*.*' ]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v1.0.2)'
+        required: false
+        default: 'v1.0.2'
+        type: string
 
 permissions:
   contents: read
@@ -25,6 +31,9 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      - name: Accept Android SDK Licenses
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+
       - name: Setup Gradle Cache
         uses: gradle/actions/setup-gradle@d9c87d481d55275bb5441eef3fe0e46805f9ef70 # v3.5.0
 
@@ -32,8 +41,11 @@ jobs:
         run: chmod +x apps/android/gradlew
 
       - name: Derive Version From Tag
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          REF="${{ github.ref_name }}"
+          REF="${INPUT_TAG:-$REF_NAME}"
           if ! printf '%s' "$REF" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
             echo "::error::Expected a v<major>.<minor>.<patch> tag, got '$REF'."
             exit 1
@@ -63,6 +75,7 @@ jobs:
       - name: Decode Release Keystore
         env:
           LUMINARA_KEYSTORE_BASE64: ${{ secrets.LUMINARA_KEYSTORE_BASE64 }}
+          LUMINARA_KEYSTORE_PASSWORD: ${{ secrets.LUMINARA_KEYSTORE_PASSWORD }}
         run: |
           if [ -z "$LUMINARA_KEYSTORE_BASE64" ]; then
             echo "::error::LUMINARA_KEYSTORE_BASE64 is not set."
@@ -70,7 +83,7 @@ jobs:
           fi
           printf '%s' "$LUMINARA_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/luminara-release.jks"
           keytool -list -keystore "$RUNNER_TEMP/luminara-release.jks" \
-            -storepass "${{ secrets.LUMINARA_KEYSTORE_PASSWORD }}" > /dev/null
+            -storepass "$LUMINARA_KEYSTORE_PASSWORD" > /dev/null
           echo "LUMINARA_KEYSTORE_PATH=$RUNNER_TEMP/luminara-release.jks" >> "$GITHUB_ENV"
 
       - name: Build Release APK

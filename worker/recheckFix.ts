@@ -5,21 +5,10 @@ import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
 import { json } from './workerUtils';
 import { checkHostedQuota, QUOTA_CAPACITY_ERROR, refundMeteredQuota } from './quotaMiddleware';
-import { resolvesToPublicAddress, safePublicHostname, safePublicUrl, type DohFetch } from './security';
+import { resolvesToPublicAddress, safePublicUrl, type DohFetch } from './security';
 import { readCapped } from './domainVerification';
 import { readRecheck } from '../services/upgrade/recheckReading';
-
-function auditHost(input: string): string {
-  const raw = input.trim();
-  if (!raw) return '';
-  try {
-    const withScheme = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
-    const host = new URL(withScheme).hostname.toLowerCase().replace(/\.$/, '');
-    return safePublicHostname(host) ? host : '';
-  } catch {
-    return '';
-  }
-}
+import { auditHostname } from './auditScoutRun';
 
 const MAX_BYTES = 64_000;
 const FETCH_MS = 5_000;
@@ -27,12 +16,13 @@ const FETCH_MS = 5_000;
 export async function recheckOneFix(
   env: Env,
   user: HostedIdentity,
-  body: { domain?: unknown; checkId?: unknown; expect?: string | unknown },
+  body: { domain?: unknown; checkId?: unknown; expect?: string | unknown; targetUrl?: unknown },
   fetcher: typeof fetch = fetch,
 ): Promise<Response> {
-  const domain = auditHost(typeof body.domain === 'string' ? body.domain : '');
+  const domain = auditHostname(typeof body.domain === 'string' ? body.domain : '');
   const checkId = typeof body.checkId === 'string' ? body.checkId : '';
   const expect = typeof body.expect === 'string' ? body.expect.trim().slice(0, 80) : '';
+  const rawTargetUrl = typeof body.targetUrl === 'string' ? body.targetUrl.trim() : '';
   if (!domain) return json({ ok: false, error: 'A public site is required.', code: 'BAD_REQUEST' }, 400);
 
   const quota = await checkHostedQuota(env, user);
@@ -44,7 +34,12 @@ export async function recheckOneFix(
     );
   }
 
-  const pageUrl = safePublicUrl(`https://${domain}/`);
+  const pageUrl =
+    checkId === 'brand_mention'
+      ? rawTargetUrl
+        ? safePublicUrl(rawTargetUrl)
+        : null
+      : safePublicUrl(`https://${domain}/`);
   const publicHost = pageUrl ? await resolvesToPublicAddress(pageUrl.hostname, fetcher as DohFetch) : false;
   let html = '';
   let status = 0;

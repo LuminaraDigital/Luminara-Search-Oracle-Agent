@@ -71,7 +71,7 @@ export interface Env extends DataPlaneEnv {
   /**
    * API-wide App Check gate: "off" | "log" | "enforce". Unset is off.
    * log records a bad or missing token and still serves the request.
-   * enforce returns 401. Health, robots.txt, llms.txt, and webhook routes are exempt.
+   * enforce returns 401. Health, robots.txt, llms.txt, ai.txt, and webhook routes are exempt.
    * Production stays "off" until a log soak is clean.
    */
   APPCHECK_ENFORCE?: string;

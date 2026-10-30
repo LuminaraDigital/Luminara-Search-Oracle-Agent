@@ -6,7 +6,7 @@ import { quotedQuery, type RadarCitationRow, type RadarStatus } from '../audit/V
 import { buildBrandMindshare, type MindshareHistoryPoint } from '../../services/visibility/mindshareService';
 import { extractCitationDrivers } from '../../services/visibility/citationDriverService';
 import { verifiedRivalsFromReport } from '../audit/CompetitorMap';
-import { scoutAuthoritySources } from '../../services/visibility/authorityScoutService';
+import { scoutAuthoritySources, type AuthorityScoutSummary } from '../../services/visibility/authorityScoutService';
 
 interface MindshareRadarCardProps {
   domain: string;
@@ -18,6 +18,8 @@ interface MindshareRadarCardProps {
   history?: readonly MindshareHistoryPoint[];
   /** Report markdown. Citation-driver copy follows the rival rows this report's map draws. */
   reportMarkdown?: string;
+  /** Optional precomputed authority scout summary from parent to avoid duplicate computation. */
+  authorityScoutSummary?: AuthorityScoutSummary;
   onSelectAction?: (actionId: string, label: string) => void;
 }
 
@@ -42,6 +44,7 @@ export const MindshareRadarCard: React.FC<MindshareRadarCardProps> = ({
   radarRows,
   history,
   reportMarkdown,
+  authorityScoutSummary,
   onSelectAction,
 }) => {
   const mindshare = useMemo(() => {
@@ -59,12 +62,13 @@ export const MindshareRadarCard: React.FC<MindshareRadarCardProps> = ({
   }, [domain, evidence]);
 
   const authorityScout = useMemo(() => {
+    if (authorityScoutSummary) return authorityScoutSummary;
     return scoutAuthoritySources({
       targetDomain: domain,
       evidence,
       rawSources,
     });
-  }, [domain, evidence, rawSources]);
+  }, [authorityScoutSummary, domain, evidence, rawSources]);
 
   const shareRows = useMemo((): ShareRow[] => {
     if (radarRows && radarRows.length > 0) {

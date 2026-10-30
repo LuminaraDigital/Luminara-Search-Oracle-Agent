@@ -40,6 +40,19 @@ export const TOOL_GOVERNANCE: Record<string, ToolGovernanceEntry> = {
   browse_act: { risk: 'write', status: 'active' },
   browse_goal: { risk: 'destructive', status: 'active' },
   browse_close: { risk: 'destructive', status: 'active' },
+  // Dreaming memory catalogue
+  dream_status: { risk: 'read', status: 'active' },
+  get_business_memory: { risk: 'read', status: 'active' },
+  dream_consolidate: { risk: 'write', status: 'active' },
+  review_dream_proposal: { risk: 'write', status: 'active' },
+  // Conversion spine & CMS MCP bridge catalogue (0042)
+  list_enquiries: { risk: 'read', status: 'active' },
+  ingest_enquiry: { risk: 'write', status: 'active' },
+  propose_booking_slots: { risk: 'write', status: 'active' },
+  decide_booking_signoff: { risk: 'destructive', status: 'active' },
+  get_outcomes_funnel: { risk: 'read', status: 'active' },
+  classify_cms_remediation: { risk: 'read', status: 'active' },
+  prepare_cms_mcp_call: { risk: 'destructive', status: 'active' },
 };
 
 /** Unknown tools default to write/active and are still logged. */

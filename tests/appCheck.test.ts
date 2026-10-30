@@ -161,8 +161,8 @@ describe('APPCHECK_ENFORCE', () => {
     expect(resolveAppCheckMode({ APPCHECK_ENFORCE: 'LOG' })).toBe('log');
   });
 
-  it('exempts health, robots.txt, llms.txt, and webhooks', () => {
-    for (const path of ['/api/health', '/health', '/robots.txt', '/llms.txt', '/api/stripe/webhook', '/api/webhooks/auth', '/api/telegram/webhook']) {
+  it('exempts health, robots.txt, llms.txt, ai.txt, and webhooks', () => {
+    for (const path of ['/api/health', '/health', '/robots.txt', '/llms.txt', '/ai.txt', '/api/stripe/webhook', '/api/webhooks/auth', '/api/telegram/webhook']) {
       expect(isAppCheckExempt(new URL(path, 'https://luminarasuite.com'))).toBe(true);
     }
     expect(isAppCheckExempt(new URL('/api/projects', 'https://luminarasuite.com'))).toBe(false);

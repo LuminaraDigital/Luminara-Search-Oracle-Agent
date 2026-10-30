@@ -1,5 +1,5 @@
 # Luminara Suite crawl policy
-# Public marketing pages, /llms.txt, and redacted /share/teaser/ cards are meant to be cited.
+# Public marketing pages, /llms.txt, /ai.txt, and redacted /share/teaser/ cards are meant to be cited.
 # Share URLs under /share/ are unlisted (not in the sitemap) and served noindex. They are
 # allowed here only so link unfurls can fetch the preview HTML.
 # Attestation verify, API, and OAuth stay disallowed.
@@ -28,9 +28,11 @@ Allow: /faq
 Allow: /contact
 Allow: /desktop
 Allow: /compare/
+Allow: /best/
 Allow: /docs/
 Allow: /docs/what-is-aeo.html
 Allow: /llms.txt
+Allow: /ai.txt
 Allow: /sitemap.xml
 Allow: /share/
 Allow: /share/teaser/
@@ -53,9 +55,11 @@ Allow: /faq
 Allow: /contact
 Allow: /desktop
 Allow: /compare/
+Allow: /best/
 Allow: /docs/
 Allow: /docs/what-is-aeo.html
 Allow: /llms.txt
+Allow: /ai.txt
 Allow: /sitemap.xml
 Allow: /share/
 Allow: /share/teaser/

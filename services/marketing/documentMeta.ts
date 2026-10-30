@@ -2,11 +2,13 @@ import { AppView } from '../../types';
 import {
   DASHBOARD_TAB_TITLE,
   DEFAULT_OG_IMAGE,
+  ENQUIRY_DESK_TAB_TITLE,
   MARKETING_ORIGIN,
   MARKETING_SHELL_BY_PATH,
   instantAuditTabTitle,
   marketingShellKey,
   perDomainShell,
+  checkShell,
   type MarketingShellMeta,
 } from './pageMeta';
 import { HONEST_VISIBILITY_PROMISE } from './engineCoverage';
@@ -100,6 +102,10 @@ const DEFAULT_APP_META = {
 
 function shellFor(pathname: string, view: AppView): MarketingShellMeta | undefined {
   const path = pathname || '/';
+  // A shared check renders the landing view with its own noindex meta. Any other view on that
+  // path (it is cleared on navigation, but a reload with a hash can land here) gets its own meta.
+  const sharedCheck = view === AppView.LANDING ? checkShell(path) : null;
+  if (sharedCheck) return sharedCheck;
   // `/` plus a hash is a product view. A real path such as /compare/profound wins over the shared view.
   const key = path === '/' ? null : marketingShellKey(path);
   const shellPath = key ?? VIEW_TO_SHELL[view];
@@ -125,6 +131,7 @@ export function resolveDocumentTitle(pathname: string, view: AppView): string {
   const page = shellFor(pathname, view);
   if (page) return page.title;
   if (view === AppView.DASHBOARD) return DASHBOARD_TAB_TITLE;
+  if (view === AppView.ENQUIRY_DESK) return ENQUIRY_DESK_TAB_TITLE;
   if (view === AppView.INSTANT_AUDIT) return instantAuditTabTitle(parseUrlSwapRoute(pathname)?.targetUrl);
   return DEFAULT_APP_META.title;
 }

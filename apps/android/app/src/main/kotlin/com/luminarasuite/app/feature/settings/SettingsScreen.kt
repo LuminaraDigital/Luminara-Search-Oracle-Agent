@@ -69,15 +69,25 @@ class SettingsViewModel(
 
     init {
         viewModelScope.launch {
+            var initialKeysLoaded = false
+            var lastStoredKeys = ByokKeyBag()
             repository.vaultFlow.collect { snap ->
-                _uiState.update {
-                    it.copy(
+                val keysChanged = !initialKeysLoaded || snap.byokKeys != lastStoredKeys
+                initialKeysLoaded = true
+                lastStoredKeys = snap.byokKeys
+                _uiState.update { current ->
+                    current.copy(
                         vault = snap,
-                        groqKeyInput = snap.byokKeys.groqKey,
-                        nimKeyInput = snap.byokKeys.nimKey,
-                        geminiKeyInput = snap.byokKeys.geminiKey,
-                        tavilyKeyInput = snap.byokKeys.tavilyKey,
+                        groqKeyInput = if (keysChanged) snap.byokKeys.groqKey else current.groqKeyInput,
+                        nimKeyInput = if (keysChanged) snap.byokKeys.nimKey else current.nimKeyInput,
+                        geminiKeyInput = if (keysChanged) snap.byokKeys.geminiKey else current.geminiKeyInput,
+                        tavilyKeyInput = if (keysChanged) snap.byokKeys.tavilyKey else current.tavilyKeyInput,
                     )
+                }
+                if (snap.isSignedIn && _uiState.value.quota == null) {
+                    repository.refreshQuota().onSuccess { quota ->
+                        _uiState.update { it.copy(quota = quota) }
+                    }
                 }
             }
         }

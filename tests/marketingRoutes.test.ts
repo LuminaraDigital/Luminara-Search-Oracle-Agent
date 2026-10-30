@@ -10,12 +10,12 @@ import {
   resolveAppView,
   urlForView,
 } from '../utils/marketingRoutes';
-import { DASHBOARD_TAB_TITLE, MARKETING_SHELL_BY_PATH, instantAuditTabTitle, marketingShellKey } from '../services/marketing/pageMeta';
+import { DASHBOARD_TAB_TITLE, ENQUIRY_DESK_TAB_TITLE, MARKETING_SHELL_BY_PATH, instantAuditTabTitle, marketingShellKey } from '../services/marketing/pageMeta';
 import { resolveCanonicalHref, resolveDocumentTitle, resolveRobotsDirective } from '../services/marketing/documentMeta';
 import { injectMarketingMeta } from '../worker/marketingShell';
 import { CHECKOUT_TERM_LINE, listPriceSummary } from '../components/paywall/planCopy';
 import { PAID_PLAN_PRICES } from '../components/paywall/planPrices';
-import { LLMS_TXT, ROBOTS_TXT, SITEMAP_XML } from '../worker/crawlDocuments';
+import { AI_TXT, LLMS_TXT, ROBOTS_TXT, SITEMAP_XML } from '../worker/crawlDocuments';
 
 describe('marketingRoutes', () => {
   it('maps canonical paths to views', () => {
@@ -31,10 +31,10 @@ describe('marketingRoutes', () => {
     expect(marketingViewFromPathname('/how/')).toBe(AppView.INFRASTRUCTURE);
     expect(marketingViewFromPathname('/infrastructure')).toBe(AppView.INFRASTRUCTURE);
     expect(marketingViewFromPathname('/why-us')).toBe(AppView.WHY_US);
-    expect(marketingViewFromPathname('/compare/profound')).toBe(AppView.WHY_US);
-    expect(marketingViewFromPathname('/compare/ahrefs')).toBe(AppView.WHY_US);
-    expect(marketingViewFromPathname('/compare/otterly')).toBe(AppView.WHY_US);
-    expect(marketingViewFromPathname('/compare/peec')).toBe(AppView.WHY_US);
+    expect(marketingViewFromPathname('/compare/profound')).toBe(AppView.COMPARE);
+    expect(marketingViewFromPathname('/compare/ahrefs')).toBe(AppView.COMPARE);
+    expect(marketingViewFromPathname('/compare/otterly')).toBe(AppView.COMPARE);
+    expect(marketingViewFromPathname('/compare/peec')).toBe(AppView.COMPARE);
   });
 
   it('maps legacy hashes', () => {
@@ -69,6 +69,7 @@ describe('marketingRoutes', () => {
     expect(resolveAppView('/aeo', '')).toBe(AppView.NOT_FOUND);
     expect(resolveAppView('/', '#launchpad')).toBe(AppView.NOT_FOUND);
     expect(resolveAppView('/', '#trust_center')).toBe(AppView.TRUST_CENTER);
+    expect(resolveAppView('/', '#enquiry_desk')).toBe(AppView.ENQUIRY_DESK);
   });
 
   it('routes /verify/r/<id> to the receipt view without breaking /verify/<digest>', () => {
@@ -92,13 +93,14 @@ describe('marketingRoutes', () => {
 
 describe('tab titles', () => {
   it('uses Topic | Luminara Suite, unique, under 60 characters', () => {
-    expect(resolveDocumentTitle('/compare/profound', AppView.WHY_US)).toBe('Luminara vs Profound | Luminara Suite');
-    expect(resolveDocumentTitle('/compare/ahrefs', AppView.WHY_US)).toBe('Luminara vs Ahrefs | Luminara Suite');
-    expect(resolveDocumentTitle('/compare/otterly', AppView.WHY_US)).toBe('Luminara vs Otterly | Luminara Suite');
-    expect(resolveDocumentTitle('/compare/peec', AppView.WHY_US)).toBe('Luminara vs Peec | Luminara Suite');
+    expect(resolveDocumentTitle('/compare/profound', AppView.COMPARE)).toBe('Luminara vs Profound | Luminara Suite');
+    expect(resolveDocumentTitle('/compare/ahrefs', AppView.COMPARE)).toBe('Luminara vs Ahrefs | Luminara Suite');
+    expect(resolveDocumentTitle('/compare/otterly', AppView.COMPARE)).toBe('Luminara vs Otterly | Luminara Suite');
+    expect(resolveDocumentTitle('/compare/peec', AppView.COMPARE)).toBe('Luminara vs Peec | Luminara Suite');
     expect(resolveDocumentTitle('/why', AppView.WHY_US)).toBe('Why Luminara | Luminara Suite');
     expect(resolveDocumentTitle('/dashboard', AppView.DASHBOARD)).toBe('Dashboard | Luminara Suite');
     expect(resolveDocumentTitle('/', AppView.DASHBOARD)).toBe('Dashboard | Luminara Suite');
+    expect(resolveDocumentTitle('/', AppView.ENQUIRY_DESK)).toBe('Enquiry Desk | Luminara Suite');
     expect(resolveDocumentTitle('/labs', AppView.ECOSYSTEM_HUB)).toBe('Labs | Luminara Suite');
     expect(resolveDocumentTitle('/audit/example.com', AppView.INSTANT_AUDIT)).toBe('Instant Audit: example.com | Luminara Suite');
     expect(resolveDocumentTitle('/audit/https://shop.example/pricing', AppView.INSTANT_AUDIT)).toBe('Instant Audit: shop.example | Luminara Suite');
@@ -112,6 +114,7 @@ describe('tab titles', () => {
     const titles = [
       ...Object.values(MARKETING_SHELL_BY_PATH).map((page) => page.title),
       DASHBOARD_TAB_TITLE,
+      ENQUIRY_DESK_TAB_TITLE,
       instantAuditTabTitle('example.com'),
       instantAuditTabTitle(undefined),
       'Windows app | Luminara Suite',
@@ -142,6 +145,7 @@ describe('marketing crawl documents', () => {
   it('sitemap lists canonical marketing URLs', () => {
     expect(SITEMAP_XML).toContain('https://www.luminarasuite.com/how-it-works');
     expect(SITEMAP_XML).toContain('https://www.luminarasuite.com/llms.txt');
+    expect(SITEMAP_XML).toContain('https://www.luminarasuite.com/ai.txt');
     expect(SITEMAP_XML).toContain('https://www.luminarasuite.com/docs/what-is-aeo.html');
     expect(SITEMAP_XML).toContain('http://www.sitemaps.org/schemas/sitemap/0.9');
   });
@@ -198,6 +202,7 @@ describe('marketing crawl documents', () => {
   it('public crawl files match the Worker constants', () => {
     expect(readFileSync('public/robots.txt', 'utf8')).toBe(ROBOTS_TXT);
     expect(readFileSync('public/llms.txt', 'utf8')).toBe(LLMS_TXT);
+    expect(readFileSync('public/ai.txt', 'utf8')).toBe(AI_TXT);
     expect(readFileSync('public/sitemap.xml', 'utf8')).toBe(SITEMAP_XML);
   });
 });

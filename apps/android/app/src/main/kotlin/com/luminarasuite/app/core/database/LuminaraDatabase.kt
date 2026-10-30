@@ -67,6 +67,7 @@ data class FindingEntity(
     val id: String,
     val auditRunId: String,
     val domain: String,
+    val stableKey: String = "",
     val category: String,
     val severity: String,
     val title: String,
@@ -80,6 +81,7 @@ data class FindingEntity(
             id = id,
             auditRunId = auditRunId,
             domain = domain,
+            stableKey = stableKey,
             category = category,
             severity = severity,
             title = title,
@@ -95,6 +97,7 @@ fun AuditFinding.toEntity(): FindingEntity =
         id = id,
         auditRunId = auditRunId,
         domain = domain,
+        stableKey = stableKey,
         category = category,
         severity = severity,
         title = title,
@@ -117,6 +120,9 @@ interface LuminaraDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertFindings(findings: List<FindingEntity>)
+
+    @Query("DELETE FROM audit_findings WHERE domain = :domain")
+    suspend fun deleteFindingsForDomain(domain: String)
 
     @Query("UPDATE audit_findings SET status = :status, updatedAt = :updatedAt WHERE id = :id")
     suspend fun updateFindingStatus(

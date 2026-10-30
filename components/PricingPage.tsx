@@ -8,17 +8,41 @@ import { TelegramAccountPanel } from './telegram/TelegramAccountPanel';
 import React, { useEffect, useState } from 'react';
 import { accountCallsAllowed, getServerHealthSync, openPaywallModal } from '../services/apiClient';
 import { beginCardCheckout, CARD_CHECKOUT_ERROR_EVENT, readCardCheckoutError } from './paywall/pendingCardCheckout';
-import { MarketingPageHeader, MarketingPageShell } from './marketing/MarketingPageShell';
+import { EvidenceGlyph, MarketingPageHeader, MarketingPageShell } from './marketing/MarketingPageShell';
 import { PLAN_ENTITLEMENTS } from '../services/plans/planEntitlements';
 import { TELEGRAM_MINI_APP_URL, isStripeCheckoutAvailable, isTonAvailable } from './paywall/paymentOptions';
-import { CHECKOUT_TERM_LINE, NO_TAX_LINE, NOTHING_TO_CANCEL, PLAN_CARD_BADGE, TELEGRAM_STARS_HANDOFF, WAITLIST_LINE, freePlanLines, listPriceSummary, planBullets, planSeatLine, planTitle, pricingTiers, starsPayLabel, type PlanBullet } from './paywall/planCopy';
+import {
+  BYOK_CHECKOUT_LINE,
+  CHECKOUT_TERM_LINE,
+  NO_TAX_LINE,
+  NOTHING_TO_CANCEL,
+  PLAN_CARD_BADGE,
+  TELEGRAM_STARS_HANDOFF,
+  WAITLIST_LINE,
+  freePlanLines,
+  listPriceSummary,
+  planBullets,
+  planSeatLine,
+  planTitle,
+  pricingTiers,
+  starsPayLabel,
+  type PlanBullet,
+} from './paywall/planCopy';
 import { cardPayLabel, cardTermLabel, type PaidPlanId } from './paywall/planPrices';
 import { PRICING_HERO } from '../services/marketing/marketingHeroCopy';
+import { LIVE_ANSWER_CHECKS } from '../services/marketing/engineCoverage';
+import { COMPANY_SERVICES_URL } from '../services/legal/consumerTerms';
 
 export { pricingTiers };
 
 interface PricingPageProps {
   onTerminal: () => void;
+  onBack?: () => void;
+  onNavigateInfrastructure?: () => void;
+  onNavigateIntelligence?: () => void;
+  onNavigateWhy?: () => void;
+  onNavigateSampleReport?: () => void;
+  onSignUpClick?: () => void;
 }
 
 /** The line the paywall opens with when a plan is chosen here. TON is named only while its checkout is open. */
@@ -34,6 +58,123 @@ const DAY_PASS = {
   price: '25 Stars',
   body: 'Premium hosted AI engines and hosted calls past the free daily cap, for one site, for 24 hours. Live answers from specific AI products stay Not measured unless you are on Agency or you connect your own search login.',
 } as const;
+
+const buyerFitCards = [
+  {
+    badge: 'Profile 01 · Starter Pass',
+    title: 'Single-office principal or local business',
+    term: cardTermLabel('starter'),
+    summary: 'Built for an owner-operator fixing 1 or 2 core domains who wants ranked page leaks, ready-to-paste LocalBusiness and FAQPage JSON-LD, white-label PDF exports, and monthly re-audit reminders in Telegram.',
+  },
+  {
+    badge: 'Profile 02 · Growth Pass (Recommended)',
+    title: 'In-house marketer or multi-suburb team',
+    term: cardTermLabel('growth'),
+    summary: 'Built for teams monitoring up to 5 domains who share read-only audit links with vendors or executives, connect Claude or Cursor via /api/mcp, and run weekly re-audit reminders in Telegram.',
+  },
+  {
+    badge: 'Profile 03 · Agency Pass',
+    title: 'Multi-office group or digital agency',
+    term: cardTermLabel('agency'),
+    summary: `Built for groups managing up to 25 domains across 10 client workspaces with daily re-audit reminders in Telegram and Twenty CRM sync. ${LIVE_ANSWER_CHECKS}`,
+  },
+] as const;
+
+const capabilityMatrixRows = [
+  {
+    feature: 'Monitored domains',
+    free: '1 domain',
+    starter: '2 domains',
+    growth: '5 domains',
+    agency: '25 domains',
+  },
+  {
+    feature: 'Client workspaces',
+    free: 'Personal workspace',
+    starter: 'Personal workspace',
+    growth: 'Personal workspace',
+    agency: '10 client workspaces',
+  },
+  {
+    feature: 'Hosted Instant Audit checks',
+    free: '3 checks per UTC day',
+    starter: 'Higher daily allowance',
+    growth: 'Higher daily allowance',
+    agency: 'Highest daily allowance',
+  },
+  {
+    feature: 'Ready-to-paste JSON-LD schema & /llms.txt Fix Pack',
+    free: 'Included',
+    starter: 'Included',
+    growth: 'Included',
+    agency: 'Included',
+  },
+  {
+    feature: '3-Tier CMS Fixer & live /api/deploy/readback',
+    free: 'Included in web app',
+    starter: 'Included in web app',
+    growth: 'Included + MCP relay',
+    agency: 'Included + MCP relay',
+  },
+  {
+    feature: 'Enquiry Desk, statutory guardrails & booking sign-off',
+    free: 'Included in workspace',
+    starter: 'Included in workspace',
+    growth: 'Included + MCP tools',
+    agency: 'Included + Twenty CRM sync',
+  },
+  {
+    feature: 'White-label PDF exports',
+    free: 'Not included',
+    starter: 'Included',
+    growth: 'Included',
+    agency: 'Included',
+  },
+  {
+    feature: 'Public share links & IDE MCP access (Cursor / Claude)',
+    free: 'Not included',
+    starter: 'Not included',
+    growth: 'Included',
+    agency: 'Included',
+  },
+  {
+    feature: 'Re-audit reminders in Telegram',
+    free: 'On-demand only',
+    starter: 'Monthly reminders',
+    growth: 'Weekly reminders',
+    agency: 'Daily reminders',
+  },
+  {
+    feature: 'Live ChatGPT, Perplexity & Google AI Overviews checks',
+    free: 'With own DataForSEO login',
+    starter: 'With own DataForSEO login',
+    growth: 'With own DataForSEO login',
+    agency: 'Included on Agency (or own DataForSEO login)',
+  },
+] as const;
+
+const pricingFaqItems = [
+  {
+    question: 'Does a 30-day pass renew automatically or bill my card again?',
+    answer: 'No. Every paid plan is a one-time 30-day grant that starts as soon as payment is confirmed. It never renews on its own, so there is nothing to cancel.',
+  },
+  {
+    question: 'What happens to my saved reports and Enquiry Desk leads after 30 days?',
+    answer: 'Your account, saved audit history, and Enquiry Desk records stay in your workspace. When a 30-day pass ends, your account simply returns to the Free allowance (3 hosted checks per UTC day, or your own keys in Settings) until you activate another pass.',
+  },
+  {
+    question: 'Can I bring my own API keys (BYOK) instead of buying a pass?',
+    answer: `${BYOK_CHECKOUT_LINE} You can paste your own Gemini, Groq, OpenRouter, or DataForSEO credentials in Settings at any time.`,
+  },
+  {
+    question: 'Which pass includes live ChatGPT, Perplexity, and Google AI Overviews checks?',
+    answer: `${LIVE_ANSWER_CHECKS} Every other check is labeled Measured, Estimated, or Not measured so you never act on invented scores.`,
+  },
+  {
+    question: 'When should we engage Luminara Digital instead of a self-serve pass?',
+    answer: `Self-serve passes cover Instant Audit, Tier 1 and Tier 2 CMS Fix Packs, and the Enquiry Desk. If your agency needs a custom Next.js rebuild, SSR hydration refactoring, or bespoke CRM webhook engineering, our team at ${COMPANY_SERVICES_URL} scopes and delivers that engineering work directly.`,
+  },
+] as const;
 
 function PlanFeature({ line }: { line: PlanBullet }) {
   return (
@@ -53,7 +194,12 @@ function PlanFeature({ line }: { line: PlanBullet }) {
   );
 }
 
-const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
+const PricingPage: React.FC<PricingPageProps> = ({
+  onTerminal,
+  onNavigateInfrastructure,
+  onNavigateSampleReport,
+  onSignUpClick,
+}) => {
   const [busyPlan, setBusyPlan] = useState<PaidPlanId | null>(null);
   const [cardNote, setCardNote] = useState<string | null>(null);
 
@@ -80,6 +226,10 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
     setBusyPlan(null);
   };
 
+  const handleHowItWorks = onNavigateInfrastructure ?? onTerminal;
+  const handleSample = onNavigateSampleReport ?? onTerminal;
+  const handleSignUp = onSignUpClick ?? onTerminal;
+
   const inTelegram = isInTelegram();
   // TON is paid on the web with a connected wallet, never inside Telegram, and only while the
   // Worker reports that checkout open. Until then this page names Stars alone.
@@ -102,6 +252,10 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
         ),
         body: 'Open Instant Audit on the site that matters most, then choose a plan when you need more.',
         cta: { label: 'Open Instant Audit', onClick: onTerminal },
+        links: [
+          { label: 'See sample report', onClick: handleSample },
+          { label: 'How it works', onClick: handleHowItWorks },
+        ],
       }}
     >
       <MarketingPageHeader
@@ -112,7 +266,17 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
           </>
         }
         lede={PRICING_HERO.lede}
-      />
+      >
+        <button type="button" onClick={handleSignUp} className="lx-btn lx-btn-gold">
+          Create free account
+        </button>
+        <button type="button" onClick={onTerminal} className="lx-btn lx-btn-ghost">
+          Open Instant Audit
+        </button>
+        <button type="button" onClick={handleSample} className="lx-link text-sm">
+          See sample report
+        </button>
+      </MarketingPageHeader>
       <p className="lx-enter-rise lx-d4 mx-auto mt-6 max-w-2xl text-center text-sm leading-relaxed text-[var(--color-ink-2)]">
         {CHECKOUT_TERM_LINE}{tonClause}
       </p>
@@ -135,7 +299,7 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <article className="lx-glass relative flex min-w-0 flex-col rounded-3xl p-6 sm:p-8">
             <h3 className="font-serif text-3xl leading-tight text-[var(--color-ink)]">{PLAN_ENTITLEMENTS.free.title}</h3>
-            <p className="mt-7 font-serif text-5xl leading-none text-[var(--color-ink)]">A$0</p>
+            <p className="mt-7 font-serif text-5xl leading-none text-[var(--color-ink)] tabular-nums">A$0</p>
             <p className="mt-3 text-[13px] text-[var(--color-ink-2)]">No card</p>
             <p className="mt-6 leading-relaxed text-[var(--color-ink-2)]">
               One domain, on-demand audits, and a daily hosted allowance after you create an account.
@@ -176,16 +340,16 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
                   <p className="mt-1 whitespace-nowrap text-[13px] text-[var(--color-ink-2)]">{planSeatLine(tier.id)}</p>
                 </div>
                 <p
-                  className={`mt-7 font-serif text-6xl leading-none ${
+                  className={`mt-7 font-serif text-6xl leading-none tabular-nums ${
                     tier.highlight ? 'lx-gold-text' : 'text-[var(--color-ink)]'
                   }`}
                 >
                   {tier.priceLabel}
                 </p>
-                <p className="mt-3 text-[13px] text-[var(--color-ink-2)]">
+                <p className="mt-3 text-[13px] text-[var(--color-ink-2)] tabular-nums">
                   {cardTermLabel(tier.id)}
                 </p>
-                <p className="mt-1 text-[13px] text-[var(--color-ink-2)]">
+                <p className="mt-1 text-[13px] text-[var(--color-ink-2)] tabular-nums">
                   {tonOpen ? `${tier.stars} · or ${tier.ton} on the web` : `${tier.stars} in Telegram`}
                 </p>
                 <p className="mt-6 leading-relaxed text-[var(--color-ink-2)]">{tier.blurb}</p>
@@ -226,9 +390,135 @@ const PricingPage: React.FC<PricingPageProps> = ({ onTerminal }) => {
         <div className="mt-8 border-t pt-6 lx-hairline" data-reveal>
           <div className="flex items-baseline justify-between gap-3">
             <h3 className="font-serif text-2xl text-[var(--color-ink)]">{DAY_PASS.title}</h3>
-            <p className="shrink-0 text-sm text-[var(--gold-light)]">{DAY_PASS.price}</p>
+            <p className="shrink-0 text-sm text-[var(--gold-light)] tabular-nums">{DAY_PASS.price}</p>
           </div>
           <p className="mt-3 leading-relaxed text-[var(--color-ink-2)]">{DAY_PASS.body} Paid in Telegram.</p>
+        </div>
+      </section>
+
+      {/* Section: Which Pass Fits Your Agency */}
+      <section
+        aria-labelledby="fit-guide-heading"
+        className="mt-24 border-t pt-20 lx-hairline sm:mt-32 sm:pt-24"
+      >
+        <div className="max-w-3xl" data-reveal>
+          <p className="lx-eyebrow">Which pass fits your agency</p>
+          <h2 id="fit-guide-heading" className="lx-display lx-h3 mt-5 [overflow-wrap:anywhere]">
+            Match the pass to <span className="italic lx-gold-text pr-[0.08em]">your domain footprint.</span>
+          </h2>
+          <p className="mt-5 text-[15px] leading-relaxed text-[var(--color-ink-2)]">
+            Every pass is a 30-day grant with no recurring lock-in. Start free on a single domain, or pick the pass that matches how many suburb and client sites you manage.
+          </p>
+        </div>
+
+        <div className="mt-12 grid gap-6 lg:grid-cols-12">
+          {buyerFitCards.map((item, idx) => (
+            <article
+              key={item.title}
+              data-reveal
+              style={{ transitionDelay: `${idx * 80}ms` }}
+              className="lx-glass flex flex-col justify-between rounded-[20px] p-6 sm:p-8 lg:col-span-4"
+            >
+              <div>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="lx-eyebrow">{item.badge}</span>
+                  <span className="rounded-full border px-2.5 py-0.5 font-mono text-[11px] text-[var(--gold-light)] tabular-nums lx-hairline">
+                    {item.term}
+                  </span>
+                </div>
+                <h3 className="mt-4 text-xl font-medium text-[var(--color-ink)]">{item.title}</h3>
+                <div aria-hidden className="mt-4 h-px w-full bg-gradient-to-r from-gold/60 to-transparent" />
+                <p className="mt-4 text-sm leading-relaxed text-[var(--color-ink-2)]">{item.summary}</p>
+              </div>
+              <div className="mt-6 flex items-center justify-between gap-2 border-t pt-4 text-xs text-[var(--color-ink-2)] lx-hairline">
+                <span className="inline-flex items-center gap-1.5">
+                  <EvidenceGlyph state="Measured" />
+                  30-day pass, non-renewing
+                </span>
+                <button type="button" onClick={onTerminal} className="lx-link font-medium">
+                  Audit a domain
+                </button>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      {/* Section: Full 4-Tier Capability Matrix */}
+      <section
+        aria-labelledby="matrix-heading"
+        className="mt-24 border-t pt-20 lx-hairline sm:mt-32 sm:pt-24"
+      >
+        <div className="max-w-3xl" data-reveal>
+          <p className="lx-eyebrow">Side-by-side comparison</p>
+          <h2 id="matrix-heading" className="lx-display lx-h3 mt-5 [overflow-wrap:anywhere]">
+            What is included <span className="italic lx-gold-text pr-[0.08em]">on every tier.</span>
+          </h2>
+          <p className="mt-5 text-[15px] leading-relaxed text-[var(--color-ink-2)]">
+            Every tier includes the core page and schema Fix Pack and the Enquiry Desk workspace. Higher tiers lift domain caps and add white-label PDFs, share links, MCP access, and hosted live answer checks.
+          </p>
+        </div>
+
+        <div
+          tabIndex={0}
+          role="region"
+          aria-label="Full capability comparison across Free, Starter, Growth, and Agency"
+          className="mt-10 overflow-x-auto rounded-[20px] border lx-glass lx-hairline"
+          data-reveal
+        >
+          <table className="w-full min-w-[720px] border-collapse text-left text-sm">
+            <thead>
+              <tr className="border-b text-xs uppercase tracking-wider text-[var(--color-ink-2)] lx-hairline">
+                <th scope="col" className="py-4 pl-6 pr-4 font-medium">Capability</th>
+                <th scope="col" className="px-4 py-4 font-medium">Free (A$0)</th>
+                <th scope="col" className="px-4 py-4 font-medium">Starter ({cardTermLabel('starter')})</th>
+                <th scope="col" className="px-4 py-4 font-medium text-[var(--gold-light)]">Growth ({cardTermLabel('growth')})</th>
+                <th scope="col" className="py-4 pl-4 pr-6 font-medium text-[var(--color-ink)]">Agency ({cardTermLabel('agency')})</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y lx-hairline">
+              {capabilityMatrixRows.map((row) => (
+                <tr key={row.feature}>
+                  <th scope="row" className="py-4 pl-6 pr-4 font-medium text-[var(--color-ink)]">
+                    {row.feature}
+                  </th>
+                  <td className="px-4 py-4 text-[var(--color-ink-2)] tabular-nums">{row.free}</td>
+                  <td className="px-4 py-4 text-[var(--color-ink)] tabular-nums">{row.starter}</td>
+                  <td className="px-4 py-4 text-[var(--color-ink)] tabular-nums">{row.growth}</td>
+                  <td className="py-4 pl-4 pr-6 text-[var(--color-ink)] tabular-nums">{row.agency}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {/* Section: Pricing & Pass FAQ */}
+      <section
+        aria-labelledby="pricing-faq-heading"
+        className="mt-24 border-t pt-20 lx-hairline sm:mt-32 sm:pt-24"
+      >
+        <div className="max-w-3xl" data-reveal>
+          <p className="lx-eyebrow">Common questions</p>
+          <h2 id="pricing-faq-heading" className="lx-display lx-h3 mt-5 [overflow-wrap:anywhere]">
+            Pass terms, keys, <span className="italic lx-gold-text pr-[0.08em]">and data retention.</span>
+          </h2>
+        </div>
+
+        <div className="lx-faq mt-10 divide-y rounded-[20px] border px-6 lx-glass lx-hairline sm:px-8" data-reveal>
+          {pricingFaqItems.map((item) => (
+            <details key={item.question} className="group py-5">
+              <summary className="flex items-center justify-between gap-4 text-left text-base font-medium text-[var(--color-ink)]">
+                <span>{item.question}</span>
+                <span aria-hidden className="font-mono text-sm text-[var(--gold-light)] transition-transform group-open:rotate-45">
+                  +
+                </span>
+              </summary>
+              <p className="mt-3 text-sm leading-relaxed text-[var(--color-ink-2)]">
+                {item.answer}
+              </p>
+            </details>
+          ))}
         </div>
       </section>
 

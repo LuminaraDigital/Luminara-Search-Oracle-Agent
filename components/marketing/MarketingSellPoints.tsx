@@ -5,7 +5,7 @@ import './space.css';
 export const MARKETING_SELL_POINTS = [
   {
     title: 'Search and AI answers together',
-    body: `Your site and live web search, in one pass. ${LIVE_ANSWER_CHECKS}`,
+    body: `Your site, suburb pages, and live web search in one pass so you see where buyers find you and where competitors get named instead. ${LIVE_ANSWER_CHECKS}`,
   },
   {
     title: 'Labeled evidence',
@@ -13,7 +13,7 @@ export const MARKETING_SELL_POINTS = [
   },
   {
     title: 'One action you can ship',
-    body: 'Live crawl check to Instant Audit to a plain-English next step. Growth adds shareable report links and IDE access.',
+    body: 'Free check to Instant Audit to a ready-to-paste page, review, or schema fix that helps win the enquiry. Growth adds shareable report links and IDE access.',
   },
 ] as const;
 

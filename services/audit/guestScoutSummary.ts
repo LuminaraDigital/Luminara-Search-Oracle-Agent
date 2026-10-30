@@ -11,6 +11,7 @@ import type { AnswerDepth } from './answerDepth';
 import type { LlmCrawlerCheck, LlmCrawlerReport } from './llmCrawlerReadiness';
 import { hostedAuthRecoveryHint, type HostedScoutRail } from './hostedScoutRail';
 import { teaserFailureCodes, teaserFailureLine, type TeaserFailureCode } from './teaserFailureCodes';
+import { crawlerFixes } from './crawlerFixes';
 import { guardUnmeasuredClaims, type MeasuredClaimFacts } from './unmeasuredClaimGuard';
 import { measuredCheckLine, resolveCheckCounts } from '../agentCore/auditEvidenceGate';
 import { countPhrase, joinList, tidySentence } from './reportSentence';
@@ -292,7 +293,8 @@ export function buildGuestScoutSummary(input: GuestScoutSummaryInput): GuestScou
     failureCodes,
   });
 
-  const firstFix = input.findings.map((f) => f.title.trim()).find(Boolean);
+  const firstFix = input.findings.map((f) => f.title.trim()).find(Boolean)
+    || crawlerFixes(crawlerChecks).find((fix) => !fix.optional)?.title;
   const topFix = (degraded || evidenceEmpty)
     ? 'Do not ship changes from this run. Fetch the homepage and a search sample, then scout again.'
     : (firstFix || 'Ship the first measured gap before adding more pages.');

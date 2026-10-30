@@ -2,7 +2,11 @@
  * DataForSEO LLM Mentions → EngineVisibilityResult (W4).
  */
 import type { EngineVisibilityResult, VisibilityEngineId } from './engineVisibilityTypes';
-import { notMeasuredEngine } from './engineVisibilityTypes';
+import {
+  classifyBrandMentionStatus,
+  findMentionedCompetitors,
+  notMeasuredEngine,
+} from './engineVisibilityTypes';
 import { dfsFirstResult } from '../tools/dfsParse';
 
 export type DfsPostFn = (
@@ -31,6 +35,7 @@ export async function fetchDataForSeoMentions(opts: {
   dfsPost: DfsPostFn;
   domain: string;
   brand?: string;
+  competitors?: string[];
   queries?: string[];
   locationCode?: number;
   languageCode?: string;
@@ -38,6 +43,7 @@ export async function fetchDataForSeoMentions(opts: {
   const measuredAt = Date.now();
   const target = opts.domain.replace(/^www\./, '');
   const keyword = opts.queries?.[0] || opts.brand || target;
+  const competitors = (opts.competitors || []).map((c) => c.trim()).filter(Boolean);
   const payload = [
     {
       keywords: [keyword],
@@ -74,13 +80,18 @@ export async function fetchDataForSeoMentions(opts: {
     const evidence = rows.slice(0, 10).map((row) => {
       const r = row as Record<string, unknown>;
       const snippet = String(r.answer || r.snippet || r.title || '').slice(0, 400);
+      const snippetLower = snippet.toLowerCase();
       const cited =
-        snippet.toLowerCase().includes(target.toLowerCase()) ||
-        (opts.brand ? snippet.toLowerCase().includes(opts.brand.toLowerCase()) : false) ||
+        snippetLower.includes(target.toLowerCase()) ||
+        (opts.brand ? snippetLower.includes(opts.brand.toLowerCase()) : false) ||
         Boolean(r.mentioned);
+      const competitorsMentioned = findMentionedCompetitors(snippet, competitors);
+      const brandStatus = classifyBrandMentionStatus(cited, snippet);
       return {
-        query: keyword,
+        query: String(r.keyword || r.question || keyword),
         cited,
+        brandStatus,
+        competitorsMentioned: competitorsMentioned.length ? competitorsMentioned : undefined,
         answerSnippet: snippet || undefined,
         sources: Array.isArray(r.sources) ? (r.sources as string[]).map(String) : undefined,
       };

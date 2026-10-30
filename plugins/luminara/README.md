@@ -20,6 +20,7 @@ Self-host: point the URL at your Worker origin `/api/mcp`.
 - luminara-competitor-analysis
 - luminara-visibility
 - luminara-local
+- luminara-aeo-hub (transcript or audit to a reviewed /compare or /best entry plus a syndication pack; Prepare mode)
 
 ## Invariant
 

@@ -1,0 +1,32 @@
+# Luminara Suite AI policy (ai.txt)
+# Public marketing pages, /llms.txt, /ai.txt, and redacted /share/teaser/ cards may be crawled and cited with attribution.
+# Unlisted full reports under /share/ are served noindex and are not for training or citation.
+# API, verification, report storage, and OAuth routes are disallowed.
+# Structured product context for answer engines lives at https://www.luminarasuite.com/llms.txt
+# Methodology and honesty glossary: https://www.luminarasuite.com/docs/what-is-aeo.html
+
+User-agent: *
+Allow: /
+Allow: /how-it-works
+Allow: /ai
+Allow: /why
+Allow: /pricing
+Allow: /methodology
+Allow: /sample-report
+Allow: /privacy
+Allow: /terms
+Allow: /faq
+Allow: /contact
+Allow: /desktop
+Allow: /compare/
+Allow: /best/
+Allow: /docs/
+Allow: /docs/what-is-aeo.html
+Allow: /llms.txt
+Allow: /ai.txt
+Allow: /sitemap.xml
+Allow: /share/teaser/
+Disallow: /api/
+Disallow: /verify/
+Disallow: /reports/
+Disallow: /oauth/

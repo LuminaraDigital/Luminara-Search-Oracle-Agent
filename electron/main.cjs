@@ -6,13 +6,14 @@
  * update every desktop client without rebuilding the installer.
  */
 
-const { app, BrowserWindow, shell, Menu, Tray, nativeImage, ipcMain, dialog, session, crashReporter } = require('electron');
+const { app, BrowserWindow, shell, Menu, Tray, nativeImage, ipcMain, dialog, session, crashReporter, safeStorage } = require('electron');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { applyWindowsHardening } = require('./windowsHardening.cjs');
 const { createShellPolicy, createNavigationGuard, createTrustedIpc } = require('./security.cjs');
 const { setupAutoUpdater } = require('./updater.cjs');
 const { setupCrashReporting, installProcessErrorHandlers } = require('./crashReporting.cjs');
+const { createDesktopCoordinator } = require('./coordinator/desktopCoordinator.cjs');
 
 function configureLlmSessionSecurity() {
   if (!session?.defaultSession?.webRequest) return;
@@ -258,11 +259,9 @@ function buildMenu() {
         {
           label: 'Check for shell updates',
           click: () => {
-            const { checkForUpdatesManual } = setupAutoUpdater({
-              mainWindow,
-              getMainWindow: () => mainWindow,
-            });
-            checkForUpdatesManual();
+            if (mainUpdaterApi) {
+              mainUpdaterApi.checkForUpdatesManual();
+            }
           },
         },
         {
@@ -310,6 +309,8 @@ function createTray() {
   });
 }
 
+let mainUpdaterApi = null;
+
 /** Bridge calls answer only the app and the shell's own splash and offline pages. */
 const handleTrusted = createTrustedIpc(ipcMain, shellPolicy);
 
@@ -318,6 +319,7 @@ function registerIpc() {
     mainWindow,
     getMainWindow: () => mainWindow,
   });
+  mainUpdaterApi = updaterApi;
 
   handleTrusted('desktop:get-info', () => ({
     shellVersion: app.getVersion(),
@@ -348,6 +350,34 @@ function registerIpc() {
     if (mainWindow) {
       void mainWindow.loadURL(resolveWebappUrl());
     }
+  });
+
+  const coordinator = createDesktopCoordinator({
+    userDataDir: app.getPath('userData'),
+    safeStorage,
+    persistToDisk: true,
+  });
+
+  handleTrusted('desktop:coordinator:status', () => coordinator.getStatus());
+  handleTrusted('desktop:coordinator:check-crawler', () => coordinator.checkCrawlerHealth());
+  handleTrusted('desktop:coordinator:supervise-crawler', (_event, opts) =>
+    coordinator.superviseCrawler(opts && typeof opts === 'object' ? opts : {}),
+  );
+  handleTrusted('desktop:coordinator:resolve-profile', (_event, profileId) => coordinator.resolveProfile(profileId));
+  handleTrusted('desktop:coordinator:list-routines', () => coordinator.listRoutines());
+  handleTrusted('desktop:coordinator:upsert-routine', (_event, spec) => coordinator.upsertRoutine(spec));
+  handleTrusted('desktop:coordinator:run-routine', (_event, routineId, mockObservation) =>
+    coordinator.runRoutineOnce(routineId, mockObservation),
+  );
+  handleTrusted('desktop:coordinator:validate-mcp', (_event, payload) => coordinator.validateMcpCall(payload));
+  handleTrusted('desktop:coordinator:store-secret', (_event, payload) => {
+    const { key, value } = payload && typeof payload === 'object' ? payload : {};
+    return coordinator.storeSecret(key, value);
+  });
+  handleTrusted('desktop:coordinator:has-secret', (_event, key) => coordinator.hasSecret(key));
+
+  app.on('before-quit', () => {
+    coordinator.stopCrawler();
   });
 
   return updaterApi;

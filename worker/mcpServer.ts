@@ -8,7 +8,7 @@ import { SESSION_MCP_CREDENTIAL, credentialAllowsResearch } from './userTypes';
 import { billingId, json } from './workerUtils';
 import { getActiveSubscription } from './quotaMiddleware';
 import { planCapsFor } from './telegramBot';
-import { createProject, getProject, listProjects } from './projectService';
+import { createProject, listProjects } from './projectService';
 import { getProjectContext, updateProjectContext } from './projectContextService';
 import { getAgentReport, listAgentReports, saveAgentReport } from './agentReportService';
 import type { McpCreditClass, ProjectContextPatch } from '../services/projects/types';
@@ -47,6 +47,7 @@ import {
 } from './dreamingService';
 import { getPendingDreamEvents } from './dreamingQueue';
 import { evaluateWakeGate } from './dreamingWakeGate';
+import { CONVERSION_SPINE_MCP_TOOLS } from './mcpConversionTools';
 
 export type McpToolDef = {
   name: string;
@@ -535,6 +536,7 @@ const TOOLS: McpToolDef[] = [
       );
     },
   },
+  ...CONVERSION_SPINE_MCP_TOOLS,
   ...PAID_TOOL_CATALOGUE.map((meta) => ({
     name: meta.name,
     description: meta.description,
@@ -569,7 +571,8 @@ function toolsListPayload() {
           t.name.startsWith('get_') ||
           t.name.startsWith('list_') ||
           t.name === 'whoami' ||
-          t.name === 'dream_status',
+          t.name === 'dream_status' ||
+          t.name === 'classify_cms_remediation',
       },
     })),
   };

@@ -59,6 +59,9 @@ describe('tool governance catalogue', () => {
       'research_keywords', 'get_domain_overview', 'get_serp_results',
       'get_backlinks_overview', 'get_visibility_snapshot', 'get_pagespeed_summary',
       'browse_observe', 'browse_act', 'browse_goal', 'browse_close',
+      'dream_status', 'get_business_memory', 'dream_consolidate', 'review_dream_proposal',
+      'list_enquiries', 'ingest_enquiry', 'propose_booking_slots', 'decide_booking_signoff',
+      'get_outcomes_funnel', 'classify_cms_remediation', 'prepare_cms_mcp_call',
     ];
     for (const name of known) {
       expect(TOOL_GOVERNANCE[name], name).toBeDefined();

@@ -12,12 +12,18 @@ interface MarketingAction {
   onClick: () => void;
 }
 
+/** Inner-page section rule and body text, shared by hub and free tool pages. */
+export const MARKETING_SECTION = 'mt-16 border-t pt-16 lx-hairline';
+export const MARKETING_BODY = 'text-[15px] leading-relaxed text-[var(--color-ink-2)]';
+
 /** Closing call to action over the horizon, directly above the footer. */
 export interface MarketingClosing {
   eyebrow: string;
   title: React.ReactNode;
   body?: React.ReactNode;
-  cta: MarketingAction;
+  /** A gold button, or `form` (such as the domain check) in its place. */
+  cta?: MarketingAction;
+  form?: React.ReactNode;
   links?: MarketingAction[];
 }
 
@@ -124,7 +130,9 @@ export const MarketingPageShell: React.FC<MarketingPageShellProps> = ({
         {children}
       </main>
       {closing ? (
-        <div className="relative overflow-hidden border-t lx-hairline">
+        // clip, not hidden: the horizon is wider than the page, and a hidden box can still be
+        // scrolled sideways by a centring scroll (scroll-to-text links), shifting the closing.
+        <div className="relative overflow-clip border-t lx-hairline">
           <section aria-labelledby="closing-heading" className="relative z-10 px-5 pb-12 pt-24 text-center sm:px-8 sm:pt-32">
             <div data-reveal>
               <p className="lx-eyebrow">{closing.eyebrow}</p>
@@ -133,16 +141,21 @@ export const MarketingPageShell: React.FC<MarketingPageShellProps> = ({
               </h2>
               {closing.body && <p className="lx-lede mx-auto mt-6 max-w-xl">{closing.body}</p>}
             </div>
-            <div className="mt-10 flex flex-wrap items-center justify-center gap-x-7 gap-y-4">
-              <button type="button" onClick={closing.cta.onClick} className="lx-btn lx-btn-gold">
-                {closing.cta.label}
-              </button>
-              {closing.links?.map((link) => (
-                <button key={link.label} type="button" onClick={link.onClick} className="lx-link text-sm">
-                  {link.label}
-                </button>
-              ))}
-            </div>
+            {closing.form && <div className="mt-10">{closing.form}</div>}
+            {(closing.cta || (closing.links?.length ?? 0) > 0) && (
+              <div className="mt-10 flex flex-wrap items-center justify-center gap-x-7 gap-y-4">
+                {closing.cta && (
+                  <button type="button" onClick={closing.cta.onClick} className="lx-btn lx-btn-gold">
+                    {closing.cta.label}
+                  </button>
+                )}
+                {closing.links?.map((link) => (
+                  <button key={link.label} type="button" onClick={link.onClick} className="lx-link text-sm">
+                    {link.label}
+                  </button>
+                ))}
+              </div>
+            )}
           </section>
           {/* The horizon hangs from the footer, so it clears the closing copy at any length. */}
           <div className="relative pt-36 sm:pt-44">

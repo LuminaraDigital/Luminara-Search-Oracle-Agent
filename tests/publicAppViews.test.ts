@@ -9,6 +9,11 @@ describe('PUBLIC_APP_VIEWS (activation Slice A)', () => {
     expect(PUBLIC_APP_VIEWS.has(AppView.IDEA_SCOUT)).toBe(true);
   });
 
+  it('keeps /compare and /best pages and Enquiry Desk preview public for logged-out visitors', () => {
+    expect(PUBLIC_APP_VIEWS.has(AppView.COMPARE)).toBe(true);
+    expect(PUBLIC_APP_VIEWS.has(AppView.ENQUIRY_DESK)).toBe(true);
+  });
+
   it('still gates non-scout product surfaces', () => {
     expect(PUBLIC_APP_VIEWS.has(AppView.ORACLE_AGENT)).toBe(false);
     expect(PUBLIC_APP_VIEWS.has(AppView.DASHBOARD)).toBe(false);

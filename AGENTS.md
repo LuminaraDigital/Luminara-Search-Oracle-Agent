@@ -71,6 +71,7 @@ Screenshot-click automation uses `services/grounding/` (PointerBench protocol): 
 - `docs/plans/commercial-credibility-100x-ship.md` (CC0-CC5 sellability: honesty residual + Stripe + pitch + Fix/streak + 10-20 payers; authoritative for charging)
 - `docs/plans/agent-mcp-product-surface.md` (APS A0-A8)
 - `docs/plans/virality-activation-loops.md` (share OG + MCP mint activation)
+- `docs/plans/chatseo-competitive-gap.md` (ChatSEO gap matrix; G1 free tools + /compare/chatseo, G1c homepage read)
 - `docs/plans/e2e-visibility-agent-platform.md` (W0-W8)
 - `docs/plans/gui-grounding-pointerbench.md`
 - `docs/plans/indexed-dom-action-agent.md` (B0-B5)
