@@ -19,15 +19,6 @@ export function responseBlocked(status: number | null | undefined, body?: string
     || sample.includes('checking your browser');
 }
 
-/**
- * A soft 404: the site answered with an HTML page (often its homepage, after a redirect)
- * instead of the text file. A 200 alone is not proof the file exists.
- */
-export function servedWebPage(body: string | null | undefined): boolean {
-  const head = (body || '').trimStart().slice(0, 1024).toLowerCase();
-  return /^(?:<!--[\s\S]*?-->\s*)*<(?:!doctype\s+html|html|head|body)\b/.test(head);
-}
-
 export type LlmCrawlerCheckId =
   | 'llms_txt'
   | 'llms_structure'
@@ -209,9 +200,6 @@ function evaluateLlmsPresence(snapshot: LlmCrawlerSnapshot): LlmCrawlerCheck {
   if (snapshot.llmsHttpStatus === 404 || (snapshot.llmsTxt !== null && snapshot.llmsTxt.trim() === '')) {
     return check('llms_txt', 'fail', 'llms.txt was not found at the site root.');
   }
-  if (servedWebPage(snapshot.llmsTxt)) {
-    return check('llms_txt', 'fail', 'llms.txt was not found at the site root. The address returned a web page, not a text file.');
-  }
   if (snapshot.llmsTxt && snapshot.llmsTxt.trim().length > 0 && (snapshot.llmsHttpStatus === 200 || snapshot.llmsHttpStatus === null)) {
     return check('llms_txt', 'pass', 'llms.txt is present. Some search engines may ignore it. Other agents can still quote it.');
   }
@@ -241,7 +229,7 @@ function evaluateBotDirectives(snapshot: LlmCrawlerSnapshot): { check: LlmCrawle
   if (responseBlocked(snapshot.robotsHttpStatus, snapshot.robotsTxt)) {
     return { check: check('ai_bot_directives', 'not_measured', BLOCKED_CHECK), groups: null };
   }
-  if (snapshot.robotsHttpStatus === 404 || (snapshot.robotsTxt !== null && snapshot.robotsTxt.trim() === '') || servedWebPage(snapshot.robotsTxt)) {
+  if (snapshot.robotsHttpStatus === 404 || (snapshot.robotsTxt !== null && snapshot.robotsTxt.trim() === '')) {
     return {
       check: check('ai_bot_directives', 'pass', 'No robots.txt was found. Common AI crawlers are not blocked by a robots rule.'),
       groups: null,
@@ -305,9 +293,6 @@ function evaluateAiTxt(snapshot: LlmCrawlerSnapshot): LlmCrawlerCheck {
   }
   if (snapshot.aiHttpStatus === 404 || (snapshot.aiTxt !== null && snapshot.aiTxt !== undefined && snapshot.aiTxt.trim() === '')) {
     return check('ai_txt', 'fail', 'Optional ai.txt was not found at the site root. Absence is recorded. It is not a citation score.');
-  }
-  if (servedWebPage(snapshot.aiTxt)) {
-    return check('ai_txt', 'fail', 'Optional ai.txt was not found at the site root. The address returned a web page, not a text file.');
   }
   if (snapshot.aiTxt && snapshot.aiTxt.trim().length > 0 && (snapshot.aiHttpStatus === 200 || snapshot.aiHttpStatus === null)) {
     return check('ai_txt', 'pass', 'Optional ai.txt is present. Presence is not a citation score.');

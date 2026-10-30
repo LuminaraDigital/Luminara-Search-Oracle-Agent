@@ -12,12 +12,24 @@ import { sameSiteHost } from '../services/audit/sameSiteHost';
 import { mintScoutReceipt } from './referrals';
 import { readCapped } from './domainVerification';
 import { readServedCrawlFile } from './crawlDocuments';
-import { servedWebPage, type LlmCrawlerSnapshot } from '../services/audit/llmCrawlerReadiness';
+import { responseBlocked, type LlmCrawlerSnapshot } from '../services/audit/llmCrawlerReadiness';
 
 const MAX_BYTES = 64_000;
 const FETCH_MS = 5_000;
 const MAX_REDIRECTS = 3;
 const FOLLOW_REDIRECT = new Set([301, 302, 303, 307, 308]);
+const PAGE_TYPE = /^\s*(?:text\/html|application\/xhtml\+xml|application\/json)\b/i;
+
+/**
+ * A soft 404: the site answered with a web page or an API error (often its homepage,
+ * after a redirect) instead of the text file. A 200 alone is not proof the file exists.
+ * Crawler files are plain text and never open with a tag or a JSON object.
+ */
+export function servedWebPage(body: string, contentType: string | null): boolean {
+  if (contentType && PAGE_TYPE.test(contentType)) return true;
+  const text = body.trimStart().replace(/^(?:<!--[\s\S]*?-->\s*)+/, '');
+  return /^[<{]/.test(text);
+}
 
 async function fetchOne(
   url: string,
@@ -71,7 +83,13 @@ async function fetchOne(
       }
       if (res.status === 404) return { status: 404, body: '' };
       if (!res.ok) return { status: res.status, body: null };
-      return { status: res.status, body: await readCapped(res, MAX_BYTES) };
+      const body = await readCapped(res, MAX_BYTES);
+      // A bot challenge stays as served, so readers report it as blocked. Any other web page is
+      // recorded as a 404 so every reader, including the Android client, sees the file as missing.
+      if (!responseBlocked(res.status, body) && servedWebPage(body, res.headers.get('content-type'))) {
+        return { status: 404, body: '' };
+      }
+      return { status: res.status, body };
     } catch {
       return { status: null, body: null };
     } finally {
@@ -121,7 +139,7 @@ export async function handleLlmCrawlerRoute(request: Request, env: Env): Promise
     return json({ ok: false, error: loaded.error, code: loaded.code, snapshot: null }, 400);
   }
   const sawFile = [loaded.snapshot.llmsTxt, loaded.snapshot.robotsTxt, loaded.snapshot.aiTxt].some(
-    (text) => typeof text === 'string' && text.trim().length > 0 && !servedWebPage(text),
+    (text) => typeof text === 'string' && text.trim().length > 0,
   );
   const host = safePublicHostname(target);
   let receipt: string | null = null;
