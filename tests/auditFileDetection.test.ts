@@ -85,7 +85,16 @@ describe('crawler file detection', () => {
     expect(status(checks, 'llms_txt')).toBe('pass');
     expect(status(checks, 'llms_structure')).toBe('pass');
     expect(status(checks, 'ai_txt')).toBe('pass');
-    expect(servedWebPage('<!-- generated -->\n# Example Co\n', 'text/plain')).toBe(false);
+    expect(servedWebPage('<!-- generated -->\n# Example Co\n')).toBe(false);
+  });
+
+  it('reads real files a server mislabels as text/html', async () => {
+    const { checks } = await crawl({
+      '/llms.txt': { body: LLMS, type: 'text/html; charset=UTF-8' },
+      '/robots.txt': { body: 'User-agent: GPTBot\nDisallow: /\n', type: 'text/html' },
+    });
+    expect(status(checks, 'llms_txt')).toBe('pass');
+    expect(status(checks, 'ai_bot_directives')).toBe('fail');
   });
 });
 

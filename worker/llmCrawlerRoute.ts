@@ -18,15 +18,14 @@ const MAX_BYTES = 64_000;
 const FETCH_MS = 5_000;
 const MAX_REDIRECTS = 3;
 const FOLLOW_REDIRECT = new Set([301, 302, 303, 307, 308]);
-const PAGE_TYPE = /^\s*(?:text\/html|application\/xhtml\+xml|application\/json)\b/i;
 
 /**
  * A soft 404: the site answered with a web page or an API error (often its homepage,
  * after a redirect) instead of the text file. A 200 alone is not proof the file exists.
- * Crawler files are plain text and never open with a tag or a JSON object.
+ * Crawler files are plain text and never open with a tag or a JSON object. The body
+ * decides, not the content type: servers often label real text files text/html.
  */
-export function servedWebPage(body: string, contentType: string | null): boolean {
-  if (contentType && PAGE_TYPE.test(contentType)) return true;
+export function servedWebPage(body: string): boolean {
   const text = body.trimStart().replace(/^(?:<!--[\s\S]*?-->\s*)+/, '');
   return /^[<{]/.test(text);
 }
@@ -86,7 +85,7 @@ async function fetchOne(
       const body = await readCapped(res, MAX_BYTES);
       // A bot challenge stays as served, so readers report it as blocked. Any other web page is
       // recorded as a 404 so every reader, including the Android client, sees the file as missing.
-      if (!responseBlocked(res.status, body) && servedWebPage(body, res.headers.get('content-type'))) {
+      if (!responseBlocked(res.status, body) && servedWebPage(body)) {
         return { status: 404, body: '' };
       }
       return { status: res.status, body };
