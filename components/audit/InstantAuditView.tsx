@@ -983,6 +983,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
             rlmTrajectory={report.rlmTrajectory}
             healthSite={report.healthSite}
             boardFindings={boardFindings}
+            crawlerChecks={scoutSummary?.crawlerChecks}
             checkLine={scoutSummary?.badges.find((badge) => badge.label === 'Page health')?.value}
           />
         </div>

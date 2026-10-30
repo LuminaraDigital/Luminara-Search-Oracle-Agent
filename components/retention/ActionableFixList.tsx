@@ -75,6 +75,9 @@ Allow: /
 User-agent: Google-Extended
 Allow: /
 
+User-agent: Applebot-Extended
+Allow: /
+
 Sitemap: https://${domain}/sitemap.xml
 `;
 }

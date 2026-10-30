@@ -211,7 +211,8 @@ export async function ingestCrewFindings(opts: {
   writeBag(domain, merged);
   rememberBoardDomain(domain);
 
-  if (opts.syncRemote === false) return merged;
+  // The route refuses an empty list, and a clean run has nothing to save.
+  if (opts.syncRemote === false || merged.length === 0) return merged;
 
   try {
     const res = await workerFetchWithAuthRetry(`${apiBase()}/api/findings/bulk`, {

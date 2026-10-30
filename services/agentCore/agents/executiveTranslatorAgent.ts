@@ -123,7 +123,10 @@ export class ExecutiveTranslatorAgent {
     // above a FAIL row with nothing to fix. Optional ai.txt gets a step but is never "needed".
     const crawlerFixList = crawlerFixes(crawlerChecks);
     const crawlerNeeded = crawlerFixList.filter((fix) => !fix.optional).length;
-    const crawlerNote = crawlerNeeded > 0 ? ` ${crawlerNeeded} AI crawler ${crawlerNeeded === 1 ? 'fix is' : 'fixes are'} needed.` : '';
+    const crawlerOptional = crawlerFixList.length - crawlerNeeded;
+    const crawlerNote = crawlerNeeded > 0
+      ? ` ${crawlerNeeded} AI crawler ${crawlerNeeded === 1 ? 'fix is' : 'fixes are'} needed${crawlerOptional > 0 ? `, plus ${crawlerOptional} optional` : ''}.`
+      : '';
     const failedTakeaway = `${failed} ${failed === 1 ? 'check failed' : 'checks failed'}.${notMeasuredNote(unchecked)}`;
     const takeaway = criticalCount > 0
       ? `⚠️ **The Big Takeaway:** This run found ${criticalCount} critical ${criticalCount === 1 ? 'gap' : 'gaps'}: ${critical.map((f) => f.title).join('; ')}.`
