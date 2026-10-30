@@ -38,6 +38,7 @@ const ALLOWED_TYPES = new Set([
   'upgrade_prompt_dismissed',
   'share_clicked',
   'share_page_view',
+  'free_tool_copied',
 ]);
 
 const MAX_BATCH = 40;

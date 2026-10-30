@@ -66,6 +66,7 @@ const InfrastructurePage = lazyWithReload(() => import('./components/Infrastruct
 const IntelligencePage = lazyWithReload(() => import('./components/IntelligencePage'));
 const WhyLuminaraPage = lazyWithReload(() => import('./components/WhyLuminaraPage'));
 const SeoHubPage = lazyWithReload(() => import('./components/marketing/SeoHubPage'));
+const FreeToolPage = lazyWithReload(() => import('./components/marketing/freeTools/FreeToolPage'));
 const PricingPage = lazyWithReload(() => import('./components/PricingPage'));
 const MethodologyPage = lazyWithReload(() => import('./components/MethodologyPage'));
 const SampleReportPage = lazyWithReload(() => import('./components/SampleReportPage'));
@@ -107,10 +108,13 @@ const MARKETING_VIEWS = new Set<AppView>([
   AppView.INTELLIGENCE,
   AppView.WHY_US,
   AppView.COMPARE,
+  AppView.FREE_TOOLS,
   AppView.PRICING,
   AppView.METHODOLOGY,
   AppView.SAMPLE_REPORT,
 ]);
+/** Views whose page comes from the pathname: /compare/*, /best/*, /free-tools/*. */
+const PATH_DRIVEN_VIEWS = new Set<AppView>([AppView.COMPARE, AppView.FREE_TOOLS]);
 
 interface SendOptions {
   /** Short text to show in the user bubble instead of the full prompt. */
@@ -129,6 +133,7 @@ import {
 } from './utils/marketingRoutes';
 import { applyDocumentMetaForView } from './services/marketing/documentMeta';
 import { hubPageForPath } from './services/marketing/seoHubPages';
+import { freeToolsPageForPath } from './services/marketing/freeTools';
 
 const viewFromLocation = (): AppView | null => {
   if (typeof window === 'undefined') return null;
@@ -263,7 +268,7 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const path = (window.location.pathname || '/').replace(/\/+$/, '') || '/';
-    productTelemetry.trackPageView(view === AppView.COMPARE ? `${view}:${path}` : view);
+    productTelemetry.trackPageView(PATH_DRIVEN_VIEWS.has(view) ? `${view}:${path}` : view);
     applyDocumentMetaForView(view);
   }, [view]);
 
@@ -924,9 +929,10 @@ const App: React.FC = () => {
   const introOverlay = showIntro ? <Suspense fallback={null}><AppIntroOverlay onComplete={completeIntro} /></Suspense> : null;
 
   const hubPage = view === AppView.COMPARE ? hubPageForPath(window.location.pathname) : null;
+  const freeToolsPage = view === AppView.FREE_TOOLS ? freeToolsPageForPath(window.location.pathname) : null;
 
-  // A COMPARE view without a hub path (e.g. a stray #compare hash) is Not Found, never a blank page.
-  if (view === AppView.NOT_FOUND || (view === AppView.COMPARE && !hubPage)) {
+  // A path-driven view without its page (e.g. a stray #compare hash) is Not Found, never a blank page.
+  if (view === AppView.NOT_FOUND || (PATH_DRIVEN_VIEWS.has(view) && !hubPage && !freeToolsPage)) {
     return (
       <Suspense fallback={null}>
         <NotFoundPage onHome={() => setView(AppView.LANDING)} />
@@ -1124,6 +1130,22 @@ const App: React.FC = () => {
       <Suspense fallback={<ViewLoader label="Loading" />}>
         {introOverlay}
         <SeoHubPage page={hubPage} onTerminal={() => enterInstantAudit()} />
+        {marketingOverlays}
+      </Suspense>
+      </MarketingChromeContext.Provider>
+    );
+  }
+
+  if (freeToolsPage) {
+    return (
+      <MarketingChromeContext.Provider value={marketingChrome}>
+      <Suspense fallback={<ViewLoader label="Loading" />}>
+        {introOverlay}
+        <FreeToolPage
+          tool={freeToolsPage.tool}
+          isAuthenticated={appAuth.authenticated}
+          onFullAudit={(handoff) => (appAuth.authenticated ? enterInstantAudit(handoff) : openLoginWall('signup', handoff))}
+        />
         {marketingOverlays}
       </Suspense>
       </MarketingChromeContext.Provider>

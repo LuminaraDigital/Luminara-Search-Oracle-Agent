@@ -15,12 +15,15 @@ interface DomainCheckProps {
   isAuthenticated?: boolean;
   /** Guests go to sign-up with the handoff; signed-in users go straight to the audit. */
   onFullAudit: (handoff?: AuditHandoff) => void;
+  /** Where the check ran, for `probe_completed`. */
+  surface?: string;
 }
 
 export const DomainCheck: React.FC<DomainCheckProps> = ({
   inputId,
   isAuthenticated,
   onFullAudit,
+  surface = 'landing_inline',
 }) => {
   const demo = useDemoPlayback();
   const [error, setError] = useState<string | null>(null);
@@ -33,10 +36,10 @@ export const DomainCheck: React.FC<DomainCheckProps> = ({
     productTelemetry.track('probe_completed', {
       domain: demo.fixture.domain,
       focus: 'AEO',
-      surface: 'landing_inline',
+      surface,
       resultKind: demo.resultKind,
     });
-  }, [demo.phase, demo.fixture, demo.resultKind]);
+  }, [demo.phase, demo.fixture, demo.resultKind, surface]);
 
   const handoffFor = (raw: string): AuditHandoff | undefined => {
     const parsed = normalizeDemoUrl(raw);
