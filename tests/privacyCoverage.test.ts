@@ -77,7 +77,7 @@ describe('privacy coverage', () => {
   it('hands an organization to the next member and removes one left empty', async () => {
     const db = createSqliteD1();
     db.sqlite.exec(`
-      INSERT INTO users (id, source, account_id, created_at, last_seen_at) VALUES ('login', 'web', 'acct', 1, 1);
+      INSERT INTO users (id, source, account_id, created_at, last_seen_at) VALUES ('login', 'firebase', 'acct', 1, 1);
       INSERT INTO organizations (id, name, slug, tier, created_at, updated_at) VALUES
         ('shared', 'Shared', 'shared', 'standard', 1, 1), ('solo', 'Pat''s Organization', 'solo', 'standard', 1, 1);
       INSERT INTO organization_memberships (org_id, user_id, role, status, joined_at) VALUES
