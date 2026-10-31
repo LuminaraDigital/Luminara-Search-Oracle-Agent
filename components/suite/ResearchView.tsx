@@ -46,7 +46,7 @@ export const ResearchView: React.FC<ResearchViewProps> = ({ dna }) => {
   };
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8 animate-in fade-in duration-700">
+    <div className="w-full sm:w-auto max-w-4xl mx-auto px-4 py-8 animate-in fade-in duration-700">
       <div className="text-center mb-8">
         <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-gold/10 border border-gold/30 mb-4">
           <ICONS.Research className="w-4 h-4 text-gold-light" />
