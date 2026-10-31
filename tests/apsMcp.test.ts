@@ -67,9 +67,12 @@ function tgHeaders(userId: number, ip: string) {
 }
 
 describe('APS entitlements', () => {
-  it('mcpAccess on growth/agency; apiAccess agency only; mcp route not agency-only', () => {
+  it('mcpAccess on every plan, capped below Growth; apiAccess agency only; mcp route not agency-only', () => {
     expect(entitlementsFor('growth').mcpAccess).toBe(true);
-    expect(entitlementsFor('starter').mcpAccess).toBe(false);
+    expect(entitlementsFor('starter').mcpAccess).toBe(true);
+    expect(entitlementsFor('free').mcpAccess).toBe(true);
+    expect(entitlementsFor('free').mcpDailyCallLimit).toBe(100);
+    expect(entitlementsFor('growth').mcpDailyCallLimit).toBe(0);
     expect(planCapsFor('growth').mcpAccess).toBe(true);
     expect(planCapsFor('agency').apiAccess).toBe(true);
     expect(isApiAccessRoute('/mcp')).toBe(false);
@@ -77,10 +80,10 @@ describe('APS entitlements', () => {
     expect(isApiAccessRoute('/oracle/chat')).toBe(true);
   });
 
-  it('requireMcpAccess blocks free and allows growth', async () => {
+  it('requireMcpAccess allows free and growth', async () => {
     const env = makeEnv(new Map());
     const user = { id: '42', source: 'telegram' as const };
-    expect((await requireMcpAccess(env, user))?.status).toBe(403);
+    expect(await requireMcpAccess(env, user)).toBeNull();
 
     const growthEnv = makeEnv(
       new Map([['sub:42', JSON.stringify({ plan: 'growth', expiresAt: Date.now() + 86400_000 })]]),
@@ -97,7 +100,7 @@ describe('APS project utils', () => {
 });
 
 describe('APS MCP + projects', () => {
-  it('unsigned MCP returns 401; free signed-in returns 403; growth can whoami and create project', async () => {
+  it('unsigned MCP returns 401; free signed-in lists tools; growth can whoami and create project', async () => {
     const store = new Map<string, string>();
     const env = makeEnv(store);
 
@@ -121,9 +124,7 @@ describe('APS MCP + projects', () => {
       env,
       ctx,
     );
-    expect(free.status).toBe(403);
-    const freeBody = (await free.json()) as { code?: string };
-    expect(freeBody.code).toBe('MCP_ACCESS_REQUIRED');
+    expect(free.status).toBe(200);
 
     store.set('sub:202', JSON.stringify({ plan: 'growth', expiresAt: Date.now() + 86400_000 }));
     const growthEnv = makeEnv(store);
@@ -272,7 +273,7 @@ describe('APS MCP + projects', () => {
     expect(paidBody.result?.structuredContent?.code).toBe('PAID_TOOL_FORBIDDEN');
   });
 
-  it('a lapsed plan still lists and revokes its API keys but cannot mint one', async () => {
+  it('a lapsed plan still lists, mints and revokes its API keys', async () => {
     const store = new Map<string, string>([
       ['sub:77101', JSON.stringify({ plan: 'growth', expiresAt: Date.now() + 86400_000 })],
     ]);
@@ -288,17 +289,48 @@ describe('APS MCP + projects', () => {
     const listed = await call('/api/api-keys', { method: 'GET' }, '10.20.2.2');
     expect(listed.status).toBe(200);
     const list = (await listed.json()) as { mcpAccess: boolean; keys: Array<{ id: string }> };
-    expect(list.mcpAccess).toBe(false);
+    expect(list.mcpAccess).toBe(true);
     expect(list.keys.map((k) => k.id)).toEqual([keyId]);
 
-    const refused = await call('/api/api-keys', { method: 'POST', body: JSON.stringify({ name: 'Again' }) }, '10.20.2.3');
-    expect(refused.status).toBe(403);
-    expect(((await refused.json()) as { code?: string }).code).toBe('MCP_ACCESS_REQUIRED');
+    const again = await call('/api/api-keys', { method: 'POST', body: JSON.stringify({ name: 'Again' }) }, '10.20.2.3');
+    expect(again.status).toBe(200);
+    const againId = ((await again.json()) as { meta: { id: string } }).meta.id;
 
     const revoked = await call(`/api/api-keys/${keyId}`, { method: 'DELETE' }, '10.20.2.4');
     expect(revoked.status).toBe(200);
-    const after = (await (await call('/api/api-keys', { method: 'GET' }, '10.20.2.5')).json()) as { keys: unknown[] };
-    expect(after.keys).toEqual([]);
+    const after = (await (await call('/api/api-keys', { method: 'GET' }, '10.20.2.5')).json()) as {
+      keys: Array<{ id: string }>;
+    };
+    expect(after.keys.map((k) => k.id)).toEqual([againId]);
+  });
+
+  it('free MCP stops at the daily call cap and keeps browser tools on Growth', async () => {
+    const store = new Map<string, string>();
+    const env = makeEnv(store);
+    const callTool = async (name: string, ip: string) => {
+      const res = await worker.fetch(
+        new Request('https://luminarasuite.com/api/mcp', {
+          method: 'POST',
+          headers: tgHeaders(303, ip),
+          body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: {} } }),
+        }),
+        env,
+        ctx,
+      );
+      expect(res.status).toBe(200);
+      return ((await res.json()) as { result?: { isError?: boolean; structuredContent?: { code?: string } } }).result;
+    };
+
+    expect((await callTool('whoami', '10.20.4.1'))?.isError).toBeFalsy();
+
+    const browse = await callTool('browse_observe', '10.20.4.2');
+    expect(browse?.isError).toBe(true);
+    expect(browse?.structuredContent?.code).toBe('PAID_TOOL_FORBIDDEN');
+
+    store.set(`mcp_calls:303:${new Date().toISOString().slice(0, 10)}`, '100');
+    const capped = await callTool('whoami', '10.20.4.3');
+    expect(capped?.isError).toBe(true);
+    expect(capped?.structuredContent?.code).toBe('MCP_DAILY_LIMIT');
   });
 
   it('answers a malformed percent-encoded project id with 400, not 500', async () => {

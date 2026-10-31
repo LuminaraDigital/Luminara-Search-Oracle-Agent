@@ -26,7 +26,7 @@ Every MCP `tools/call` runs through three gates before a handler executes:
 | Step | Condition | Outcome |
 | 1 | tool status is `quarantined` | block, reason `tool_quarantined` |
 | 2 | risk is `destructive` and no approved, unexpired request exists for tool+project | require_approval, reason `destructive_requires_approval` |
-| 3 | risk is `write` and caller has no active subscription (same `getActiveSubscription` semantics as the paid path in `worker/quotaMiddleware.ts`) | block, reason `subscription_required` |
+| 3 | risk is `write`, the tool is not `creditClass: free`, and caller has no active subscription (same `getActiveSubscription` semantics as the paid path in `worker/quotaMiddleware.ts`) | block, reason `subscription_required` |
 | 4 | anything else | allow |
 
 ## Approval flow

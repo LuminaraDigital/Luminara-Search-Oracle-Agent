@@ -153,8 +153,8 @@ function llmsPaidPlanBlock(): string {
     const parts = [
       `${ent.title}: list price ${price.audLabel}, pay ${price.starsLabel}`,
       `${ent.domainLimit} monitored domains`,
-      ent.mcpAccess ? 'IDE access' : 'No IDE access',
-      ent.shareLinks ? 'Public share links' : 'No public share links',
+      ent.mcpDailyCallLimit ? `IDE access, ${ent.mcpDailyCallLimit} MCP calls a day` : 'IDE access, no daily MCP cap',
+      ent.shareDailyLimit ? `${ent.shareDailyLimit} share links a day` : 'Share links, no daily cap',
     ];
     if (ent.scheduledReaudit !== 'none') {
       const cadence = ent.scheduledReaudit.charAt(0).toUpperCase() + ent.scheduledReaudit.slice(1);
@@ -220,13 +220,13 @@ Answer Engine Optimization (AEO) is the discipline of structuring web content, t
 ${CHECKOUT_TERM_LINE} ${listPriceSummary()}
 
 ${llmsPaidPlanBlock()}
-- Free: ${PLAN_ENTITLEMENTS.free.domainLimit} domain. Telegram initData or a signed-in account can use a capped hosted scout. Anonymous web visitors use their own API keys. Redacted teaser links are free. Full branded share links are Growth and Agency only.
+- Free: ${PLAN_ENTITLEMENTS.free.domainLimit} domain. Telegram initData or a signed-in account can use a capped hosted scout. Anonymous web visitors use their own API keys. Redacted teaser links are free. Public share links are free too, ${PLAN_ENTITLEMENTS.free.shareDailyLimit} a day, with a Luminara badge.
 
 ## MCP
 
 - Docs: https://www.luminarasuite.com/docs/mcp.html
 - Endpoint: https://luminarasuite.com/api/mcp
-- MCP access is included on Growth and Agency.
+- MCP is on every plan: ${PLAN_ENTITLEMENTS.free.mcpDailyCallLimit} calls a day on Free, no daily cap on Growth and Agency. Paid research needs Agency or your own DataForSEO login.
 
 ## Telegram Mini App
 

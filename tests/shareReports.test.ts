@@ -122,7 +122,7 @@ describe('W1 shareable reports', () => {
     expect(gone.status).toBe(404);
   });
 
-  it('password gate and free plan entitlement', async () => {
+  it('password gate and free plan cap and branding', async () => {
     const store = new Map<string, string>([
       ['sub:88', JSON.stringify({ plan: 'agency', expiresAt: Date.now() + 86400_000 })],
     ]);
@@ -169,19 +169,34 @@ describe('W1 shareable reports', () => {
       auth_date: String(Math.floor(Date.now() / 1000)),
       user: JSON.stringify({ id: 11, first_name: 'Free' }),
     });
-    const denied = await handleShareRoute(
-      new Request('https://luminarasuite.com/api/share/reports', {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'x-telegram-init-data': freeInit,
-        },
-        body: JSON.stringify({ markdownText: '# Nope' }),
-      }),
+    const freeShare = (body: Record<string, unknown>) =>
+      handleShareRoute(
+        new Request('https://luminarasuite.com/api/share/reports', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-telegram-init-data': freeInit,
+          },
+          body: JSON.stringify(body),
+        }),
+        freeEnv,
+        '/share/reports',
+      );
+    // Free plan shares, but without white-label the Worker drops custom branding.
+    const freeCreated = await freeShare({ markdownText: '# Free one', branding: { agencyName: 'Acme Agency' } });
+    expect(freeCreated.status).toBe(200);
+    const freeToken = ((await freeCreated.json()) as { token: string }).token;
+    const freeOpened = await handleShareRoute(
+      new Request(`https://luminarasuite.com/api/share/reports/${freeToken}`),
       freeEnv,
-      '/share/reports',
+      `/share/reports/${freeToken}`,
     );
-    expect(denied.status).toBe(403);
+    expect(((await freeOpened.json()) as { report: { branding?: unknown } }).report.branding).toBeUndefined();
+    expect((await freeShare({ markdownText: '# Free two' })).status).toBe(200);
+    expect((await freeShare({ markdownText: '# Free three' })).status).toBe(200);
+    const capped = await freeShare({ markdownText: '# Free four' });
+    expect(capped.status).toBe(429);
+    expect(((await capped.json()) as { code?: string }).code).toBe('SHARE_QUOTA');
 
     const pwHash = await hashSharePassword('correct-horse');
     expect(pwHash).toBe(await sha256Hex('luminara-share-pw:correct-horse'));

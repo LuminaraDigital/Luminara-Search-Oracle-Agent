@@ -249,13 +249,14 @@ describe('agent connector consent', () => {
     expect(page.headers.get('content-security-policy')).toContain("frame-ancestors 'none'");
   });
 
-  it('tells a plan without agent access to upgrade and issues nothing', async () => {
-    const { env, store } = makeEnv('starter');
-    const { page, html, consent } = await openConsent(env);
-    expect(page.status).toBe(403);
-    expect(html).toContain('/pricing');
-    expect(consent).toBe('');
-    expect([...store.keys()].some((k) => k.startsWith('mcp_oauth_consent:'))).toBe(false);
+  it('lets Free and Starter open consent; the daily cap is the limit', async () => {
+    for (const plan of ['free', 'starter']) {
+      const { env, store } = makeEnv(plan);
+      const { page, consent } = await openConsent(env);
+      expect(page.status).toBe(200);
+      expect(consent.startsWith('oconsent')).toBe(true);
+      expect(store.has(`mcp_oauth_consent:${consent}`)).toBe(true);
+    }
   });
 
   it('returns access_denied on Cancel', async () => {

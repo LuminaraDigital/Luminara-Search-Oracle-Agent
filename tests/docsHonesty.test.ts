@@ -3,14 +3,16 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 describe('docs honesty', () => {
-  it('gives MCP a nav and does not call Growth tools free', () => {
+  it('gives MCP a nav and states the free MCP cap', () => {
     const html = readFileSync(resolve(__dirname, '../public/docs/mcp.html'), 'utf8');
     expect(html).toContain('href="/"');
     expect(html).toContain('href="/how-it-works"');
     expect(html).toContain('href="/pricing"');
     expect(html).toContain('href="/privacy"');
     expect(html).toContain('href="/terms"');
-    expect(html).toContain('Free has no IDE access');
+    expect(html).toContain('Free allows 100 calls a day');
+    expect(html).toContain('The connector is on every plan.');
+    expect(html).not.toContain('The connector is included with Growth and Agency.');
     expect(html).not.toContain('Free tools:');
   });
 

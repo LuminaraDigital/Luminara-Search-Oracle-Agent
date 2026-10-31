@@ -75,7 +75,7 @@ export const McpUsageStrip: React.FC = () => {
       <p className="text-[11px] text-gray-400 leading-relaxed">
         Endpoint: <span className="font-mono text-gray-300">/api/mcp</span>
         {' · '}
-        Free tools: {caps.mcpAccess ? 'Growth+ yes' : 'upgrade to Growth+'}
+        Free tools: {caps.mcpDailyCallLimit ? `${caps.mcpDailyCallLimit} calls a day` : 'no daily cap'}
         {' · '}
         Paid research: {caps.apiAccess ? 'Agency hosted or BYOK' : 'BYOK DataForSEO or Agency'}
       </p>

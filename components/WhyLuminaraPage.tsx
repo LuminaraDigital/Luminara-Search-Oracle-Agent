@@ -84,7 +84,7 @@ const agencyRoles = [
     badge: 'Role 03 · Multi-Office & Marketing Teams',
     title: 'Ship across offices without tool sprawl',
     problem: 'Juggling separate rank trackers, schema generators, AI prompt monitors, and lead spreadsheets slows down every campaign.',
-    solution: 'Run repeatable audits across up to 10 client workspaces on Agency, export white-label PDFs on Starter+, share public links on Growth+, and connect Cursor or Claude via /api/mcp.',
+    solution: 'Run repeatable audits across up to 10 client workspaces on Agency, export white-label PDFs on Starter+, share public links on every plan, and connect Cursor or Claude via /api/mcp.',
     ctaLabel: 'See 30-day passes',
     action: 'pricing' as const,
   },

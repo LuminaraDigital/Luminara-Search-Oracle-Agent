@@ -96,9 +96,13 @@ describe('decideToolCall branches', () => {
     expect(d.action).toBe('allow');
   });
 
-  it('blocks write tools without an active subscription', () => {
-    const d = decideToolCall('save_report', ctxFree);
+  it('blocks credit-spending write tools without an active subscription', () => {
+    const d = decideToolCall('research_keywords', { ...ctxFree, creditClass: 'paid' });
     expect(d).toEqual({ action: 'block', reason: 'subscription_required' });
+  });
+
+  it('allows free-credit write tools without a subscription', () => {
+    expect(decideToolCall('save_report', ctxFree)).toEqual({ action: 'allow' });
   });
 
   it('allows write tools with an active subscription', () => {
@@ -293,15 +297,19 @@ describe('mcp integration', () => {
     expect((await getActionRequestById(env, id))?.status).toBe('approved');
   });
 
-  it('write tool without subscription returns governance block', async () => {
+  it('free-credit write tool without subscription passes governance', async () => {
     const env = makeEnv();
     const res = await handleMcpRequest(mcpCall('save_report', { projectId: 'p', title: 't', summary: 's', html: '<html/>' }), env, user);
     const body = (await res.json()) as {
       result?: { isError?: boolean; structuredContent?: { code?: string; reason?: string } };
     };
-    expect(body.result?.isError).toBe(true);
-    expect(body.result?.structuredContent?.code).toBe('GOVERNANCE_BLOCKED');
-    expect(body.result?.structuredContent?.reason).toBe('subscription_required');
+    expect(body.result?.structuredContent?.code).not.toBe('GOVERNANCE_BLOCKED');
+    const audit = await env.DB.prepare(
+      `SELECT action FROM org_audit_logs WHERE org_id = ? ORDER BY created_at DESC LIMIT 1`,
+    )
+      .bind('org_acct_gov')
+      .first<{ action: string }>();
+    expect(audit?.action).toBe('mcp_tool_allow');
   });
 
   it('read tool allowed without subscription and writes audit row', async () => {

@@ -18,6 +18,6 @@ describe('agency plan + caps', () => {
     expect(planCapsFor('pro').apiAccess).toBe(true);
     expect(planCapsFor('agency').sentinelLimit).toBe(25);
     expect(planCapsFor('growth').shareLinks).toBe(true);
-    expect(planCapsFor('free' as string).shareLinks).toBe(false);
+    expect(planCapsFor('free' as string).shareLinks).toBe(true);
   });
 });

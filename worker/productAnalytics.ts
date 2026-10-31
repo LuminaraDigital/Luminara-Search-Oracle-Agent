@@ -27,6 +27,7 @@ const ALLOWED_TYPES = new Set([
   'share_cta_clicked',
   'share_link_created',
   'share_link_opened',
+  'shared_report_cta_clicked',
   'mcp_key_created',
   'mcp_snippet_copied',
   'mcp_first_used',

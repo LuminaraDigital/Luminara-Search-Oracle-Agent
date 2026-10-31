@@ -227,7 +227,7 @@ describe('marketing shell injection', () => {
     expect(out).toContain('Growth');
     expect(out).toContain('MCP');
     expect(page.description).toMatch(/Growth/i);
-    expect(page.crawlerBody).toMatch(/Starter:[\s\S]*No MCP/);
+    expect(page.crawlerBody).toMatch(/Starter:[\s\S]*higher daily caps on share links and MCP/);
   });
 
   it('resolves shell keys for aliases and comparisons', () => {

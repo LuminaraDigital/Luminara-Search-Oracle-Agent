@@ -60,6 +60,12 @@ export const SharedReportView: React.FC<{
   }, [token]);
 
   const branding = payload?.branding;
+  // White-labelled reports belong to the agency; every other report carries Luminara's badge and CTA.
+  const showLuminaraCta = Boolean(payload) && !branding?.agencyName;
+  const openInstantAudit = () => {
+    productTelemetry.track('shared_report_cta_clicked', { domain: payload?.domain || null });
+    onOpenInstantAudit?.();
+  };
 
   return (
     <div className="min-h-[100dvh] bg-black text-gray-100">
@@ -121,6 +127,19 @@ export const SharedReportView: React.FC<{
             {branding?.preparedBy && (
               <p className="text-xs text-gray-500 mb-4 font-mono">Prepared by {branding.preparedBy}</p>
             )}
+            {showLuminaraCta && (
+              <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-gold/30 bg-gold/[0.04] px-4 py-3">
+                <p className="text-sm text-gray-200">
+                  <span className="font-mono text-[10px] uppercase tracking-widest text-gold-light mr-2">Audited by Luminara</span>
+                  How do AI answer engines see your site?
+                </p>
+                {onOpenInstantAudit && (
+                  <Button variant="primary" size="sm" onClick={openInstantAudit}>
+                    Check your site free
+                  </Button>
+                )}
+              </div>
+            )}
             <ReportDisplay
               markdownText={payload.markdownText}
               sources={payload.sources}
@@ -128,15 +147,15 @@ export const SharedReportView: React.FC<{
               dnaName={payload.dnaName}
               hideAgencyActions
             />
-            {(onOpenInstantAudit || onSeePricing) && (
+            {showLuminaraCta && (onOpenInstantAudit || onSeePricing) && (
               <footer className="mt-10 pt-6 border-t border-white/10 space-y-3">
                 <p className="text-sm text-gray-300 leading-relaxed">
-                  Run your own Instant Audit on a domain, or see Growth pricing for share links and MCP.
+                  Get the same report for your own site. The Instant Audit and share links are free.
                 </p>
                 <div className="flex flex-col sm:flex-row flex-wrap gap-2">
                   {onOpenInstantAudit && (
-                    <Button variant="primary" size="sm" onClick={onOpenInstantAudit}>
-                      Run Instant Audit
+                    <Button variant="primary" size="sm" onClick={openInstantAudit}>
+                      Run a free Instant Audit
                     </Button>
                   )}
                   {onSeePricing && (

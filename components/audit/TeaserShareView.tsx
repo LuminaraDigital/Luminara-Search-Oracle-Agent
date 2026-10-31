@@ -97,7 +97,7 @@ export const TeaserShareView: React.FC<{ onOpenApp?: () => void }> = ({ onOpenAp
               </>
             )}
             <p className="mt-10 text-[12px] leading-relaxed text-gray-500">
-              This page is a redacted teaser, not a verified measurement. It omits the full report, sources list, and any account data. Open the Mini App to run your own scout. Full branded share links are a Growth and Agency feature.
+              This page is a redacted teaser, not a verified measurement. It omits the full report, sources list, and any account data. Open the Mini App to run your own scout. Full share links are free with an account.
             </p>
           </article>
         )}
