@@ -208,7 +208,7 @@ function nextStepFor(rail: HostedScoutRail, evidenceEmpty: boolean): string {
     return 'Try the scout again when search and page fetch respond. You can also add your own keys in Settings. This run is not a finished audit.';
   }
   if (evidenceEmpty) {
-    return 'Check provider status in Settings and run the scout again. This run is not a finished audit.';
+    return 'Please run the check again in a few minutes. This run is not a finished audit.';
   }
   if (rail === 'byok_or_signin') {
     return 'Sign in to save this scout to a project. Share links are free with an account. A redacted teaser needs Telegram or a signed-in session.';

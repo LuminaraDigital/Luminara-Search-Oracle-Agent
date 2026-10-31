@@ -19,6 +19,7 @@ export type TelemetryEventType =
   | 'probe_completed'
   | 'signup_completed'
   | 'instant_audit_completed'
+  | 'site_platform_detected'
   | 'paywall_viewed'
   | 'checkout_started'
   | 'payment_completed'
@@ -61,6 +62,14 @@ const STORAGE_KEY_EVENTS = 'luminara_telemetry_events';
 const STORAGE_KEY_SUMMARY = 'luminara_telemetry_summary';
 const SESSION_START_KEY = 'luminara_session_start_time';
 const MAX_STORED_EVENTS = 100;
+
+/** Which app sent the event, so desktop use can be counted apart from web and Telegram. */
+export function telemetrySurface(): 'desktop' | 'telegram' | 'web' {
+  if (typeof window === 'undefined') return 'web';
+  if (window.luminaraDesktop) return 'desktop';
+  const telegram = (window as { Telegram?: { WebApp?: { initData?: string } } }).Telegram;
+  return telegram?.WebApp?.initData ? 'telegram' : 'web';
+}
 
 class ProductTelemetryEngine {
   private summary: TelemetryMetricsSummary;
@@ -139,7 +148,7 @@ class ProductTelemetryEngine {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       type,
       timestamp: Date.now(),
-      data,
+      data: { ...data, surface: telemetrySurface() },
     };
 
     // Store in local ring buffer

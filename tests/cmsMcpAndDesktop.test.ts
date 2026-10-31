@@ -570,10 +570,21 @@ describe('Stage 4: Hermes-Class Desktop Coordinator (Electron Main Process)', ()
     // 8. Pass 4 regression: storeSecret return contract & delegateTask task recording + invalid role guard
     const tempSecDir = mkdtempSync(join(tmpdir(), 'luminara-sec-'));
     try {
-      const secCoord = createDesktopCoordinator({ userDataDir: tempSecDir, persistToDisk: false });
+      const noKeychain = createDesktopCoordinator({ userDataDir: tempSecDir, persistToDisk: false });
+      expect(() => noKeychain.storeSecret('wp_app_pwd', 'sec_val_123')).toThrow(/secure storage/);
+      expect(noKeychain.hasSecret('wp_app_pwd')).toBe(false);
+
+      const secCoord = createDesktopCoordinator({
+        userDataDir: tempSecDir,
+        persistToDisk: false,
+        safeStorage: {
+          isEncryptionAvailable: () => true,
+          encryptString: (value: string) => Buffer.from(`sealed:${value}`),
+        },
+      });
       const secStored = secCoord.storeSecret('wp_app_pwd', 'sec_val_123');
       expect(secStored.stored).toBe(true);
-      expect(typeof secStored.encrypted).toBe('boolean');
+      expect(secStored.encrypted).toBe(true);
       expect(secCoord.hasSecret('wp_app_pwd')).toBe(true);
     } finally {
       rmSync(tempSecDir, { recursive: true, force: true });

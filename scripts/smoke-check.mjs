@@ -204,6 +204,9 @@ if (targetUrl && !isDryRun) {
     console.error('[SmokeCheck] FAILED: /api/health must expose boolean appCheckRequired');
     process.exit(1);
   }
+  if (data.hostedAudit === false) {
+    console.warn('::warning::[SmokeCheck] Hosted audit providers are not set, so a new account with no keys cannot complete a full audit.');
+  }
   console.log('[SmokeCheck] [PASS] Remote health check returned:', JSON.stringify(data));
 
   // Findings board must be mounted and auth-gated (unsigned GET → 401).

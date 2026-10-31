@@ -50,11 +50,11 @@ afterEach(() => {
 });
 
 describe('honest guest audit copy', () => {
-  it('tells guests the homepage check is crawl files, and a full audit needs sign-in or keys', () => {
+  it('tells guests the homepage check is crawl files, and a full audit needs an account', () => {
     expect(GUEST_HERO_NOTE).toMatch(/robots\.txt/);
-    expect(GUEST_HERO_NOTE).toMatch(/sign-in or your own keys/i);
+    expect(GUEST_HERO_NOTE).toMatch(/a free account/i);
     expect(GUEST_HERO_NOTE).not.toMatch(/no signup/i);
-    expect(GUEST_REPORT_NOTE).toMatch(/sign-in or your own keys/i);
+    expect(GUEST_REPORT_NOTE).toMatch(/a free account/i);
     expect(GUEST_FULL_AUDIT_CTA).toBe('Sign in to run a full audit');
 
     const html = renderToStaticMarkup(createElement(LandingPage, {
@@ -144,7 +144,7 @@ describe('Mission Control status', () => {
     }));
     const bannerAt = html.indexOf('Live data unavailable');
     const signInAt = html.indexOf(GUEST_FULL_AUDIT_CTA);
-    const keysAt = html.indexOf('Or add your own keys in Settings.');
+    const keysAt = html.indexOf('Have your own AI account? Add it in Settings.');
     expect(bannerAt).toBeGreaterThan(-1);
     expect(signInAt).toBeGreaterThan(bannerAt);
     expect(keysAt).toBeGreaterThan(signInAt);

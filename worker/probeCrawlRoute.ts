@@ -10,6 +10,7 @@ import { defaultPortFetcher, fetchPublicUrl, safePublicUrl, type DohFetch } from
 import { loadCrawlerSnapshot } from './llmCrawlerRoute';
 import { readCapped } from './domainVerification';
 import { readPageHead, robotsSaysNoindex } from './pageHead';
+import { detectSitePlatform } from '../services/audit/sitePlatform';
 import { applyMarketingDocument } from './marketingShell';
 import { isStagingCrawlHost, servesOwnHost } from './crawlDocuments';
 import { MARKETING_ORIGIN, MARKETING_SHELL_BY_PATH } from '../services/marketing/pageMeta';
@@ -86,7 +87,12 @@ export async function readHomepage(pageUrl: string, fetcher: typeof fetch = fetc
     const bare = !head.title && !head.description;
     if (bare && (head.noindex || headerNoindex || FIREWALL_VENDORS.test(sample))) return failed('blocked');
     return {
-      page: { finalUrl: fetched.finalUrl, ...head, noindex: head.noindex || headerNoindex },
+      page: {
+        finalUrl: fetched.finalUrl,
+        ...head,
+        noindex: head.noindex || headerNoindex,
+        platform: detectSitePlatform(html, res.headers),
+      },
       pageReason: null,
     };
   } catch {
