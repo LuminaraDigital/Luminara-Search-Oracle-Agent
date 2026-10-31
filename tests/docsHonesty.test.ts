@@ -11,6 +11,8 @@ describe('docs honesty', () => {
     expect(html).toContain('href="/privacy"');
     expect(html).toContain('href="/terms"');
     expect(html).toContain('Free allows 100 calls a day');
+    expect(html).toContain('The connector is on every plan.');
+    expect(html).not.toContain('The connector is included with Growth and Agency.');
     expect(html).not.toContain('Free tools:');
   });
 
