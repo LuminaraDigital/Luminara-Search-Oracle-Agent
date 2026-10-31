@@ -462,7 +462,7 @@ export const TrustCenterView: React.FC<{ initialDomain?: string }> = ({ initialD
                   return (
                     <li key={d.domain} className="p-4 space-y-3">
                       <div className="flex flex-wrap items-center gap-3">
-                        <span className="font-mono text-sm text-white">{d.domain}</span>
+                        <span className="font-mono text-sm text-white min-w-0 [overflow-wrap:anywhere]">{d.domain}</span>
                         <StatusChip status={d.status} />
                         {d.method && <span className="text-xs text-gray-500">{DOMAIN_METHOD_LABELS[d.method] ?? d.method}</span>}
                         <span className="ml-auto flex flex-wrap items-center gap-2">

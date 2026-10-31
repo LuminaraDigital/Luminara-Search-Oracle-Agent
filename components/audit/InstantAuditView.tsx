@@ -896,7 +896,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
             <FreeAiAnswerCard suburb={dna.suburb} state={dna.state} brandName={dna.name} />
           ) : null}
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 glass-morphism rounded-xl border border-gold/30">
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <span className="text-xs text-gray-400 font-mono">Regenerate Focus:</span>
               {(['SEO', 'AEO', 'GEO'] as const).map((f) => (
                 <button

@@ -1382,7 +1382,7 @@ const App: React.FC = () => {
                   </div>
                   <a href="/faq" className="w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold">Help: FAQ</a>
                   <a href="/contact" className="w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold">Help: Contact</a>
-                  <a href="/how-it-works" className="w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold">How Luminara works</a>
+                  {!skipMarketing && <a href="/how-it-works" className="w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold">How Luminara works</a>}
                   <button
                     type="button"
                     onClick={() => { setView(AppView.IDEA_SCOUT); setShowSuiteMenu(false); }}
@@ -1503,14 +1503,14 @@ const App: React.FC = () => {
                     <span>Research the market</span>
                   </button>
                   </>)}
-                  <button
+                  {!skipMarketing && <button
                     type="button"
                     onClick={() => { setView(AppView.INFRASTRUCTURE); setShowSuiteMenu(false); }}
                     className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 border-t border-white/5 mt-1 pt-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
                   >
                     <ICONS.Sparkle className="w-3.5 h-3.5 text-gold-light" />
                     <span>How Luminara works</span>
-                  </button>
+                  </button>}
                   <button
                     type="button"
                     onClick={() => { setShowSuiteMenu(false); setIsOmnibarOpen(true); }}
