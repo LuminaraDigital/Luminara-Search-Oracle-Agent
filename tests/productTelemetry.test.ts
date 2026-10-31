@@ -1,6 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { productTelemetry } from '../services/analytics/productTelemetry';
 import { pickFirstTouch, readTouch } from '../services/analytics/firstTouch';
+import { ingestProductAnalytics } from '../worker/productAnalytics';
+import { billingId } from '../worker/workerUtils';
+import type { Env } from '../worker/env';
+import type { HostedIdentity } from '../worker/userTypes';
 
 describe('productTelemetry', () => {
   beforeEach(() => {
@@ -142,6 +146,53 @@ describe('first touch attribution', () => {
       store.set('luminara_first_touch', JSON.stringify({ campaign: 'old-shape' }));
       productTelemetry.track('signup_completed', { method: 'google' });
       expect(stored()[0].data).toEqual({ method: 'google' });
+    });
+
+    it('sends a signup straight away but leaves other events on the timer', async () => {
+      const flush = vi.spyOn(productTelemetry, 'flushToServer').mockResolvedValue();
+      productTelemetry.track('probe_completed', { surface: 'landing_inline' });
+      expect(flush).not.toHaveBeenCalled();
+      productTelemetry.track('signup_completed', { method: 'email' });
+      expect(flush).toHaveBeenCalledTimes(1);
+      flush.mockRestore();
+    });
+  });
+
+  describe('on the Worker ingest', () => {
+    function fakeDb() {
+      const rows: unknown[][] = [];
+      const prepare = () => ({
+        bind: (...values: unknown[]) => ({
+          run: async () => {
+            rows.push(values);
+            return { success: true };
+          },
+        }),
+      });
+      return { rows, env: { DB: { prepare } } as unknown as Env };
+    }
+    const post = (data: unknown) =>
+      new Request('https://api.test/api/analytics/events', {
+        method: 'POST',
+        body: JSON.stringify({ sessionId: 's1', events: [{ type: 'signup_completed', data }] }),
+      });
+    const firstTouch = readTouch(`${SITE}/share/abc123?utm_source=partner-a`, '', 7);
+
+    it('stores the first touch under the signed-in account', async () => {
+      const { rows, env } = fakeDb();
+      const user = { uid: 'u1', source: 'firebase' } as unknown as HostedIdentity;
+      const res = await ingestProductAnalytics(post({ method: 'email', firstTouch }), env, user);
+      expect(await res.json()).toEqual({ ok: true, inserted: 1 });
+      const [, accountId, sessionId, type, , payload] = rows[0];
+      expect(accountId).toBe(billingId(user));
+      expect([sessionId, type]).toEqual(['s1', 'signup_completed']);
+      expect(JSON.parse(payload as string).firstTouch).toMatchObject({ source: 'partner-a', landingPath: '/share' });
+    });
+
+    it('keeps an anonymous free check with no account', async () => {
+      const { rows, env } = fakeDb();
+      await ingestProductAnalytics(post({ firstTouch }), env, null);
+      expect(rows[0][1]).toBeNull();
     });
   });
 });

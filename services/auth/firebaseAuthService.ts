@@ -7,6 +7,7 @@
 import { initializeApp, type FirebaseApp, getApps } from 'firebase/app';
 import * as firebaseAuthSdk from 'firebase/auth';
 import {
+  getAdditionalUserInfo,
   getAuth,
   signInWithEmailAndPassword,
   signOut,
@@ -445,14 +446,15 @@ export async function signInWithEmail(
   return hydrateClientSession(email, password);
 }
 
-export async function signInWithGoogle(opts?: { keepSignedIn?: boolean }): Promise<User> {
+/** `isNewUser` comes from Firebase: Google is one button, so the panel's tab cannot say who is new. */
+export async function signInWithGoogle(opts?: { keepSignedIn?: boolean }): Promise<{ user: User; isNewUser: boolean }> {
   await applyAuthPersistence(opts?.keepSignedIn ?? false);
   ensureAuth();
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
   const cred = await signInWithPopup(ensureAuth(), provider);
   await refreshCachedToken(cred.user);
-  return cred.user;
+  return { user: cred.user, isNewUser: getAdditionalUserInfo(cred)?.isNewUser === true };
 }
 
 /**

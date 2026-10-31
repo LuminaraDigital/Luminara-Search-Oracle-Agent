@@ -403,8 +403,8 @@ export const AuthPanel: React.FC<{
         disabled={busy}
         onClick={() =>
           run(async () => {
-            await signInWithGoogle({ keepSignedIn });
-            if (mode === 'signup') {
+            const { isNewUser } = await signInWithGoogle({ keepSignedIn });
+            if (isNewUser) {
               productTelemetry.track('signup_completed', { method: 'google' });
             }
           })

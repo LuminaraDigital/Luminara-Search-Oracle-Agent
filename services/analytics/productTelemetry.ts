@@ -178,7 +178,8 @@ class ProductTelemetryEngine {
   private enqueueServerFlush(event: TelemetryEvent): void {
     if (typeof window === 'undefined') return;
     this.pendingFlush.push(event);
-    if (this.pendingFlush.length >= 8) {
+    // A signup happens once, so it goes now: the queue dies with the tab or a checkout redirect.
+    if (this.pendingFlush.length >= 8 || event.type === 'signup_completed') {
       void this.flushToServer();
       return;
     }
