@@ -295,6 +295,74 @@ describe('agent connector consent', () => {
     expect([...store.keys()].some((k) => k.startsWith('mcp_oauth_code:'))).toBe(false);
   });
 
+  it('sends a repeat Allow to the same callback and mints no second code', async () => {
+    const { env, store } = makeEnv();
+    const { consent } = await openConsent(env);
+    const first = await decide(env, consent, 'allow', 77001);
+    const second = await decide(env, consent, 'allow', 77001);
+    expect(second.status).toBe(303);
+    expect(second.headers.get('location')).toBe(first.headers.get('location'));
+    expect([...store.keys()].filter((k) => k.startsWith('mcp_oauth_code:'))).toHaveLength(1);
+  });
+
+  it('sends a repeat Cancel to the same callback', async () => {
+    const { env } = makeEnv();
+    const { consent } = await openConsent(env);
+    const first = await decide(env, consent, 'deny', 77001);
+    const second = await decide(env, consent, 'deny', 77001);
+    expect(second.status).toBe(303);
+    expect(second.headers.get('location')).toBe(first.headers.get('location'));
+  });
+
+  it('shows a page, not a used code, when Allow repeats after the code is spent', async () => {
+    const { env, store } = makeEnv();
+    const { consent } = await openConsent(env);
+    const first = await decide(env, consent, 'allow', 77001);
+    const code = new URL(first.headers.get('location') ?? '').searchParams.get('code');
+    store.delete(`mcp_oauth_code:${code}`);
+    const repeat = await decide(env, consent, 'allow', 77001);
+    expect(repeat.status).toBe(200);
+    expect(repeat.headers.get('content-type')).toContain('text/html');
+    expect(await repeat.text()).toContain('already approved');
+  });
+
+  it('keeps the first answer when a stale tab presses the other button', async () => {
+    const { env, store } = makeEnv();
+    const allowedFirst = await openConsent(env);
+    await decide(env, allowedFirst.consent, 'allow', 77001);
+    const cancelAfterAllow = await decide(env, allowedFirst.consent, 'deny', 77001);
+    expect(cancelAfterAllow.status).toBe(200);
+    expect(await cancelAfterAllow.text()).toContain('already approved');
+    expect([...store.keys()].filter((k) => k.startsWith('mcp_oauth_code:'))).toHaveLength(1);
+
+    const { env: other, store: otherStore } = makeEnv();
+    const cancelledFirst = await openConsent(other);
+    await decide(other, cancelledFirst.consent, 'deny', 77001);
+    const allowAfterCancel = await decide(other, cancelledFirst.consent, 'allow', 77001);
+    expect(allowAfterCancel.status).toBe(200);
+    expect(await allowAfterCancel.text()).toContain('cancelled');
+    expect([...otherStore.keys()].some((k) => k.startsWith('mcp_oauth_code:'))).toBe(false);
+  });
+
+  it('does not replay a decided approval to another user', async () => {
+    const { env } = makeEnv();
+    const { consent } = await openConsent(env);
+    await decide(env, consent, 'allow', 77001);
+    const other = await decide(env, consent, 'allow', 77002);
+    expect(other.status).toBe(403);
+    expect(other.headers.get('location')).toBeNull();
+  });
+
+  it('explains an expired approval on a page', async () => {
+    const { env, store } = makeEnv();
+    const { consent } = await openConsent(env);
+    store.delete(`mcp_oauth_consent:${consent}`);
+    const res = await decide(env, consent, 'allow', 77001);
+    expect(res.status).toBe(400);
+    expect(res.headers.get('content-type')).toContain('text/html');
+    expect(await res.text()).toContain('This approval expired');
+  });
+
   it('refuses an approval from another user or a signed-out caller, and keeps it usable', async () => {
     const { env, store } = makeEnv();
     const { consent } = await openConsent(env);
@@ -309,7 +377,6 @@ describe('agent connector consent', () => {
     const allowed = await decide(env, consent, 'allow', 77001);
     expect(allowed.status).toBe(303);
     const code = new URL(allowed.headers.get('location') ?? '').searchParams.get('code') ?? '';
-    expect((await decide(env, consent, 'allow', 77001)).status).toBe(400);
 
     const exchange = (id: string, c: string) =>
       call(env, '/api/oauth/mcp/token', {
