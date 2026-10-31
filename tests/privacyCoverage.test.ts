@@ -81,8 +81,8 @@ describe('privacy coverage', () => {
       INSERT INTO organizations (id, name, slug, tier, created_at, updated_at) VALUES
         ('shared', 'Shared', 'shared', 'standard', 1, 1), ('solo', 'Pat''s Organization', 'solo', 'standard', 1, 1);
       INSERT INTO organization_memberships (org_id, user_id, role, status, joined_at) VALUES
-        ('shared', 'login', 'owner', 'active', 1), ('shared', 'late', 'member', 'active', 3),
-        ('shared', 'early', 'member', 'active', 2), ('solo', 'login', 'owner', 'active', 1);
+        ('shared', 'login', 'owner', 'active', 1), ('shared', 'late', 'analyst', 'active', 3),
+        ('shared', 'early', 'analyst', 'active', 2), ('solo', 'login', 'owner', 'active', 1);
       INSERT INTO org_audit_logs (id, org_id, actor_id, action, ip_address, hash, created_at) VALUES ('log', 'solo', 'login', 'x', '1.2.3.4', 'h', 1);
     `);
     await eraseAccountRows({ DB: db } as unknown as Env, 'acct');
@@ -90,7 +90,7 @@ describe('privacy coverage', () => {
     expect(db.sqlite.prepare(`SELECT id FROM org_audit_logs`).all()).toEqual([]);
     expect(db.sqlite.prepare(`SELECT user_id, role FROM organization_memberships ORDER BY joined_at`).all()).toEqual([
       { user_id: 'early', role: 'owner' },
-      { user_id: 'late', role: 'member' },
+      { user_id: 'late', role: 'analyst' },
     ]);
   });
 
