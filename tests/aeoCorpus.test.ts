@@ -1,5 +1,6 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import { aeoCorpusService } from '../services/corpus/aeoCorpusService';
+import type { AeoPatternRecord } from '../services/corpus/aeoCorpusService';
 
 const storage: Record<string, string> = {};
 const mockLocalStorage = {
@@ -13,6 +14,24 @@ if (typeof (globalThis as any).window === 'undefined') {
   (globalThis as any).window = globalThis;
 }
 (globalThis as any).localStorage = mockLocalStorage;
+
+function saveReal(domain: string, overrides: Partial<AeoPatternRecord> = {}): void {
+  aeoCorpusService.saveRecord({
+    id: `real-${domain}`,
+    timestamp: 1,
+    domain,
+    vertical: 'SaaS & Technology',
+    query: `${domain} overview`,
+    intent: 'informational',
+    winningSchemaType: 'Organization',
+    entityNodes: [domain.split('.')[0]],
+    citationRate: 70,
+    schemaSnippet: '{"@type":"Organization"}',
+    plainEnglishBrief: `Brief for ${domain}`,
+    provenance: 'real',
+    ...overrides,
+  });
+}
 
 describe('AeoCorpusService', () => {
   beforeEach(() => {
@@ -44,19 +63,37 @@ Brand is performing well.
     expect(stats.avgCitationRate).toBeGreaterThan(0);
   });
 
+  it('keeps the measured citation rate on every row', () => {
+    expect(aeoCorpusService.ingestAudit('zero.com', '# Report', 0).map((r) => r.citationRate)).toEqual([0, 0, 0]);
+    expect(aeoCorpusService.ingestAudit('high.com', '# Report', 75).map((r) => r.citationRate)).toEqual([75, 75, 75]);
+  });
+
+  it('labels audit rows as synthetic and keeps them out of every export', () => {
+    const entries = aeoCorpusService.ingestAudit('template.com', '# Report\nSaaS audit', 70);
+    expect(entries.every((r) => r.provenance === 'synthetic_template')).toBe(true);
+    expect(aeoCorpusService.exportAlpacaDataset()).toEqual([]);
+    expect(aeoCorpusService.exportShareGptDataset()).toEqual([]);
+    expect(aeoCorpusService.exportOpenAiToolTrajectories()).toEqual([]);
+  });
+
+  it('keeps rows saved before provenance existed out of every export', () => {
+    saveReal('legacy.com', { provenance: undefined });
+    expect(aeoCorpusService.exportAlpacaDataset()).toEqual([]);
+  });
+
   it('exports Alpaca instruction fine-tuning dataset', () => {
-    aeoCorpusService.ingestAudit('alpacatest.com', '# Report Title\nBrief content', 70);
+    saveReal('alpacatest.com');
     const alpaca = aeoCorpusService.exportAlpacaDataset();
     expect(alpaca.length).toBeGreaterThanOrEqual(1);
 
     const first = alpaca[0];
     expect(first.instruction).toContain('OracleMind');
     expect(first.input).toContain('alpacatest.com');
-    expect(first.output).toContain('alpacatest.com');
+    expect(first.output).toContain('Brief for alpacatest.com');
   });
 
   it('exports ShareGPT multi-turn fine-tuning dataset', () => {
-    aeoCorpusService.ingestAudit('sharegpt.com', '# ShareGPT Report\nAudit body', 85);
+    saveReal('sharegpt.com');
     const sharegpt = aeoCorpusService.exportShareGPTDataset();
     expect(sharegpt.length).toBeGreaterThanOrEqual(1);
 
@@ -75,32 +112,18 @@ Brand is performing well.
       integrityScore: 80,
       schemaSafety: 100,
       citeWorthiness: 82,
-      measurementConfidence: 'full',
     });
     expect(entries[0].citeWorthiness).toBe(82);
-    expect(entries[0].trainEligible).toBe(true);
 
+    saveReal('trustbrand.com', { citeWorthiness: 82, securityTrust: 70 });
     const alpaca = aeoCorpusService.exportAlpacaDataset();
     const trustRow = alpaca.find((r) => r.input.includes('trustbrand.com'));
     expect(trustRow?.input).toContain('Cite-Worthiness: 82');
     expect(trustRow?.input).toContain('Security Trust: 70');
   });
 
-  it('marks cors_limited records trainEligible=false and skips them in exports', () => {
-    aeoCorpusService.ingestAudit('corslimited.com', '# CORS Report\nbody', 60, undefined, {
-      securityTrust: 40,
-      citeWorthiness: 45,
-      measurementConfidence: 'cors_limited',
-    });
-    const records = aeoCorpusService.getCorpusRecords().filter((r) => r.domain === 'corslimited.com');
-    expect(records[0].trainEligible).toBe(false);
-
-    const alpaca = aeoCorpusService.exportAlpacaDataset();
-    expect(alpaca.every((r) => !r.input.includes('corslimited.com'))).toBe(true);
-  });
-
-  it('exports OpenAI-style tool trajectories with get_project_context first', () => {
-    aeoCorpusService.ingestAudit('tooltraj.com', '# Tool Trajectory Report\nSaaS audit', 88);
+  it('exports OpenAI-style tool trajectories without claiming a measurement', () => {
+    saveReal('tooltraj.com');
     const rows = aeoCorpusService.exportOpenAiToolTrajectories();
     expect(rows.length).toBeGreaterThanOrEqual(1);
 
@@ -109,7 +132,8 @@ Brand is performing well.
     expect(first!.messages[0].role).toBe('system');
     expect(first!.messages[2].tool_calls?.[0].function.name).toBe('get_project_context');
     expect(first!.messages[4].tool_calls?.[0].function.name).toBe('get_visibility_snapshot');
-    expect(first!.messages.some((m) => m.role === 'tool')).toBe(true);
+    expect(first!.messages[3].content).toContain('"research_log_within_30_days":"unknown"');
+    expect(first!.messages[5].content).toContain('"status":"estimated"');
     expect(first!.messages[first!.messages.length - 1].content).toContain('Verdict');
   });
 });
