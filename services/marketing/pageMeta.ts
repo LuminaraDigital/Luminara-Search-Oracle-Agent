@@ -332,7 +332,7 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
     <li>Deterministic crawl-file and DOM schema inspection before any model call</li>
     <li>Separate SEO, AEO, and GEO checks with ready-to-paste LocalBusiness and FAQPage JSON-LD</li>
     <li>Connect your own keys (Gemini, Groq, OpenRouter, DataForSEO) in Settings, or use the hosted daily allowance</li>
-    <li>Programmatic MCP server (/api/mcp) on Growth and Agency passes with SHA-256 idempotency and human booking sign-off</li>
+    <li>Programmatic MCP server (/api/mcp) on every plan, with SHA-256 idempotency and human booking sign-off</li>
   </ul>
   <p><a href="/">Home</a> · <a href="/how-it-works">How it works</a> · <a href="/sample-report">Sample report</a> · <a href="/pricing">Pricing</a></p>
 </section>`,
@@ -365,9 +365,9 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
 <section>
   <h1>Pricing</h1>
   <p>${REAL_ESTATE_AUDIENCE} ${listPriceSummary()}</p>
-  <p>Free: labeled sample insight and Instant Audit with your own keys where configured. Save, share, and hosted spend need an account.</p>
-  <p>Starter: web audits for a small site set. No MCP. No share links.</p>
-  <p>Growth: shareable audit links plus MCP access for Cursor, Claude, and the Luminara plugin.</p>
+  <p>Free: labeled sample insight and Instant Audit with your own keys where configured. Save, share, and hosted spend need an account. A free account gets public share links and MCP with daily caps.</p>
+  <p>Starter: web audits for a small site set, with higher daily caps on share links and MCP and your own branding on shared reports.</p>
+  <p>Growth: share links and MCP with no daily cap, for Cursor, Claude, and the Luminara plugin.</p>
   <p>Agency: Growth capabilities plus API access and client workspaces. ${LIVE_ANSWER_CHECKS}</p>
   <p>Pay by card for a 30-day pass, or with Telegram Stars in the Mini App. The Mini App takes Stars only. No invented SEO scores on any plan.</p>
   <p><a href="/">Home</a> · <a href="/why">Why Luminara</a> · <a href="/docs/mcp.html">MCP docs</a></p>

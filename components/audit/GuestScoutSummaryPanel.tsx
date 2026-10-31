@@ -204,7 +204,7 @@ export const GuestScoutSummaryPanel: React.FC<GuestScoutSummaryPanelProps> = ({
             )}
           </div>
           <p className="mt-3 text-[11px] leading-relaxed text-gray-500">
-            The teaser is a redacted summary and a link back to the Mini App. It is not a full branded share report. Those stay on Growth and Agency.
+            The teaser is a redacted summary and a link back to the Mini App. It is not a full share report. Share links are free with an account. Your own branding starts on Starter.
           </p>
         </>
       )}

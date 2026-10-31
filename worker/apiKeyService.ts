@@ -1,5 +1,5 @@
 /**
- * Agency / Growth API keys for MCP (hashed at rest).
+ * API keys for MCP, any plan (hashed at rest).
  */
 import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';

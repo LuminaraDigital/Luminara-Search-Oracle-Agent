@@ -622,7 +622,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       <div className="mb-4 rounded-xl border border-gold/25 bg-gold/5 px-4 py-3 text-xs text-gray-300 leading-relaxed">
         {hostedScoutPreRunCopy(hostedRail, { hostedGateOpen: preRunGate })}
         {isGuest && hostedRail === 'byok_or_signin' && (
-          <p className="mt-2 text-gray-400">Saving a project strategy and full branded share links still need sign-in. Growth and Agency include those share links.</p>
+          <p className="mt-2 text-gray-400">Saving a project strategy and share links need a free account.</p>
         )}
       </div>
 

@@ -140,7 +140,7 @@ import {
 } from './auditQueue';
 import { handleAuditScoutRun } from './auditScoutRun';
 import { dispatchQueueBatch } from './queueDispatch';
-import { handleMcpOAuthRoute } from './mcpOAuth';
+import { MCP_OAUTH_PUBLIC_CORS, handleMcpOAuthRoute, handleOAuthDiscovery, listAgentConnections, revokeAgentConnection } from './mcpOAuth';
 import { executeOracleGatewayTask, type OracleGatewayRequest } from './oracleGateway';
 import { createMemoryFact, listMemoryFacts } from './memoryService';
 import { handlePrivacyRoute, purgeExpiredPrivacyDeletes } from './privacyService';
@@ -270,7 +270,8 @@ async function auditAccountLink(
 async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   const url = new URL(request.url);
   const path = url.pathname.replace(/^\/api/, '');
-  const cors = corsHeaders(env, request);
+  // MCP clients run on any origin. These two routes never read a cookie, so a wildcard is safe.
+  const cors = path === '/oauth/mcp/token' || path === '/oauth/mcp/register' ? MCP_OAUTH_PUBLIC_CORS : corsHeaders(env, request);
 
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
 
@@ -1540,12 +1541,13 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
 
   // MCP OAuth 2.1 + PKCE (token + metadata public; authorize needs session)
   if (path.startsWith('/oauth/mcp')) {
-    if (path === '/oauth/mcp/token' && request.method === 'POST') {
+    if ((path === '/oauth/mcp/token' || path === '/oauth/mcp/register') && request.method === 'POST') {
       const dual = await enforceDualRateLimit(env, {
-        action: 'mcp_oauth_token',
+        // Hosted agents share egress IPs, so token and register keep separate, wider buckets.
+        action: path === '/oauth/mcp/token' ? 'mcp_oauth_token' : 'mcp_oauth_register',
         accountId: null,
         ip,
-        limitPerKey: 10,
+        limitPerKey: path === '/oauth/mcp/token' ? 60 : 20,
         windowSec: 60,
       });
       if (!dual.ok) return withCors(dual.response);
@@ -1864,7 +1866,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     return withCors(json({ error: 'Method not allowed' }, 405));
   }
 
-  // APS: MCP (Growth+ mcpAccess; session, lm_live_* API key, or mcp_* OAuth token)
+  // APS: MCP (mcpAccess on every plan, daily cap below Growth; session, lm_live_* API key, or mcp_* OAuth token)
   if (path === '/mcp' || path.startsWith('/mcp/')) {
     const resolved = await resolveMcpUser(request, env);
     if ('response' in resolved) return withCors(resolved.response);
@@ -1997,6 +1999,25 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
   }
 
   // APS: API keys for MCP
+  // Any plan: a lapsed account must still be able to see and cut off a connected agent.
+  if (path === '/agent-connections' || path.startsWith('/agent-connections/')) {
+    const who = await identify(request, env);
+    if (who.error || !who.user) {
+      return withCors(json({ ok: false, error: who.error || 'Unauthorized', code: 'AUTH_REQUIRED' }, 401));
+    }
+    const accountId = billingId(who.user);
+    if (path === '/agent-connections' && request.method === 'GET') {
+      return withCors(json({ ok: true, connections: await listAgentConnections(env, accountId) }));
+    }
+    const connectionMatch = path.match(/^\/agent-connections\/([^/]+)$/);
+    if (connectionMatch && request.method === 'DELETE') {
+      const revoked = await revokeAgentConnection(env, accountId, connectionMatch[1]!);
+      if (!revoked) return withCors(json({ ok: false, error: 'Connection not found', code: 'NOT_FOUND' }, 404));
+      return withCors(json({ ok: true }));
+    }
+    return withCors(json({ error: 'Method not allowed' }, 405));
+  }
+
   if (path === '/api-keys' || path.startsWith('/api-keys/')) {
     const who = await identify(request, env);
     if (who.error || !who.user) {
@@ -2208,6 +2229,9 @@ const handler = {
       const html = await decoratePublicHtml(secured, env.ASSETS);
       return applyHostRobots(url, env.ENVIRONMENT, html);
     };
+
+    const oauthDiscovery = handleOAuthDiscovery(request);
+    if (oauthDiscovery) return guard(oauthDiscovery);
 
     // Canonical redirect: redirect naked domain to www.luminarasuite.com for web/marketing traffic in production
     if (env.ENVIRONMENT === 'production' && url.hostname === 'luminarasuite.com' && !url.pathname.startsWith('/api/')) {

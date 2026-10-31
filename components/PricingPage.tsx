@@ -1,5 +1,5 @@
 /**
- * Pricing page: entitlement-true tiers. Hero sells Growth (IDE access + share).
+ * Pricing page: entitlement-true tiers. Hero sells Growth (no daily cap on IDE access + share).
  * Prices are the AUD card prices and the Stars / TON amounts the Worker charges
  * (worker/telegramBot.ts, worker/tonPayment.ts, worker/stripePayment.ts), mirrored in ./paywall/planPrices.
  */
@@ -133,10 +133,10 @@ const capabilityMatrixRows = [
   },
   {
     feature: 'Public share links & IDE MCP access (Cursor / Claude)',
-    free: 'Not included',
-    starter: 'Not included',
-    growth: 'Included',
-    agency: 'Included',
+    free: '3 links + 100 MCP calls a day',
+    starter: '10 links + 300 MCP calls a day',
+    growth: 'No daily cap',
+    agency: 'No daily cap',
   },
   {
     feature: 'Re-audit reminders in Telegram',
@@ -459,7 +459,7 @@ const PricingPage: React.FC<PricingPageProps> = ({
             What is included <span className="italic lx-gold-text pr-[0.08em]">on every tier.</span>
           </h2>
           <p className="mt-5 text-[15px] leading-relaxed text-[var(--color-ink-2)]">
-            Every tier includes the core page and schema Fix Pack and the Enquiry Desk workspace. Higher tiers lift domain caps and add white-label PDFs, share links, MCP access, and hosted live answer checks.
+            Every tier includes the core page and schema Fix Pack and the Enquiry Desk workspace. Every tier also gets share links and MCP. Higher tiers lift domain and daily caps and add white-label PDFs and hosted live answer checks.
           </p>
         </div>
 

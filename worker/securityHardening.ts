@@ -405,6 +405,34 @@ export async function putCounterBestEffort(env: Env, key: string, value: string,
   }
 }
 
+/**
+ * Counts one use against a per-account UTC-day cap in KV. A limit of 0 is unlimited.
+ * Without KV the cap fails open, except where REQUIRE_TG_AUTH marks a production Worker.
+ */
+export async function meterDailyUse(
+  env: Env,
+  prefix: string,
+  accountId: string,
+  limit: number,
+  label: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (limit <= 0) return { ok: true };
+  if (!env.LUMINARA_KV) {
+    if (env.REQUIRE_TG_AUTH === 'true') {
+      return { ok: false, error: `${label} quota store unavailable. Try again later.` };
+    }
+    return { ok: true };
+  }
+  const day = new Date().toISOString().slice(0, 10);
+  const key = `${prefix}:${accountId}:${day}`;
+  const used = Number((await env.LUMINARA_KV.get(key)) || 0);
+  if (used >= limit) {
+    return { ok: false, error: `Daily ${label.toLowerCase()} limit of ${limit} reached.` };
+  }
+  await putCounterBestEffort(env, key, String(used + 1), 2 * 86400);
+  return { ok: true };
+}
+
 // ---- Sliding-window / burst / outbound budget (toll-fraud defense) ----------------------------
 
 type SlidingBucket = { timestamps: number[] };

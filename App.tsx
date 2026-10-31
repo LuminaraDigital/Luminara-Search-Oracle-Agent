@@ -36,6 +36,7 @@ import { isDesktopShell } from './services/desktop/desktopShell';
 import { productTelemetry } from './services/analytics/productTelemetry';
 import { draftPersistenceService, DRAFT_KEYS } from './services/state/draftPersistenceService';
 import { apiBase, getCurrentQuotaSync, setAccountSignedIn, streamOracleChat } from './services/apiClient';
+import { agentConnectTarget, resumeAgentConnect } from './services/auth/agentConnect';
 import { entitlementsFor } from './services/plans/planEntitlements';
 import { hasPersistedAuthSession } from './services/auth/firebaseIdToken';
 import type { AuditHandoff } from './services/activation/auditHandoff';
@@ -425,6 +426,14 @@ const App: React.FC = () => {
   }, [advancedUi, view]);
 
   const appAuth = useAppAuth();
+
+  // An agent connector sent the owner here to sign in. Go back to the approval screen once they have.
+  useEffect(() => {
+    const target = agentConnectTarget(window.location.search);
+    if (!target || appAuth.loading) return;
+    if (appAuth.authenticated) void resumeAgentConnect(target);
+    else setLoginWallMode('signin');
+  }, [appAuth.loading, appAuth.authenticated]);
 
   // Before child effects, so a signed-out Instant Audit does not call /api/auth/quota.
   setAccountSignedIn(appAuth.loading ? null : appAuth.authenticated);

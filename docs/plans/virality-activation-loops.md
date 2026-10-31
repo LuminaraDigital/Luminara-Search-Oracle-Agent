@@ -11,7 +11,7 @@ Deepen two activation loops that create word-of-mouth without building a broad "
 
 **North-star:** % of new users who complete one Instant Audit and either save a report/project **or** mint+test an MCP key within 24h.
 
-**Packaging truth (do not regress):** Free = insight. Paid = sync, share, MCP, research. Growth = `shareLinks` + `mcpAccess`. Agency adds `apiAccess`.
+**Packaging truth (revised 2026-10-30):** Share links and MCP free tools are on every plan so each report and IDE session spreads Luminara. Free and Starter carry daily caps (`shareDailyLimit`, `mcpDailyCallLimit`) and free shared reports carry the Luminara badge and CTA. Growth removes the caps; Agency adds `apiAccess`.
 
 ## Product locks
 

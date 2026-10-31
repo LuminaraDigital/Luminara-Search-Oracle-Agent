@@ -658,6 +658,27 @@ describe('LLM crawler readiness', () => {
     expect(html).not.toContain('Copy link');
   });
 
+  it('tells a measured run that share links are free, not Growth-only', () => {
+    const summary = buildGuestScoutSummary({
+      targetUrl: 'brand.example',
+      measurementStatus: 'measured',
+      citationRatePercent: 56,
+      shareOfVoiceScore: 5,
+      healthScore: 73,
+      healthChecks: { passed: 3, total: 4 },
+      scrapedPageCount: 1,
+      serpCount: 9,
+      findings: [],
+      hostedRail: 'signed_in_hosted',
+    });
+    const html = renderToStaticMarkup(createElement(GuestScoutSummaryPanel, {
+      summary,
+      onShare: () => {},
+    }));
+    expect(html).toContain('Share links are free with an account.');
+    expect(html).not.toContain('Those stay on Growth and Agency');
+  });
+
   it('remembers Quick and Thorough for the scout summary', () => {
     setAnswerDepth('thorough');
     expect(getAnswerDepth()).toBe('thorough');

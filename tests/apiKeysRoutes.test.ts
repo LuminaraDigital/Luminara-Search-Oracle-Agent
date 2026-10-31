@@ -233,7 +233,7 @@ describe('/api-keys route (handler level)', () => {
     expect(bodyA.keys).toHaveLength(1);
   });
 
-  it('lists for callers without Growth+ mcpAccess and refuses them a new key with 403 MCP_ACCESS_REQUIRED', async () => {
+  it('lists and mints keys on the free plan, which now has capped MCP access', async () => {
     const { env, store } = makeEnv();
     store.set('sub:77001', JSON.stringify({ plan: 'free', expiresAt: Date.now() + 86400_000 }));
     const list = await worker.fetch(
@@ -242,7 +242,7 @@ describe('/api-keys route (handler level)', () => {
       ctx,
     );
     expect(list.status).toBe(200);
-    expect(((await list.json()) as { mcpAccess?: boolean }).mcpAccess).toBe(false);
+    expect(((await list.json()) as { mcpAccess?: boolean }).mcpAccess).toBe(true);
 
     const res = await worker.fetch(
       req('/api/api-keys', {
@@ -253,8 +253,8 @@ describe('/api-keys route (handler level)', () => {
       env,
       ctx,
     );
-    expect(res.status).toBe(403);
-    expect(((await res.json()) as { code?: string }).code).toBe('MCP_ACCESS_REQUIRED');
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { key?: string }).key).toMatch(/^lm_live_/);
   });
 
   it('identifyApiKey resolves a created key to its account, then stops after revoke', async () => {
