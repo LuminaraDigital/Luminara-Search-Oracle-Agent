@@ -552,6 +552,8 @@ When D1 is unbound they fail best-effort and log to console.
 
 `dual` reads and writes D1. After a successful login upsert or `PUT /audits/history`, a Firestore write is scheduled with `waitUntil`. It times out after 4 seconds. The log line is `data_plane_mirror` with `op`, `entity`, `id`, `outcome`, and `latency_ms`. Firestore errors do not change the response. `dual` is the ceiling. D1 stays the source of truth and Firestore is a backup mirror only. `firestore` mode is not planned unless the operator decides otherwise. The code path exists and wrangler does not set it.
 
+**Every account-keyed table is erased and exported, or carries a reason.** `tests/privacyCoverage.test.ts` fails on a new table with no decision. Add it to `ERASED_TABLES` and `TABLE_EXPORTS` in `worker/privacyTables.ts`, or to `ERASE_RETAINED` / `EXPORT_EXEMPT`.
+
 Collections: `users/{loginId}` and `audits/{accountId length}.{accountId}.{entryId}`. `email_unsub_token` is not copied. Account link mirrors the shared account id. Privacy erase deletes the Firestore user and audit docs in `waitUntil` and records a failed delete in D1 `firestore_erase_ledger` (migration 0041) for `npm run db:backfill:firestore -- --reconcile-erases`. The flag stays unset. A failed Firebase Auth delete leaves that row `pending_firebase` and `POST /api/privacy/account` returns an error. The next sign-in retries the Auth delete and does not write the D1 user again. `done` means the Auth delete succeeded.
 
 Backfill (dry-run by default, refuses project `luminara-suite` unless `--i-understand-prod`):

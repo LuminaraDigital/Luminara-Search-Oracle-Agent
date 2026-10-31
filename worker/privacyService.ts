@@ -9,6 +9,7 @@ import { trackAndScheduleErase } from './accountMirror';
 import { billingId, json } from './workerUtils';
 import { auditOrgIdFor, recordAuditLogBestEffort } from './auditLog';
 import { deleteHostedAccount } from './accountDeletion';
+import { ERASED_TABLES, EXPORTED_TABLES, OWN_USER_IDS, TABLE_EXPORTS } from './privacyTables';
 
 const EXPORT_TTL_MS = 48 * 60 * 60 * 1000;
 const DELETE_CANCEL_MS = 24 * 60 * 60 * 1000;
@@ -46,7 +47,7 @@ async function countRecentJobs(env: Env, accountId: string, kind: PrivacyJobKind
 }
 
 /** Collect account-linked JSON for Article 15/20 style export (Luminara processors). */
-async function collectExportPayload(env: Env, accountId: string): Promise<Record<string, unknown>> {
+export async function collectExportPayload(env: Env, accountId: string): Promise<Record<string, unknown>> {
   const db = env.DB!;
   const q = async <T>(sql: string, ...binds: unknown[]) => {
     const res = await db.prepare(sql).bind(...binds).all<T>();
@@ -243,6 +244,13 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
     if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
     return [] as Record<string, unknown>[];
   });
+  const tableRows: Record<string, unknown[]> = {};
+  for (const { key, table, columns = '*', where = 'account_id = ?1' } of TABLE_EXPORTS) {
+    tableRows[key] = await q<Record<string, unknown>>(`SELECT ${columns} FROM ${table} WHERE ${where} LIMIT 500`, accountId).catch((err) => {
+      if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+      return [] as Record<string, unknown>[];
+    });
+  }
   return {
     exportedAt: new Date().toISOString(),
     accountId,
@@ -280,6 +288,7 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
       'recovery_runs',
       'outcome_stage_events',
       'external_effects',
+      ...EXPORTED_TABLES,
     ],
     users,
     workspace: workspace.map((w) => ({
@@ -325,8 +334,33 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
     recoveryRuns,
     outcomeStageEvents,
     externalEffects,
+    ...tableRows,
     note: 'Financial ledger rows may be retained in minimized form for legal obligations.',
   };
+}
+
+/** Hands each organization to its next active member, and removes one with nobody left in it. */
+async function releaseOrganizations(db: NonNullable<Env['DB']>, accountId: string, counts: Record<string, number>): Promise<void> {
+  const left = await db.prepare(`SELECT DISTINCT org_id FROM organization_memberships WHERE ${OWN_USER_IDS}`).bind(accountId).all<{ org_id: string }>();
+  const removed = await db.prepare(`DELETE FROM organization_memberships WHERE ${OWN_USER_IDS}`).bind(accountId).run();
+  counts.organization_memberships = Number(removed.meta?.changes ?? 0);
+  for (const { org_id: orgId } of left.results ?? []) {
+    const heir = await db
+      .prepare(
+        `SELECT user_id, role FROM organization_memberships WHERE org_id = ? AND status = 'active'
+          ORDER BY role = 'owner' DESC, joined_at ASC LIMIT 1`,
+      )
+      .bind(orgId)
+      .first<{ user_id: string; role: string }>();
+    if (!heir) {
+      await db.batch([
+        db.prepare(`DELETE FROM org_audit_logs WHERE org_id = ?`).bind(orgId),
+        db.prepare(`DELETE FROM organizations WHERE id = ?`).bind(orgId),
+      ]);
+    } else if (heir.role !== 'owner') {
+      await db.prepare(`UPDATE organization_memberships SET role = 'owner' WHERE org_id = ? AND user_id = ?`).bind(orgId, heir.user_id).run();
+    }
+  }
 }
 
 async function softDeleteAccount(env: Env, accountId: string, deps?: DataPlaneDeps): Promise<Record<string, number>> {
@@ -431,6 +465,34 @@ async function softDeleteAccount(env: Env, accountId: string, deps?: DataPlaneDe
   await drop('projects', `DELETE FROM projects WHERE account_id = ?`);
   await drop('win_shares', `DELETE FROM win_shares WHERE owner_id = ?`);
   await drop('shared_reports', `DELETE FROM shared_reports WHERE owner_account_id = ?`);
+  await drop('mcp_action_requests', `DELETE FROM mcp_action_requests WHERE ${OWN_USER_IDS}`);
+  await releaseOrganizations(db, accountId, counts).catch((err) => {
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+  });
+  // Vouchers need a registered contract, so an off-chain campaign has none and goes whole.
+  await drop('launchpad_campaigns', `DELETE FROM launchpad_campaigns WHERE account_id = ? AND contract_address IS NULL`);
+  // A campaign on a public chain stays as a record. Only its merchant can redeem, so open vouchers are cancelled.
+  await drop(
+    'launchpad_vouchers_closed',
+    `UPDATE launchpad_vouchers SET customer_ref = NULL, status = CASE status WHEN 'issued' THEN 'cancelled' ELSE status END
+      WHERE campaign_id IN (SELECT id FROM launchpad_campaigns WHERE account_id = ?)`,
+  );
+  await drop(
+    'launchpad_subscriptions',
+    `DELETE FROM launchpad_subscriptions WHERE campaign_id IN (SELECT id FROM launchpad_campaigns WHERE account_id = ?)`,
+  );
+  await drop(
+    'launchpad_campaigns_minimized',
+    `UPDATE launchpad_campaigns SET abn_nzbn = NULL, compliance_details = NULL, listed_at = NULL WHERE account_id = ?`,
+  );
+  // A child run in another account must not block this delete through its parent key.
+  await drop(
+    'run_provenance_unlinked',
+    `UPDATE run_provenance SET parent_run_id = NULL WHERE parent_run_id IN (SELECT run_id FROM run_provenance WHERE account_id = ?)`,
+  );
+  for (const table of ERASED_TABLES) await drop(table, `DELETE FROM ${table} WHERE account_id = ?`);
+  // Workspaces saved to KV on a deployment without D1.
+  if (env.LUMINARA_KV) await env.LUMINARA_KV.delete(`workspace:${accountId}`);
   // Anonymize login rows; keep account_id for ledger FK honesty (anonymize path when legal holds exist).
   await run(
     'users_anon',
