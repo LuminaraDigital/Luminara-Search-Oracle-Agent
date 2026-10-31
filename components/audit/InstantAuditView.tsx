@@ -590,7 +590,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
   ) : null;
 
   return (
-    <div className="max-w-5xl mx-auto px-3 sm:px-4 py-6 sm:py-8 animate-in fade-in duration-700 min-w-0">
+    <div className="w-full max-w-5xl mx-auto px-3 sm:px-4 py-6 sm:py-8 animate-in fade-in duration-700 min-w-0">
       <PastReports onOpen={openSavedAudit} />
       <FirstRunTour signedInWeb={!isGuest} />
       <div className="text-center mb-6 sm:mb-8">
@@ -715,7 +715,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
             </div>
 
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pt-4 border-t border-white/5">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Focus:</span>
                 {(['SEO', 'AEO', 'GEO'] as const).map((f) => (
                   <button
