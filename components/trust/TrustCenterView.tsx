@@ -341,7 +341,7 @@ export const TrustCenterView: React.FC<{ initialDomain?: string }> = ({ initialD
   const badgeLive = domainState === 'ready' && receiptState === 'ready';
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-8 space-y-10">
+    <div className="w-full sm:w-auto max-w-3xl mx-auto px-4 py-8 space-y-10">
       {confirmModal}
       <header className="space-y-2 border-b border-white/10 pb-6">
         <p className="text-[10px] uppercase tracking-widest text-gold-light font-mono">Trust</p>
@@ -462,7 +462,7 @@ export const TrustCenterView: React.FC<{ initialDomain?: string }> = ({ initialD
                   return (
                     <li key={d.domain} className="p-4 space-y-3">
                       <div className="flex flex-wrap items-center gap-3">
-                        <span className="font-mono text-sm text-white">{d.domain}</span>
+                        <span className="font-mono text-sm text-white min-w-0 [overflow-wrap:anywhere]">{d.domain}</span>
                         <StatusChip status={d.status} />
                         {d.method && <span className="text-xs text-gray-500">{DOMAIN_METHOD_LABELS[d.method] ?? d.method}</span>}
                         <span className="ml-auto flex flex-wrap items-center gap-2">

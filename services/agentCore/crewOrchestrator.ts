@@ -336,6 +336,7 @@ export class CrewOrchestrator {
         ctx.serpEvidence,
         ctx.dna,
         emit,
+        llmCrawlerReadiness,
       );
       return {
         findings,
@@ -463,6 +464,7 @@ export class CrewOrchestrator {
         ctx.dna,
         emit,
         ctx.displayName,
+        ctx.llmCrawlerReadiness?.checks,
       );
       return { plainEnglishBrief };
     });

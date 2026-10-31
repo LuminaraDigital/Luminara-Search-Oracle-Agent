@@ -918,7 +918,7 @@ Strict Formatting Guidelines:
    ## Competitor Reality Map
    ## 6. Budget notes
    ## 7. Sources
-4. ## 1. One move this week: one concrete action, why it helps citation odds, how to tell it worked.
+4. ## 1. One move this week: one concrete action, why it matters using only evidence from this run, how to tell it worked. Do not say a security file, a header, or any other change improves trust signals or citation odds: no check measures that.
 5. ## 3. Fix list: Markdown table with strictly these columns:
    ${reportTableHeader('fixList')}
    ${unsupportedNeedles.length ? `Do not recommend these checks in the fix list or the one-move section. The evidence check did not support them: ${unsupportedNeedles.join('; ')}.` : ''}

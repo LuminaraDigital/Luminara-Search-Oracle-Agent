@@ -1,6 +1,8 @@
 /**
- * Client helper for anonymous landing Probe crawl (robots / llms / ai.txt).
+ * Client helper for anonymous landing Probe crawl (robots / llms / ai.txt and the homepage head).
  */
+import type { HomepageHead, HomepageReadFailure } from './homepageSnippet';
+
 export type ProbeCrawlClientResult =
   | {
       ok: true;
@@ -12,6 +14,10 @@ export type ProbeCrawlClientResult =
         llmsPresent: boolean;
         aiTxtPresent: boolean;
       };
+      /** Absent from an older Worker, so treat undefined as not read. */
+      page?: HomepageHead | null;
+      pageReason?: HomepageReadFailure | null;
+      checkedAt?: string;
     }
   | { ok: false; error: string; code?: string };
 

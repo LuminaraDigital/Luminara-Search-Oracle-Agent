@@ -152,7 +152,7 @@ export function UpgradeSurfaces({
 
   return (
     <div className="mb-8 max-w-[70ch] space-y-4">
-      <p className="text-sm text-gray-200">{progress.label}</p>
+      {progress.total > 0 && <p className="text-sm text-gray-200">{progress.label}</p>}
       <p className="text-sm text-gray-200">{competitorRankLine()}</p>
       {prior <= 1 && fix && (
         <section className="rounded-2xl border border-gold bg-black px-4 py-4">

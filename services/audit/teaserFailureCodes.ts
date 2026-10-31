@@ -41,7 +41,7 @@ export function teaserFailureLine(code: TeaserFailureCode): string {
   return TEASER_FAILURE_COPY[code];
 }
 
-const LLMS_CHECK_IDS = new Set(['llms_txt', 'site_llms']);
+const LLMS_CHECK_IDS = new Set(['llms_txt', 'llms_structure', 'site_llms']);
 const ROBOTS_CHECK_IDS = new Set(['ai_bot_directives', 'cite_paths', 'site_robots']);
 
 /** True only when that file's measured check failed. A pass or a missing probe is not a fix. */

@@ -590,7 +590,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
   ) : null;
 
   return (
-    <div className="max-w-5xl mx-auto px-3 sm:px-4 py-6 sm:py-8 animate-in fade-in duration-700 min-w-0">
+    <div className="w-full max-w-5xl mx-auto px-3 sm:px-4 py-6 sm:py-8 animate-in fade-in duration-700 min-w-0">
       <PastReports onOpen={openSavedAudit} />
       <FirstRunTour signedInWeb={!isGuest} />
       <div className="text-center mb-6 sm:mb-8">
@@ -715,7 +715,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
             </div>
 
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pt-4 border-t border-white/5">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Focus:</span>
                 {(['SEO', 'AEO', 'GEO'] as const).map((f) => (
                   <button
@@ -796,10 +796,10 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
 
       {/* Error State */}
       {error && (
-        <div className="glass-morphism rounded-xl border border-danger-500/40 p-5 mb-8 flex items-center justify-between text-xs text-danger-200">
-          <div className="flex items-center gap-3">
+        <div className="glass-morphism rounded-xl border border-danger-500/40 p-5 mb-8 flex items-center justify-between gap-3 text-xs text-danger-200">
+          <div className="flex items-center gap-3 min-w-0">
             <ICONS.AlertCircle className="w-5 h-5 text-danger-400 shrink-0" />
-            <span>{error}</span>
+            <span className="min-w-0 [overflow-wrap:anywhere]">{error}</span>
           </div>
           <button
             type="button"
@@ -812,7 +812,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       )}
 
       {persistHint && !error && (
-        <p className="text-[11px] font-mono text-gray-400 px-1">{persistHint}</p>
+        <p className="text-[11px] font-mono text-gray-400 px-1 [overflow-wrap:anywhere]">{persistHint}</p>
       )}
 
       {strategySaved && !error && (
@@ -896,7 +896,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
             <FreeAiAnswerCard suburb={dna.suburb} state={dna.state} brandName={dna.name} />
           ) : null}
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 glass-morphism rounded-xl border border-gold/30">
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <span className="text-xs text-gray-400 font-mono">Regenerate Focus:</span>
               {(['SEO', 'AEO', 'GEO'] as const).map((f) => (
                 <button
@@ -983,6 +983,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
             rlmTrajectory={report.rlmTrajectory}
             healthSite={report.healthSite}
             boardFindings={boardFindings}
+            crawlerChecks={scoutSummary?.crawlerChecks}
             checkLine={scoutSummary?.badges.find((badge) => badge.label === 'Page health')?.value}
           />
         </div>

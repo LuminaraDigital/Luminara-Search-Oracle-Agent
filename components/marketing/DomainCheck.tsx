@@ -1,31 +1,63 @@
 /* Landing domain check: one input, one button, an honest inline result.
- * Runs the anonymous live crawl check (robots.txt / llms.txt) on this page, keeps the
- * four engines labeled Not measured, then hands off to the full audit.
+ * Runs the anonymous live check (homepage head, robots.txt, llms.txt) on this page, keeps the
+ * engines labeled Not measured, then hands off to the full audit.
  */
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useEffectEvent, useRef, useState } from 'react';
 import { useDemoPlayback } from './demo/useDemoPlayback';
 import { normalizeDemoUrl, visibleProbeHost } from './demo/demoFixtures';
 import { EngineStatusChip } from './EvidenceGlyph';
+import { HomepageSnippetResult } from './HomepageSnippetResult';
 import { productTelemetry } from '../../services/analytics/productTelemetry';
 import type { AuditHandoff } from '../../services/activation/auditHandoff';
 import { GUEST_FULL_AUDIT_CTA } from '../../services/audit/hostedScoutRail';
+import { checkPathForHost } from '../../services/marketing/homepageSnippet';
+import { copyToClipboard } from '../../utils/clipboard';
+import { prefersReducedMotion } from './deviceCapability';
 
 interface DomainCheckProps {
   inputId: string;
   isAuthenticated?: boolean;
   /** Guests go to sign-up with the handoff; signed-in users go straight to the audit. */
   onFullAudit: (handoff?: AuditHandoff) => void;
+  /** Where the check ran, for `probe_completed`. A check started from a shared link reports `check_link`. */
+  surface?: string;
+  /** From a /check/<host> link: run the check on this host on first render. */
+  autoRunHost?: string;
 }
 
 export const DomainCheck: React.FC<DomainCheckProps> = ({
   inputId,
   isAuthenticated,
   onFullAudit,
+  surface = 'landing_inline',
+  autoRunHost,
 }) => {
   const demo = useDemoPlayback();
   const [error, setError] = useState<string | null>(null);
+  // Tied to the host it was copied for, so a new check shows the plain button again.
+  // 'manual': the copy failed (some in-app browsers), so the link is shown to copy by hand.
+  const [share, setShare] = useState<{ host: string; state: 'copied' | 'manual' } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const running = demo.phase === 'analyzing';
+  const resultHost = demo.fixture?.domain ?? '';
+  const shareState = !running && share && share.host === resultHost ? share.state : 'idle';
+  // Only the run the shared link started counts as a check_link check; later typed checks do not.
+  const sharedHost = autoRunHost ? normalizeDemoUrl(autoRunHost) : null;
+  const runSurface = sharedHost?.ok && resultHost === sharedHost.host ? 'check_link' : surface;
+
+  // A remount (React StrictMode in development) cancels the first run in useDemoPlayback's
+  // cleanup, so this starts it again on every mount rather than once per component.
+  const runShared = useEffectEvent((host: string) => demo.runSample(host));
+  useEffect(() => {
+    if (autoRunHost) runShared(autoRunHost);
+  }, [autoRunHost]);
+
+  const checkLink = (domain: string) => `${window.location.origin}${checkPathForHost(domain)}`;
+
+  const copyCheckLink = (domain: string) => {
+    productTelemetry.track('share_clicked', { channel: 'check_link', surface: runSurface });
+    void copyToClipboard(checkLink(domain)).then((ok) => setShare({ host: domain, state: ok ? 'copied' : 'manual' }));
+  };
 
   // Count a check only once it has finished, with how it ended.
   useEffect(() => {
@@ -33,10 +65,10 @@ export const DomainCheck: React.FC<DomainCheckProps> = ({
     productTelemetry.track('probe_completed', {
       domain: demo.fixture.domain,
       focus: 'AEO',
-      surface: 'landing_inline',
+      surface: runSurface,
       resultKind: demo.resultKind,
     });
-  }, [demo.phase, demo.fixture, demo.resultKind]);
+  }, [demo.phase, demo.fixture, demo.resultKind, runSurface]);
 
   const handoffFor = (raw: string): AuditHandoff | undefined => {
     const parsed = normalizeDemoUrl(raw);
@@ -56,8 +88,23 @@ export const DomainCheck: React.FC<DomainCheckProps> = ({
   };
 
   const showResult = running || demo.phase === 'results_sample';
+
+  // Someone opening a shared link came for the result, so bring it into view once it is ready.
+  // Not earlier: the check starts during page load, when the browser's own scroll restoration
+  // would undo the scroll.
+  const resultRef = useRef<HTMLDivElement>(null);
+  const scrolledToShared = useRef(false);
+  const sharedResultReady = runSurface === 'check_link' && demo.phase === 'results_sample';
+  useEffect(() => {
+    if (!sharedResultReady || scrolledToShared.current) return;
+    scrolledToShared.current = true;
+    resultRef.current?.scrollIntoView({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block: 'start' });
+  }, [sharedResultReady]);
   const crawl = demo.engines.find((r) => r.id === 'crawl_readiness');
-  const engines = demo.engines.filter((r) => r.id !== 'crawl_readiness');
+  // One chip per label: several engines share "AI answers", and repeated chips read as a bug.
+  const engines = demo.engines
+    .filter((r) => r.id !== 'crawl_readiness')
+    .filter((row, i, rows) => rows.findIndex((other) => other.label === row.label) === i);
   const host = demo.fixture?.domain ?? demo.url;
   const message = error || demo.error;
 
@@ -104,7 +151,7 @@ export const DomainCheck: React.FC<DomainCheckProps> = ({
       )}
 
       {showResult && (
-        <div aria-live="polite" className="lx-glass mt-4 rounded-2xl p-5 text-left">
+        <div ref={resultRef} aria-live="polite" className="lx-glass mt-4 scroll-mt-28 rounded-2xl p-5 text-left">
           <div className="flex items-center justify-between gap-3">
             <p className="min-w-0 truncate text-sm text-[var(--color-ink)]">
               <span className="text-[var(--color-ink-2)]">{running ? 'Checking ' : 'Results for '}</span>
@@ -122,7 +169,18 @@ export const DomainCheck: React.FC<DomainCheckProps> = ({
             </button>
           </div>
 
-          <ul className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-5 list-none m-0 p-0">
+          {/* The homepage read is the first value, so it leads; the engine chips follow it. */}
+          {demo.fixture && demo.resultKind === 'live_crawl' && demo.fixture.page !== undefined && (
+            <div className="mt-4">
+              <HomepageSnippetResult
+                page={demo.fixture.page}
+                pageReason={demo.fixture.pageReason ?? null}
+                checkedAt={demo.fixture.checkedAt}
+              />
+            </div>
+          )}
+
+          <ul className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4 list-none m-0 p-0">
             {crawl && (
               <li className="col-span-2 sm:col-span-1 min-w-0">
                 <p className="text-[13px] text-[var(--color-ink)]">Crawl access</p>
@@ -148,7 +206,15 @@ export const DomainCheck: React.FC<DomainCheckProps> = ({
                   ? crawl?.note
                   : 'We could not reach the site for a live crawl just now. Try again, or run the full audit.'}
               </p>
-              <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+              {demo.resultKind === 'live_crawl' && (
+                <p className="mt-2 text-xs text-[var(--color-ink-2)]">
+                  Free generators:{' '}
+                  <a href="/free-tools/robots-txt-generator" className="lx-link">robots.txt</a>
+                  {' · '}
+                  <a href="/free-tools/llms-txt-generator" className="lx-link">llms.txt</a>
+                </p>
+              )}
+              <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
                 <button
                   type="button"
                   onClick={() => onFullAudit(handoffFor(demo.fixture?.domain || demo.url))}
@@ -156,6 +222,26 @@ export const DomainCheck: React.FC<DomainCheckProps> = ({
                 >
                   {isAuthenticated ? 'Run the full audit' : GUEST_FULL_AUDIT_CTA}
                 </button>
+                {demo.resultKind === 'live_crawl' && (
+                  <button
+                    type="button"
+                    onClick={() => copyCheckLink(demo.fixture?.domain || '')}
+                    className="lx-link text-sm"
+                  >
+                    {shareState === 'copied' ? 'Link copied. Opening it runs the check again.' : 'Copy link to this check'}
+                  </button>
+                )}
+                {shareState === 'manual' && demo.fixture && (
+                  <label className="block w-full text-xs text-[var(--color-ink-2)]">
+                    Copy this link. Opening it runs the check again.
+                    <input
+                      readOnly
+                      value={checkLink(demo.fixture.domain)}
+                      onFocus={(e) => e.currentTarget.select()}
+                      className="lx-field mt-1"
+                    />
+                  </label>
+                )}
                 {!isAuthenticated && (
                   <span className="text-xs text-[var(--color-ink-2)]">Hosted engines stay off until you sign in or add your own keys.</span>
                 )}

@@ -315,20 +315,25 @@ export function safePublicUrl(input: string): URL | null {
 
 export type DohFetch = (url: string, init?: RequestInit) => Promise<Response>;
 
+/** A DNS answer slower than this counts as a failed lookup (fail closed), so a fetch never waits on it. */
+const DOH_TIMEOUT_MS = 3_000;
+
 /**
  * Resolves a hostname through DNS-over-HTTPS and returns false when any answer points at a
- * private or reserved address. Resolution failures are treated as unsafe. Cloudflare's own
- * resolver is used so no extra binding is needed.
+ * private or reserved address. Resolution failures and timeouts are treated as unsafe.
+ * Cloudflare's own resolver is used so no extra binding is needed.
  */
 export async function resolvesToPublicAddress(host: string, fetcher: DohFetch = fetch): Promise<boolean> {
   const lookup = async (type: 'A' | 'AAAA'): Promise<string[] | null> => {
     try {
       const res = await fetcher(`https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(host)}&type=${type}`, {
         headers: { accept: 'application/dns-json' },
+        signal: AbortSignal.timeout(DOH_TIMEOUT_MS),
       });
       if (!res.ok) return null;
       const data = (await res.json()) as { Status?: number; Answer?: Array<{ type: number; data: string }> };
-      if (data.Status !== 0) return [];
+      if (data.Status === 3) return []; // NXDOMAIN: no records of this type
+      if (data.Status !== 0) return null; // SERVFAIL and the rest: unknown, not empty
       const want = type === 'A' ? 1 : 28;
       return (data.Answer || []).filter(a => a.type === want).map(a => a.data);
     } catch {
@@ -336,10 +341,23 @@ export async function resolvesToPublicAddress(host: string, fetcher: DohFetch = 
     }
   };
   const [a, aaaa] = await Promise.all([lookup('A'), lookup('AAAA')]);
-  if (a === null && aaaa === null) return false; // resolver unreachable: fail closed
+  // Either lookup failing fails closed: a public AAAA must not vouch for an A record we never saw,
+  // because the real fetch may connect over IPv4.
+  if (a === null || aaaa === null) return false;
   const addrs = [...(a || []), ...(aaaa || [])];
   if (addrs.length === 0) return false; // NXDOMAIN or no address records
   return addrs.every(ip => !isPrivateIp(ip));
+}
+
+/**
+ * Wraps a fetcher so it only reaches the standard web ports. Pass it as fetchPublicUrl's
+ * `fetcher`, which calls it for the first hop and every redirect.
+ */
+export function defaultPortFetcher(fetcher: typeof fetch = fetch): (input: string, init?: RequestInit) => Promise<Response> {
+  return async (input, init) => {
+    if (new URL(input).port) throw new Error('non-default port');
+    return fetcher(input, init);
+  };
 }
 
 export type FetchPublicUrlResult =

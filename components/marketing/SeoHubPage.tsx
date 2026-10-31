@@ -1,15 +1,18 @@
 import React, { useEffect } from 'react';
-import { MarketingPageHeader, MarketingPageShell } from './MarketingPageShell';
+import { MARKETING_BODY as BODY, MARKETING_SECTION as SECTION, MarketingPageHeader, MarketingPageShell } from './MarketingPageShell';
 import { MarketingCompareTable } from './MarketingCompareTable';
+import { MarketingFaq } from './MarketingFaq';
+import { DomainCheck } from './DomainCheck';
+import { prefersReducedMotion } from './deviceCapability';
 import { HUB_FAQ_HEADING, HUB_PAGES, HUB_REVIEWED, type BestPage, type ComparePage, type HubPage } from '../../services/marketing/seoHubPages';
+import type { AuditHandoff } from '../../services/activation/auditHandoff';
 
 interface SeoHubPageProps {
   page: HubPage;
-  onTerminal: () => void;
+  isAuthenticated?: boolean;
+  /** Guests go to sign-up with the handoff; signed-in users go straight to the audit. */
+  onFullAudit: (handoff?: AuditHandoff) => void;
 }
-
-const SECTION = 'mt-16 border-t pt-16 lx-hairline';
-const BODY = 'text-[15px] leading-relaxed text-[var(--color-ink-2)]';
 
 const Bullets: React.FC<{ items: readonly string[] }> = ({ items }) => (
   <ul className={`mt-5 space-y-3 ${BODY}`}>
@@ -87,34 +90,50 @@ function slug(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
 
+const CHECK_INPUT_ID = 'hub-domain';
+
 /** /compare/* and /best/* pages. Content, crawler HTML, and JSON-LD share services/marketing/seoHubPages. */
-const SeoHubPage: React.FC<SeoHubPageProps> = ({ page, onTerminal }) => {
+const SeoHubPage: React.FC<SeoHubPageProps> = ({ page, isAuthenticated, onFullAudit }) => {
 
   useEffect(() => {
     window.scrollTo(0, 0);
   }, []);
+
+  // The header button goes to the check on this page rather than to a sign-in wall.
+  const goToCheck = () => {
+    const input = document.getElementById(CHECK_INPUT_ID);
+    input?.scrollIntoView({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block: 'center' });
+    window.setTimeout(() => input?.focus({ preventScroll: true }), 400);
+  };
 
   return (
     <MarketingPageShell
       footerStatement="Measure when we can. Label when we cannot."
       wide
       closing={{
-        eyebrow: 'Start free',
+        eyebrow: 'Free check',
         title: (
           <>
             Check your own site <span className="italic lx-gold-text pr-[0.08em]">for free.</span>
           </>
         ),
-        body: 'The live crawl check reads your robots.txt and llms.txt with no card and no account. Results are labeled Measured, Estimated, or Not measured.',
-        cta: { label: 'Run the free crawl check', onClick: onTerminal },
+        body: 'Reads a homepage title and description, robots.txt and llms.txt. No card, no account. Every result is labeled Measured, Estimated, or Not measured.',
+        form: (
+          <DomainCheck
+            inputId={CHECK_INPUT_ID}
+            isAuthenticated={isAuthenticated}
+            onFullAudit={onFullAudit}
+            surface={`hub:${page.path}`}
+          />
+        ),
       }}
     >
       <MarketingPageHeader
         eyebrow={`${page.kind === 'compare' ? 'Comparison' : "Buyer's guide"} · reviewed ${HUB_REVIEWED}`}
         title={page.h1}
       >
-        <button type="button" onClick={onTerminal} className="lx-btn lx-btn-gold">
-          Run the free crawl check
+        <button type="button" onClick={goToCheck} className="lx-btn lx-btn-gold">
+          Run the free check
         </button>
       </MarketingPageHeader>
 
@@ -125,17 +144,7 @@ const SeoHubPage: React.FC<SeoHubPageProps> = ({ page, onTerminal }) => {
 
       {page.kind === 'compare' ? <CompareBody page={page} /> : <BestBody page={page} />}
 
-      <section aria-labelledby="hub-faq-heading" className={SECTION}>
-        <h2 id="hub-faq-heading" className="lx-display lx-h3 mb-8">{HUB_FAQ_HEADING}</h2>
-        <div className="max-w-3xl border-b lx-hairline">
-          {page.faq.map((item) => (
-            <details key={item.question} className="lx-faq group border-t lx-hairline">
-              <summary className="py-6 text-lg leading-snug text-[var(--color-ink)]">{item.question}</summary>
-              <p className={`-mt-1 max-w-2xl pb-7 ${BODY}`}>{item.answer}</p>
-            </details>
-          ))}
-        </div>
-      </section>
+      <MarketingFaq embedded className="mt-16" items={page.faq} heading={HUB_FAQ_HEADING} />
 
       <section aria-labelledby="sources-heading" className={SECTION}>
         <h2 id="sources-heading" className="lx-eyebrow">Sources, reviewed {HUB_REVIEWED}</h2>
