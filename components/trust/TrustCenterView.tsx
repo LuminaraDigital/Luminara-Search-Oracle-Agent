@@ -341,7 +341,7 @@ export const TrustCenterView: React.FC<{ initialDomain?: string }> = ({ initialD
   const badgeLive = domainState === 'ready' && receiptState === 'ready';
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-8 space-y-10">
+    <div className="w-full sm:w-auto max-w-3xl mx-auto px-4 py-8 space-y-10">
       {confirmModal}
       <header className="space-y-2 border-b border-white/10 pb-6">
         <p className="text-[10px] uppercase tracking-widest text-gold-light font-mono">Trust</p>

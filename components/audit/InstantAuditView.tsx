@@ -796,10 +796,10 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
 
       {/* Error State */}
       {error && (
-        <div className="glass-morphism rounded-xl border border-danger-500/40 p-5 mb-8 flex items-center justify-between text-xs text-danger-200">
-          <div className="flex items-center gap-3">
+        <div className="glass-morphism rounded-xl border border-danger-500/40 p-5 mb-8 flex items-center justify-between gap-3 text-xs text-danger-200">
+          <div className="flex items-center gap-3 min-w-0">
             <ICONS.AlertCircle className="w-5 h-5 text-danger-400 shrink-0" />
-            <span>{error}</span>
+            <span className="min-w-0 [overflow-wrap:anywhere]">{error}</span>
           </div>
           <button
             type="button"
@@ -812,7 +812,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       )}
 
       {persistHint && !error && (
-        <p className="text-[11px] font-mono text-gray-400 px-1">{persistHint}</p>
+        <p className="text-[11px] font-mono text-gray-400 px-1 [overflow-wrap:anywhere]">{persistHint}</p>
       )}
 
       {strategySaved && !error && (

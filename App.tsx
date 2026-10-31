@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, Suspense } from 'react';
+import { createPortal } from 'react-dom';
 import { OracleMode, Message, AppView, BusinessDNA, LAB_VIEWS } from './types';
 import { getAnswerDepth, setAnswerDepth } from './services/audit/answerDepth';
 import { toChatHistory } from './services/chat/messages';
@@ -1352,7 +1353,8 @@ const App: React.FC = () => {
               <ICONS.ChevronDown className="w-3 h-3 text-gold" />
             </Button>
 
-            {showSuiteMenu && (
+            {/* Portal: the header nav scrolls sideways and would otherwise clip this phone sheet. */}
+            {showSuiteMenu && createPortal(
               <>
                 <div
                   className="fixed inset-0 z-40 bg-black/70 animate-in fade-in duration-150"
@@ -1544,7 +1546,8 @@ const App: React.FC = () => {
                     </button>
                   )}
                 </div>
-              </>
+              </>,
+              document.body,
             )}
           </div>
 
