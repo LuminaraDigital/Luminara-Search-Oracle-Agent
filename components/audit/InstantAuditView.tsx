@@ -403,9 +403,9 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
         guest: Boolean(isGuest),
       });
       void fetchProbeCrawl(formattedUrl).then((probe) => {
-        productTelemetry.track('site_platform_detected', {
-          platform: probe.ok ? probe.page?.platform ?? 'unknown' : 'unknown',
-        });
+        if (probe.ok && probe.page?.platform) {
+          productTelemetry.track('site_platform_detected', { platform: probe.page.platform });
+        }
       });
 
       try {
@@ -747,7 +747,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
 
             <details className="pt-4 border-t border-white/5">
               <summary className="cursor-pointer text-xs text-gray-400 hover:text-white">More audit options</summary>
-              <div className="mt-3 flex items-center justify-between mb-2">
+              <div className="mt-3 mb-2">
                 <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Focus Lenses:</span>
               </div>
               <div className="flex flex-wrap gap-2">

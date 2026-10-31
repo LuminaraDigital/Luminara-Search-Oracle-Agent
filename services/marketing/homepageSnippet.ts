@@ -8,10 +8,9 @@
 import { checkDescription, checkTitle } from '../freeTools/serpPreview';
 import { safePublicHostname } from '../security/publicHostname';
 import type { FreeTool } from './freeTools';
-
-/** Parsed head fields only, each at most 300 characters. The page HTML is never returned or stored. */
 import type { SitePlatform } from '../audit/sitePlatform';
 
+/** Parsed head fields only, each at most 300 characters. The page HTML is never returned or stored. */
 export interface HomepageHead {
   /** Where the read ended after redirects. */
   finalUrl: string;

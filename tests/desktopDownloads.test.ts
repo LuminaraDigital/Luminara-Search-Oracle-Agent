@@ -52,6 +52,9 @@ describe('desktop downloads', () => {
 });
 
 describe('desktop download count', () => {
+  const pending: Promise<void>[] = [];
+  const background = (work: Promise<void>) => void pending.push(work);
+
   function fakeDb(fail = false) {
     const run = vi.fn(async () => {
       if (fail) throw new Error('D1 down');
@@ -63,16 +66,18 @@ describe('desktop download count', () => {
   it('counts a GET and not a HEAD', async () => {
     const { db, bind, run } = fakeDb();
     vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 404 })));
-    await desktopWindowsDownload({ DB: db }, new Request('https://luminarasuite.com/desktop/windows', { method: 'HEAD' }));
+    await desktopWindowsDownload({ DB: db }, new Request('https://luminarasuite.com/desktop/windows', { method: 'HEAD' }), background);
     expect(run).not.toHaveBeenCalled();
-    await desktopWindowsDownload({ DB: db }, new Request('https://luminarasuite.com/desktop/windows'));
+    await desktopWindowsDownload({ DB: db }, new Request('https://luminarasuite.com/desktop/windows'), background);
+    await Promise.all(pending);
     expect(bind.mock.calls[0]).toContain('desktop_download_started');
     vi.unstubAllGlobals();
   });
 
   it('still serves the download when the count fails', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 404 })));
-    const res = await desktopWindowsDownload({ DB: fakeDb(true).db }, new Request('https://luminarasuite.com/desktop/windows'));
+    const res = await desktopWindowsDownload({ DB: fakeDb(true).db }, new Request('https://luminarasuite.com/desktop/windows'), background);
+    await Promise.all(pending);
     expect(res.status).toBe(302);
     vi.unstubAllGlobals();
   });

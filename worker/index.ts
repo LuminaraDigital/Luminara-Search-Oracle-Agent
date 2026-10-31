@@ -354,7 +354,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
         ok: true,
         hostedGemini: Boolean(String(env.GEMINI_API_KEY || '').trim()),
         // A signed-in account with no keys of its own needs one of these to read a site.
-        hostedAudit: ['firecrawl', 'tavily'].some((id) => PROVIDERS[id].auth(env, new Headers(), {}).ok),
+        hostedAudit: Boolean(env.FIRECRAWL_API_KEY || env.TAVILY_API_KEY),
         // ton is true only when the config is valid AND the owner has confirmed the merchant address.
         ton: isTonCheckoutOpen(env),
         jettonCheckout: JETTON_CHECKOUT_LIVE && isTonCheckoutOpen(env),
@@ -2331,7 +2331,7 @@ const handler = {
 
     // Windows desktop installer: R2 mirror when bound, otherwise GitHub Releases.
     if (url.pathname === '/desktop/windows' || url.pathname === '/desktop/windows/') {
-      return guard(await desktopWindowsDownload(env, request));
+      return guard(await desktopWindowsDownload(env, request, (work) => ctx.waitUntil(work)));
     }
 
     // Windows desktop landing page: fetch static doc directly without SPA fallback loop.

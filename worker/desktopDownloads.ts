@@ -74,13 +74,17 @@ export async function desktopLatestJson(env: DesktopDownloadEnv): Promise<Respon
 /**
  * Stream the Windows installer from R2, or 302 to GitHub Releases.
  */
-export async function desktopWindowsDownload(env: DesktopDownloadEnv, request: Request): Promise<Response> {
+export async function desktopWindowsDownload(
+  env: DesktopDownloadEnv,
+  request: Request,
+  background: (work: Promise<void>) => void = () => undefined,
+): Promise<Response> {
   if (request.method !== 'GET' && request.method !== 'HEAD') {
     return new Response('Method not allowed', { status: 405 });
   }
 
   if (request.method === 'GET') {
-    await recordAnonymousEvent(env.DB, 'desktop_download_started', '/desktop/windows');
+    background(recordAnonymousEvent(env.DB, 'desktop_download_started', '/desktop/windows'));
   }
 
   if (env.DESKTOP_RELEASES) {
