@@ -471,7 +471,7 @@ describe('signed-in degraded copy', () => {
   it('drops the sign-in suffix from hosted auth skips when the session exists', () => {
     expect(hostedAuthSkipError(true).toLowerCase()).not.toContain('sign in');
     expect(hostedAuthSkipError(true)).toMatch(/try again in a few minutes/);
-    expect(hostedAuthSkipError(false)).toMatch(/or sign in/);
+    expect(hostedAuthSkipError(false)).toMatch(/sign in/);
     expect(hostedAuthRecoveryHint({ rail: 'signed_in_hosted' }).toLowerCase()).not.toContain('sign in');
     expect(hostedAuthRecoveryHint({ rail: 'tma_hosted' }).toLowerCase()).not.toContain('sign in');
   });

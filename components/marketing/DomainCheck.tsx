@@ -243,7 +243,7 @@ export const DomainCheck: React.FC<DomainCheckProps> = ({
                   </label>
                 )}
                 {!isAuthenticated && (
-                  <span className="text-xs text-[var(--color-ink-2)]">Hosted engines stay off until you sign in or add your own keys.</span>
+                  <span className="text-xs text-[var(--color-ink-2)]">Full audits need a free account.</span>
                 )}
               </div>
             </div>

@@ -10,10 +10,10 @@ export type HostedScoutRail = 'tma_hosted' | 'signed_in_hosted' | 'byok_or_signi
 
 /** Homepage probe reads the homepage head and the crawl files only. A full audit is a different product. */
 export const GUEST_HERO_NOTE =
-  'Free check of your homepage title and description, robots.txt and llms.txt. No card. A full audit needs sign-in or your own keys.';
+  'Free check of your homepage title and description, robots.txt and llms.txt. No card. A full audit needs a free account.';
 
 export const GUEST_REPORT_NOTE =
-  'No 40-page PDF and no made-up score. A full verdict needs sign-in or your own keys.';
+  'No 40-page PDF and no made-up score. A full verdict needs a free account.';
 
 export const GUEST_FULL_AUDIT_CTA = 'Sign in to run a full audit';
 
@@ -66,7 +66,7 @@ export function railHasSession(rail: HostedScoutRail): boolean {
 export function hostedAuthRecoveryHint(input: { signedIn: boolean } | { rail: HostedScoutRail }): string {
   const signedIn = 'rail' in input ? railHasSession(input.rail) : input.signedIn;
   if (signedIn) return 'Please try again in a few minutes.';
-  return 'Add your own key in Settings or sign in.';
+  return 'Please sign in and try again.';
 }
 
 export function hostedScoutPreRunCopy(

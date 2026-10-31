@@ -63,7 +63,7 @@ That promise is only true on a connected platform, so it arrives in DF3, on one 
 
 ## 4. Phases
 
-**Progress (2026-11-01):** DF0-2, DF0-3, DF1-2 and DF1-3 are built. DF1-1 is partial: `/api/health` reports `hostedAudit` and the smoke check warns when it is false, on each deploy, not on a schedule. A real full audit needs a test account from the owner. DF1-4 is partial: the focus and lens controls sit behind Advanced; the one-fix view waits for #287 and engine panels and Business DNA are unchanged. DF0-1 waits for this branch to reach staging.
+**Progress (2026-11-01):** DF0-2, DF0-3, DF1-2 and DF1-3 are built. First-run audit and landing copy no longer mention keys; Settings and methodology pages still explain them. DF1-1 is partial: `/api/health` reports `hostedAudit` and the smoke check warns when it is false, on each deploy, not on a schedule. A real full audit needs a test account from the owner. DF1-4 is partial: the focus and lens controls sit behind Advanced; the one-fix view waits for #287 and engine panels and Business DNA are unchanged. DF0-1 waits for this branch to reach staging.
 
 ### DF0: Safer Windows app (start now)
 
