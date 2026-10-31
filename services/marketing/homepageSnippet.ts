@@ -10,6 +10,8 @@ import { safePublicHostname } from '../security/publicHostname';
 import type { FreeTool } from './freeTools';
 
 /** Parsed head fields only, each at most 300 characters. The page HTML is never returned or stored. */
+import type { SitePlatform } from '../audit/sitePlatform';
+
 export interface HomepageHead {
   /** Where the read ended after redirects. */
   finalUrl: string;
@@ -18,6 +20,8 @@ export interface HomepageHead {
   jsonLdTypes: string[];
   /** A robots meta tag or X-Robots-Tag header asks search engines not to index the page. */
   noindex: boolean;
+  /** Absent when the page was not fetched from the site itself. */
+  platform?: SitePlatform;
 }
 
 /** Why the homepage could not be read. One coarse code per case, never a raw error. */

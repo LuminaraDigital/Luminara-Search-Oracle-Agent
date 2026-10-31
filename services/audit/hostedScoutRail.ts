@@ -65,7 +65,7 @@ export function railHasSession(rail: HostedScoutRail): boolean {
  */
 export function hostedAuthRecoveryHint(input: { signedIn: boolean } | { rail: HostedScoutRail }): string {
   const signedIn = 'rail' in input ? railHasSession(input.rail) : input.signedIn;
-  if (signedIn) return 'Retry, or check Settings → provider status.';
+  if (signedIn) return 'Please try again in a few minutes.';
   return 'Add your own key in Settings or sign in.';
 }
 
@@ -78,12 +78,9 @@ export function hostedScoutPreRunCopy(
   }
   if (rail === 'signed_in_hosted') {
     if (options?.hostedGateOpen === false) {
-      return 'Signed in: hosted engines are off for this session. Add your own keys in Settings, or retry when provider status is ready. Premium engines still need an active plan.';
+      return 'Full audits are paused right now. Please try again in a few minutes.';
     }
-    if (options?.hostedGateOpen === true) {
-      return 'Signed in: hosted engines use your daily free allowance, or your own keys in Settings. Premium engines still need an active plan.';
-    }
-    return 'Signed in: hosted engines use your daily free allowance when provider status is ready, or your own keys in Settings. Premium engines still need an active plan.';
+    return 'Free daily audits are included with your account. Some deeper checks need a paid plan.';
   }
-  return 'Sign in for a full audit, or add your own AI keys in Settings.';
+  return 'Sign in for a free full audit.';
 }

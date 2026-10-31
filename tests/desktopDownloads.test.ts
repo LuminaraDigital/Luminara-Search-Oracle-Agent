@@ -50,3 +50,30 @@ describe('desktop downloads', () => {
     vi.unstubAllGlobals();
   });
 });
+
+describe('desktop download count', () => {
+  function fakeDb(fail = false) {
+    const run = vi.fn(async () => {
+      if (fail) throw new Error('D1 down');
+    });
+    const bind = vi.fn(() => ({ run }));
+    return { db: { prepare: vi.fn(() => ({ bind })) } as unknown as D1Database, bind, run };
+  }
+
+  it('counts a GET and not a HEAD', async () => {
+    const { db, bind, run } = fakeDb();
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 404 })));
+    await desktopWindowsDownload({ DB: db }, new Request('https://luminarasuite.com/desktop/windows', { method: 'HEAD' }));
+    expect(run).not.toHaveBeenCalled();
+    await desktopWindowsDownload({ DB: db }, new Request('https://luminarasuite.com/desktop/windows'));
+    expect(bind.mock.calls[0]).toContain('desktop_download_started');
+    vi.unstubAllGlobals();
+  });
+
+  it('still serves the download when the count fails', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 404 })));
+    const res = await desktopWindowsDownload({ DB: fakeDb(true).db }, new Request('https://luminarasuite.com/desktop/windows'));
+    expect(res.status).toBe(302);
+    vi.unstubAllGlobals();
+  });
+});

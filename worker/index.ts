@@ -353,6 +353,8 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       return withCors(json({
         ok: true,
         hostedGemini: Boolean(String(env.GEMINI_API_KEY || '').trim()),
+        // A signed-in account with no keys of its own needs one of these to read a site.
+        hostedAudit: ['firecrawl', 'tavily'].some((id) => PROVIDERS[id].auth(env, new Headers(), {}).ok),
         // ton is true only when the config is valid AND the owner has confirmed the merchant address.
         ton: isTonCheckoutOpen(env),
         jettonCheckout: JETTON_CHECKOUT_LIVE && isTonCheckoutOpen(env),

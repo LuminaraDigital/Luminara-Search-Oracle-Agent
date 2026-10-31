@@ -264,7 +264,7 @@ describe('guest scout summary honesty', () => {
       expect(copy.toLowerCase()).not.toContain('sign in');
       expect(summary.banner).toBe(copy);
       expect(JSON.stringify(summary).toLowerCase()).not.toContain('sign in');
-      expect(summary.banner).toMatch(/Settings → provider status/);
+      expect(summary.banner).toMatch(/try again in a few minutes/);
       const html = renderToStaticMarkup(createElement(GuestScoutSummaryPanel, { summary }));
       expect(html.toLowerCase()).not.toContain('sign in');
     }
@@ -384,9 +384,9 @@ describe('guest scout summary honesty', () => {
     expect(summary.verdictMarkdown).not.toContain('third action');
     expect(summary.badges.every((badge) => badge.status === 'not_measured' && !badge.value)).toBe(true);
     expect(summary.verdict).toMatch(/not measured/i);
-    expect(summary.banner).toMatch(/provider status/i);
+    expect(summary.banner).toMatch(/try again in a few minutes/i);
     const html = renderToStaticMarkup(createElement(GuestScoutSummaryPanel, { summary }));
-    expect(html).toContain('provider status');
+    expect(html).toContain('try again in a few minutes');
     expect(html).not.toContain('75/100');
     expect(html).not.toContain('56%');
     expect(html).not.toContain('**');
@@ -422,13 +422,17 @@ describe('hosted scout rail', () => {
     expect(resolveHostedScoutRail({ inTelegram: false, hasInitData: false, signedIn: true })).toBe('signed_in_hosted');
     expect(resolveHostedScoutRail({ inTelegram: false, hasInitData: false, signedIn: false })).toBe('byok_or_signin');
     expect(hostedScoutPreRunCopy('byok_or_signin')).toBe(
-      'Sign in for a full audit, or add your own AI keys in Settings.',
+      'Sign in for a free full audit.',
     );
     expect(hostedScoutPreRunCopy('tma_hosted').toLowerCase()).toContain('no api key');
     expect(hostedScoutPreRunCopy('signed_in_hosted').toLowerCase()).not.toContain('sign in');
-    expect(hostedScoutPreRunCopy('signed_in_hosted', { hostedGateOpen: false })).toMatch(/off for this session/i);
+    for (const hostedGateOpen of [true, false, undefined]) {
+      expect(hostedScoutPreRunCopy('signed_in_hosted', { hostedGateOpen }).toLowerCase()).not.toContain('key');
+    }
+    expect(hostedAuthRecoveryHint({ rail: 'signed_in_hosted' }).toLowerCase()).not.toContain('key');
+    expect(hostedScoutPreRunCopy('signed_in_hosted', { hostedGateOpen: false })).toMatch(/paused right now/i);
     expect(hostedScoutPreRunCopy('signed_in_hosted', { hostedGateOpen: false }).toLowerCase()).not.toContain('sign in');
-    expect(hostedScoutPreRunCopy('signed_in_hosted', { hostedGateOpen: true })).toMatch(/daily free allowance/);
+    expect(hostedScoutPreRunCopy('signed_in_hosted', { hostedGateOpen: true })).toMatch(/Free daily audits/);
   });
 
   it('refuses free hosted keys without identity', () => {
@@ -458,7 +462,7 @@ describe('signed-in degraded copy', () => {
     expect(instantAuditPersistHint(true, 'unsaved').toLowerCase()).not.toContain('sign in');
     expect(instantAuditPersistHint(true, 'unmeasured').toLowerCase()).not.toContain('sign in');
     expect(instantAuditPersistHint(true, 'unmeasured', true)).toBe(
-      "This check couldn't finish, it didn't count against your free checks. Retry, or check Settings → provider status.",
+      "This check couldn't finish, it didn't count against your free checks. Please try again in a few minutes.",
     );
     expect(instantAuditPersistHint(false, 'unsaved')).toMatch(/Sign in to save a project/);
     expect(instantAuditPersistHint(false, 'unmeasured')).toMatch(/Sign in to save a project/);
@@ -466,7 +470,7 @@ describe('signed-in degraded copy', () => {
 
   it('drops the sign-in suffix from hosted auth skips when the session exists', () => {
     expect(hostedAuthSkipError(true).toLowerCase()).not.toContain('sign in');
-    expect(hostedAuthSkipError(true)).toMatch(/provider status/);
+    expect(hostedAuthSkipError(true)).toMatch(/try again in a few minutes/);
     expect(hostedAuthSkipError(false)).toMatch(/or sign in/);
     expect(hostedAuthRecoveryHint({ rail: 'signed_in_hosted' }).toLowerCase()).not.toContain('sign in');
     expect(hostedAuthRecoveryHint({ rail: 'tma_hosted' }).toLowerCase()).not.toContain('sign in');
