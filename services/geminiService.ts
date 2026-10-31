@@ -92,11 +92,13 @@ import { WIKI_LINK_PROMPT_HINT } from './audit/wikiLinkService';
 import { postAuditReflectionService } from './audit/postAuditReflectionService';
 import { dreamingClient } from './dreaming/dreamingClient';
 import { synthesizeRlmAuditEvidence, type RLMTrajectoryMetadata } from './rlm';
+import type { AuditRunMeta } from './audit/auditRun';
 
 export interface AuditReportResult {
   text: string;
   answeredBy?: string;
   answeredByProvider?: 'nvidia';
+  auditRun?: AuditRunMeta;
   sources: Array<{ uri: string; title: string }>;
   empiricalSummary?: EmpiricalCitationSummary;
   remediationPayload?: RemediationPayload;
@@ -772,6 +774,7 @@ Respect these consolidated business memories and historical recommendation outco
     // 3. Search-sample citation probe. ESTIMATED: substring match, nothing re-fetched or confirmed.
     // Live crew SERP rows are scored in place. A not_measured reuse falls back to the live probe.
     let empiricalSummary: EmpiricalCitationSummary | undefined;
+    let citationMethod: AuditRunMeta['method'] = null;
     try {
       const citationGroups = serpRowsToCitationGroups(crewEvidence?.serpEvidence);
       if (citationGroups.length > 0) {
@@ -781,7 +784,10 @@ Respect these consolidated business memories and historical recommendation outco
           dna?.competitors || [],
           citationGroups,
         );
-        if (reused.measurementStatus !== 'not_measured') empiricalSummary = reused;
+        if (reused.measurementStatus !== 'not_measured') {
+          empiricalSummary = reused;
+          citationMethod = 'crew_search_rows';
+        }
       }
     } catch (e) {
       console.warn('[Audit] Reused citation rows skipped', e);
@@ -793,6 +799,7 @@ Respect these consolidated business memories and historical recommendation outco
           legalName,
           dna?.competitors || []
         );
+        citationMethod = 'live_probe';
       } catch (e) {
         console.warn('[Audit] Empirical citation probe fallback', e);
       }
@@ -937,7 +944,18 @@ Strict Formatting Guidelines:
 11. ${WIKI_LINK_PROMPT_HINT}
 `;
 
-    const buildReportResult = (modelText: string, answeredBy?: string, answeredByProvider?: 'nvidia'): AuditReportResult => {
+    const buildReportResult = (
+      modelText: string,
+      writer: { model: string | null; provider: string },
+      answeredBy?: string,
+      answeredByProvider?: 'nvidia',
+    ): AuditReportResult => {
+      const auditRun: AuditRunMeta = {
+        runId: crewEvidence?.runId ?? null,
+        ...writer,
+        method: citationMethod,
+        queries: (empiricalSummary?.evidenceList ?? []).map((row) => row.query),
+      };
       // Only the report's own table columns pass. No evidence block fills any other.
       // The copy each provider path writes to memory goes through the same gate.
       const scrapedLinks = collectScrapedLinks(crewEvidence?.scrapedPages, scrapedContent);
@@ -1014,6 +1032,7 @@ Strict Formatting Guidelines:
           citationRatePercent: empiricalSummary?.citationRatePercent ?? null,
           topCompetitor: empiricalSummary?.topCitedCompetitor ?? null,
           dna,
+          auditRun,
         });
         reportText = vault.linkedReport;
         auditHistoryId = vault.entry.id;
@@ -1123,13 +1142,14 @@ Strict Formatting Guidelines:
         enterpriseTrust,
         rlmTrajectory,
         answeredBy, answeredByProvider,
+        auditRun,
         auditHistoryId,
       };
     };
 
     try {
       const written = await writeHostedAuditReport(prompt, ORACLE_SYSTEM_PROMPT);
-      return buildReportResult(written.text, written.answeredBy, written.answeredByProvider);
+      return buildReportResult(written.text, { model: written.model, provider: written.provider }, written.answeredBy, written.answeredByProvider);
     } catch (error) {
       console.warn('Hosted audit write failed', error);
       throw new ProviderUnavailableError(AUDIT_WRITE_UNAVAILABLE);

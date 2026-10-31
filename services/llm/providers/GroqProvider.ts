@@ -194,6 +194,7 @@ export class GroqProvider extends BaseAIProvider {
 
     return {
       text,
+      model: fallback?.model || usedModel,
       tokenUsage: {
         prompt: usage.prompt_tokens || this.estimateTokens(prompt),
         completion: usage.completion_tokens || this.estimateTokens(text),
