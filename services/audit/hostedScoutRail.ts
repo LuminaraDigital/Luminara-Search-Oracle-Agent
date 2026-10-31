@@ -10,10 +10,10 @@ export type HostedScoutRail = 'tma_hosted' | 'signed_in_hosted' | 'byok_or_signi
 
 /** Homepage probe reads the homepage head and the crawl files only. A full audit is a different product. */
 export const GUEST_HERO_NOTE =
-  'Free check of your homepage title and description, robots.txt and llms.txt. No card. A full audit needs sign-in or your own keys.';
+  'Free check of your homepage title and description, robots.txt and llms.txt. No card. A full audit needs a free account.';
 
 export const GUEST_REPORT_NOTE =
-  'No 40-page PDF and no made-up score. A full verdict needs sign-in or your own keys.';
+  'No 40-page PDF and no made-up score. A full verdict needs a free account.';
 
 export const GUEST_FULL_AUDIT_CTA = 'Sign in to run a full audit';
 
@@ -65,8 +65,8 @@ export function railHasSession(rail: HostedScoutRail): boolean {
  */
 export function hostedAuthRecoveryHint(input: { signedIn: boolean } | { rail: HostedScoutRail }): string {
   const signedIn = 'rail' in input ? railHasSession(input.rail) : input.signedIn;
-  if (signedIn) return 'Retry, or check Settings → provider status.';
-  return 'Add your own key in Settings or sign in.';
+  if (signedIn) return 'Please try again in a few minutes.';
+  return 'Please sign in and try again.';
 }
 
 export function hostedScoutPreRunCopy(
@@ -78,12 +78,9 @@ export function hostedScoutPreRunCopy(
   }
   if (rail === 'signed_in_hosted') {
     if (options?.hostedGateOpen === false) {
-      return 'Signed in: hosted engines are off for this session. Add your own keys in Settings, or retry when provider status is ready. Premium engines still need an active plan.';
+      return 'Full audits are paused right now. Please try again in a few minutes.';
     }
-    if (options?.hostedGateOpen === true) {
-      return 'Signed in: hosted engines use your daily free allowance, or your own keys in Settings. Premium engines still need an active plan.';
-    }
-    return 'Signed in: hosted engines use your daily free allowance when provider status is ready, or your own keys in Settings. Premium engines still need an active plan.';
+    return 'Free daily audits are included with your account. Some deeper checks need a paid plan.';
   }
-  return 'Sign in for a full audit, or add your own AI keys in Settings.';
+  return 'Sign in for a free full audit.';
 }

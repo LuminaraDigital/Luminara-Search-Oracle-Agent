@@ -145,6 +145,6 @@ describe('siteEvidencePackService', () => {
     const pack = await siteEvidencePackService.buildPack('https://example.com', { mode: 'smart', maxPages: 4 });
     const warning = pack.warnings.join(' ');
     expect(warning.toLowerCase()).not.toContain('sign in');
-    expect(warning).toMatch(/provider status/i);
+    expect(warning).toMatch(/try again in a few minutes/i);
   });
 });

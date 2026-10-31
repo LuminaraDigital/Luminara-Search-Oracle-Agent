@@ -47,7 +47,7 @@ export function instantAuditPersistHint(
   metered = false,
 ): string {
   if (signedIn && outcome === 'unmeasured' && metered) {
-    return `${FAILED_CHECK_NOTE} Retry, or check Settings → provider status.`;
+    return `${FAILED_CHECK_NOTE} Please try again in a few minutes.`;
   }
   if (!signedIn) {
     if (outcome === 'unmeasured') {
@@ -56,9 +56,9 @@ export function instantAuditPersistHint(
     return 'Instant Audit finished. Use the summary above. Sign in to save a project. Share links are free with an account.';
   }
   if (outcome === 'unmeasured') {
-    return 'Instant Audit finished. Use the summary above. This run did not measure the site, so no full report was generated. Strategy was not saved. Retry, or check Settings → provider status.';
+    return 'Instant Audit finished. Use the summary above. This run did not measure the site, so no full report was generated. Nothing was saved. Please try again in a few minutes.';
   }
-  return 'Audit complete. Strategy was not saved to a project. Retry, or check Settings for share links and MCP on your plan.';
+  return 'Audit complete, but we could not save it to your account. Run it again to keep it.';
 }
 
 /** Undefined until provider health is known. False when signed-in hosted Firecrawl and Tavily are both closed. */

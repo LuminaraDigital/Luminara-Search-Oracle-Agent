@@ -4,6 +4,7 @@ import { AUDIT_LENSES, inferLenses, type AuditLens } from '../../services/skills
 import { contextGraphService } from '../../services/contextGraph/contextGraphService';
 import { freeLlmModalitiesService } from '../../services/freellm/modalitiesService';
 import { ICONS } from '../../constants';
+import { fetchProbeCrawl } from '../../services/marketing/probeCrawlClient';
 import { ReportDisplay } from './ReportDisplay';
 import { WeeklyDecisionCard } from './WeeklyDecisionCard';
 import { PageSpeedPanel } from './PageSpeedPanel';
@@ -401,6 +402,11 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
         focus: targetFocus,
         guest: Boolean(isGuest),
       });
+      void fetchProbeCrawl(formattedUrl).then((probe) => {
+        if (probe.ok && probe.page?.platform) {
+          productTelemetry.track('site_platform_detected', { platform: probe.page.platform });
+        }
+      });
 
       try {
         const { saveAuditStrategyToProject } = await import('../../services/projects/projectClient');
@@ -612,8 +618,8 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
         </h1>
         <p className="text-sm text-gray-400 max-w-xl mx-auto leading-relaxed px-1">
           {isGuest && hostedRail === 'byok_or_signin'
-            ? 'Paste your site. A full audit needs sign-in or your own keys. Without them, the run says what was not measured.'
-            : 'Paste your site. Get a plain verdict, evidence chips, and one move to ship this week.'}
+            ? 'Paste your site. A full audit needs a free account.'
+            : 'Paste your site. Get a plain answer, the evidence behind it, and one thing to fix this week.'}
         </p>
       </div>
 
@@ -715,7 +721,9 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
             </div>
 
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pt-4 border-t border-white/5">
-              <div className="flex flex-wrap items-center gap-2">
+              <details>
+                <summary className="cursor-pointer text-xs text-gray-400 hover:text-white">Advanced options</summary>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
                 <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Focus:</span>
                 {(['SEO', 'AEO', 'GEO'] as const).map((f) => (
                   <button
@@ -733,11 +741,13 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
                     {focusLabel(f)}
                   </button>
                 ))}
-              </div>
+                </div>
+              </details>
             </div>
 
-            <div className="pt-4 border-t border-white/5">
-              <div className="flex items-center justify-between mb-2">
+            <details className="pt-4 border-t border-white/5">
+              <summary className="cursor-pointer text-xs text-gray-400 hover:text-white">More audit options</summary>
+              <div className="mt-3 mb-2">
                 <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Focus Lenses:</span>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -759,7 +769,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
                   );
                 })}
               </div>
-            </div>
+            </details>
           </div>
         </div>
       )}
