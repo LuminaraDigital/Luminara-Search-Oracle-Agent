@@ -88,13 +88,15 @@ async function authorizePath(clientId: string, redirectUri = callback) {
   return `/api/oauth/mcp/authorize?${q}`;
 }
 
-function decide(env: Env, consent: string, decision: string, userId?: number) {
+function decide(env: Env, consent: string, decision: string, userId?: number, origin?: string) {
+  const headers: Record<string, string> = { 'content-type': 'application/x-www-form-urlencoded' };
+  if (origin) headers.origin = origin;
   return call(
     env,
     '/api/oauth/mcp/authorize',
     {
       method: 'POST',
-      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      headers,
       body: new URLSearchParams({ consent, decision }).toString(),
     },
     userId,
@@ -257,6 +259,29 @@ describe('agent connector consent', () => {
       expect(consent.startsWith('oconsent')).toBe(true);
       expect(store.has(`mcp_oauth_consent:${consent}`)).toBe(true);
     }
+  });
+
+  it('redirects Allow and Cancel when the browser sends an allowlisted Origin', async () => {
+    const { env } = makeEnv();
+    const origin = 'https://luminarasuite.com';
+    const allow = await openConsent(env);
+    const allowed = await decide(env, allow.consent, 'allow', 77001, origin);
+    expect(allowed.status).toBe(303);
+    const allowedUrl = new URL(allowed.headers.get('location') ?? '');
+    expect(`${allowedUrl.origin}${allowedUrl.pathname}`).toBe(callback);
+    expect(allowedUrl.searchParams.get('code')).toMatch(/^oc/);
+    expect(allowedUrl.searchParams.get('state')).toBe('st1');
+    expect(allowed.headers.get('access-control-allow-origin')).toBe(origin);
+    expect(allowed.headers.get('access-control-allow-credentials')).toBe('true');
+
+    const deny = await openConsent(env);
+    const denied = await decide(env, deny.consent, 'deny', 77001, origin);
+    expect(denied.status).toBe(303);
+    const deniedUrl = new URL(denied.headers.get('location') ?? '');
+    expect(`${deniedUrl.origin}${deniedUrl.pathname}`).toBe(callback);
+    expect(deniedUrl.searchParams.get('error')).toBe('access_denied');
+    expect(deniedUrl.searchParams.get('code')).toBeNull();
+    expect(denied.headers.get('access-control-allow-origin')).toBe(origin);
   });
 
   it('returns access_denied on Cancel', async () => {
