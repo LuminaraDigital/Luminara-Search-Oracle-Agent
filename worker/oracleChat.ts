@@ -18,6 +18,7 @@ import {
   recordCostEvent,
 } from './budgets';
 import { auditOrgIdFor, recordAuditLogBestEffort } from './auditLog';
+import { spendLumen } from './lumenLedger';
 import { runAllValidators, summarizeFindings } from './agentOutputValidators';
 import {
   buildOracleSystemPrompt,
@@ -821,6 +822,12 @@ export async function handleOracleChatSse(
           },
         });
         await completeRun(env, runHandle.runId, 'completed');
+        await spendLumen(env, {
+          accountId,
+          source: 'agent',
+          idempotencyKey: `agent:${runHandle.runId}`,
+          refId: runHandle.runId,
+        });
       }
     } catch (e) {
       if (runHandle) {

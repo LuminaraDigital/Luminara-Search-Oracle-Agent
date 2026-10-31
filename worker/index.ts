@@ -164,6 +164,7 @@ import { handleDomainVerificationRoute, isDomainVerifyEnabled, recheckVerifiedDo
 import { isReceiptSigningConfigured } from './receiptSigning';
 import { handleMemoryRagRoute } from './memoryRag';
 import { handleBudgetReconcileRoute } from './invoiceReconcile';
+import { readLumenAccount } from './lumenLedger';
 import { handleCreateStripeCheckoutSession, handleStripeWebhook, isStripeCheckoutLive } from './stripePayment';
 import { enforceAppCheckRequest } from './appCheck';
 import { bindWorkerSentry, reportWorkerException } from './sentry';
@@ -1742,6 +1743,14 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
   // Deploy read-back (SW0a-17). Sign-in, rate limit and the SSRF guard live in worker/deployReadback.ts.
   if (path === '/deploy/readback') {
     return withCors(handleDeployReadbackRoute(request, env));
+  }
+
+  if (path === '/lumen' && request.method === 'GET') {
+    const who = await identify(request, env);
+    if (who.error || !who.user) {
+      return withCors(json({ ok: false, error: who.error || 'Unauthorized', code: 'AUTH_REQUIRED' }, 401));
+    }
+    return withCors(json({ ok: true, ...(await readLumenAccount(env, billingId(who.user))) }));
   }
 
   // Budget policy self-service (spec 0014). Authz: the caller's own account

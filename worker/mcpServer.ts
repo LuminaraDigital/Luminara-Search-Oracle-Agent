@@ -48,6 +48,7 @@ import {
 import { getPendingDreamEvents } from './dreamingQueue';
 import { evaluateWakeGate } from './dreamingWakeGate';
 import { CONVERSION_SPINE_MCP_TOOLS } from './mcpConversionTools';
+import { spendLumen } from './lumenLedger';
 
 export type McpToolDef = {
   name: string;
@@ -849,6 +850,18 @@ export async function handleMcpRequest(
       let result: McpToolResult;
       try {
         result = await callTool(name, args, ctx);
+        if (
+          runHandle &&
+          !result.isError &&
+          TOOLS.find((tool) => tool.name === name)?.creditClass === 'paid'
+        ) {
+          await spendLumen(env, {
+            accountId: ctx.accountId,
+            source: 'mcp',
+            idempotencyKey: `mcp:${runHandle.runId}`,
+            refId: name,
+          });
+        }
         if (runHandle) {
           const budgetHalted = result.structuredContent?.budgetHalted === true;
           await completeRun(
