@@ -94,20 +94,25 @@ describe('privacy coverage', () => {
     ]);
   });
 
-  it('removes a private Launchpad campaign and minimizes one others depend on', async () => {
+  it('removes an off-chain Launchpad campaign and closes out one on a public chain', async () => {
     const db = createSqliteD1();
     const columns = `id, account_id, domain, business_name, abn_nzbn, country, campaign_type, title, description, compliance_status,
-      compliance_details, chain, network, token_name, token_symbol, target_fiat_cents, fiat_currency, terms_accepted_at, listed_at, created_at, updated_at`;
-    const row = (id: string, listed: string) =>
-      `('${id}', 'acct', 'a.com', 'Biz', '123', 'AU', 'voucher', 't', 'd', 'passed', '{}', 'ton', 'mainnet', 'T', 'T', 1, 'AUD', 1, ${listed}, 1, 1)`;
-    db.sqlite.exec(`INSERT INTO launchpad_campaigns (${columns}) VALUES ${row('draft', 'NULL')}, ${row('issued', "'2026-01-01'")};
+      compliance_details, chain, network, token_name, token_symbol, contract_address, target_fiat_cents, fiat_currency, terms_accepted_at, listed_at, created_at, updated_at`;
+    const row = (id: string, contract: string, listed: string) =>
+      `('${id}', 'acct', 'a.com', 'Biz', '123', 'AU', 'voucher', 't', 'd', 'passed', '{}', 'ton', 'mainnet', 'T', 'T', ${contract}, 1, 'AUD', 1, ${listed}, 1, 1)`;
+    db.sqlite.exec(`INSERT INTO launchpad_campaigns (${columns}) VALUES ${row('draft', 'NULL', 'NULL')}, ${row('onchain', "'0xabc'", "'2026-01-01'")};
       INSERT INTO launchpad_vouchers (id, campaign_id, voucher_code, customer_ref, item_description, status, issued_by_account_id, issued_at, expires_at)
-        VALUES ('v', 'issued', 'CODE', 'c', 'item', 'issued', 'acct', 1, 2);`);
+        VALUES ('open', 'onchain', 'CODE1', 'wallet', 'item', 'issued', 'acct', 1, 2), ('used', 'onchain', 'CODE2', 'wallet', 'item', 'redeemed', 'acct', 1, 2);
+      INSERT INTO launchpad_subscriptions (id, campaign_id, subscriber_ref, channel, created_at) VALUES ('sub', 'onchain', 'ref', 'telegram', 1);`);
     await eraseAccountRows({ DB: db } as unknown as Env, 'acct');
     expect(db.sqlite.prepare(`SELECT id, abn_nzbn, compliance_details, listed_at FROM launchpad_campaigns`).all()).toEqual([
-      { id: 'issued', abn_nzbn: null, compliance_details: null, listed_at: null },
+      { id: 'onchain', abn_nzbn: null, compliance_details: null, listed_at: null },
     ]);
-    expect(db.sqlite.prepare(`SELECT id FROM launchpad_vouchers`).all()).toEqual([{ id: 'v' }]);
+    expect(db.sqlite.prepare(`SELECT id, status, customer_ref FROM launchpad_vouchers ORDER BY id`).all()).toEqual([
+      { id: 'open', status: 'cancelled', customer_ref: null },
+      { id: 'used', status: 'redeemed', customer_ref: null },
+    ]);
+    expect(db.sqlite.prepare(`SELECT id FROM launchpad_subscriptions`).all()).toEqual([]);
   });
 
   it('erases a run whose child belongs to another account', async () => {

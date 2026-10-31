@@ -79,7 +79,7 @@ export const ERASE_RETAINED: Record<string, string> = {
   cost_events: 'Spend ledger with no content, needed to reconcile provider invoices.',
   firestore_erase_ledger: 'Tombstone that stops an old export recreating the account.',
   invoice_reconcile_runs: 'Financial reconciliation record.',
-  launchpad_campaigns: 'Only campaigns on a public chain or with vouchers issued stay, unlisted, without tax id or compliance detail.',
+  launchpad_campaigns: 'Only campaigns on a public chain stay, unlisted, with personal detail removed and open vouchers cancelled.',
   license_redemptions: 'Stops a one-time license key being redeemed twice.',
   license_trial_claims: 'Stops a one-time trial being claimed twice.',
   privacy_jobs: 'Record that the erasure request was carried out.',

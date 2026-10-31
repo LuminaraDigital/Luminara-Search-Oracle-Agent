@@ -469,11 +469,17 @@ async function softDeleteAccount(env: Env, accountId: string, deps?: DataPlaneDe
   await releaseOrganizations(db, accountId, counts).catch((err) => {
     if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
   });
-  // A campaign on a public chain or with vouchers issued stays for those holders, unlisted and without its compliance detail.
+  // Vouchers need a registered contract, so an off-chain campaign has none and goes whole.
+  await drop('launchpad_campaigns', `DELETE FROM launchpad_campaigns WHERE account_id = ? AND contract_address IS NULL`);
+  // A campaign on a public chain stays as a record. Only its merchant can redeem, so open vouchers are cancelled.
   await drop(
-    'launchpad_campaigns',
-    `DELETE FROM launchpad_campaigns WHERE account_id = ?
-       AND contract_address IS NULL AND id NOT IN (SELECT campaign_id FROM launchpad_vouchers)`,
+    'launchpad_vouchers_closed',
+    `UPDATE launchpad_vouchers SET customer_ref = NULL, status = CASE status WHEN 'issued' THEN 'cancelled' ELSE status END
+      WHERE campaign_id IN (SELECT id FROM launchpad_campaigns WHERE account_id = ?)`,
+  );
+  await drop(
+    'launchpad_subscriptions',
+    `DELETE FROM launchpad_subscriptions WHERE campaign_id IN (SELECT id FROM launchpad_campaigns WHERE account_id = ?)`,
   );
   await drop(
     'launchpad_campaigns_minimized',

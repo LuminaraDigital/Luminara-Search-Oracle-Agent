@@ -115,7 +115,7 @@ export const PRIVACY_SECTIONS: PrivacySection[] = [
       'Database backups: Cloudflare D1 Time Travel can restore the database for 30 days. A deleted account is removed from the live database. We do not restore it from that backup unless the law requires it.',
       'Payment identifiers we need for a dispute: as long as the payment partner requires. A public blockchain record cannot be erased.',
       'Records that stay after an account is deleted: spend totals with no content, used for checking provider invoices, and one-time license and trial claims, used to stop repeat use.',
-      'A Launchpad campaign that is on a public chain or has vouchers issued also stays after deletion, for the people holding them. We stop listing it and remove its business number and compliance notes.',
+      'A Launchpad campaign recorded on a public chain also stays after deletion. We stop listing it, remove its business number, compliance notes, subscribers and voucher customer references, and cancel its unredeemed vouchers, because nobody can honour them once the merchant is gone.',
     ],
   },
   {
