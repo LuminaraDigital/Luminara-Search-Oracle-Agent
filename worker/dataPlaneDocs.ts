@@ -4,6 +4,7 @@
  * Audit entry ids are unique per account, so the doc id is `{accountId.length}.{accountId}.{entryId}`.
  * `email_unsub_token` is never copied.
  */
+import { readAuditRun } from './auditRunEntry';
 import type { D1Database } from '@cloudflare/workers-types';
 import type { StoredAuditEntry } from './auditHistoryRoute';
 
@@ -157,6 +158,7 @@ export function auditFields(accountId: string, entry: StoredAuditEntry, updatedA
     reportExcerpt: entry.reportExcerpt,
     clientId: entry.clientId,
     tags: entry.tags,
+    auditRun: entry.auditRun,
   };
 }
 
@@ -180,6 +182,7 @@ export function fieldsToAudit(fields: Record<string, unknown>): StoredAuditEntry
     reportExcerpt: asString(fields.reportExcerpt) ?? '',
     clientId: asString(fields.clientId),
     tags: stringList(fields.tags),
+    auditRun: readAuditRun(fields.auditRun),
   };
 }
 

@@ -1,3 +1,4 @@
+import { newAuditRunId } from '../../services/audit/auditRun';
 import React, { useState, useRef, useEffect } from 'react';
 import { ReportFocus, BusinessDNA } from '../../types';
 import { AUDIT_LENSES, inferLenses, type AuditLens } from '../../services/skills/seoPlaybooks';
@@ -268,6 +269,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       await ensureHostedProviderReady();
       if (!isGuest) await beginHostedAuditRun(formattedUrl);
 
+      const runId = newAuditRunId();
       // 1. Run the Autonomous Multi-Agent Search Crew with real-time streaming
       const crewResult = await crewOrchestrator.runAuditCrew(
         formattedUrl,
@@ -350,7 +352,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
           const boarded = await ingestCrewFindings({
             domain: formattedUrl,
             findings: crewResult.findings || [],
-            auditRunId: `crew_${Date.now().toString(36)}`,
+            auditRunId: runId,
           });
           setBoardFindings(boarded);
         } catch {
@@ -364,6 +366,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       // Degraded runs stay on the honest summary for guests and signed-in sessions.
       // The report model can invent citation language when nothing was measured.
       const result = await generateAuditReportUnlessDegraded({
+        runId,
         isGuest,
         summary,
         measurementStatus: crewResult.measurementStatus,

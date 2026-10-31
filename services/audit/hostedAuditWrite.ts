@@ -13,7 +13,7 @@ export const AUDIT_WRITE_UNAVAILABLE =
 export async function writeHostedAuditReport(
   prompt: string,
   systemPrompt: string,
-): Promise<{ text: string; answeredBy?: string; answeredByProvider?: FallbackAnswerInfo['provider'] }> {
+): Promise<{ text: string; answeredBy?: string; answeredByProvider?: FallbackAnswerInfo['provider']; model: string | null; provider: string }> {
   if (!configService.getByokKey('luminara_groq_key') && !configService.getGroqKey()) {
     throw new Error(AUDIT_WRITE_UNAVAILABLE);
   }
@@ -29,6 +29,8 @@ export async function writeHostedAuditReport(
     if (!text) throw new Error(AUDIT_WRITE_UNAVAILABLE);
     return {
       text,
+      model: result.model ?? null,
+      provider: result.fallback?.provider ?? 'groq',
       ...(result.fallback?.model ? { answeredBy: result.fallback.model } : {}),
       ...(result.fallback?.provider ? { answeredByProvider: result.fallback.provider } : {}),
     };

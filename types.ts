@@ -906,6 +906,8 @@ export interface ChatTurn {
  * Result from a text generation request
  */
 export interface GenerateResult {
+  /** The model that answered, when the provider reports it. */
+  model?: string;
   text: string;
   tokenUsage: { prompt: number; completion: number; total: number };
   finishReason: GenerateFinishReason;
