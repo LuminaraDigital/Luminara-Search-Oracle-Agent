@@ -74,6 +74,42 @@ describe('privacy coverage', () => {
     expect(deleted).toContain('workspace:acct');
   });
 
+  it('hands an organization to the next member and removes one left empty', async () => {
+    const db = createSqliteD1();
+    db.sqlite.exec(`
+      INSERT INTO users (id, source, account_id, created_at, last_seen_at) VALUES ('login', 'web', 'acct', 1, 1);
+      INSERT INTO organizations (id, name, slug, tier, created_at, updated_at) VALUES
+        ('shared', 'Shared', 'shared', 'standard', 1, 1), ('solo', 'Pat''s Organization', 'solo', 'standard', 1, 1);
+      INSERT INTO organization_memberships (org_id, user_id, role, status, joined_at) VALUES
+        ('shared', 'login', 'owner', 'active', 1), ('shared', 'late', 'member', 'active', 3),
+        ('shared', 'early', 'member', 'active', 2), ('solo', 'login', 'owner', 'active', 1);
+      INSERT INTO org_audit_logs (id, org_id, actor_id, action, ip_address, hash, created_at) VALUES ('log', 'solo', 'login', 'x', '1.2.3.4', 'h', 1);
+    `);
+    await eraseAccountRows({ DB: db } as unknown as Env, 'acct');
+    expect(db.sqlite.prepare(`SELECT id FROM organizations`).all()).toEqual([{ id: 'shared' }]);
+    expect(db.sqlite.prepare(`SELECT id FROM org_audit_logs`).all()).toEqual([]);
+    expect(db.sqlite.prepare(`SELECT user_id, role FROM organization_memberships ORDER BY joined_at`).all()).toEqual([
+      { user_id: 'early', role: 'owner' },
+      { user_id: 'late', role: 'member' },
+    ]);
+  });
+
+  it('removes a private Launchpad campaign and minimizes one others depend on', async () => {
+    const db = createSqliteD1();
+    const columns = `id, account_id, domain, business_name, abn_nzbn, country, campaign_type, title, description, compliance_status,
+      compliance_details, chain, network, token_name, token_symbol, target_fiat_cents, fiat_currency, terms_accepted_at, listed_at, created_at, updated_at`;
+    const row = (id: string, listed: string) =>
+      `('${id}', 'acct', 'a.com', 'Biz', '123', 'AU', 'voucher', 't', 'd', 'passed', '{}', 'ton', 'mainnet', 'T', 'T', 1, 'AUD', 1, ${listed}, 1, 1)`;
+    db.sqlite.exec(`INSERT INTO launchpad_campaigns (${columns}) VALUES ${row('draft', 'NULL')}, ${row('issued', "'2026-01-01'")};
+      INSERT INTO launchpad_vouchers (id, campaign_id, voucher_code, customer_ref, item_description, status, issued_by_account_id, issued_at, expires_at)
+        VALUES ('v', 'issued', 'CODE', 'c', 'item', 'issued', 'acct', 1, 2);`);
+    await eraseAccountRows({ DB: db } as unknown as Env, 'acct');
+    expect(db.sqlite.prepare(`SELECT id, abn_nzbn, compliance_details, listed_at FROM launchpad_campaigns`).all()).toEqual([
+      { id: 'issued', abn_nzbn: null, compliance_details: null, listed_at: null },
+    ]);
+    expect(db.sqlite.prepare(`SELECT id FROM launchpad_vouchers`).all()).toEqual([{ id: 'v' }]);
+  });
+
   it('erases a run whose child belongs to another account', async () => {
     const db = createSqliteD1();
     db.sqlite.exec(`PRAGMA foreign_keys = ON;

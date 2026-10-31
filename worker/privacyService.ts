@@ -339,6 +339,30 @@ export async function collectExportPayload(env: Env, accountId: string): Promise
   };
 }
 
+/** Hands each organization to its next active member, and removes one with nobody left in it. */
+async function releaseOrganizations(db: NonNullable<Env['DB']>, accountId: string, counts: Record<string, number>): Promise<void> {
+  const left = await db.prepare(`SELECT DISTINCT org_id FROM organization_memberships WHERE ${OWN_USER_IDS}`).bind(accountId).all<{ org_id: string }>();
+  const removed = await db.prepare(`DELETE FROM organization_memberships WHERE ${OWN_USER_IDS}`).bind(accountId).run();
+  counts.organization_memberships = Number(removed.meta?.changes ?? 0);
+  for (const { org_id: orgId } of left.results ?? []) {
+    const heir = await db
+      .prepare(
+        `SELECT user_id, role FROM organization_memberships WHERE org_id = ? AND status = 'active'
+          ORDER BY role = 'owner' DESC, joined_at ASC LIMIT 1`,
+      )
+      .bind(orgId)
+      .first<{ user_id: string; role: string }>();
+    if (!heir) {
+      await db.batch([
+        db.prepare(`DELETE FROM org_audit_logs WHERE org_id = ?`).bind(orgId),
+        db.prepare(`DELETE FROM organizations WHERE id = ?`).bind(orgId),
+      ]);
+    } else if (heir.role !== 'owner') {
+      await db.prepare(`UPDATE organization_memberships SET role = 'owner' WHERE org_id = ? AND user_id = ?`).bind(orgId, heir.user_id).run();
+    }
+  }
+}
+
 async function softDeleteAccount(env: Env, accountId: string, deps?: DataPlaneDeps): Promise<Record<string, number>> {
   const db = env.DB!;
   const listed = await db.prepare(`SELECT id FROM users WHERE account_id = ? OR id = ?`).bind(accountId, accountId).all<{ id: string }>();
@@ -442,7 +466,19 @@ async function softDeleteAccount(env: Env, accountId: string, deps?: DataPlaneDe
   await drop('win_shares', `DELETE FROM win_shares WHERE owner_id = ?`);
   await drop('shared_reports', `DELETE FROM shared_reports WHERE owner_account_id = ?`);
   await drop('mcp_action_requests', `DELETE FROM mcp_action_requests WHERE ${OWN_USER_IDS}`);
-  await drop('organization_memberships', `DELETE FROM organization_memberships WHERE ${OWN_USER_IDS}`);
+  await releaseOrganizations(db, accountId, counts).catch((err) => {
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+  });
+  // A campaign on a public chain or with vouchers issued stays for those holders, unlisted and without its compliance detail.
+  await drop(
+    'launchpad_campaigns',
+    `DELETE FROM launchpad_campaigns WHERE account_id = ?
+       AND contract_address IS NULL AND id NOT IN (SELECT campaign_id FROM launchpad_vouchers)`,
+  );
+  await drop(
+    'launchpad_campaigns_minimized',
+    `UPDATE launchpad_campaigns SET abn_nzbn = NULL, compliance_details = NULL, listed_at = NULL WHERE account_id = ?`,
+  );
   // A child run in another account must not block this delete through its parent key.
   await drop(
     'run_provenance_unlinked',
