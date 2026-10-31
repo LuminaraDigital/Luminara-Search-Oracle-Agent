@@ -10,7 +10,7 @@ import { planCapsFor } from './telegramBot';
 import { identify, json } from './workerUtils';
 import { identifyApiKey } from './apiKeyService';
 import { bearerFromAuthorization } from './firebaseAuth';
-import { identifyMcpOAuthToken } from './mcpOAuth';
+import { identifyMcpOAuthToken, mcpResourceMetadataUrl } from './mcpOAuth';
 
 /** Paths that require an Agency (apiAccess) plan in addition to authentication. */
 export const API_ACCESS_PATH_PATTERNS: RegExp[] = [
@@ -130,7 +130,7 @@ export async function resolveMcpUser(
           code: 'AUTH_REQUIRED',
         },
         401,
-        { 'WWW-Authenticate': 'Bearer error="invalid_token", Cookie name="__session"' },
+        { 'WWW-Authenticate': `Bearer resource_metadata="${mcpResourceMetadataUrl(request)}"` },
       ),
     };
   }
