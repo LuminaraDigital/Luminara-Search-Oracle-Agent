@@ -28,8 +28,8 @@ describe('report article links', () => {
       '',
     ].join('\n'));
 
-    expect(html).toContain('<a href="/fixes/schema" class="text-gold-light underline underline-offset-2 hover:text-white">the fix</a>');
-    expect(html).toContain('<a href="https://example.com/guide" class="text-gold-light underline underline-offset-2 hover:text-white" target="_blank" rel="noopener noreferrer">the guide</a>');
+    expect(html).toContain('<a href="/fixes/schema" class="text-gold-light underline underline-offset-2 hover:text-white [overflow-wrap:anywhere]">the fix</a>');
+    expect(html).toContain('<a href="https://example.com/guide" class="text-gold-light underline underline-offset-2 hover:text-white [overflow-wrap:anywhere]" target="_blank" rel="noopener noreferrer">the guide</a>');
     expect(html).toContain('<span>one</span>');
     expect(html).toContain('<span>two</span>');
     expect(html).toContain('<span>three</span>');
