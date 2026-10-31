@@ -6,6 +6,7 @@ import { CHECKOUT_TERM_LINE, TELEGRAM_STARS_HANDOFF } from '../paywall/planCopy'
 import { lazyWithReload } from '../../utils/lazyWithReload';
 import { formatAuDate } from '../../utils/formatAuDate';
 import { PUBLIC_PRIVACY_URL, PUBLIC_TERMS_URL } from '../../services/legal/privacyCopy';
+import { LumenBalance } from '../settings/LumenBalance';
 import {
   decideBookingAppointmentApi,
   fetchEnquiryDesk,
@@ -275,6 +276,8 @@ export const TelegramAccountBody: React.FC<TelegramAccountPanelProps> = ({
       {active && (
         <p className="text-[11px] text-gray-400">Active until {formatAuDate(sub!.expiresAt)}.</p>
       )}
+
+      <LumenBalance />
 
       <p className="text-xs text-gray-400 leading-relaxed">
         Link Telegram and web account - shares subscription. Use Account above and confirm before plans are shared.

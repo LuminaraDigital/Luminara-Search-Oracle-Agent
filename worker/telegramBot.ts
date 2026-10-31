@@ -14,6 +14,7 @@ import { formatWeeklyMissionNudge } from '../services/referrals/rules';
 import { activateLicenseKey } from './licenseService';
 import { PROVIDERS } from './providerRelay';
 import { claimStarsCharge, isStarsLedgerReady, releaseStarsCharge } from './paymentLedger';
+import { clawbackLumen, lumenGrantFor, mintLumen } from './lumenLedger';
 import { PlanDowngradeRefusedError, downgradeRefusalText, wouldDowngrade } from './planRank';
 import { recordAuditLogBestEffort } from './auditLog';
 import {
@@ -1645,7 +1646,16 @@ async function grantPlanForCharge(env: Env, input: PlanChargeInput): Promise<{ e
   // told now.
   const receipt = (await kv.get(chargeKey, 'json')) as { refunded?: boolean; expiresAt?: number; payerTgId?: number } | null;
   if (receipt?.refunded) throw new Error('the receipt says this charge was refunded');
-  if (receipt) return { expiresAt: Number(receipt.expiresAt) || 0, alreadyTold: receipt.payerTgId === undefined };
+  if (receipt) {
+    await mintLumen(env, {
+      accountId: input.accountId,
+      source: 'stars',
+      amount: lumenGrantFor(input.planId),
+      idempotencyKey: `stars:${input.chargeId}`,
+      refId: input.chargeId,
+    });
+    return { expiresAt: Number(receipt.expiresAt) || 0, alreadyTold: receipt.payerTgId === undefined };
+  }
 
   const claim = await claimStarsCharge(env, input.chargeId, input.accountId);
   if (!claim.ok && claim.reason !== 'duplicate') throw new Error(`the charge could not be claimed (${claim.reason})`);
@@ -1693,7 +1703,23 @@ async function grantPlanForCharge(env: Env, input: PlanChargeInput): Promise<{ e
   }
 
   await kv.put(chargeKey, starsReceipt({ ...input, previousPlan }, expiresAt));
+  await mintLumen(env, {
+    accountId: input.accountId,
+    source: 'stars',
+    amount: lumenGrantFor(input.planId),
+    idempotencyKey: `stars:${input.chargeId}`,
+    refId: input.chargeId,
+  });
   return { expiresAt, alreadyTold: false };
+}
+
+async function voidStarsLumen(env: Env, accountId: string | null | undefined, chargeId: string): Promise<void> {
+  if (!accountId) return;
+  await clawbackLumen(env, {
+    accountId,
+    mintKey: `stars:${chargeId}`,
+    voidKey: `void:stars:${chargeId}`,
+  });
 }
 
 async function sendPlanActiveMessage(
@@ -1924,7 +1950,11 @@ async function handleRefundedPayment(msg: any, env: Env): Promise<PaymentUpdateO
   }
   const revoked = await revokeStarsGrant(env, payerTgId, chargeId);
   try {
-    if (revoked.ok) await markStarsChargeRefundedAtTelegram(env, chargeId);
+    if (revoked.ok) {
+      const row = await readStarsCharge(env, chargeId);
+      await voidStarsLumen(env, row?.account_id, chargeId);
+      await markStarsChargeRefundedAtTelegram(env, chargeId);
+    }
     else await requestStarsRefund(env, chargeId, 'refunded_at_telegram');
   } catch (err) {
     console.error(`[Stars] The ledger row for refunded charge ${chargeId} could not be updated.`, err);
@@ -2121,11 +2151,13 @@ function starsChargeHooks(env: Env): StarsChargeHooks {
     releaseClaim: (row) => releaseStarsCharge(env, row.charge_id),
     refund: async (row) => {
       const res = await refundStarPayment(env, row.payer_tg_id, row.charge_id);
+      if (res.ok) await voidStarsLumen(env, row.account_id, row.charge_id);
       // Refunded, but the plan is still there: not finished, so the sweep comes back to it.
       if (res.ok) return res.revoked === false ? { ok: false, moneyReturned: true, error: planStayed } : { ok: true };
       if (!/CHARGE_ALREADY_REFUNDED/i.test(res.error || '')) return res;
       // The Stars are already back with the payer. Make sure the grant went with them.
       const revoked = await revokeStarsGrant(env, row.payer_tg_id, row.charge_id);
+      if (revoked.ok) await voidStarsLumen(env, row.account_id, row.charge_id);
       return revoked.ok ? { ok: true } : { ok: false, moneyReturned: true, error: planStayed };
     },
     revoke: async (row) => ((await revokeStarsGrant(env, row.payer_tg_id, row.charge_id)).ok ? { ok: true } : { ok: false, error: planStayed }),
@@ -2189,7 +2221,10 @@ async function recordRefundOutsideLedger(
     }
     // A row that was there after all must not go on saying credited.
     await markStarsReturned(env, chargeId);
-    if (revoked) await markStarsChargeRefundedAtTelegram(env, chargeId);
+    if (revoked) {
+      await voidStarsLumen(env, receipt?.accountId ? String(receipt.accountId) : null, chargeId);
+      await markStarsChargeRefundedAtTelegram(env, chargeId);
+    }
     else await requestStarsRefund(env, chargeId, reason);
     return onRecord;
   } catch (err) {
