@@ -105,7 +105,7 @@ export const GuestScoutSummaryPanel: React.FC<GuestScoutSummaryPanelProps> = ({
             onClick={() => window.dispatchEvent(new CustomEvent('luminara-open-settings'))}
             className="min-h-11 px-1 text-left text-sm text-gray-400 underline-offset-2 hover:text-gray-200 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
           >
-            Or add your own keys in Settings.
+            Have your own AI account? Add it in Settings.
           </button>
         </div>
       )}
@@ -204,7 +204,7 @@ export const GuestScoutSummaryPanel: React.FC<GuestScoutSummaryPanelProps> = ({
             )}
           </div>
           <p className="mt-3 text-[11px] leading-relaxed text-gray-500">
-            The teaser is a redacted summary and a link back to the Mini App. It is not a full branded share report. Those stay on Growth and Agency.
+            The teaser is a redacted summary and a link back to the Mini App. It is not a full share report. Share links are free with an account. Your own branding starts on Starter.
           </p>
         </>
       )}

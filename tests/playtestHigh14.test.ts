@@ -50,11 +50,11 @@ afterEach(() => {
 });
 
 describe('honest guest audit copy', () => {
-  it('tells guests the homepage check is crawl files, and a full audit needs sign-in or keys', () => {
+  it('tells guests the homepage check is crawl files, and a full audit needs an account', () => {
     expect(GUEST_HERO_NOTE).toMatch(/robots\.txt/);
-    expect(GUEST_HERO_NOTE).toMatch(/sign-in or your own keys/i);
+    expect(GUEST_HERO_NOTE).toMatch(/a free account/i);
     expect(GUEST_HERO_NOTE).not.toMatch(/no signup/i);
-    expect(GUEST_REPORT_NOTE).toMatch(/sign-in or your own keys/i);
+    expect(GUEST_REPORT_NOTE).toMatch(/a free account/i);
     expect(GUEST_FULL_AUDIT_CTA).toBe('Sign in to run a full audit');
 
     const html = renderToStaticMarkup(createElement(LandingPage, {
@@ -144,7 +144,7 @@ describe('Mission Control status', () => {
     }));
     const bannerAt = html.indexOf('Live data unavailable');
     const signInAt = html.indexOf(GUEST_FULL_AUDIT_CTA);
-    const keysAt = html.indexOf('Or add your own keys in Settings.');
+    const keysAt = html.indexOf('Have your own AI account? Add it in Settings.');
     expect(bannerAt).toBeGreaterThan(-1);
     expect(signInAt).toBeGreaterThan(bannerAt);
     expect(keysAt).toBeGreaterThan(signInAt);
@@ -204,18 +204,16 @@ describe('checkout honesty', () => {
       for (const line of planBullets(id)) expect(line.text).not.toMatch(/^[a-z]/);
     }
     expect(PAYWALL_HEADLINE.toLowerCase()).not.toContain('unlimited');
-    expect(planBullets('starter').filter((line) => !line.included).map((line) => line.text)).toEqual([
-      'No IDE access (web app only)',
-      'No public share links',
-    ]);
+    expect(planBullets('starter').filter((line) => !line.included).map((line) => line.text)).toEqual([]);
+    expect(planBullets('starter').map((line) => line.text)).toContain('IDE access (Cursor / Claude / Codex), 300 MCP calls a day');
     expect(planBullets('growth').find((line) => line.text.startsWith('IDE access'))?.included).toBe(true);
     const html = renderToStaticMarkup(createElement(PaywallModal, { isOpen: true, onClose: () => {} }));
     expect(html).toContain(PAYWALL_HEADLINE);
     expect(html).toContain(PAYWALL_SUBLINE);
     expect(html).not.toContain('See the caps on each plan');
     expect(html.toLowerCase()).not.toContain('unlimited');
-    expect(html).toContain('Not included: </span>No IDE access (web app only)');
-    expect(html).toContain('Not included: </span>No public share links');
+    expect(html).not.toContain('No IDE access');
+    expect(html).not.toContain('No public share links');
     expect(html).not.toContain('✓</span>No IDE access');
     expect(html).not.toContain('✓</span>No public share links');
     expect(html).toContain('✓');

@@ -20,6 +20,7 @@ const ALLOWED_TYPES = new Set([
   'probe_completed',
   'signup_completed',
   'instant_audit_completed',
+  'site_platform_detected',
   'paywall_viewed',
   'checkout_started',
   'payment_completed',
@@ -27,6 +28,7 @@ const ALLOWED_TYPES = new Set([
   'share_cta_clicked',
   'share_link_created',
   'share_link_opened',
+  'shared_report_cta_clicked',
   'mcp_key_created',
   'mcp_snippet_copied',
   'mcp_first_used',
@@ -61,6 +63,23 @@ function scrubPayload(raw: unknown): string {
   }
   const text = JSON.stringify(obj);
   return text.length > MAX_PAYLOAD_CHARS ? text.slice(0, MAX_PAYLOAD_CHARS) : text;
+}
+
+/** One server-side event with no account attached. Failure never affects the caller. */
+export async function recordAnonymousEvent(db: D1Database | undefined, type: string, path: string): Promise<void> {
+  if (!db) return;
+  try {
+    await db
+      .prepare(
+        `INSERT INTO product_analytics_events
+          (id, account_id, session_id, event_type, path, payload_json, created_at)
+         VALUES (?, NULL, NULL, ?, ?, '{}', ?)`,
+      )
+      .bind(crypto.randomUUID(), type, path, Date.now())
+      .run();
+  } catch {
+    // A missed count must not stop the request.
+  }
 }
 
 export async function ingestProductAnalytics(

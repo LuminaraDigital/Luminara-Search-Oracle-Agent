@@ -4,6 +4,7 @@ import { AUDIT_LENSES, inferLenses, type AuditLens } from '../../services/skills
 import { contextGraphService } from '../../services/contextGraph/contextGraphService';
 import { freeLlmModalitiesService } from '../../services/freellm/modalitiesService';
 import { ICONS } from '../../constants';
+import { fetchProbeCrawl } from '../../services/marketing/probeCrawlClient';
 import { ReportDisplay } from './ReportDisplay';
 import { WeeklyDecisionCard } from './WeeklyDecisionCard';
 import { PageSpeedPanel } from './PageSpeedPanel';
@@ -401,6 +402,11 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
         focus: targetFocus,
         guest: Boolean(isGuest),
       });
+      void fetchProbeCrawl(formattedUrl).then((probe) => {
+        if (probe.ok && probe.page?.platform) {
+          productTelemetry.track('site_platform_detected', { platform: probe.page.platform });
+        }
+      });
 
       try {
         const { saveAuditStrategyToProject } = await import('../../services/projects/projectClient');
@@ -590,7 +596,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
   ) : null;
 
   return (
-    <div className="max-w-5xl mx-auto px-3 sm:px-4 py-6 sm:py-8 animate-in fade-in duration-700 min-w-0">
+    <div className="w-full max-w-5xl mx-auto px-3 sm:px-4 py-6 sm:py-8 animate-in fade-in duration-700 min-w-0">
       <PastReports onOpen={openSavedAudit} />
       <FirstRunTour signedInWeb={!isGuest} />
       <div className="text-center mb-6 sm:mb-8">
@@ -612,8 +618,8 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
         </h1>
         <p className="text-sm text-gray-400 max-w-xl mx-auto leading-relaxed px-1">
           {isGuest && hostedRail === 'byok_or_signin'
-            ? 'Paste your site. A full audit needs sign-in or your own keys. Without them, the run says what was not measured.'
-            : 'Paste your site. Get a plain verdict, evidence chips, and one move to ship this week.'}
+            ? 'Paste your site. A full audit needs a free account.'
+            : 'Paste your site. Get a plain answer, the evidence behind it, and one thing to fix this week.'}
         </p>
       </div>
 
@@ -622,7 +628,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       <div className="mb-4 rounded-xl border border-gold/25 bg-gold/5 px-4 py-3 text-xs text-gray-300 leading-relaxed">
         {hostedScoutPreRunCopy(hostedRail, { hostedGateOpen: preRunGate })}
         {isGuest && hostedRail === 'byok_or_signin' && (
-          <p className="mt-2 text-gray-400">Saving a project strategy and full branded share links still need sign-in. Growth and Agency include those share links.</p>
+          <p className="mt-2 text-gray-400">Saving a project strategy and share links need a free account.</p>
         )}
       </div>
 
@@ -715,7 +721,9 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
             </div>
 
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pt-4 border-t border-white/5">
-              <div className="flex items-center gap-2">
+              <details>
+                <summary className="cursor-pointer text-xs text-gray-400 hover:text-white">Advanced options</summary>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
                 <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Focus:</span>
                 {(['SEO', 'AEO', 'GEO'] as const).map((f) => (
                   <button
@@ -733,11 +741,13 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
                     {focusLabel(f)}
                   </button>
                 ))}
-              </div>
+                </div>
+              </details>
             </div>
 
-            <div className="pt-4 border-t border-white/5">
-              <div className="flex items-center justify-between mb-2">
+            <details className="pt-4 border-t border-white/5">
+              <summary className="cursor-pointer text-xs text-gray-400 hover:text-white">More audit options</summary>
+              <div className="mt-3 mb-2">
                 <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Focus Lenses:</span>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -759,7 +769,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
                   );
                 })}
               </div>
-            </div>
+            </details>
           </div>
         </div>
       )}
@@ -796,10 +806,10 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
 
       {/* Error State */}
       {error && (
-        <div className="glass-morphism rounded-xl border border-danger-500/40 p-5 mb-8 flex items-center justify-between text-xs text-danger-200">
-          <div className="flex items-center gap-3">
+        <div className="glass-morphism rounded-xl border border-danger-500/40 p-5 mb-8 flex items-center justify-between gap-3 text-xs text-danger-200">
+          <div className="flex items-center gap-3 min-w-0">
             <ICONS.AlertCircle className="w-5 h-5 text-danger-400 shrink-0" />
-            <span>{error}</span>
+            <span className="min-w-0 [overflow-wrap:anywhere]">{error}</span>
           </div>
           <button
             type="button"
@@ -812,7 +822,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       )}
 
       {persistHint && !error && (
-        <p className="text-[11px] font-mono text-gray-400 px-1">{persistHint}</p>
+        <p className="text-[11px] font-mono text-gray-400 px-1 [overflow-wrap:anywhere]">{persistHint}</p>
       )}
 
       {strategySaved && !error && (
@@ -896,7 +906,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
             <FreeAiAnswerCard suburb={dna.suburb} state={dna.state} brandName={dna.name} />
           ) : null}
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 glass-morphism rounded-xl border border-gold/30">
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <span className="text-xs text-gray-400 font-mono">Regenerate Focus:</span>
               {(['SEO', 'AEO', 'GEO'] as const).map((f) => (
                 <button

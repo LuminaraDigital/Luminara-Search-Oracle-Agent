@@ -317,17 +317,13 @@ function createDesktopCoordinator(options = {}) {
     if (typeof plainTextValue !== 'string') {
       throw new Error('Secret value must be a string');
     }
-    if (safeStorage && typeof safeStorage.isEncryptionAvailable === 'function' && safeStorage.isEncryptionAvailable()) {
-      const buf = safeStorage.encryptString(plainTextValue);
-      encryptedSecrets.set(key.trim(), buf.toString('base64'));
-      flushDiskState();
-      return { key: key.trim(), stored: true, encrypted: true, encryptedWithOsKeychain: true };
+    if (!safeStorage || typeof safeStorage.isEncryptionAvailable !== 'function' || !safeStorage.isEncryptionAvailable()) {
+      throw new Error('This computer has no secure storage available, so the secret was not saved.');
     }
-    // Fallback obfuscation when OS keychain is unavailable in headless test environments
-    const encoded = Buffer.from(plainTextValue, 'utf8').toString('base64');
-    encryptedSecrets.set(key.trim(), `b64:${encoded}`);
+    const buf = safeStorage.encryptString(plainTextValue);
+    encryptedSecrets.set(key.trim(), buf.toString('base64'));
     flushDiskState();
-    return { key: key.trim(), stored: true, encrypted: false, encryptedWithOsKeychain: false };
+    return { key: key.trim(), stored: true, encrypted: true, encryptedWithOsKeychain: true };
   }
 
   function hasSecret(key) {

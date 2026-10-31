@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, Suspense } from 'react';
+import { createPortal } from 'react-dom';
 import { OracleMode, Message, AppView, BusinessDNA, LAB_VIEWS } from './types';
 import { getAnswerDepth, setAnswerDepth } from './services/audit/answerDepth';
 import { toChatHistory } from './services/chat/messages';
@@ -35,6 +36,7 @@ import { isDesktopShell } from './services/desktop/desktopShell';
 import { productTelemetry } from './services/analytics/productTelemetry';
 import { draftPersistenceService, DRAFT_KEYS } from './services/state/draftPersistenceService';
 import { apiBase, getCurrentQuotaSync, setAccountSignedIn, streamOracleChat } from './services/apiClient';
+import { agentConnectTarget, resumeAgentConnect } from './services/auth/agentConnect';
 import { entitlementsFor } from './services/plans/planEntitlements';
 import { hasPersistedAuthSession } from './services/auth/firebaseIdToken';
 import type { AuditHandoff } from './services/activation/auditHandoff';
@@ -424,6 +426,14 @@ const App: React.FC = () => {
   }, [advancedUi, view]);
 
   const appAuth = useAppAuth();
+
+  // An agent connector sent the owner here to sign in. Go back to the approval screen once they have.
+  useEffect(() => {
+    const target = agentConnectTarget(window.location.search);
+    if (!target || appAuth.loading) return;
+    if (appAuth.authenticated) void resumeAgentConnect(target);
+    else setLoginWallMode('signin');
+  }, [appAuth.loading, appAuth.authenticated]);
 
   // Before child effects, so a signed-out Instant Audit does not call /api/auth/quota.
   setAccountSignedIn(appAuth.loading ? null : appAuth.authenticated);
@@ -1352,7 +1362,8 @@ const App: React.FC = () => {
               <ICONS.ChevronDown className="w-3 h-3 text-gold" />
             </Button>
 
-            {showSuiteMenu && (
+            {/* Portal: the header nav scrolls sideways and would otherwise clip this phone sheet. */}
+            {showSuiteMenu && createPortal(
               <>
                 <div
                   className="fixed inset-0 z-40 bg-black/70 animate-in fade-in duration-150"
@@ -1380,7 +1391,7 @@ const App: React.FC = () => {
                   </div>
                   <a href="/faq" className="w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold">Help: FAQ</a>
                   <a href="/contact" className="w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold">Help: Contact</a>
-                  <a href="/how-it-works" className="w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold">How Luminara works</a>
+                  {!skipMarketing && <a href="/how-it-works" className="w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold">How Luminara works</a>}
                   <button
                     type="button"
                     onClick={() => { setView(AppView.IDEA_SCOUT); setShowSuiteMenu(false); }}
@@ -1501,14 +1512,14 @@ const App: React.FC = () => {
                     <span>Research the market</span>
                   </button>
                   </>)}
-                  <button
+                  {!skipMarketing && <button
                     type="button"
                     onClick={() => { setView(AppView.INFRASTRUCTURE); setShowSuiteMenu(false); }}
                     className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 border-t border-white/5 mt-1 pt-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
                   >
                     <ICONS.Sparkle className="w-3.5 h-3.5 text-gold-light" />
                     <span>How Luminara works</span>
-                  </button>
+                  </button>}
                   <button
                     type="button"
                     onClick={() => { setShowSuiteMenu(false); setIsOmnibarOpen(true); }}
@@ -1544,7 +1555,8 @@ const App: React.FC = () => {
                     </button>
                   )}
                 </div>
-              </>
+              </>,
+              document.body,
             )}
           </div>
 

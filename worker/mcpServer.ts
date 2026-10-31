@@ -28,7 +28,8 @@ import {
   governanceFor,
 } from './mcpGovernance';
 import { MAX_BODY_BYTES, readBody } from './security';
-import { putCounterBestEffort } from './securityHardening';
+import { meterDailyUse, putCounterBestEffort } from './securityHardening';
+import { entitlementsFor } from '../services/plans/planEntitlements';
 import {
   BYOK_PAID_CALL_COST_CENTS,
   HOSTED_PAID_CALL_COST_CENTS,
@@ -619,6 +620,26 @@ async function callTool(
     return textResult(
       'Tool blocked by governance policy: budget_exhausted',
       { code: 'BUDGET_EXHAUSTED', reason: 'budget_exhausted', budgetHalted: true },
+      true,
+    );
+  }
+
+  // Free and Starter get MCP with a daily call cap; Growth+ is unmetered.
+  const mcpDailyCallLimit = entitlementsFor(ctx.planId).mcpDailyCallLimit;
+  // Opening a hosted browser session spends crawler time, so it stays on Growth+ (or the paid path).
+  // browse_act and browse_goal already need the paid path; browse_close only ends a session.
+  if (name === 'browse_observe' && mcpDailyCallLimit > 0 && !canUsePaid(ctx)) {
+    return textResult(
+      'Browser tools need Growth or Agency. Upgrade, or pass DataForSEO BYOK as x-provider-key.',
+      { code: 'PAID_TOOL_FORBIDDEN', requiredPlan: 'growth' },
+      true,
+    );
+  }
+  const meter = await meterDailyUse(ctx.env, 'mcp_calls', ctx.accountId, mcpDailyCallLimit, 'MCP call');
+  if (!meter.ok) {
+    return textResult(
+      `${meter.error} Growth has no daily cap.`,
+      { code: 'MCP_DAILY_LIMIT', requiredPlan: 'growth' },
       true,
     );
   }

@@ -37,6 +37,8 @@ export function unionCorsHeaderValues(...parts: Array<string | null | undefined>
  * Apply app CORS onto a response. List-valued CORS headers are merged with any
  * values already set (e.g. MCP Allow-Headers for mcp-session-id) so withCors
  * cannot wipe protocol-specific headers.
+ * Response.redirect() and the Cache API return immutable headers. headers.set
+ * on those throws TypeError, which the /api catch turns into Internal error.
  */
 export function applyCorsHeaders(response: Response, cors: Record<string, string>): Response {
   const mergeKeys = new Set([
@@ -44,14 +46,15 @@ export function applyCorsHeaders(response: Response, cors: Record<string, string
     'access-control-allow-methods',
     'access-control-expose-headers',
   ]);
+  const out = Object.keys(cors).length === 0 ? response : new Response(response.body, response);
   for (const [k, v] of Object.entries(cors)) {
     if (mergeKeys.has(k.toLowerCase())) {
-      response.headers.set(k, unionCorsHeaderValues(response.headers.get(k), v));
+      out.headers.set(k, unionCorsHeaderValues(out.headers.get(k), v));
     } else {
-      response.headers.set(k, v);
+      out.headers.set(k, v);
     }
   }
-  return response;
+  return out;
 }
 
 function isAllowedOrigin(env: Env, origin: string): boolean {

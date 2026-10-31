@@ -6,9 +6,12 @@
  *   windows/manifest.json       { version, fileName, sha512?, releasedAt }
  */
 
+import { recordAnonymousEvent } from './productAnalytics';
+
 export type DesktopDownloadEnv = {
   DESKTOP_RELEASES?: R2Bucket;
   DESKTOP_GITHUB_REPO?: string;
+  DB?: D1Database;
 };
 
 const DEFAULT_REPO = 'LuminaraDigital/Luminara-Search-Oracle-Agent';
@@ -71,9 +74,17 @@ export async function desktopLatestJson(env: DesktopDownloadEnv): Promise<Respon
 /**
  * Stream the Windows installer from R2, or 302 to GitHub Releases.
  */
-export async function desktopWindowsDownload(env: DesktopDownloadEnv, request: Request): Promise<Response> {
+export async function desktopWindowsDownload(
+  env: DesktopDownloadEnv,
+  request: Request,
+  background: (work: Promise<void>) => void = () => undefined,
+): Promise<Response> {
   if (request.method !== 'GET' && request.method !== 'HEAD') {
     return new Response('Method not allowed', { status: 405 });
+  }
+
+  if (request.method === 'GET') {
+    background(recordAnonymousEvent(env.DB, 'desktop_download_started', '/desktop/windows'));
   }
 
   if (env.DESKTOP_RELEASES) {

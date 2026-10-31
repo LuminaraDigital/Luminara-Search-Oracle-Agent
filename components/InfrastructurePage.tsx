@@ -128,8 +128,8 @@ const accessRows = [
   {
     capability: 'White-label PDF exports, share links & IDE MCP server',
     guest: 'Not included',
-    freeAccount: 'Not included',
-    paidPass: 'PDF on Starter+; share links & MCP on Growth+',
+    freeAccount: 'Share links & MCP, capped per day',
+    paidPass: 'PDF on Starter+; no daily cap on share links & MCP from Growth',
   },
   {
     capability: 'Live ChatGPT, Perplexity & Google AI Overviews checks',

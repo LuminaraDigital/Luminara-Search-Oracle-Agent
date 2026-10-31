@@ -75,7 +75,8 @@ export type PolicyContext = {
  * Deterministic policy, evaluated in order:
  * 1. quarantined tool -> block
  * 2. destructive risk + no approved request -> require_approval
- * 3. write risk without active subscription -> block
+ * 3. write risk on a credit-spending tool without active subscription -> block
+ *    (free-credit writes such as create_project and save_report are open to every plan)
  * 4. otherwise allow
  */
 export function decideToolCall(
@@ -90,7 +91,7 @@ export function decideToolCall(
   if (gov.risk === 'destructive' && !approved) {
     return { action: 'require_approval', reason: 'destructive_requires_approval' };
   }
-  if (gov.risk === 'write' && !ctx.subscriptionActive) {
+  if (gov.risk === 'write' && ctx.creditClass !== 'free' && !ctx.subscriptionActive) {
     return { action: 'block', reason: 'subscription_required' };
   }
   return { action: 'allow' };

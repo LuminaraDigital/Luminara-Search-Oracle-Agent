@@ -1,5 +1,5 @@
 /**
- * Cursor mcpServers JSON for Growth+ lm_live_* keys.
+ * Cursor mcpServers JSON for lm_live_* keys (any plan).
  * Pure helpers for Instant Audit mint CTA and Settings reveal.
  */
 

@@ -60,11 +60,11 @@ function InlineRun({ items }: { items: Inline[] }) {
       {items.map((item, index) => {
         if (item.kind === 'strong') return <strong key={index} className="font-semibold text-white">{item.text}</strong>;
         if (item.kind === 'em') return <em key={index}>{item.text}</em>;
-        if (item.kind === 'code') return <code key={index} className="rounded bg-white/10 px-1 py-0.5 text-[0.9em] text-gray-100">{item.text}</code>;
+        if (item.kind === 'code') return <code key={index} className="rounded bg-white/10 px-1 py-0.5 text-[0.9em] [overflow-wrap:anywhere] text-gray-100">{item.text}</code>;
         if (item.kind === 'link') {
           const href = safeHref(item.href);
           return href ? (
-            <a key={index} href={href} className="text-gold-light underline underline-offset-2 hover:text-white" target={href.startsWith('/') ? undefined : '_blank'} rel={href.startsWith('/') ? undefined : 'noopener noreferrer'}>{item.text}</a>
+            <a key={index} href={href} className="text-gold-light underline underline-offset-2 hover:text-white [overflow-wrap:anywhere]" target={href.startsWith('/') ? undefined : '_blank'} rel={href.startsWith('/') ? undefined : 'noopener noreferrer'}>{item.text}</a>
           ) : <span key={index}>{item.text}</span>;
         }
         return <span key={index}>{item.text}</span>;

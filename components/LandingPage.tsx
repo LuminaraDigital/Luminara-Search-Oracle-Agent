@@ -439,7 +439,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
             <div className="max-w-md">
               <p className="text-[15px] font-medium text-[var(--color-ink)]">For developers and agencies</p>
               <p className="mt-1 text-sm leading-relaxed text-[var(--color-ink-2)]">
-                Pull your latest verdict and fix into Cursor or Claude Code over MCP. Included on Growth and Agency.{' '}
+                Pull your latest verdict and fix into Cursor or Claude Code over MCP. Free on every plan.{' '}
                 <a href="/docs/mcp.html" className="lx-link">
                   Setup guide
                 </a>

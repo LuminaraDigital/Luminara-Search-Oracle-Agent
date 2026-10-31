@@ -66,8 +66,9 @@ describe('plain language pricing', () => {
     expect(planBullets('starter').map((line) => line.text)).toContain('White-label PDF exports');
     expect(html.split('24-hour pass').length - 1).toBe(1);
     expect(html).not.toContain('saved in this browser');
-    expect(html.split('Not included: </span>No IDE access (web app only)').length - 1).toBe(2);
-    expect(html.split('Not included: </span>No public share links').length - 1).toBe(2);
+    expect(html).not.toContain('No IDE access');
+    expect(html).not.toContain('No public share links');
+    expect(html).toContain('10 public share links a day');
     expect(html).toContain('Pay by card on the website and the desktop app.');
     expect(html).toContain('Pay with Telegram Stars in the Mini App.');
     expect(html).not.toContain('Payment happens in Telegram with Stars');

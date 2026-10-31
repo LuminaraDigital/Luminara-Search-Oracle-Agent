@@ -7,8 +7,9 @@ import { MAX_SMALL_BODY_BYTES, readBody, safePublicHostname } from './security';
 import { identify, json, billingId, sha256Hex, secretEquals } from './workerUtils';
 import { isTeaserFailureCode, teaserFailureLine } from '../services/audit/teaserFailureCodes';
 import { getActiveSubscription } from './quotaMiddleware';
-import { putCounterBestEffort } from './securityHardening';
+import { meterDailyUse } from './securityHardening';
 import { planCapsFor } from './telegramBot';
+import { entitlementsFor } from '../services/plans/planEntitlements';
 import { PRODUCTION_MINI_APP_URL, resolveMiniAppUrl } from '../services/referrals/rules';
 import { handleWinRoute } from './winShare';
 import { stripUntrustedFences } from '../utils/untrustedContent';
@@ -310,23 +311,6 @@ export function parseTeaserCreateBody(
   };
 }
 
-async function meterTeaserCreate(env: Env, accountId: string): Promise<{ ok: true } | { ok: false; error: string }> {
-  if (!env.LUMINARA_KV) {
-    if (env.REQUIRE_TG_AUTH === 'true') {
-      return { ok: false, error: 'Teaser quota store unavailable. Try again later.' };
-    }
-    return { ok: true };
-  }
-  const day = new Date().toISOString().slice(0, 10);
-  const key = `teaser:${accountId}:${day}`;
-  const used = Number((await env.LUMINARA_KV.get(key)) || 0);
-  if (used >= TEASER_DAILY_LIMIT) {
-    return { ok: false, error: `Daily teaser limit of ${TEASER_DAILY_LIMIT} reached.` };
-  }
-  await putCounterBestEffort(env, key, String(used + 1), 2 * 86400);
-  return { ok: true };
-}
-
 function parseCreateBody(raw: unknown): {
   ok: true;
   payload: SharedReportPublic;
@@ -434,7 +418,7 @@ export async function handleShareRoute(request: Request, env: Env, path: string)
     const parsed = parseTeaserCreateBody(read.value, resolveMiniAppUrl(env.TELEGRAM_MINI_APP_URL));
     if (!parsed.ok) return json({ ok: false, error: parsed.error }, 400);
     const accountId = billingId(who.user);
-    const meter = await meterTeaserCreate(env, accountId);
+    const meter = await meterDailyUse(env, 'teaser', accountId, TEASER_DAILY_LIMIT, 'Teaser');
     if (!meter.ok) {
       return json({ ok: false, error: meter.error, code: 'TEASER_QUOTA' }, 429);
     }
@@ -557,10 +541,18 @@ export async function handleShareRoute(request: Request, env: Env, path: string)
     const parsed = parseCreateBody(read.value);
     if (!parsed.ok) return json({ ok: false, error: parsed.error }, parsed.status);
 
+    const accountId = billingId(who.user);
+    const ent = entitlementsFor(sub?.plan);
+    // Without white-label, the page carries Luminara's badge and CTA: that is what makes free sharing pay.
+    if (!ent.whiteLabelPdf) parsed.payload.branding = undefined;
+    const meter = await meterDailyUse(env, 'share', accountId, ent.shareDailyLimit, 'Share link');
+    if (!meter.ok) {
+      return json({ ok: false, error: meter.error, code: 'SHARE_QUOTA', requiredPlan: 'growth' }, 429);
+    }
+
     const token = randomTokenHex(32);
     const tokenHash = await sha256Hex(token);
     const id = randomId();
-    const accountId = billingId(who.user);
     const passwordHash = parsed.password ? await hashSharePasswordSalted(parsed.password) : null;
     const expiresAt = parsed.payload.expiresAt;
 

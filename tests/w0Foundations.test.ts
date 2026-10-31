@@ -122,9 +122,11 @@ describe('W0 foundations: finding stable keys + visibility types', () => {
 });
 
 describe('W0 foundations: entitlements + DataForSEO relay', () => {
-  it('shareLinks on growth/agency only; apiAccess agency only', () => {
-    expect(entitlementsFor('free').shareLinks).toBe(false);
-    expect(entitlementsFor('starter').shareLinks).toBe(false);
+  it('shareLinks on every plan, capped below Growth; apiAccess agency only', () => {
+    expect(entitlementsFor('free').shareLinks).toBe(true);
+    expect(entitlementsFor('free').shareDailyLimit).toBe(3);
+    expect(entitlementsFor('starter').shareLinks).toBe(true);
+    expect(entitlementsFor('growth').shareDailyLimit).toBe(0);
     expect(entitlementsFor('growth').shareLinks).toBe(true);
     expect(entitlementsFor('agency').shareLinks).toBe(true);
     expect(planCapsFor('growth').shareLinks).toBe(true);

@@ -26,11 +26,11 @@ describe('quota snapshot after an audit call', () => {
     expect(canMintMcpKeys()).toBe(true);
   });
 
-  it('keeps a Starter plan, so MCP keys stay closed', async () => {
+  it('keeps a Starter plan, which can mint capped MCP keys', async () => {
     await signInWithBootQuota(paidBootQuota('starter', EXPIRES));
     updateQuotaFromHeaders(UNLIMITED);
     expect(getCurrentQuotaSync()).toMatchObject({ plan: 'starter', expiresAt: EXPIRES });
-    expect(canMintMcpKeys()).toBe(false);
+    expect(canMintMcpKeys()).toBe(true);
   });
 
   it('turns a Growth plan into free once the headers are limited', async () => {
@@ -40,7 +40,8 @@ describe('quota snapshot after an audit call', () => {
 
     updateQuotaFromHeaders(new Headers({ 'x-quota-limit': '3', 'x-quota-remaining': '3', 'x-quota-reset': '600' }));
     expect(getCurrentQuotaSync()).toMatchObject({ plan: 'free', expiresAt: undefined, isUnlimited: false, remaining: 3 });
-    expect(canCreateShareLinks()).toBe(false);
+    // Free still shares, under the Worker's daily cap.
+    expect(canCreateShareLinks()).toBe(true);
   });
 });
 

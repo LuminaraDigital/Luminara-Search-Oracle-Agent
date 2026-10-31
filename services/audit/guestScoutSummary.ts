@@ -208,15 +208,15 @@ function nextStepFor(rail: HostedScoutRail, evidenceEmpty: boolean): string {
     return 'Try the scout again when search and page fetch respond. You can also add your own keys in Settings. This run is not a finished audit.';
   }
   if (evidenceEmpty) {
-    return 'Check provider status in Settings and run the scout again. This run is not a finished audit.';
+    return 'Please run the check again in a few minutes. This run is not a finished audit.';
   }
   if (rail === 'byok_or_signin') {
-    return 'Sign in to save this scout to a project. Full branded share links stay on Growth and Agency. A redacted teaser needs Telegram or a signed-in session.';
+    return 'Sign in to save this scout to a project. Share links are free with an account. A redacted teaser needs Telegram or a signed-in session.';
   }
   if (rail === 'tma_hosted') {
-    return 'Share the redacted teaser if it is useful. Sign in on the web later to save a project. Full branded share links stay on Growth and Agency.';
+    return 'Share the redacted teaser if it is useful. Sign in on the web later to save a project. Share links are free with an account.';
   }
-  return 'Save the strategy to a project if you want it kept. Full branded share links stay on Growth and Agency.';
+  return 'Save the strategy to a project if you want it kept. Share links are free with an account.';
 }
 
 /** The summary card when the run did not keep a scout summary. Every field says it was not measured. */

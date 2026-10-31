@@ -188,11 +188,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
     await loadServerHealth().catch(() => undefined);
     await fetchQuotaStatus().catch(() => null);
     if (!canCreateShareLinks()) {
-      setShareMessage(
-        getCurrentQuotaSync()
-          ? 'A full branded report link is on Growth and Agency.'
-          : 'Sign in to create share links. Growth and Agency include share and MCP.',
-      );
+      setShareMessage('Sign in to create a free share link.');
       return;
     }
     setShareBusy(true);
@@ -291,7 +287,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
                 Share this audit with a teammate or client
               </p>
               <p className="text-xs text-gray-400 mt-1 leading-relaxed">
-                A measured win can be shared on the free plan. A full branded report link is on Growth and Agency.
+                Share links are free on every plan. Free links carry a Luminara badge; Starter and up can add your own branding.
               </p>
             </div>
             {canShare && (

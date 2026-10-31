@@ -77,7 +77,7 @@ const US = {
   metrics: 'No blended score. Every result is labeled Measured, Estimated, or Not measured',
   engines: `Site crawl and live web search on every plan. ${LIVE_ANSWER_CHECKS}`,
   output: 'One ranked fix per week, plus llms.txt and JSON-LD fix packs',
-  access: 'MCP for Cursor and Claude on Growth and Agency. API access on Agency',
+  access: 'MCP for Cursor and Claude on every plan, capped per day below Growth. API access on Agency',
   pricing: `30-day passes that do not auto-renew. Pay by card or Telegram Stars (${STARS_AMOUNTS}), or run a guest audit with your own keys`,
 } as const;
 
@@ -177,7 +177,7 @@ const COMPARE_PAGES: ComparePage[] = [
       {
         question: 'Do both tools have an MCP server?',
         answer:
-          'Yes. Ahrefs offers a hosted MCP server metered in API units. Luminara includes MCP for Cursor and Claude on Growth and Agency plans.',
+          'Yes. Ahrefs offers a hosted MCP server metered in API units. Luminara includes MCP for Cursor and Claude on every plan, free included.',
       },
       {
         question: 'Does Luminara Suite show an AI share of voice number?',
@@ -224,7 +224,7 @@ const COMPARE_PAGES: ComparePage[] = [
       {
         question: 'Do both tools offer an MCP server?',
         answer:
-          'Yes. Otterly.AI lists MCP requests on higher plans. Luminara includes MCP for Cursor and Claude on Growth and Agency.',
+          'Yes. Otterly.AI lists MCP requests on higher plans. Luminara includes MCP for Cursor and Claude on every plan, free included.',
       },
       {
         question: 'Does Luminara Suite use a visibility index?',
@@ -271,7 +271,7 @@ const COMPARE_PAGES: ComparePage[] = [
       {
         question: 'Do Peec AI and Luminara Suite both have MCP?',
         answer:
-          'Yes. Peec AI offers an MCP server for Claude, Cursor, and other IDEs. Luminara includes MCP on Growth and Agency plans.',
+          'Yes. Peec AI offers an MCP server for Claude, Cursor, and other IDEs. Luminara includes MCP on every plan, free included.',
       },
       {
         question: 'Does Luminara Suite measure sentiment?',
@@ -318,7 +318,7 @@ const COMPARE_PAGES: ComparePage[] = [
       {
         question: 'Does Semrush have an MCP server like Luminara Suite?',
         answer:
-          'Yes. Semrush offers an MCP server with OAuth or an API key. Luminara includes MCP for Cursor and Claude on Growth and Agency.',
+          'Yes. Semrush offers an MCP server with OAuth or an API key. Luminara includes MCP for Cursor and Claude on every plan, free included.',
       },
       {
         question: 'Can I use Semrush and Luminara Suite together?',
@@ -594,7 +594,7 @@ const BEST_PAGES: BestPage[] = [
       {
         question: 'Which Luminara plans include MCP?',
         answer:
-          'Growth and Agency include MCP for Cursor, Claude, and the Luminara plugin. Paid research tools also need Agency API access or your own DataForSEO keys.',
+          'Every plan, free included. Free and Starter have a daily call cap; Growth and Agency have no daily cap. Paid research tools also need Agency API access or your own DataForSEO keys.',
       },
       {
         question: 'Will an MCP tool invent SEO numbers?',

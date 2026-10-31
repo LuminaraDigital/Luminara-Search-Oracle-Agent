@@ -1,6 +1,6 @@
 /**
  * Agency API access gate for /api/oracle, /api/audit, /api/tools.
- * MCP free tools use guardMcpAccess (Growth+) instead.
+ * MCP free tools use the mcpAccess gate instead (every plan; Free and Starter capped per day).
  */
 import type { Env } from './env';
 import type { HostedIdentity, McpCredential } from './userTypes';
@@ -10,7 +10,7 @@ import { planCapsFor } from './telegramBot';
 import { identify, json } from './workerUtils';
 import { identifyApiKey } from './apiKeyService';
 import { bearerFromAuthorization } from './firebaseAuth';
-import { identifyMcpOAuthToken } from './mcpOAuth';
+import { identifyMcpOAuthToken, mcpResourceMetadataUrl } from './mcpOAuth';
 
 /** Paths that require an Agency (apiAccess) plan in addition to authentication. */
 export const API_ACCESS_PATH_PATTERNS: RegExp[] = [
@@ -19,7 +19,7 @@ export const API_ACCESS_PATH_PATTERNS: RegExp[] = [
   /^\/tools(\/|$)/,
 ];
 
-/** MCP requires Growth+ mcpAccess (not full Agency apiAccess). */
+/** MCP requires mcpAccess (every plan today), not full Agency apiAccess. */
 export const MCP_ACCESS_PATH_PATTERNS: RegExp[] = [/^\/mcp(\/|$)/];
 
 export function isApiAccessRoute(path: string): boolean {
@@ -130,7 +130,7 @@ export async function resolveMcpUser(
           code: 'AUTH_REQUIRED',
         },
         401,
-        { 'WWW-Authenticate': 'Bearer error="invalid_token", Cookie name="__session"' },
+        { 'WWW-Authenticate': `Bearer resource_metadata="${mcpResourceMetadataUrl(request)}"` },
       ),
     };
   }

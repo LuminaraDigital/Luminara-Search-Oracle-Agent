@@ -345,12 +345,12 @@ const IntelligencePage: React.FC<IntelligencePageProps> = ({
                 Programmatic MCP server and statutory safety rails
               </h3>
               <p className="mt-2 text-sm leading-relaxed text-[var(--color-ink-2)]">
-                Growth and Agency passes unlock `/api/mcp` so your IDE or agent can inspect project context, classify CMS fixes, and query the Enquiry Desk with cryptographic SHA-256 idempotency.
+                Every plan can use `/api/mcp` so your IDE or agent can inspect project context, classify CMS fixes, and query the Enquiry Desk with cryptographic SHA-256 idempotency.
               </p>
 
               <dl className="mt-5 space-y-2.5 rounded-xl border p-4 text-xs lx-hairline">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <dt className="text-[var(--color-ink-2)]">Free MCP tools (Growth+)</dt>
+                  <dt className="text-[var(--color-ink-2)]">Free MCP tools (every plan)</dt>
                   <dd className="font-mono text-[var(--color-ink)]">Projects, context, reports, funnel</dd>
                 </div>
                 <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-2 lx-hairline">

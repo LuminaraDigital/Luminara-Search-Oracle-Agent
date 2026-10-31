@@ -11,6 +11,7 @@ import {
   redactKey,
 } from './apiKeysTabUtils';
 import { buildCursorMcpServersJson, mcpHttpUrlFromApiBase } from '../../../services/mcp/cursorMcpSnippet';
+import { AgentConnectionsPanel } from './AgentConnectionsPanel';
 import { productTelemetry } from '../../../services/analytics/productTelemetry';
 import { useAppAuth } from '../../../services/auth/useAppAuth';
 
@@ -241,6 +242,8 @@ export const ApiKeysTab: React.FC = () => {
           })}
         </ul>
       )}
+
+      {!guest && <AgentConnectionsPanel />}
 
       {/* Reveal-once dialog: the ONLY place the full key ever exists client-side. */}
       {created && (
