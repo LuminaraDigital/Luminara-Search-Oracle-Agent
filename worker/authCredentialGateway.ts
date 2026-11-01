@@ -25,6 +25,11 @@ import { identityToolkitHeaders } from './identityToolkit';
 
 const IDENTITY_SIGN_UP = 'https://identitytoolkit.googleapis.com/v1/accounts:signUp';
 const IDENTITY_SIGN_IN = 'https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword';
+const IDENTITY_SIGN_IN_IDP = 'https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp';
+const SECURE_TOKEN_URL = 'https://securetoken.googleapis.com/v1/token';
+const MAX_GOOGLE_ID_TOKEN_CHARS = 8192;
+const MAX_REFRESH_TOKEN_CHARS = 2048;
+const DEAD_REFRESH_ERRORS = new Set(['INVALID_REFRESH_TOKEN', 'TOKEN_EXPIRED', 'USER_DISABLED', 'USER_NOT_FOUND']);
 
 const MIN_PASSWORD_LEN = 6;
 const MAX_PASSWORD_LEN = 128;
@@ -292,6 +297,130 @@ export async function handleSignUp(
     json({ ok: false, error: SIGN_UP_FAILURE_MESSAGE, code: 'SIGN_UP_FAILED' }, 400),
     gate.headers,
   );
+}
+
+/**
+ * POST /api/auth/refresh
+ * Renews a Firebase ID token for native clients, which cannot send the referrer a restricted
+ * web API key requires. A refused refresh token returns 401 so the client signs in again.
+ */
+export async function handleTokenRefresh(
+  request: Request,
+  env: Env,
+  opts?: { fetchImpl?: typeof fetch },
+): Promise<Response> {
+  let refreshToken = '';
+  try {
+    const body = (await request.json()) as { refreshToken?: unknown };
+    refreshToken = typeof body?.refreshToken === 'string' ? body.refreshToken.trim() : '';
+  } catch {
+    refreshToken = '';
+  }
+  if (!refreshToken || refreshToken.length > MAX_REFRESH_TOKEN_CHARS) {
+    return json({ ok: false, error: 'Send the refreshToken from your last sign-in.', code: 'INVALID_BODY' }, 400);
+  }
+  const apiKey = String(env.FIREBASE_WEB_API_KEY || '').trim();
+  if (!apiKey) {
+    return json({ ok: false, error: 'Sign-in is temporarily unavailable. Try again later.', code: 'AUTH_UNAVAILABLE' }, 503);
+  }
+
+  const fetchImpl = opts?.fetchImpl || fetch;
+  let res: Response;
+  try {
+    res = await fetchImpl(`${SECURE_TOKEN_URL}?key=${encodeURIComponent(apiKey)}`, {
+      method: 'POST',
+      headers: identityToolkitHeaders(env),
+      body: JSON.stringify({ grant_type: 'refresh_token', refresh_token: refreshToken }),
+    });
+  } catch {
+    return json({ ok: false, error: 'Sign-in is temporarily unavailable. Try again later.', code: 'AUTH_UNAVAILABLE' }, 503);
+  }
+
+  const parsed = (await res.json().catch(() => ({}))) as {
+    id_token?: string;
+    refresh_token?: string;
+    expires_in?: string;
+    error?: { message?: string };
+  };
+  if (res.ok && parsed.id_token && parsed.refresh_token) {
+    return json({ ok: true, idToken: parsed.id_token, refreshToken: parsed.refresh_token, expiresIn: parsed.expires_in });
+  }
+  // A bad API key or blocked referrer must not sign every user out, so match the token errors only.
+  if (DEAD_REFRESH_ERRORS.has(String(parsed.error?.message || '').split(' ')[0])) {
+    return json({ ok: false, error: 'Your session ended. Sign in again.', code: 'SESSION_EXPIRED' }, 401);
+  }
+  return json({ ok: false, error: 'Sign-in is temporarily unavailable. Try again later.', code: 'AUTH_UNAVAILABLE' }, 503);
+}
+
+/**
+ * POST /api/auth/google
+ * Exchanges a Google ID token from Android Credential Manager for a Firebase session.
+ * Firebase checks the token signature and audience, so a forged token gets a 401 here.
+ */
+export async function handleGoogleSignIn(
+  request: Request,
+  env: Env,
+  ip: string,
+  opts?: { fetchImpl?: typeof fetch },
+): Promise<Response> {
+  const gate = await gateCredential(env, ip, 'signin');
+  if (!gate.ok) return gate.response;
+
+  let googleIdToken = '';
+  try {
+    const body = (await request.json()) as { googleIdToken?: unknown };
+    googleIdToken = typeof body?.googleIdToken === 'string' ? body.googleIdToken.trim() : '';
+  } catch {
+    googleIdToken = '';
+  }
+  if (!googleIdToken || googleIdToken.length > MAX_GOOGLE_ID_TOKEN_CHARS) {
+    return json({ ok: false, error: 'Send the Google ID token from sign-in.', code: 'INVALID_BODY' }, 400);
+  }
+  const apiKey = String(env.FIREBASE_WEB_API_KEY || '').trim();
+  if (!apiKey) {
+    return json({ ok: false, error: 'Sign-in is temporarily unavailable. Try again later.', code: 'AUTH_UNAVAILABLE' }, 503);
+  }
+
+  const fetchImpl = opts?.fetchImpl || fetch;
+  let res: Response;
+  try {
+    res = await fetchImpl(`${IDENTITY_SIGN_IN_IDP}?key=${encodeURIComponent(apiKey)}`, {
+      method: 'POST',
+      headers: identityToolkitHeaders(env),
+      body: JSON.stringify({
+        postBody: new URLSearchParams({ id_token: googleIdToken, providerId: 'google.com' }).toString(),
+        requestUri: String(env.WEBAPP_URL || 'https://www.luminarasuite.com/'),
+        returnSecureToken: true,
+      }),
+    });
+  } catch {
+    return json({ ok: false, error: 'Sign-in is temporarily unavailable. Try again later.', code: 'AUTH_UNAVAILABLE' }, 503);
+  }
+
+  const parsed = (await res.json().catch(() => ({}))) as {
+    idToken?: string;
+    refreshToken?: string;
+    localId?: string;
+    email?: string;
+    expiresIn?: string;
+  };
+  if (res.ok && parsed.idToken && parsed.refreshToken) {
+    return withRateLimitHeaders(
+      json({
+        ok: true,
+        idToken: parsed.idToken,
+        refreshToken: parsed.refreshToken,
+        localId: parsed.localId || '',
+        email: parsed.email || '',
+        expiresIn: parsed.expiresIn || '3600',
+      }),
+      gate.headers,
+    );
+  }
+  if (res.status === 400) {
+    return json({ ok: false, error: 'Google sign-in failed. Try again.', code: 'GOOGLE_TOKEN_REJECTED' }, 401);
+  }
+  return json({ ok: false, error: 'Sign-in is temporarily unavailable. Try again later.', code: 'AUTH_UNAVAILABLE' }, 503);
 }
 
 /**

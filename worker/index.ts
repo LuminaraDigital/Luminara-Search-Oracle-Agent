@@ -8,6 +8,8 @@
  *   POST /api/auth/reset-password         IP-throttled password reset (anti-enumeration)
  *   POST /api/auth/sign-up                IP-throttled Identity Toolkit sign-up
  *   POST /api/auth/sign-in                IP-throttled Identity Toolkit sign-in
+ *   POST /api/auth/refresh                IP-throttled ID token renewal for native clients
+ *   POST /api/auth/google                 IP-throttled Google ID token exchange for native clients
  *   POST /api/auth/request-otp            IP-throttled OTP (Twilio when enabled; else 501)
  *   POST /api/auth/verify-otp             IP-throttled OTP verify (when SMS enabled)
  *   POST /api/auth/send-verification      Dual-key email verification trigger (neutral body)
@@ -86,7 +88,7 @@ import { auditOrgIdFor, recordAuditLog, getAuditLogs, recordAuditLogBestEffort, 
 import { isAdminAuthorized } from './adminAuth';
 
 import { applyCorsHeaders, corsHeaders, getSessionCookieToken, identify, json, secretEquals, billingId, sha256Hex } from './workerUtils';
-import { getActiveSubscription, readQuotaSnapshot } from './quotaMiddleware';
+import { getActiveSubscription, mapHostedEntitlement, readQuotaSnapshot } from './quotaMiddleware';
 import { handleReferralRoute } from './referrals';
 import { handleIdeaScoutRoute } from './ideaScout';
 import { proxySidecar, isSidecarConfigured, type SidecarId } from './sidecarRelay';
@@ -178,7 +180,8 @@ import {
 } from './securityHardening';
 import { handlePasswordResetRequest, handleSendVerification } from './authTollFraud';
 import { handleRequestOtp, handleVerifyOtp } from './authOtpSms';
-import { handleSignIn, handleSignUp } from './authCredentialGateway';
+import { handleAssetLinks } from './assetLinks';
+import { handleSignIn, handleGoogleSignIn, handleTokenRefresh, handleSignUp } from './authCredentialGateway';
 import { settleFirebaseErase } from './accountDeletion';
 import { handleEmailUnsubscribe, runWithWaitUntil } from './welcomeEmail';
 
@@ -579,6 +582,20 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     return withCors(handleSignIn(request, env, ip));
   }
 
+  if (path === '/auth/google') {
+    if (request.method !== 'POST') return withCors(json({ error: 'Method not allowed' }, 405));
+    const hit = limited('auth_signin', 5);
+    if (hit) return hit;
+    return withCors(handleGoogleSignIn(request, env, ip));
+  }
+
+  if (path === '/auth/refresh') {
+    if (request.method !== 'POST') return withCors(json({ error: 'Method not allowed' }, 405));
+    const hit = limited('auth', RATE_AUTH_PER_MIN);
+    if (hit) return hit;
+    return withCors(handleTokenRefresh(request, env));
+  }
+
   // Public OTP: rate-gated; Twilio SMS only when OTP_SMS_ENABLED + secrets are set.
   if (path === '/auth/request-otp') {
     if (request.method !== 'POST') return withCors(json({ error: 'Method not allowed' }, 405));
@@ -898,6 +915,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
         remaining: limit,
         resetSec,
         isUnlimited: false,
+        entitlement: mapHostedEntitlement({ signedIn: false, active: null, records: [], now: Date.now() }),
       })));
     }
 
@@ -2234,6 +2252,9 @@ const handler = {
 
     const oauthDiscovery = handleOAuthDiscovery(request);
     if (oauthDiscovery) return guard(oauthDiscovery);
+
+    const assetLinks = handleAssetLinks(request, env);
+    if (assetLinks) return guard(assetLinks);
 
     // Canonical redirect: redirect naked domain to www.luminarasuite.com for web/marketing traffic in production
     if (env.ENVIRONMENT === 'production' && url.hostname === 'luminarasuite.com' && !url.pathname.startsWith('/api/')) {

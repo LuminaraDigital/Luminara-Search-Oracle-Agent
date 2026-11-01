@@ -181,4 +181,32 @@ const webManifest = JSON.stringify(
 fs.writeFileSync(path.join(outDir, 'site.webmanifest'), webManifest);
 fs.writeFileSync(path.join(outDir, 'manifest.json'), webManifest);
 
+// Android and Play Store share the same mark so every surface shows one logo.
+const androidRes = path.join(root, 'apps', 'android', 'app', 'src', 'main', 'res');
+const roundMask = (size) =>
+  Buffer.from(`<svg width="${size}" height="${size}"><circle cx="${size / 2}" cy="${size / 2}" r="${size / 2}"/></svg>`);
+const roundMark = (size) =>
+  sharp(buf)
+    .resize(size, size, { fit: 'cover' })
+    .composite([{ input: roundMask(size), blend: 'dest-in' }])
+    .png()
+    .toBuffer();
+
+for (const [density, scale] of [['mdpi', 1], ['hdpi', 1.5], ['xhdpi', 2], ['xxhdpi', 3], ['xxxhdpi', 4]]) {
+  const dir = path.join(androidRes, `mipmap-${density}`);
+  const canvas = Math.round(108 * scale);
+  const mark = Math.round(72 * scale);
+  const legacy = Math.round(48 * scale);
+  const inset = Math.round((canvas - mark) / 2);
+  await sharp({ create: { width: canvas, height: canvas, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+    .composite([{ input: await roundMark(mark), left: inset, top: inset }])
+    .webp({ quality: 92 })
+    .toFile(path.join(dir, 'ic_launcher_foreground.webp'));
+  await sharp(buf).resize(legacy, legacy, { fit: 'cover' }).webp({ quality: 92 }).toFile(path.join(dir, 'ic_launcher.webp'));
+  await sharp(await roundMark(legacy)).webp({ quality: 92 }).toFile(path.join(dir, 'ic_launcher_round.webp'));
+}
+fs.mkdirSync(path.join(androidRes, 'drawable-nodpi'), { recursive: true });
+await sharp(await roundMark(512)).webp({ quality: 92 }).toFile(path.join(androidRes, 'drawable-nodpi', 'luminara_mark.webp'));
+await sharp(buf).resize(512, 512, { fit: 'cover' }).png().toFile(path.join(root, 'docs', 'play-store', 'assets', 'play-icon-512.png'));
+
 console.log('Wrote brand + favicon + manifest assets from', src);

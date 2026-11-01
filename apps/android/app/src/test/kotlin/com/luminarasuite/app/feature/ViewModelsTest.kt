@@ -34,6 +34,14 @@ class ViewModelsTest {
         Dispatchers.setMain(testDispatcher)
     }
 
+    /** streamOracle runs on Dispatchers.IO, so the test waits on real time, not the scheduler. */
+    private fun waitForTurns(vm: AskViewModel) {
+        repeat(200) {
+            if (vm.uiState.value.turns.isNotEmpty()) return
+            Thread.sleep(10)
+        }
+    }
+
     @After
     fun tearDown() {
         Dispatchers.resetMain()
@@ -90,6 +98,7 @@ class ViewModelsTest {
             val vm = AskViewModel(repo)
 
             vm.submitQuestion("Check AEO citations")
+            waitForTurns(vm)
             assertEquals(1, vm.uiState.value.turns.size)
             val turnId = vm.uiState.value.turns.first().id
 
@@ -153,8 +162,13 @@ class ViewModelsTest {
             vm.exportData()
             assertEquals("Export ready.", vm.uiState.value.statusBanner)
 
+            assertEquals("free", vm.uiState.value.quota?.plan)
+            assertEquals("free", vm.uiState.value.quota?.entitlement?.tier)
+            assertEquals(2, vm.uiState.value.quota?.remaining)
+
             vm.signOut()
             assertFalse(vm.uiState.value.vault.isSignedIn)
+            assertNull(vm.uiState.value.quota)
 
             vm.updateEmail("user@luminarasuite.com")
             vm.updatePassword("password123")
