@@ -2,6 +2,8 @@ package com.luminarasuite.app.core.model
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 
 @Serializable
 data class ProbeCrawlResponse(
@@ -391,6 +393,39 @@ data class AuthRefreshResponse(
     val idToken: String = "",
     val refreshToken: String = "",
     val error: String? = null,
+)
+
+@Serializable
+data class FirecrawlMapRequest(
+    val url: String,
+    val limit: Int,
+    val includeSubdomains: Boolean = false,
+    val ignoreSitemap: Boolean = false,
+)
+
+@Serializable
+data class FirecrawlMapResponse(
+    val links: List<JsonElement> = emptyList(),
+)
+
+@Serializable
+data class FirecrawlScrapeRequest(
+    val url: String,
+    val formats: List<String> = listOf("markdown", "rawHtml"),
+    val onlyMainContent: Boolean = true,
+    val waitFor: Int = 1000,
+)
+
+@Serializable
+data class FirecrawlScrapeResponse(
+    val data: FirecrawlPage? = null,
+)
+
+@Serializable
+data class FirecrawlPage(
+    val markdown: String = "",
+    val rawHtml: String = "",
+    val metadata: JsonObject = JsonObject(emptyMap()),
 )
 
 @Serializable

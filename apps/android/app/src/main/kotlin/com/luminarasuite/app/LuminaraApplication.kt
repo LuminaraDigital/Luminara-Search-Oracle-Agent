@@ -5,10 +5,12 @@ import com.luminarasuite.app.core.auth.KeystoreCredentialVault
 import com.luminarasuite.app.core.auth.VaultStorage
 import com.luminarasuite.app.core.database.LuminaraDatabase
 import com.luminarasuite.app.core.network.DefaultLuminaraRepository
+import com.luminarasuite.app.core.network.DefaultWorkspaceGateway
 import com.luminarasuite.app.core.network.LuminaraApi
 import com.luminarasuite.app.core.network.LuminaraRepository
 import com.luminarasuite.app.core.network.LuminaraWireJson
 import com.luminarasuite.app.core.network.SessionAuthenticator
+import com.luminarasuite.app.core.network.WorkspaceGateway
 import com.luminarasuite.app.core.network.refreshOverHttp
 import kotlinx.coroutines.runBlocking
 import okhttp3.Interceptor
@@ -20,6 +22,9 @@ import java.util.concurrent.TimeUnit
 
 class LuminaraApplication : Application() {
     lateinit var repository: LuminaraRepository
+        private set
+
+    lateinit var workspace: WorkspaceGateway
         private set
 
     override fun onCreate() {
@@ -56,6 +61,7 @@ class LuminaraApplication : Application() {
                 .build()
                 .create(LuminaraApi::class.java)
 
+        workspace = DefaultWorkspaceGateway(api)
         repository =
             DefaultLuminaraRepository(
                 api = api,

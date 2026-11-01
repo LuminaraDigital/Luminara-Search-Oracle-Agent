@@ -9,6 +9,7 @@
  *   POST /api/auth/sign-up                IP-throttled Identity Toolkit sign-up
  *   POST /api/auth/sign-in                IP-throttled Identity Toolkit sign-in
  *   POST /api/auth/refresh                IP-throttled ID token renewal for native clients
+ *   POST /api/auth/google                 IP-throttled Google ID token exchange for native clients
  *   POST /api/auth/request-otp            IP-throttled OTP (Twilio when enabled; else 501)
  *   POST /api/auth/verify-otp             IP-throttled OTP verify (when SMS enabled)
  *   POST /api/auth/send-verification      Dual-key email verification trigger (neutral body)
@@ -179,7 +180,8 @@ import {
 } from './securityHardening';
 import { handlePasswordResetRequest, handleSendVerification } from './authTollFraud';
 import { handleRequestOtp, handleVerifyOtp } from './authOtpSms';
-import { handleSignIn, handleTokenRefresh, handleSignUp } from './authCredentialGateway';
+import { handleAssetLinks } from './assetLinks';
+import { handleSignIn, handleGoogleSignIn, handleTokenRefresh, handleSignUp } from './authCredentialGateway';
 import { settleFirebaseErase } from './accountDeletion';
 import { handleEmailUnsubscribe, runWithWaitUntil } from './welcomeEmail';
 
@@ -578,6 +580,13 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     const hit = limited('auth_signin', 5);
     if (hit) return hit;
     return withCors(handleSignIn(request, env, ip));
+  }
+
+  if (path === '/auth/google') {
+    if (request.method !== 'POST') return withCors(json({ error: 'Method not allowed' }, 405));
+    const hit = limited('auth_signin', 5);
+    if (hit) return hit;
+    return withCors(handleGoogleSignIn(request, env, ip));
   }
 
   if (path === '/auth/refresh') {
@@ -2242,6 +2251,9 @@ const handler = {
 
     const oauthDiscovery = handleOAuthDiscovery(request);
     if (oauthDiscovery) return guard(oauthDiscovery);
+
+    const assetLinks = handleAssetLinks(request, env);
+    if (assetLinks) return guard(assetLinks);
 
     // Canonical redirect: redirect naked domain to www.luminarasuite.com for web/marketing traffic in production
     if (env.ENVIRONMENT === 'production' && url.hostname === 'luminarasuite.com' && !url.pathname.startsWith('/api/')) {

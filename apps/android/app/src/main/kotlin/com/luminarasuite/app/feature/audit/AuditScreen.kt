@@ -1,5 +1,7 @@
 package com.luminarasuite.app.feature.audit
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import androidx.compose.animation.AnimatedVisibility
@@ -57,6 +59,7 @@ import com.luminarasuite.app.core.designsystem.probeCaption
 import com.luminarasuite.app.core.designsystem.toneColor
 import com.luminarasuite.app.core.designsystem.toneForStatus
 import com.luminarasuite.app.core.model.BotDirectiveStatus
+import com.luminarasuite.app.core.model.CrewResult
 import com.luminarasuite.app.core.model.ReadinessCheck
 import com.luminarasuite.app.core.network.AuditRead
 import com.luminarasuite.app.core.network.InstantAuditReport
@@ -70,6 +73,7 @@ import kotlinx.coroutines.launch
 data class AuditUiState(
     val domainInput: String = "",
     val isLoading: Boolean = false,
+    val stage: String? = null,
     val errorMessage: String? = null,
     val report: InstantAuditReport? = null,
     val recheckBanner: String? = null,
@@ -107,14 +111,15 @@ class AuditViewModel(
             )
         }
         viewModelScope.launch {
-            repository.runInstantAudit(target)
+            repository.runInstantAudit(target) { stage -> _uiState.update { it.copy(stage = stage) } }
                 .onSuccess { report ->
-                    _uiState.update { it.copy(isLoading = false, report = report, errorMessage = null) }
+                    _uiState.update { it.copy(isLoading = false, stage = null, report = report, errorMessage = null) }
                 }
                 .onFailure { err ->
                     _uiState.update {
                         it.copy(
                             isLoading = false,
+                            stage = null,
                             errorMessage = err.message ?: "Live crawl check failed. Check your connection.",
                         )
                     }
@@ -222,20 +227,25 @@ class AuditViewModel(
 private fun reportAsText(report: InstantAuditReport): String =
     buildString {
         appendLine("Luminara check of ${report.domain}")
-        appendLine(report.verdict)
+        report.crew?.let { crew ->
+            appendLine(crew.brief.asText())
+            appendLine("Health score: ${crew.healthScore?.let { "$it/100" } ?: "not_measured"}")
+            appendLine("Citation rate: ${crew.citationRatePercent?.let { "$it%" } ?: "not_measured"}")
+        } ?: appendLine(report.verdict)
         report.evaluation.checks.forEach { appendLine("- ${it.label}: ${it.status}. ${it.detail}") }
         appendLine("This week: ${report.oneMoveThisWeek}")
     }
 
 private fun shareReport(
     context: Context,
-    report: InstantAuditReport,
+    domain: String,
+    text: String,
 ) {
     val send =
         Intent(Intent.ACTION_SEND)
             .setType("text/plain")
-            .putExtra(Intent.EXTRA_SUBJECT, "AI visibility check: ${report.domain}")
-            .putExtra(Intent.EXTRA_TEXT, reportAsText(report))
+            .putExtra(Intent.EXTRA_SUBJECT, "AI visibility check: $domain")
+            .putExtra(Intent.EXTRA_TEXT, text)
     context.startActivity(Intent.createChooser(send, "Share report"))
 }
 
@@ -244,6 +254,9 @@ private fun shareReport(
 fun AuditScreen(
     viewModel: AuditViewModel,
     onAskAbout: (String) -> Unit = {},
+    onShareLink: suspend (String, String?) -> Result<String> = { _, _ ->
+        Result.failure(IllegalStateException("Sign in to create a link."))
+    },
 ) {
     val state by viewModel.uiState.collectAsState()
     val scrollState = rememberScrollState()
@@ -294,7 +307,7 @@ fun AuditScreen(
                 }
             }
             FoundryButton(
-                text = if (state.isLoading) "Reading live files" else "Run Instant Audit",
+                text = if (state.isLoading) state.stage ?: "Reading live files" else "Run Instant Audit",
                 onClick = { viewModel.runAudit() },
                 enabled = !state.isLoading,
                 testTag = "run_audit_button",
@@ -335,6 +348,7 @@ fun AuditScreen(
                     onRecheck = viewModel::recheckCheck,
                     onReportVerdict = viewModel::reportAuditVerdict,
                     onAskAbout = onAskAbout,
+                    onShareLink = onShareLink,
                     onProbeAnother = {
                         viewModel.prepareAnotherProbe()
                         scope.launch { scrollState.animateScrollTo(0) }
@@ -358,6 +372,7 @@ private fun AuditReportContent(
     onRecheck: (String) -> Unit,
     onReportVerdict: () -> Unit,
     onAskAbout: (String) -> Unit,
+    onShareLink: suspend (String, String?) -> Result<String>,
     onProbeAnother: () -> Unit,
 ) {
     val evaluation = report.evaluation
@@ -368,6 +383,7 @@ private fun AuditReportContent(
             failCount = evaluation.failCount,
         )
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         WorkbenchCard(emphasized = true) {
             Row(
@@ -386,8 +402,13 @@ private fun AuditReportContent(
                     style = LuminaraTextStyles.Body.copy(color = LuminaraColors.GoldLight),
                 )
             }
+            report.crewNote?.let { Text(text = it, style = LuminaraTextStyles.Body) }
             val aiRead = state.aiRead
-            if (aiRead == null) {
+            if (report.crew != null) {
+                report.crew.brief.steps.forEachIndexed { index, step ->
+                    Text(text = "${index + 1}. $step", style = LuminaraTextStyles.Body)
+                }
+            } else if (aiRead == null) {
                 GhostPillButton(
                     text = if (state.isExplaining) "Reading" else "Explain in plain English (1 check)",
                     onClick = onExplain,
@@ -412,6 +433,24 @@ private fun AuditReportContent(
                     MeasurementStatusBadge("not_measured")
                 }
             }
+            report.crew?.checklist?.let { Text(text = it.line, style = LuminaraTextStyles.Body) }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(text = "Citation rate", style = LuminaraTextStyles.Body)
+                val citation = report.crew?.citationRatePercent
+                if (citation != null) {
+                    Text(
+                        text = "$citation%",
+                        style = LuminaraTextStyles.MetricTabular,
+                        modifier = Modifier.testTag("audit_citation_rate"),
+                    )
+                } else {
+                    MeasurementStatusBadge("not_measured")
+                }
+            }
             if (report.receiptNote.isNotBlank()) {
                 Text(text = report.receiptNote, style = LuminaraTextStyles.Body)
             }
@@ -432,7 +471,14 @@ private fun AuditReportContent(
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             GhostPillButton(
                 text = "Share",
-                onClick = { shareReport(context, report) },
+                onClick = {
+                    // A guest has no account to hold a link, so the report goes out as text.
+                    val text = reportAsText(report)
+                    scope.launch {
+                        val link = onShareLink(text, report.domain).getOrNull()
+                        shareReport(context, report.domain, link ?: text)
+                    }
+                },
                 modifier = Modifier.weight(1f),
                 testTag = "audit_share_button",
             )
@@ -465,6 +511,8 @@ private fun AuditReportContent(
                 }
             }
         }
+
+        report.crew?.let { CrewEvidence(crew = it) }
 
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(
@@ -504,6 +552,69 @@ private fun AuditReportContent(
             BotField(bots = evaluation.botMatrix)
         }
     }
+}
+
+@Composable
+private fun CrewEvidence(crew: CrewResult) {
+    val context = LocalContext.current
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        crew.findings.forEach { finding ->
+            WorkbenchCard(railColor = severityColor(finding.severity)) {
+                EyebrowKicker(finding.severity)
+                Text(text = finding.title, style = LuminaraTextStyles.SectionTitle)
+                Text(text = finding.description, style = LuminaraTextStyles.Body)
+            }
+        }
+        crew.fixes.forEach { fix ->
+            WorkbenchCard {
+                EyebrowKicker(fix.filename)
+                Text(text = fix.explanation, style = LuminaraTextStyles.Body)
+                Text(text = fix.snippet, style = LuminaraTextStyles.EyebrowMono.copy(letterSpacing = 0.sp))
+                GhostPillButton(
+                    text = "Copy fix",
+                    onClick = { copyFix(context, fix.filename, fix.snippet) },
+                    testTag = "copy_${fix.id}",
+                )
+            }
+        }
+        WorkbenchCard {
+            EyebrowKicker("Pages read")
+            if (crew.pages.isEmpty()) MeasurementStatusBadge("not_measured")
+            crew.pages.forEach { page ->
+                Text(text = page.title, style = LuminaraTextStyles.SectionTitle.copy(fontSize = 13.sp))
+                Text(
+                    text = "${page.url} · ${page.wordCount} words · ${page.schemas.size} tags",
+                    style = LuminaraTextStyles.Body,
+                )
+            }
+        }
+        WorkbenchCard {
+            EyebrowKicker("Search evidence")
+            if (crew.searchRows.isEmpty()) MeasurementStatusBadge("not_measured")
+            crew.searchRows.forEach { row ->
+                Text(text = row.title, style = LuminaraTextStyles.SectionTitle.copy(fontSize = 13.sp))
+                Text(
+                    text = "${if (row.brandMentioned) "Names you" else "Does not name you"} · ${row.url}",
+                    style = LuminaraTextStyles.Body,
+                )
+            }
+        }
+    }
+}
+
+private fun severityColor(severity: String) =
+    when (severity) {
+        "critical" -> LuminaraColors.ErrorRed
+        "high", "medium" -> LuminaraColors.WarnAmber
+        else -> LuminaraColors.GoldAccent
+    }
+
+private fun copyFix(
+    context: Context,
+    label: String,
+    text: String,
+) {
+    context.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText(label, text))
 }
 
 @Composable

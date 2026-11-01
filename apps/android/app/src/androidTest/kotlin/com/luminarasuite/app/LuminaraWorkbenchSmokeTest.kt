@@ -2,6 +2,7 @@ package com.luminarasuite.app
 
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -10,8 +11,12 @@ import com.luminarasuite.app.core.auth.InMemoryVaultStorage
 import com.luminarasuite.app.core.model.AudioOverview
 import com.luminarasuite.app.core.model.AuditFinding
 import com.luminarasuite.app.core.model.AuditHistoryEntry
+import com.luminarasuite.app.core.model.BusinessDna
 import com.luminarasuite.app.core.model.ByokKeyBag
 import com.luminarasuite.app.core.model.CrawlerEvaluationResult
+import com.luminarasuite.app.core.model.EnquiryCreateRequest
+import com.luminarasuite.app.core.model.EnquiryDeskResponse
+import com.luminarasuite.app.core.model.EnquiryRecord
 import com.luminarasuite.app.core.model.IdeaCard
 import com.luminarasuite.app.core.model.IdeaCreateRequest
 import com.luminarasuite.app.core.model.IdeaCreateResponse
@@ -19,11 +24,14 @@ import com.luminarasuite.app.core.model.IdeaSummary
 import com.luminarasuite.app.core.model.OracleTurn
 import com.luminarasuite.app.core.model.QuotaStatus
 import com.luminarasuite.app.core.model.ScoutRecheckResponse
+import com.luminarasuite.app.core.model.ShareLink
+import com.luminarasuite.app.core.model.SharedDocument
 import com.luminarasuite.app.core.model.StudioSource
 import com.luminarasuite.app.core.network.AuditRead
 import com.luminarasuite.app.core.network.InstantAuditReport
 import com.luminarasuite.app.core.network.LuminaraRepository
 import com.luminarasuite.app.core.network.OracleEvent
+import com.luminarasuite.app.core.network.WorkspaceGateway
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -32,6 +40,45 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+
+class StubWorkspace : WorkspaceGateway {
+    override suspend fun openShared(
+        link: ShareLink,
+        password: String?,
+    ) = Result.success(SharedDocument(title = "example.com", body = "Shared body"))
+
+    override suspend fun createShareLink(
+        text: String,
+        domain: String?,
+    ) = Result.success("https://www.luminarasuite.com/share/abc")
+
+    override suspend fun loadProfile() = Result.success(BusinessDna(name = "Acme"))
+
+    override suspend fun saveProfile(profile: BusinessDna) = Result.success(Unit)
+
+    override suspend fun loadEnquiries() =
+        Result.success(
+            EnquiryDeskResponse(ok = true, enquiries = listOf(EnquiryRecord(id = "e1", contactName = "Sam"))),
+        )
+
+    override suspend fun createEnquiry(request: EnquiryCreateRequest) = Result.success(Unit)
+
+    override suspend fun replyToEnquiry(
+        id: String,
+        text: String,
+    ) = Result.success(Unit)
+
+    override suspend fun setEnquiryPaused(
+        id: String,
+        paused: Boolean,
+    ) = Result.success(Unit)
+
+    override suspend fun decideAppointment(
+        id: String,
+        approve: Boolean,
+        slotId: String?,
+    ) = Result.success(Unit)
+}
 
 class StubInstrumentationRepository : LuminaraRepository {
     private val vault = InMemoryVaultStorage()
@@ -43,7 +90,10 @@ class StubInstrumentationRepository : LuminaraRepository {
 
     override val quotaFlow: StateFlow<QuotaStatus?> = MutableStateFlow(null)
 
-    override suspend fun runInstantAudit(rawDomain: String): Result<InstantAuditReport> =
+    override suspend fun runInstantAudit(
+        rawDomain: String,
+        onStage: (String) -> Unit,
+    ): Result<InstantAuditReport> =
         Result.success(
             InstantAuditReport(
                 domain = "luminarasuite.com",
@@ -129,6 +179,8 @@ class StubInstrumentationRepository : LuminaraRepository {
         password: String,
     ): Result<QuotaStatus?> = Result.success(null)
 
+    override suspend fun signInWithGoogle(googleIdToken: String): Result<QuotaStatus?> = Result.success(null)
+
     override suspend fun signUp(
         email: String,
         password: String,
@@ -151,9 +203,25 @@ class LuminaraWorkbenchSmokeTest {
     val composeRule = createComposeRule()
 
     @Test
+    fun sharedLinkOpensTheViewerWithReportAiOutput() {
+        val link = ShareLink("a".repeat(64), isTeaser = false)
+        composeRule.setContent {
+            LuminaraWorkbenchApp(
+                repository = StubInstrumentationRepository(),
+                workspace = StubWorkspace(),
+                sharedLinks = MutableStateFlow(link),
+                showWelcome = true,
+            )
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("share_body").assertExists()
+        composeRule.onNodeWithText("Report AI output").assertExists()
+    }
+
+    @Test
     fun workbenchTabs_navigateAndExecuteActionsAcrossAllFourSurfaces() {
         composeRule.setContent {
-            LuminaraWorkbenchApp(repository = StubInstrumentationRepository())
+            LuminaraWorkbenchApp(repository = StubInstrumentationRepository(), workspace = StubWorkspace())
         }
         composeRule.onNodeWithTag("nav_tab_audit").assertExists().performClick()
         composeRule.onNodeWithTag("audit_domain_input").performTextInput("luminarasuite.com")
