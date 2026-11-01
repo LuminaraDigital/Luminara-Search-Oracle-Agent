@@ -16,6 +16,7 @@ const CONSTRAINT_READ_LIMIT = 25;
 const OWNER_RULES_MAX_CHARS = 4000;
 
 export type MemoryScope = { projectId: string | null; domain: string | null };
+export type ScopedRule = { id: string; text: string };
 
 export function normalizeMemoryDomain(raw?: string | null): string | null {
   if (!raw || typeof raw !== 'string') return null;
@@ -125,14 +126,14 @@ export async function rememberRuleEdge(
 }
 
 /** Active rules for this scope, newest first. Null scope values match only unscoped rules. */
-export async function listActiveConstraints(
+export async function listActiveRules(
   env: Env,
   accountId: string,
   scope: MemoryScope,
-): Promise<string[]> {
+): Promise<ScopedRule[]> {
   if (!env.DB) return [];
   const rows = await env.DB.prepare(
-    `SELECT text FROM memory_facts
+    `SELECT id, text FROM memory_facts
      WHERE account_id = ? AND kind = 'constraint' AND status = 'active'
        AND (expires_at IS NULL OR expires_at > ?)
        AND (project_id IS NULL OR project_id = ?)
@@ -141,8 +142,51 @@ export async function listActiveConstraints(
      LIMIT ?`,
   )
     .bind(accountId, Date.now(), scope.projectId, scope.domain, CONSTRAINT_READ_LIMIT)
-    .all<{ text: string }>();
-  return (rows.results || []).map((r) => sanitizePii(r.text).sanitized);
+    .all<{ id: string; text: string }>();
+  return (rows.results || []).map((r) => ({ id: r.id, text: sanitizePii(r.text).sanitized }));
+}
+
+export async function listActiveConstraints(
+  env: Env,
+  accountId: string,
+  scope: MemoryScope,
+): Promise<string[]> {
+  return (await listActiveRules(env, accountId, scope)).map((r) => r.text);
+}
+
+/** Retires a rule and closes its edge. Returns the rule so callers can clean up its other copies. */
+export async function forgetConstraint(
+  env: Env,
+  accountId: string,
+  factId: string,
+): Promise<{ text: string; projectId: string | null } | null> {
+  if (!env.DB) return null;
+  const row = await env.DB.prepare(
+    `SELECT text, project_id, domain FROM memory_facts
+     WHERE id = ? AND account_id = ? AND kind = 'constraint' AND status = 'active'`,
+  )
+    .bind(factId, accountId)
+    .first<{ text: string; project_id: string | null; domain: string | null }>();
+  if (!row) return null;
+
+  const now = Date.now();
+  await env.DB.batch([
+    env.DB.prepare(`UPDATE memory_facts SET status = 'deleted', updated_at = ? WHERE id = ? AND account_id = ?`)
+      .bind(now, factId, accountId),
+    env.DB.prepare(
+      `UPDATE memory_edges SET valid_to = ?
+       WHERE account_id = ? AND COALESCE(domain, '') = COALESCE(?, '') AND predicate = 'never_bring_up'
+         AND object_entity = ? AND valid_to IS NULL`,
+    ).bind(now, accountId, row.domain, row.text.replace(/^\[[^\]]*\] /, '').slice(0, 200)),
+  ]);
+  await appendMemoryHistory(env, {
+    accountId,
+    memoryFactId: factId,
+    event: 'DELETE',
+    text: row.text,
+    metadata: { reason: 'owner_removed_rule' },
+  });
+  return { text: row.text, projectId: row.project_id };
 }
 
 /**

@@ -18,12 +18,23 @@ import { billingId, json, sha256Hex } from './workerUtils';
 import { MAX_SMALL_BODY_BYTES, readBody } from './security';
 import { randomId } from '../services/projects/projectUtils';
 import {
-  listActiveConstraints,
+  forgetConstraint,
+  listActiveRules,
   normalizeMemoryDomain,
   rememberConstraint,
   rememberRuleEdge,
   resolveProjectScope,
+  type ScopedRule,
 } from './scopedMemory';
+import {
+  habitatIndexKey,
+  habitatTokenKey,
+  readHabitatIndex,
+  revokeHabitatToken,
+  type HabitatIndexEntry,
+  type HabitatRiskCeiling,
+  type HabitatTokenSummary,
+} from './habitatTokenStore';
 import { enqueueDreamEvent } from './dreamingQueue';
 import { getProjectContext, updateProjectContext } from './projectContextService';
 import { governanceFor, listActionRequests, type ActionRequestRow } from './mcpGovernance';
@@ -43,7 +54,6 @@ import {
 } from '../services/deployment/remediationTierRouter';
 
 const HABITAT_TOKEN_PREFIX = 'lm_hab_';
-const HABITAT_KV_PREFIX = 'hab_token:';
 const MAX_RULE_CHARS = 480;
 const MAX_PREFERENCES_CHARS = 3900;
 
@@ -60,8 +70,6 @@ const HABITAT_FORBIDDEN_TOOLS = new Set([
   'browse_observe',
   'browse_act',
 ]);
-
-export type HabitatRiskCeiling = 'read' | 'write';
 
 export interface HabitatTokenRecord {
   id: string;
@@ -81,10 +89,6 @@ function scrubEmDashes(input: string): string {
 
 function optionalString(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
-}
-
-function habitatTokenKey(tokenHash: string): string {
-  return `${HABITAT_KV_PREFIX}${tokenHash}`;
 }
 
 export interface CompileFeedbackInput {
@@ -137,6 +141,37 @@ async function addRuleToWritingPreferences(
     console.error('[habitat] writing_preferences update failed:', err);
     return false;
   }
+}
+
+async function removeRuleFromWritingPreferences(
+  env: Env,
+  accountId: string,
+  projectId: string,
+  ruleText: string,
+): Promise<void> {
+  const context = await getProjectContext(env, accountId, projectId);
+  const current = context?.sections.find((s) => s.key === 'writing_preferences')?.content;
+  if (!current) return;
+  const bullet = `- ${ruleText}`;
+  const lines = current.split('\n');
+  if (!lines.includes(bullet)) return;
+  await updateProjectContext(
+    env,
+    accountId,
+    projectId,
+    [{ section: 'writing_preferences', content: lines.filter((l) => l !== bullet).join('\n') }],
+    'mcp',
+  );
+}
+
+/** Takes a rule out of every place agents read it. */
+export async function deleteRule(env: Env, accountId: string, factId: string): Promise<boolean> {
+  const removed = await forgetConstraint(env, accountId, factId);
+  if (!removed) return false;
+  if (removed.projectId) {
+    await removeRuleFromWritingPreferences(env, accountId, removed.projectId, removed.text);
+  }
+  return true;
 }
 
 /**
@@ -260,9 +295,18 @@ export async function mintHabitatToken(
     expiresAt: now + ttlMinutes * 60 * 1000,
   };
 
-  await env.LUMINARA_KV.put(habitatTokenKey(tokenHash), JSON.stringify(record), {
-    expirationTtl: ttlMinutes * 60,
-  });
+  const expiring = { expirationTtl: ttlMinutes * 60 };
+  const indexEntry: HabitatIndexEntry = {
+    id: record.id,
+    label,
+    domain: scope.domain,
+    maxRisk,
+    expiresAt: record.expiresAt,
+    tokenHash,
+  };
+  // Index first: a token that exists must always be revocable.
+  await env.LUMINARA_KV.put(habitatIndexKey(accountId, record.id), JSON.stringify(indexEntry), expiring);
+  await env.LUMINARA_KV.put(habitatTokenKey(tokenHash), JSON.stringify(record), expiring);
   return { ok: true, token, record };
 }
 
@@ -390,7 +434,8 @@ export interface AgentHabitatStatusSnapshot {
   pendingRequests: ActionRequestRow[];
   recentRuns: RunRow[];
   budget: BudgetStatus;
-  compiledRules: string[];
+  compiledRules: ScopedRule[];
+  tokens: HabitatTokenSummary[];
 }
 
 export async function getAgentHabitatStatus(
@@ -399,11 +444,12 @@ export async function getAgentHabitatStatus(
   domain?: string | null,
 ): Promise<AgentHabitatStatusSnapshot> {
   const scope = await resolveProjectScope(env, accountId, { domain });
-  const [allRequests, recentRuns, budget, compiledRules] = await Promise.all([
+  const [allRequests, recentRuns, budget, compiledRules, indexEntries] = await Promise.all([
     listActionRequests(env, accountId, 25),
     listRunsForAccount(env, accountId, 12),
     getBudgetStatus(env, accountId),
-    listActiveConstraints(env, accountId, scope),
+    listActiveRules(env, accountId, scope),
+    readHabitatIndex(env, accountId),
   ]);
 
   const now = Date.now();
@@ -412,6 +458,15 @@ export async function getAgentHabitatStatus(
     recentRuns,
     budget,
     compiledRules,
+    tokens: indexEntries
+      .filter((t) => t.expiresAt > now)
+      .map(({ id, label, domain: tokenDomain, maxRisk, expiresAt }) => ({
+        id,
+        label,
+        domain: tokenDomain,
+        maxRisk,
+        expiresAt,
+      })),
   };
 }
 
@@ -581,6 +636,14 @@ export async function handleAgentHabitatRoute(
     const domain = new URL(request.url).searchParams.get('domain');
     const snapshot = await getAgentHabitatStatus(env, accountId, domain);
     return json({ ok: true, ...snapshot });
+  }
+
+  const deleteMatch = path.match(/^\/agent-habitat\/(rules|tokens)\/([^/]+)$/);
+  if (deleteMatch && request.method === 'DELETE') {
+    const id = decodeURIComponent(deleteMatch[2]);
+    const removed =
+      deleteMatch[1] === 'rules' ? await deleteRule(env, accountId, id) : await revokeHabitatToken(env, accountId, id);
+    return removed ? json({ ok: true }) : json({ ok: false, error: 'Not found' }, 404);
   }
 
   if (request.method !== 'POST') return json({ ok: false, error: 'Method not allowed' }, 405);

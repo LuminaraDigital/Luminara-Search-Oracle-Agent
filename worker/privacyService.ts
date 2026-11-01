@@ -350,6 +350,10 @@ async function softDeleteAccount(env: Env, accountId: string, deps?: DataPlaneDe
   // Fan-out: wipe remote vectors before dropping D1 fact rows (pattern brief invariant).
   const { deleteAccountMemoryVectors } = await import('./memoryRag');
   counts.memory_vectors = await deleteAccountMemoryVectors(env, accountId);
+  if (typeof env.LUMINARA_KV?.list === 'function') {
+    const { revokeAllHabitatTokens } = await import('./habitatTokenStore');
+    counts.habitat_tokens = await revokeAllHabitatTokens(env, accountId);
+  }
   await run('memory_facts', `DELETE FROM memory_facts WHERE account_id = ?`, accountId);
   await run('memory_chat_extractions', `DELETE FROM memory_chat_extractions WHERE account_id = ?`, accountId);
   await run('memory_history', `DELETE FROM memory_history WHERE account_id = ?`, accountId);

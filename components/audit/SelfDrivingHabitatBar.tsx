@@ -39,6 +39,18 @@ interface HabitatRunItem {
   started_at: number;
 }
 
+interface HabitatRule {
+  id: string;
+  text: string;
+}
+
+interface HabitatTokenItem {
+  id: string;
+  domain: string | null;
+  maxRisk: string;
+  expiresAt: number;
+}
+
 interface HabitatStatusPayload {
   pendingRequests: PendingActionRequestItem[];
   recentRuns: HabitatRunItem[];
@@ -46,7 +58,8 @@ interface HabitatStatusPayload {
     state?: string;
     spentCents?: number;
   };
-  compiledRules: string[];
+  compiledRules: HabitatRule[];
+  tokens: HabitatTokenItem[];
 }
 
 function habitatFetch(path: string, init?: RequestInit): Promise<Response> {
@@ -83,7 +96,7 @@ export const SelfDrivingHabitatBar: React.FC<SelfDrivingHabitatBarProps> = ({
   const [ruleTarget, setRuleTarget] = useState(primary?.category || 'sitewide_aeo');
   const [ruleError, setRuleError] = useState<string | null>(null);
   const [compilingRule, setCompilingRule] = useState(false);
-  const [compiledRules, setCompiledRules] = useState<string[]>([]);
+  const [compiledRules, setCompiledRules] = useState<HabitatRule[]>([]);
   const [compilerSuccess, setCompilerSuccess] = useState<string | null>(null);
 
   // Pillar 3: Agent Habitat Control Plane state
@@ -161,6 +174,7 @@ export const SelfDrivingHabitatBar: React.FC<SelfDrivingHabitatBarProps> = ({
         recentRuns: data.recentRuns || [],
         budget: data.budget,
         compiledRules: data.compiledRules || [],
+        tokens: data.tokens || [],
       });
     } catch {
       setHabitatError('Could not load agent activity. Try again in a moment.');
@@ -241,14 +255,14 @@ export const SelfDrivingHabitatBar: React.FC<SelfDrivingHabitatBarProps> = ({
         reason: trimmed,
         targetToolOrAsset: ruleTarget,
       });
-      const body = (await res.json().catch(() => null)) as { ok?: boolean; ruleText?: string; error?: string } | null;
+      const body = (await res.json().catch(() => null)) as { ok?: boolean; ruleText?: string; factId?: string; error?: string } | null;
       if (domainRef.current !== domain) return;
-      if (!body?.ok || !body.ruleText) {
+      if (!body?.ok || !body.ruleText || !body.factId) {
         setRuleError(res.status === 401 ? 'Sign in to save rules.' : body?.error || 'Could not save this rule.');
         return;
       }
-      const saved = body.ruleText;
-      setCompiledRules((rules) => [saved, ...rules.filter((r) => r !== saved)]);
+      const saved = { id: body.factId, text: body.ruleText };
+      setCompiledRules((rules) => [saved, ...rules.filter((r) => r.id !== saved.id)]);
       setRuleInput('');
       setCompilerSuccess('Saved. Oracle chats and connected agents now follow this rule.');
     } catch {
@@ -285,10 +299,41 @@ export const SelfDrivingHabitatBar: React.FC<SelfDrivingHabitatBarProps> = ({
         maxRisk: body.record.maxRisk,
         expiresAt: body.record.expiresAt,
       });
+      await loadHabitatStatus();
     } catch {
       setHabitatError('Could not create the token. Check your connection.');
     } finally {
       setMintingToken(false);
+    }
+  };
+
+  const handleDeleteRule = async (id: string) => {
+    setRuleError(null);
+    setCompilerSuccess(null);
+    try {
+      const res = await habitatFetch(`/agent-habitat/rules/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      if (!res.ok) {
+        setRuleError('Could not remove this rule. It is still active.');
+        return;
+      }
+      setCompiledRules((rules) => rules.filter((r) => r.id !== id));
+    } catch {
+      setRuleError('Could not reach the server. This rule is still active.');
+    }
+  };
+
+  const handleRevokeToken = async (id: string) => {
+    setHabitatError(null);
+    try {
+      const res = await habitatFetch(`/agent-habitat/tokens/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      if (!res.ok) {
+        setHabitatError('Could not revoke this token. It may still work.');
+        return;
+      }
+      setMintedToken(null);
+      await loadHabitatStatus();
+    } catch {
+      setHabitatError('Could not reach the server. This token may still work.');
     }
   };
 
@@ -490,12 +535,20 @@ export const SelfDrivingHabitatBar: React.FC<SelfDrivingHabitatBarProps> = ({
             </p>
           ) : (
             <ul className="space-y-1.5 max-h-36 overflow-auto">
-              {compiledRules.map((rule, idx) => (
+              {compiledRules.map((rule) => (
                 <li
-                  key={`${idx}-${rule.slice(0, 24)}`}
-                  className="rounded-lg border border-white/10 bg-black/40 px-3 py-1.5 text-[11px] text-gray-300 font-mono"
+                  key={rule.id}
+                  className="flex items-start justify-between gap-2 rounded-lg border border-white/10 bg-black/40 px-3 py-1.5 text-[11px] text-gray-300 font-mono"
                 >
-                  {rule}
+                  <span className="min-w-0 break-words">{rule.text}</span>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteRule(rule.id)}
+                    aria-label={`Remove rule: ${rule.text}`}
+                    className="shrink-0 text-[10px] uppercase tracking-wider text-gray-500 hover:text-amber-300"
+                  >
+                    Remove
+                  </button>
                 </li>
               ))}
             </ul>
@@ -551,6 +604,28 @@ export const SelfDrivingHabitatBar: React.FC<SelfDrivingHabitatBarProps> = ({
                 {copiedKey === 'hab_token' ? 'Copied' : 'Copy Token'}
               </button>
             </div>
+          )}
+
+          {habitatStatus && habitatStatus.tokens.length > 0 && (
+            <ul className="space-y-1.5" aria-label="Active agent tokens">
+              {habitatStatus.tokens.map((token) => (
+                <li
+                  key={token.id}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 bg-black/40 px-3 py-1.5 font-mono text-[11px] text-gray-300"
+                >
+                  <span className="min-w-0 break-words">
+                    {token.domain} ({token.maxRisk}), ends {new Date(token.expiresAt).toLocaleTimeString()}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleRevokeToken(token.id)}
+                    className="shrink-0 rounded border border-amber-500/40 px-2 py-0.5 text-[10px] uppercase tracking-wider text-amber-300"
+                  >
+                    Revoke
+                  </button>
+                </li>
+              ))}
+            </ul>
           )}
 
           {habitatLoading && (

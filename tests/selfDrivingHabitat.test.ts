@@ -11,6 +11,7 @@ import { buildVerifiedRemediationPrBundle } from '../services/deployment/remedia
 import {
   buildCoaseanHandoffPacket,
   compileFeedbackIntoSkillRule,
+  deleteRule,
   enforceHabitatScope,
   getAgentHabitatStatus,
   handleAgentHabitatRoute,
@@ -18,8 +19,10 @@ import {
   mintHabitatToken,
   SELF_DRIVING_MCP_TOOLS,
 } from '../worker/selfDrivingHabitat';
+import { revokeAllHabitatTokens, revokeHabitatToken } from '../worker/habitatTokenStore';
 import { listActiveConstraints, ownerRulesPromptBlock } from '../worker/scopedMemory';
 import { searchMemoryVectors } from '../worker/memoryRag';
+import { eraseAccountRows } from '../worker/privacyService';
 import { createProject } from '../worker/projectService';
 import { getProjectContext, updateProjectContext } from '../worker/projectContextService';
 import { saveAgentReport } from '../worker/agentReportService';
@@ -38,6 +41,9 @@ function makeEnv(overrides: Partial<Env> = {}): Env {
   kvMap.set('sub:acc_starter', JSON.stringify({ plan: 'starter', expiresAt: future }));
   const kv = {
     keys: kvMap,
+    list: async ({ prefix }: { prefix: string }) => ({
+      keys: [...kvMap.keys()].filter((name) => name.startsWith(prefix)).map((name) => ({ name })),
+    }),
     get: async (key: string, type?: string) => {
       const val = kvMap.get(key) ?? null;
       if (!val) return null;
@@ -196,7 +202,7 @@ describe('Review rules', () => {
     expect(context?.sections.find((s) => s.key === 'writing_preferences')?.content).toContain(compiled.ruleText);
 
     const status = await getAgentHabitatStatus(env, 'acc_growth', 'acmesolar.com.au');
-    expect(status.compiledRules).toContain(compiled.ruleText);
+    expect(status.compiledRules.map((r) => r.text)).toContain(compiled.ruleText);
   });
 
   it('keeps one rule per text and an edge for every distinct rule', async () => {
@@ -331,6 +337,35 @@ describe('Review rules', () => {
     expect(await listActiveConstraints(env, 'acc_growth', { projectId: null, domain: null })).toEqual([]);
   });
 
+  it('takes a deleted rule out of every place agents read it', async () => {
+    const env = makeEnv();
+    const acme = await project(env, 'acme.io');
+    const compile = (reason: string) =>
+      compileFeedbackIntoSkillRule(env, { accountId: 'acc_growth', userId: 'u', domain: 'acme.io', reason });
+    const doomed = await compile('Never mention the old brand.');
+    const kept = await compile('Always quote GST.');
+    if (!doomed.ok || !kept.ok) throw new Error('compile failed');
+
+    expect(await deleteRule(env, 'acc_other', doomed.factId)).toBe(false);
+    expect(await deleteRule(env, 'acc_growth', doomed.factId)).toBe(true);
+    expect(await deleteRule(env, 'acc_growth', doomed.factId)).toBe(false);
+
+    const block = await ownerRulesPromptBlock(env, 'acc_growth', acme.id);
+    expect(block).not.toContain('old brand');
+    expect(block).toContain('Always quote GST.');
+    const context = await getProjectContext(env, 'acc_growth', acme.id);
+    const prefs = context?.sections.find((s) => s.key === 'writing_preferences')?.content ?? '';
+    expect(prefs).not.toContain('old brand');
+    expect(prefs).toContain('Always quote GST.');
+    const edges = await env.DB!.prepare(
+      `SELECT object_entity FROM memory_edges WHERE valid_to IS NULL`,
+    ).all<{ object_entity: string }>();
+    expect(edges.results.map((e) => e.object_entity)).toEqual(['Always quote GST.']);
+
+    const again = await compile('Never mention the old brand.');
+    expect(again.ok && again.factId).not.toBe(doomed.factId);
+  });
+
   it('hides expired rules', async () => {
     const env = makeEnv();
     await env.DB!.prepare(
@@ -399,6 +434,36 @@ describe('Habitat token minting', () => {
 
     const apiKey: McpCredential = { kind: 'api_key', id: 'k', scopes: null };
     expect(await mintHabitatToken(env, growthUser, { projectId: acme.id }, apiKey)).toMatchObject({ ok: true });
+  });
+
+  it('revokes a token for its own account only and never lists a secret', async () => {
+    const env = makeEnv();
+    const acme = await project(env, 'acme.io');
+    const first = await mintFor(env, acme.id);
+    const second = await mintFor(env, acme.id);
+
+    const status = await getAgentHabitatStatus(env, 'acc_growth', 'acme.io');
+    expect(status.tokens.map((t) => t.id).sort()).toEqual([first.record.id, second.record.id].sort());
+    expect(JSON.stringify(status.tokens)).not.toMatch(/tokenHash|lm_hab_/);
+
+    expect(await revokeHabitatToken(env, 'acc_other', first.record.id)).toBe(false);
+    expect(await identifyHabitatToken(env, first.token)).not.toBeNull();
+
+    expect(await revokeHabitatToken(env, 'acc_growth', first.record.id)).toBe(true);
+    expect(await identifyHabitatToken(env, first.token)).toBeNull();
+    expect(await identifyHabitatToken(env, second.token)).not.toBeNull();
+
+    expect(await revokeAllHabitatTokens(env, 'acc_growth')).toBe(1);
+    expect(await identifyHabitatToken(env, second.token)).toBeNull();
+  });
+
+  it('ends live tokens when the account is erased', async () => {
+    const env = makeEnv();
+    const acme = await project(env, 'acme.io');
+    const minted = await mintFor(env, acme.id, 'write');
+    const counts = await eraseAccountRows(env, 'acc_growth');
+    expect(counts.habitat_tokens).toBe(1);
+    expect(await identifyHabitatToken(env, minted.token)).toBeNull();
   });
 
   it('fails closed without a token store and drops expired or forged tokens', async () => {
@@ -612,6 +677,17 @@ describe('Handoff packet and routes', () => {
     expect((await post('/agent-habitat/handoff-packet', { domain: 'acme.io', findingTitle: {} }))?.status).toBe(200);
     expect((await post('/agent-habitat/feedback-rule', { reason: 7 }))?.status).toBe(400);
     expect((await post('/agent-habitat/unknown', {}))?.status).toBe(404);
+
+    const remove = (path: string) =>
+      handleAgentHabitatRoute(
+        new Request(`https://luminarasuite.com/api${path}`, { method: 'DELETE' }),
+        env,
+        growthUser,
+        path,
+      );
+    expect((await remove('/agent-habitat/rules/nope'))?.status).toBe(404);
+    expect((await remove('/agent-habitat/tokens/nope'))?.status).toBe(404);
+    expect((await remove('/agent-habitat/status'))?.status).toBe(405);
   });
 
   it('requires a signed-in caller', async () => {

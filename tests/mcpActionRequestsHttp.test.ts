@@ -41,6 +41,9 @@ function mockKv(store = new Map<string, string>()) {
     delete: async (key: string) => {
       store.delete(key);
     },
+    list: async ({ prefix }: { prefix: string }) => ({
+      keys: [...store.keys()].filter((name) => name.startsWith(prefix)).map((name) => ({ name })),
+    }),
   };
 }
 
@@ -186,6 +189,26 @@ describe('agent workspace through the worker', () => {
       ctx,
     );
     expect(onAppRoute.status).toBe(401);
+
+    const statusRes = await worker.fetch(req('/api/agent-habitat/status', { headers: owner() }), env, ctx);
+    const { tokens } = (await statusRes.json()) as { tokens: Array<{ id: string }> };
+    expect(tokens).toHaveLength(1);
+    const revoked = await worker.fetch(
+      req(`/api/agent-habitat/tokens/${tokens[0].id}`, { method: 'DELETE', headers: owner() }),
+      env,
+      ctx,
+    );
+    expect(revoked.status).toBe(200);
+    const afterRevoke = await worker.fetch(
+      req('/api/mcp', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', accept: 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' }),
+      }),
+      env,
+      ctx,
+    );
+    expect(afterRevoke.status).toBe(401);
   });
 });
 
