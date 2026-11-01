@@ -11,6 +11,7 @@ import { recheckOneFix } from './recheckFix';
 import { handleFreeAiAnswer } from './freeAiAnswer';
 import { sameSiteHost } from '../services/audit/sameSiteHost';
 import { safePublicHostname } from './security';
+import { mintLumen, spendLumen } from './lumenLedger';
 
 export const AUDIT_RUN_TTL_SEC = 10 * 60;
 export const AUDIT_RUN_CALL_CAP = 30;
@@ -28,6 +29,7 @@ interface AuditRunRecord {
   limit: number;
   sawSuccess: boolean;
   refunded: boolean;
+  lumenSpent?: boolean;
 }
 
 export type AuditRunClaim =
@@ -121,7 +123,23 @@ export async function mintAuditRun(
     sawSuccess: false,
     refunded: false,
   };
+  const spent = await spendLumen(env, {
+    accountId: record.userId,
+    source: 'audit',
+    idempotencyKey: `audit:${token}`,
+    refId: token,
+  });
+  record.lumenSpent = spent.applied;
   if (!(await writeRun(env, token, record))) {
+    if (spent.applied) {
+      await mintLumen(env, {
+        accountId: record.userId,
+        source: 'audit',
+        amount: 1,
+        idempotencyKey: `audit-return:${token}`,
+        refId: token,
+      });
+    }
     // shortcut: no stored token. The check is given back when the refund write lands.
     if (quota.meterKey) await refundMeteredQuota(env, quota);
     return json({ ok: true, domain }, 200);
@@ -158,6 +176,19 @@ export async function refundAuditRun(
   }
   if (record.userId !== billingId(user)) {
     return json({ ok: false, error: 'This audit run belongs to another account.', code: 'AUDIT_RUN_REJECTED' }, 401);
+  }
+  if (record.lumenSpent) {
+    const back = await mintLumen(env, {
+      accountId: record.userId,
+      source: 'audit',
+      amount: 1,
+      idempotencyKey: `audit-return:${token}`,
+      refId: token,
+    });
+    if (back.applied || back.reason === 'duplicate') {
+      record.lumenSpent = false;
+      await writeRun(env, token, record);
+    }
   }
   // A 200 page can still leave both scores null. That run is unmeasured and gets its check back.
   if (record.refunded || !record.meterKey || (record.sawSuccess && !unmeasured)) {

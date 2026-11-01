@@ -17,6 +17,7 @@ import {
 import { planRank } from './planRank';
 import { resolveAccountId, writeSubscriptionRecord } from './userStore';
 import { normalizePlanId } from '../services/plans/planEntitlements';
+import { clawbackLumen, lumenGrantFor, mintLumen } from './lumenLedger';
 
 /**
  * Card checkout opens only when env.STRIPE_CHECKOUT_LIVE === 'true'.
@@ -564,6 +565,15 @@ async function creditCheckoutSession(env: Env, session: any, deps: StripeDeps): 
     throw err;
   }
 
+  // shortcut: a duplicate Stripe delivery returns before this, so a crash after the claim and before the mint is not retried. Replay mintLumen with stripe:<sessionId> when that shows up.
+  await mintLumen(env, {
+    accountId,
+    source: 'stripe',
+    amount: lumenGrantFor(planId),
+    idempotencyKey: `stripe:${sessionId}`,
+    refId: sessionId,
+  });
+
   console.log(`[Stripe Webhook] Successfully credited plan ${planId} to user ${userId} (session ${sessionId})`);
   return json({ received: true });
 }
@@ -661,6 +671,14 @@ async function reverseStripeCharge(env: Env, paymentIntentRaw: unknown, reason: 
       }
       // Restoring the plan a reversed upgrade replaced is a deliberate write of a lower plan.
       await writeSubscriptionRecord(env, userId, next, { allowLowerPlan: true });
+    }
+    if (accountId) {
+      await clawbackLumen(env, {
+        accountId,
+        mintKey: `stripe:${sessionId}`,
+        voidKey: `void:stripe:${sessionId}`,
+        now,
+      });
     }
   } catch (err) {
     await releaseStripeReversal(env, sessionId);

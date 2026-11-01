@@ -7,6 +7,7 @@ import type { Env } from './index';
 import { claimTonTransaction, isTonLedgerReady, releaseTonTransaction } from './paymentLedger';
 import { PlanDowngradeRefusedError, downgradeRefusalText, wouldDowngrade } from './planRank';
 import { PLANS, alertPaymentAdmins } from './telegramBot';
+import { lumenGrantFor, mintLumen } from './lumenLedger';
 import { appliedOrderExpiry, hasAppliedOrder, resolveAccountId, writeSubscriptionRecord } from './userStore';
 import { recordAuditLogBestEffort } from './auditLog';
 import {
@@ -1059,6 +1060,13 @@ export async function verifyTonPayment(
   }
 
   await markTonPendingOrderCredited(env, orderId);
+  await mintLumen(env, {
+    accountId,
+    source: 'ton',
+    amount: lumenGrantFor(order.planId),
+    idempotencyKey: `ton:${match.txHash}`,
+    refId: orderId,
+  });
 
   try {
     order.status = 'confirmed';

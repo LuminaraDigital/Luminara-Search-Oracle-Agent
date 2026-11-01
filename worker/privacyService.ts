@@ -9,6 +9,7 @@ import { trackAndScheduleErase } from './accountMirror';
 import { billingId, json } from './workerUtils';
 import { auditOrgIdFor, recordAuditLogBestEffort } from './auditLog';
 import { deleteHostedAccount } from './accountDeletion';
+import { readLumenAccount } from './lumenLedger';
 
 const EXPORT_TTL_MS = 48 * 60 * 60 * 1000;
 const DELETE_CANCEL_MS = 24 * 60 * 60 * 1000;
@@ -243,6 +244,7 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
     if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
     return [] as Record<string, unknown>[];
   });
+  const lumen = await readLumenAccount(env, accountId);
   return {
     exportedAt: new Date().toISOString(),
     accountId,
@@ -280,6 +282,8 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
       'recovery_runs',
       'outcome_stage_events',
       'external_effects',
+      'lumen_entries',
+      'lumen_balances',
     ],
     users,
     workspace: workspace.map((w) => ({
@@ -325,6 +329,7 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
     recoveryRuns,
     outcomeStageEvents,
     externalEffects,
+    lumen,
     note: 'Financial ledger rows may be retained in minimized form for legal obligations.',
   };
 }
@@ -380,6 +385,12 @@ async function softDeleteAccount(env: Env, accountId: string, deps?: DataPlaneDe
     accountId,
   );
   await run('referral_rewards', `DELETE FROM referral_rewards WHERE account_id = ?`, accountId);
+  await run('lumen_entries', `DELETE FROM lumen_entries WHERE account_id = ?`, accountId).catch((err) => {
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+  });
+  await run('lumen_balances', `DELETE FROM lumen_balances WHERE account_id = ?`, accountId).catch((err) => {
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+  });
   // Trust Network (0020). Deleting receipts makes their public /verify links 404.
   await run('trust_receipts', `DELETE FROM trust_receipts WHERE account_id = ?`, accountId);
   await run('domain_verifications', `DELETE FROM domain_verifications WHERE account_id = ?`, accountId);
