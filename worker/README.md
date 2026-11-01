@@ -79,7 +79,8 @@ Sentry (`@sentry/cloudflare` on the Worker, `@sentry/browser` in the client) sta
 | `POST /rsi/memory/documents`, `GET /rsi/memory/search` | worker/rsiMemorySearch.ts | session | Indexes an audit or chat for the account and searches the latest 300 by token overlap. A brand-fact nudge is returned and is not written. The client saves an accepted fact with `saveBrandFact`. Does not replace `worker/memoryRag.ts`. Needs D1 `0032_rsi_memory_search.sql` |
 | `POST /pagespeed` | worker/pagespeedRoute.ts | session | Hosted PageSpeed |
 | `POST /deploy/readback` | worker/deployReadback.ts | session | Deploy read-back for the CMS deploy screen. Body `{ url, schemaJsonLd }`. Fetches the page through `fetchPublicUrl` (public http(s) only; private, loopback and link-local addresses refused, DNS re-checked on every redirect hop) on the default web ports only, first hop and redirects alike. Answers `{ ok: true, found }`: whether a JSON-LD script element equal to the schema is in the page source. The page must be served with an HTML content type. A copy inside a comment, textarea, template, noscript, style, inline SVG or a script of another type does not count, and the `type` attribute must be `application/ld+json` (parameters after `;` allowed). The whole schema is compared, so one merged into a larger `@graph` reads as not found. Never returns the page. Every page that could not be read gets the same 422 and the same sentence, never `found: false`, so the route cannot probe ports or statuses. 10/min per account and per IP |
-| `* /mcp`, `/mcp/*` | worker/mcpServer.ts | session/apikey/oauth | MCP tool calls. A JSON-RPC batch holds at most 20 messages and one `tools/call`: every rate limit counts HTTP requests, so a batch with two or more calls is 400 `-32600` "Send one tools/call per request" (log `mcp_batch_refused`). Developer note in `public/docs/mcp.html` |
+| `GET /agent-habitat/status`, `POST /agent-habitat/feedback-rule`, `POST /agent-habitat/tokens`, `POST /agent-habitat/handoff-packet` | worker/selfDrivingHabitat.ts | session | Agent workspace: pending approvals, runs, budget and rules; review rules; `lm_hab_*` tokens (Growth+); handoff packets saved to `prepared_assets`. A deny on `/mcp-action-requests` with a `reason` also saves a rule |
+| `* /mcp`, `/mcp/*` | worker/mcpServer.ts | session/apikey/oauth/habitat | MCP tool calls. A JSON-RPC batch holds at most 20 messages and one `tools/call`: every rate limit counts HTTP requests, so a batch with two or more calls is 400 `-32600` "Send one tools/call per request" (log `mcp_batch_refused`). Developer note in `public/docs/mcp.html` |
 | `GET,POST /projects`, `/projects/:id` | worker/projectService.ts + projectContextService.ts | session | Project memory CRUD |
 | `GET,POST /reports`, `/reports/:id` | worker/agentReportService.ts | session | Agent reports |
 | `GET,POST /api-keys`, `DELETE /api-keys/:id` | worker/apiKeyService.ts | session + plan gate on POST | lm_live_* API keys. POST works on every plan today (403 `MCP_ACCESS_REQUIRED` only if a plan lacks mcpAccess). MCP calls are capped per day below Growth (`MCP_DAILY_LIMIT`); GET returns `mcpAccess` for the plan |
@@ -95,7 +96,7 @@ cookie is not read, so a Bearer that fails verification never falls back to the 
 a 401, unless valid Telegram initData on the same request identifies the Telegram user (the
 Mini App relies on that, and its client does not retry a 401 when initData is present). The
 web client drops a cached ID token under a minute from expiry, so the cookie answers instead;
-`apikey` = `lm_live_*` MCP key; `oauth` = `mcp_*` OAuth token;
+`apikey` = `lm_live_*` MCP key; `oauth` = `mcp_*` OAuth token; `habitat` = `lm_hab_*` scoped token;
 `admin` = `ADMIN_SECRET` header; `byok` = bring-your-own-key header.
 
 ## Agent Passport invariants (K0)
@@ -106,8 +107,18 @@ web client drops a cached ID token under a minute from expiry, so the cookie ans
   hash chain forbids rewrites); `GET /enterprise/audit-logs` merges them via
   `getAuditLogs(..., { legacyOrgIds })` for personal orgs.
 - **Credential on every MCP call.** `resolveMcpUser` returns `{ user, credential }`
-  (`McpCredential` in `userTypes.ts`): `api_key` (id = `api_keys.id`), `oauth`, or
-  `session`. `scopes: null` means unrestricted.
+  (`McpCredential` in `userTypes.ts`): `api_key` (id = `api_keys.id`), `oauth`,
+  `habitat` (id = the token record), or `session`. `scopes: null` means unrestricted.
+- **Habitat tokens stay inside one project.** An `lm_hab_*` token is locked to a project
+  the account owns, stores only its hash in KV, lasts 5 to 1440 minutes, and has no
+  revoke: expiry is the only way to end one early. `enforceHabitatScope` is the single gate and
+  it fails closed: a new tool with no `projectId` or `domain` argument is refused until
+  it is listed as safe. OAuth connectors and Habitat tokens cannot mint: a connector is
+  `mcp:free` and its token would outlive its revocation.
+- **Review rules are scoped.** A rule with a project or domain reaches only that project's
+  Oracle chats and `get_project_context`; a rule with neither reaches all of them. Rules
+  reach the model fenced as data, so they can narrow a reply and never grant a permission.
+  Habitat tokens and OAuth connectors cannot write rules. Rules stay out of memory search.
 - **Scope gate.** Hosted paid MCP tools require `mcp:research` on the credential
   (`SCOPE_INSUFFICIENT` otherwise). BYOK calls pass with `mcp:free`. OAuth tokens
   minted before enforcement lack `scopeEnforced` and stay unrestricted until their

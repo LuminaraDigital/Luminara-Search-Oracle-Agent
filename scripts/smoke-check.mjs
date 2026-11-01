@@ -37,6 +37,7 @@ const REQUIRED_D1_MIGRATIONS = [
   'migrations/0026_payment_support.sql',
   'migrations/0033_community_feed.sql',
   'migrations/0043_conversion_enquiry_spine.sql',
+  'migrations/0044_scoped_review_rules.sql',
 ];
 
 const REQUIRED_D1_TABLES = [
@@ -74,6 +75,7 @@ const REQUIRED_D1_TABLES = [
   'appraisal_appointments',
   'recovery_runs',
   'outcome_stage_events',
+  'memory_edges',
 ];
 
 // 1. Verify build bundle integrity
@@ -208,6 +210,29 @@ if (targetUrl && !isDryRun) {
     console.warn('::warning::[SmokeCheck] Hosted audit providers are not set, so a new account with no keys cannot complete a full audit.');
   }
   console.log('[SmokeCheck] [PASS] Remote health check returned:', JSON.stringify(data));
+
+  // Agent Habitat must be mounted and auth-gated (unsigned GET -> 401).
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    const habitatRes = await fetch(`${targetUrl}/api/agent-habitat/status?domain=smoke.example.com`, {
+      headers: { 'User-Agent': 'Luminara-Smoke-Check/1.0' },
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    if (habitatRes.status !== 401) {
+      console.error(
+        `[SmokeCheck] FAILED: GET /api/agent-habitat/status expected 401 when unsigned, got HTTP ${habitatRes.status}`,
+      );
+      process.exit(1);
+    }
+    console.log('[SmokeCheck] [PASS] GET /api/agent-habitat/status returns 401 when unsigned.');
+  } catch (err) {
+    console.error(
+      `[SmokeCheck] FAILED: /api/agent-habitat/status probe unreachable: ${err instanceof Error ? err.message : err}`,
+    );
+    process.exit(1);
+  }
 
   // Findings board must be mounted and auth-gated (unsigned GET → 401).
   try {

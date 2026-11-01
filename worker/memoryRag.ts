@@ -265,7 +265,7 @@ export async function searchMemoryVectors(
   // Fallback: recent D1 facts keyword overlap.
   if (!env.DB) return [];
   const rows = await env.DB.prepare(
-    `SELECT id, text FROM memory_facts WHERE account_id = ? ORDER BY created_at DESC LIMIT 50`,
+    `SELECT id, text FROM memory_facts WHERE account_id = ? AND kind <> 'constraint' ORDER BY created_at DESC LIMIT 50`,
   )
     .bind(accountId)
     .all<{ id: string; text: string }>();

@@ -279,3 +279,195 @@ export function buildSquarespaceInjectionPack(args: {
     desktopAssistedGoalPrompt: `Navigate to Squarespace Website Tools -> Code Injection for ${args.domain}, locate the Header code injection textarea, stage the Luminara JSON-LD script block, and pause for human Save confirmation.`,
   };
 }
+
+export interface PreFlightValidationCheck {
+  id: 'llms_txt_structure' | 'jsonld_schema_valid' | 'zero_em_dash_guard';
+  label: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface VerifiedPrHandoffFile {
+  path: string;
+  content: string;
+  mimeType: string;
+}
+
+export interface VerifiedPrHandoffBundle {
+  domain: string;
+  branchName: string;
+  commitMessage: string;
+  prTitle: string;
+  prBodyMarkdown: string;
+  validationReceipt: {
+    allPassed: boolean;
+    checkedAt: number;
+    checks: PreFlightValidationCheck[];
+  };
+  files: VerifiedPrHandoffFile[];
+  ghCliScript: string;
+  cursorDeepLinkPrompt: string;
+}
+
+/**
+ * Replit Cloud-Agent pattern (Pillar 2): Pre-validates generated AEO/GEO artifacts
+ * deterministically before packaging a ready-to-merge GitHub PR / staging preview bundle
+ * so non-technical marketers can hand developers a pre-tested PR for 1-click sign-off.
+ */
+export function buildVerifiedRemediationPrBundle(input: {
+  domain: string;
+  brandName?: string | null;
+  findingTitle?: string | null;
+  findingId?: string | null;
+  llmsTxtContent: string;
+  jsonLdContent: string;
+  comparisonMarkdown?: string | null;
+}): VerifiedPrHandoffBundle {
+  const cleanDomain = (input.domain || 'example.com')
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//i, '')
+    .replace(/^www\./i, '')
+    .split('/')[0] || 'example.com';
+  const slug = cleanDomain.replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'site';
+  const title = (input.findingTitle || `Deploy llms.txt and Organization JSON-LD for ${cleanDomain}`).trim();
+
+  const llmsTrimmed = (input.llmsTxtContent || '').trim();
+  const hasH1 = /^#\s+\S+/m.test(llmsTrimmed);
+  const hasHttpsLink = new RegExp(`https://${cleanDomain.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i').test(llmsTrimmed);
+  const llmsPassed = hasH1 && hasHttpsLink;
+
+  let jsonLdPassed = false;
+  let jsonLdDetail = 'Valid JSON-LD with @context https://schema.org, @type, and canonical url.';
+  try {
+    const parsed = JSON.parse(input.jsonLdContent || '{}') as Record<string, unknown>;
+    const ctx = typeof parsed['@context'] === 'string' ? parsed['@context'] : '';
+    const type = typeof parsed['@type'] === 'string' ? parsed['@type'] : '';
+    const url = typeof parsed.url === 'string' ? parsed.url : '';
+    jsonLdPassed = /^https?:\/\/schema\.org\/?$/i.test(ctx) && Boolean(type) && url.startsWith('https://');
+    if (!jsonLdPassed) {
+      jsonLdDetail = 'JSON-LD must include @context "https://schema.org", @type, and an https:// url.';
+    }
+  } catch {
+    jsonLdPassed = false;
+    jsonLdDetail = 'JSON-LD failed JSON.parse syntax validation.';
+  }
+
+  const combinedText = `${input.llmsTxtContent || ''}\n${input.jsonLdContent || ''}\n${input.comparisonMarkdown || ''}`;
+  const noEmDashes = !combinedText.includes('\u2014');
+
+  const checks: PreFlightValidationCheck[] = [
+    {
+      id: 'llms_txt_structure',
+      label: 'llms.txt structure (# H1 + canonical HTTPS link)',
+      passed: llmsPassed,
+      detail: llmsPassed
+        ? `Verified H1 entity header and https://${cleanDomain} reference.`
+        : 'llms.txt is missing a top-level # H1 header or canonical https:// link.',
+    },
+    {
+      id: 'jsonld_schema_valid',
+      label: 'Schema.org JSON-LD syntax & graph root',
+      passed: jsonLdPassed,
+      detail: jsonLdDetail,
+    },
+    {
+      id: 'zero_em_dash_guard',
+      label: 'Copy hygiene (zero U+2014 em dashes)',
+      passed: noEmDashes,
+      detail: noEmDashes
+        ? 'Zero em dashes detected across all staged files.'
+        : 'Detected forbidden U+2014 em dash in staged files.',
+    },
+  ];
+
+  const allPassed = checks.every((c) => c.passed);
+  const branchName = `fix/luminara-aeo-${slug}`;
+  const commitMessage = `feat(aeo): deploy llms.txt and schema for ${cleanDomain}`;
+  const prTitle = `${allPassed ? '[Luminara Pre-Flight Passed]' : '[Luminara Draft]'} ${title}`;
+
+  const files: VerifiedPrHandoffFile[] = [
+    {
+      path: 'public/llms.txt',
+      content: input.llmsTxtContent,
+      mimeType: 'text/plain;charset=utf-8',
+    },
+    {
+      path: 'public/schema-organization.jsonld',
+      content: input.jsonLdContent,
+      mimeType: 'application/ld+json;charset=utf-8',
+    },
+  ];
+  if (input.comparisonMarkdown && input.comparisonMarkdown.trim()) {
+    files.push({
+      path: `docs/aeo-compare-${slug}.md`,
+      content: input.comparisonMarkdown,
+      mimeType: 'text/markdown;charset=utf-8',
+    });
+  }
+
+  const checkLines = checks
+    .map((c) => `- [${c.passed ? 'x' : ' '}] **${c.label}**: ${c.detail}`)
+    .join('\n');
+
+  const prBodyMarkdown = [
+    `## Luminara AEO/GEO Handoff (${cleanDomain})`,
+    '',
+    `**Finding:** ${title}${input.findingId ? ` (\`${input.findingId}\`)` : ''}`,
+    `**Pre-flight checks:** ${allPassed ? 'PASSED (3/3 deterministic checks)' : 'NEEDS ATTENTION'}`,
+    '',
+    '### Automated Pre-Flight Receipt',
+    checkLines,
+    '',
+    '### Post-Merge Verification',
+    `- Confirm live response at \`https://${cleanDomain}/llms.txt\``,
+    '- Run Luminara `Re-check & Prove` or `/api/deploy/readback` to mark the Weekly Decision Card `measured`.',
+  ].join('\n');
+
+  const shSingleQuote = (val: string): string =>
+    `'${val.replace(/[\r\n]+/g, ' ').replace(/'/g, "'\\''")}'`;
+  const safeHeredocBody = prBodyMarkdown.replace(/^EOF$/gm, 'EOF_');
+  const writeFileLines = files.flatMap((f) => [
+    `mkdir -p "$(dirname ${f.path})"`,
+    `cat > ${f.path} <<'LUMINARA_FILE'`,
+    f.content.replace(/^LUMINARA_FILE$/gm, 'LUMINARA_FILE_'),
+    'LUMINARA_FILE',
+  ]);
+
+  const ghCliScript = [
+    'set -euo pipefail',
+    `git checkout -B ${branchName}`,
+    '# Change public/ below if your web root is somewhere else',
+    ...writeFileLines,
+    `git add ${files.map((f) => f.path).join(' ')}`,
+    `git commit -m ${shSingleQuote(commitMessage)}`,
+    `git push -u origin ${branchName}`,
+    `gh pr create --title ${shSingleQuote(prTitle)} --body-file - <<'EOF'`,
+    safeHeredocBody,
+    'EOF',
+  ].join('\n');
+
+  const cursorDeepLinkPrompt = [
+    `Apply the Luminara AEO fix for ${cleanDomain}:`,
+    `1. Write public/llms.txt and inject the validated Organization JSON-LD into the root layout head.`,
+    `2. Verify zero U+2014 em dashes and valid JSON-LD syntax (${allPassed ? 'pre-validated 3/3 pass' : 'check receipt'}).`,
+    `3. Open branch ${branchName} and run read-back verification against https://${cleanDomain}/llms.txt.`,
+  ].join('\n');
+
+  return {
+    domain: cleanDomain,
+    branchName,
+    commitMessage,
+    prTitle,
+    prBodyMarkdown,
+    validationReceipt: {
+      allPassed,
+      checkedAt: Date.now(),
+      checks,
+    },
+    files,
+    ghCliScript,
+    cursorDeepLinkPrompt,
+  };
+}
+

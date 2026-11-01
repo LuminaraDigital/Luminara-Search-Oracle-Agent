@@ -345,7 +345,8 @@ describe('Wave 3: Oracle SSE & 3-Plane Harness Integration', () => {
     expect(err2.ok).toBe(false);
     expect(err2.code).toBe('TURN_ACTIVE');
     expect(err2.activeTurnId).toBe('turn_1');
-    expect(llmCallCount).toBe(1);
+    // Turn 1 reaches the provider in the background; the refused turn never does.
+    await vi.waitFor(() => expect(llmCallCount).toBe(1));
 
     // Release Turn 1 so the provider throws; finally block must still settle turn_1
     releaseFirstLlm();
