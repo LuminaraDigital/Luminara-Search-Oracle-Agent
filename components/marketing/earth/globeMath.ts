@@ -152,6 +152,25 @@ export function storyPose(w: number, h: number, wide = w >= 1024): GlobePose {
 }
 
 /**
+ * Longitude change that keeps the surface under a horizontal drag. Longitude lines bunch
+ * up toward the pole, so the far-south hero view turns further for the same swipe.
+ */
+export function dragToLon(dxCss: number, radiusCss: number, latDeg: number): number {
+  return -dxCss / (Math.max(radiusCss, 1) * Math.max(Math.cos(latDeg * DEG), 0.35) * DEG);
+}
+
+/** Past the slop a touch either drags the globe or is left alone for the page. */
+export function dragIntent(dx: number, dy: number, slopPx = 8): 'wait' | 'drag' | 'none' {
+  if (Math.max(Math.abs(dx), Math.abs(dy)) < slopPx) return 'wait';
+  return Math.abs(dx) > Math.abs(dy) ? 'drag' : 'none';
+}
+
+/** Distance a fling coasts: power3.out starts at 4x its average speed, so the release speed carries on. */
+export function flingDistance(pxPerS: number, seconds: number, maxPxPerS = 2400): number {
+  return (clamp(pxPerS, -maxPxPerS, maxPxPerS) * seconds) / 4;
+}
+
+/**
  * Dot-grid pitch for a globe radius in device pixels. Levels halve from 4 degrees;
  * `mix` blends toward the next finer level so zooming never pops.
  */

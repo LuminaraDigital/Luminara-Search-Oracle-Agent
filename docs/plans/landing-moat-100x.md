@@ -299,3 +299,8 @@ npm run build
 - A static CSS planet covers no WebGL, Save-Data, link failure and context loss.
 
 The Blender constellation plates, the bake pipeline and the archive GLB were retired with the old landing, because nothing renders them any more. They remain in git history before this PR.
+
+**2026-11-01, touch drag on the globe (owner override of the GSAP budget gate).** The owner asked for interactive 3D fixes using GSAP, so the landing globe now drags on touch screens with GSAP for the fling and `gsap.matchMedia()` for reduced motion. This overrides the "Budget / 3D" kill check for GSAP only, and only in `components/marketing/earth/globeDrag.ts`:
+
+- The chunk is about 28 KB gzip. It is not preloaded and loads only on touch devices once the globe is ready, so first paint and desktop stay unchanged.
+- Three.js, R3F, Framer and runtime GLB stay killed. No React Bits component is used, because the stage is a custom shader.
