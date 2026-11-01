@@ -7,22 +7,10 @@ const shotsDir = path.join(outDir, 'screenshots');
 
 await fs.mkdir(shotsDir, { recursive: true });
 
-// 1. 512x512 Google Play Store Icon (Night Foundry Orbital Beacon, no alpha transparency per Play spec)
-const iconSvg = `
-<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
-  <rect width="512" height="512" fill="#0A0A0A"/>
-  <circle cx="256" cy="256" r="204" fill="none" stroke="#BF953F" stroke-opacity="0.28" stroke-width="3"/>
-  <circle cx="256" cy="256" r="144" fill="none" stroke="#BF953F" stroke-width="14"/>
-  <polygon points="256,144 282,230 368,256 282,282 256,368 230,282 144,256 230,230" fill="#FCF6BA"/>
-  <circle cx="256" cy="256" r="18" fill="#000000"/>
-</svg>
-`;
-await sharp(Buffer.from(iconSvg))
-  .flatten({ background: '#0A0A0A' })
-  .png({ compressionLevel: 9 })
-  .toFile(path.join(outDir, 'play-icon-512.png'));
+// The 512 store icon is the gold atom from scripts/generate-favicons.mjs.
+// Upload docs/play-store/assets/play-icon-512.png in Play Console. This script must not replace it.
 
-// 2. 1024x500 Google Play Feature Graphic (Night Foundry Workbench)
+// 1024x500 Google Play Feature Graphic (Night Foundry Workbench)
 const featureSvg = `
 <svg width="1024" height="500" viewBox="0 0 1024 500" xmlns="http://www.w3.org/2000/svg">
   <rect width="1024" height="500" fill="#000000"/>
