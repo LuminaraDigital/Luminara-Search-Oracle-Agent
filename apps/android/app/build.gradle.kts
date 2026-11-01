@@ -8,6 +8,7 @@ plugins {
   alias(libs.plugins.room3)
   alias(libs.plugins.detekt)
   alias(libs.plugins.ktlint)
+  alias(libs.plugins.google.services)
 }
 
 val defaultVersionCode = 1
@@ -23,10 +24,22 @@ val versionNameOverride: String? =
     ?.trim()
     ?.takeIf { it.isNotEmpty() }
 
+val servicesJson = file("google-services.json")
+val bundledWebClientId: String =
+  run {
+    val parsed = groovy.json.JsonSlurper().parse(servicesJson) as Map<*, *>
+    val client = (parsed["client"] as List<*>).first() as Map<*, *>
+    val oauth = client["oauth_client"] as List<*>
+    val web =
+      oauth.map { it as Map<*, *> }.firstOrNull { (it["client_type"] as Number).toInt() == 3 }
+        ?: error("google-services.json is missing the Web client (client_type 3).")
+    web["client_id"] as String
+  }
 val googleWebClientId: String =
   (providers.gradleProperty("luminara.googleWebClientId").orNull ?: System.getenv("LUMINARA_GOOGLE_WEB_CLIENT_ID"))
     ?.trim()
-    .orEmpty()
+    ?.takeIf { it.isNotEmpty() }
+    ?: bundledWebClientId
 
 val keystorePropsFile =
   rootProject.file("keystore.properties").takeIf { it.exists() }
@@ -60,7 +73,7 @@ android {
     versionCode = versionCodeOverride ?: defaultVersionCode
     versionName = versionNameOverride ?: defaultVersionName
 
-    // The web client ID from Firebase. With none set the Google button stays hidden.
+    // Web client (oauth client_type 3). A gradle or env override replaces it.
     buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$googleWebClientId\"")
   }
 
@@ -191,6 +204,8 @@ dependencies {
   implementation(libs.androidx.credentials.play.services)
   implementation(libs.google.identity.id)
   implementation(libs.androidx.work.runtime)
+  implementation(platform(libs.firebase.bom))
+  implementation(libs.firebase.auth)
 
   testImplementation(libs.junit)
   testImplementation(libs.kotlinx.coroutines.test)
