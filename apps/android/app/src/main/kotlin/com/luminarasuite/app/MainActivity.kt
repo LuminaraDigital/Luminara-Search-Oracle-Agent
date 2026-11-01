@@ -204,14 +204,17 @@ fun LuminaraWorkbenchApp(
 
     // Everything held for an account goes when that account leaves this device.
     val context = LocalContext.current
-    var wasSignedIn by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(vault.isSignedIn) {
-        if (wasSignedIn && !vault.isSignedIn) {
-            profileViewModel.reset()
-            enquiryViewModel.reset()
-            NextFixReminder.setEnabled(context, false)
+    // This reads the real vault, because `vault` above starts signed out on every recreation.
+    LaunchedEffect(Unit) {
+        var wasSignedIn = false
+        repository.vaultFlow.collect { snapshot ->
+            if (wasSignedIn && !snapshot.isSignedIn) {
+                profileViewModel.reset()
+                enquiryViewModel.reset()
+                NextFixReminder.setEnabled(context, false)
+            }
+            wasSignedIn = snapshot.isSignedIn
         }
-        wasSignedIn = vault.isSignedIn
     }
 
     fun askAbout(question: String) {

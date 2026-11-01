@@ -36,6 +36,7 @@ import com.luminarasuite.app.core.model.EnquiryCreateRequest
 import com.luminarasuite.app.core.model.EnquiryRecord
 import com.luminarasuite.app.core.network.LuminaraRepository
 import com.luminarasuite.app.core.network.WorkspaceGateway
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -61,6 +62,7 @@ class EnquiryDeskViewModel(
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(EnquiryUiState())
     val uiState: StateFlow<EnquiryUiState> = _uiState.asStateFlow()
+    private var running: Job? = null
 
     fun updateName(value: String) = _uiState.update { it.copy(name = value) }
 
@@ -75,6 +77,7 @@ class EnquiryDeskViewModel(
     fun load() = act { Result.success(Unit) }
 
     fun reset() {
+        running?.cancel()
         _uiState.value = EnquiryUiState()
     }
 
@@ -85,7 +88,7 @@ class EnquiryDeskViewModel(
     ) {
         if (_uiState.value.isBusy) return
         _uiState.update { it.copy(isBusy = true, errorMessage = null) }
-        viewModelScope.launch {
+        running = viewModelScope.launch {
             val done = call()
             val desk = workspace.loadEnquiries()
             if (done.isSuccess) _uiState.update(onSaved)

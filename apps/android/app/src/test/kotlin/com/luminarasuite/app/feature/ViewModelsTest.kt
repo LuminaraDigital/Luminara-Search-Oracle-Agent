@@ -12,6 +12,7 @@ import com.luminarasuite.app.feature.audit.AuditViewModel
 import com.luminarasuite.app.feature.dashboard.DashboardViewModel
 import com.luminarasuite.app.feature.enquiry.EnquiryDeskViewModel
 import com.luminarasuite.app.feature.settings.SettingsViewModel
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -75,6 +76,19 @@ class ViewModelsTest {
             assertEquals(1, vm.uiState.value.enquiries.size)
             vm.reset()
             assertTrue(vm.uiState.value.enquiries.isEmpty())
+        }
+
+    @Test
+    fun enquiryDesk_resetStopsAnInFlightLoadWritingOldAccountData() =
+        runTest {
+            val gate = CompletableDeferred<Unit>()
+            val api = FakeLuminaraApi().apply { enquiriesGate = gate }
+            val vm = enquiryDesk(api)
+            vm.load()
+            vm.reset()
+            gate.complete(Unit)
+            assertTrue(vm.uiState.value.enquiries.isEmpty())
+            assertFalse(vm.uiState.value.isBusy)
         }
 
     @Test

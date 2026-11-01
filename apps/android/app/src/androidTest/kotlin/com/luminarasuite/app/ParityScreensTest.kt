@@ -6,6 +6,7 @@ import android.graphics.Bitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
@@ -153,6 +154,24 @@ class ParityScreensTest {
         composeRule.waitUntil { composeRule.onAllNodesWithTag("share_body").fetchSemanticsNodes().isEmpty() }
         links.value = ShareLink("a".repeat(64), isTeaser = false)
         composeRule.waitUntil { composeRule.onAllNodesWithTag("share_body").fetchSemanticsNodes().isNotEmpty() }
+    }
+
+    @Test
+    fun aRecreatedScreenKeepsTheReminderAndSignOutEndsIt() {
+        val context = instrumentation.targetContext
+        NextFixReminder.setEnabled(context, true)
+        val repository = SignedInRepository()
+        val restoration = StateRestorationTester(composeRule)
+        restoration.setContent {
+            LuminaraWorkbenchApp(repository = repository, workspace = StubWorkspace())
+        }
+        composeRule.waitForIdle()
+        restoration.emulateSavedInstanceStateRestore()
+        composeRule.waitForIdle()
+        check(NextFixReminder.isEnabled(context)) { "A recreation turned the reminder off" }
+
+        repository.vaultFlow.value = VaultSnapshot()
+        composeRule.waitUntil(POST_TIMEOUT_MS) { !NextFixReminder.isEnabled(context) }
     }
 
     @Test

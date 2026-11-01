@@ -3,6 +3,7 @@ package com.luminarasuite.app.core.model
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
 import java.net.URI
+import java.util.Locale
 
 @Serializable
 data class GoogleSignInRequest(
@@ -29,7 +30,7 @@ data class ShareLink(
                     )
                     else -> return null
                 }
-            return link.takeIf { TOKEN.matches(it.token) }
+            return link.copy(token = link.token.lowercase(Locale.ROOT)).takeIf { TOKEN.matches(it.token) }
         }
     }
 }

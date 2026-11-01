@@ -68,6 +68,7 @@ import com.luminarasuite.app.core.model.TavilySearchResponse
 import com.luminarasuite.app.core.model.WorkspacePutRequest
 import com.luminarasuite.app.core.model.WorkspacePutResponse
 import com.luminarasuite.app.core.model.WorkspaceResponse
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
@@ -297,8 +298,10 @@ class FakeLuminaraApi : LuminaraApi {
         return WorkspacePutResponse(ok = true, updatedAt = body.baseVersion + 1)
     }
 
-    override suspend fun getEnquiries(projectId: String): EnquiryDeskResponse =
-        EnquiryDeskResponse(ok = true, enquiries = listOf(EnquiryRecord(id = "e1", contactName = "Sam")))
+    override suspend fun getEnquiries(projectId: String): EnquiryDeskResponse {
+        enquiriesGate?.await()
+        return EnquiryDeskResponse(ok = true, enquiries = listOf(EnquiryRecord(id = "e1", contactName = "Sam")))
+    }
 
     override suspend fun createEnquiry(body: EnquiryCreateRequest): JsonObject {
         check(!enquiryFails) { "offline" }
@@ -403,6 +406,7 @@ class FakeLuminaraApi : LuminaraApi {
 
     var scrapedPage: FirecrawlPage? = null
     var searchFails = false
+    var enquiriesGate: CompletableDeferred<Unit>? = null
     var enquiryFails = false
     var auditRunToken = "run"
     val refundBodies = mutableListOf<JsonObject>()
