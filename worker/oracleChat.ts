@@ -8,6 +8,7 @@ import { billingId } from './workerUtils';
 import { buildPaidToolRuntime, executePaidTool, PAID_TOOL_CATALOGUE, BROWSER_ACTION_CATALOGUE } from '../services/tools/registry';
 import { planCapsFor } from './telegramBot';
 import { getActiveSubscription } from './quotaMiddleware';
+import { GROQ_DEFAULT_MODEL } from '../services/llm/nativeModelDefaults';
 import { hasDataForSeoCredentials } from '../services/config/runtimeKeys';
 import { startRun, completeRun } from './runProvenance';
 import { loadAgentSkill } from './agentSkills';
@@ -702,7 +703,7 @@ export async function handleOracleChatSse(
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
+          model: GROQ_DEFAULT_MODEL,
           messages,
           temperature: 0.5,
           max_tokens: 2048,

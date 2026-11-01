@@ -301,7 +301,7 @@ data class GroqMessage(
 
 @Serializable
 data class GroqChatRequest(
-    val model: String = "llama-3.3-70b-versatile",
+    val model: String = "openai/gpt-oss-120b",
     val messages: List<GroqMessage>,
     val temperature: Double = 0.2,
     @SerialName("max_tokens")
