@@ -5,6 +5,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
+import androidx.test.espresso.Espresso
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.luminarasuite.app.core.auth.InMemoryVaultStorage
@@ -225,11 +226,14 @@ class LuminaraWorkbenchSmokeTest {
         }
         composeRule.onNodeWithTag("nav_tab_audit").assertExists().performClick()
         composeRule.onNodeWithTag("audit_domain_input").performTextInput("luminarasuite.com")
+        // The dock hides while the keyboard is open, so a tab tap would land on the keyboard.
+        Espresso.closeSoftKeyboard()
         composeRule.onNodeWithTag("run_audit_button").performClick()
         composeRule.onNodeWithTag("report_audit_button").assertExists().performClick()
 
         composeRule.onNodeWithTag("nav_tab_ask").performClick()
         composeRule.onNodeWithTag("ask_prompt_input").performTextInput("Check llms.txt")
+        Espresso.closeSoftKeyboard()
         composeRule.onNodeWithTag("ask_submit_button").assertExists().performClick()
 
         composeRule.onNodeWithTag("nav_tab_home").performClick()

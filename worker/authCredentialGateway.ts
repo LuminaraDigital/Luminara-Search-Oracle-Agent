@@ -28,6 +28,7 @@ const IDENTITY_SIGN_IN = 'https://identitytoolkit.googleapis.com/v1/accounts:sig
 const IDENTITY_SIGN_IN_IDP = 'https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp';
 const SECURE_TOKEN_URL = 'https://securetoken.googleapis.com/v1/token';
 const MAX_GOOGLE_ID_TOKEN_CHARS = 8192;
+const GOOGLE_TOKEN_ERRORS = new Set(['INVALID_IDP_RESPONSE', 'INVALID_ID_TOKEN']);
 const MAX_REFRESH_TOKEN_CHARS = 2048;
 const DEAD_REFRESH_ERRORS = new Set(['INVALID_REFRESH_TOKEN', 'TOKEN_EXPIRED', 'USER_DISABLED', 'USER_NOT_FOUND']);
 
@@ -363,8 +364,12 @@ export async function handleGoogleSignIn(
   ip: string,
   opts?: { fetchImpl?: typeof fetch },
 ): Promise<Response> {
-  const gate = await gateCredential(env, ip, 'signin');
+  // signInWithIdp creates the account on first use, so this carries the sign-up limits.
+  const gate = await gateCredential(env, ip, 'signup');
   if (!gate.ok) return gate.response;
+
+  const appCheckGate = await enforceAppCheckIfRequired(request, env);
+  if (!appCheckGate.ok) return appCheckGate.response;
 
   let googleIdToken = '';
   try {
@@ -403,7 +408,15 @@ export async function handleGoogleSignIn(
     localId?: string;
     email?: string;
     expiresIn?: string;
+    needConfirmation?: boolean;
+    error?: { message?: string };
   };
+  if (parsed.needConfirmation) {
+    return json(
+      { ok: false, error: 'This email already has an account. Sign in with your password.', code: 'GOOGLE_ACCOUNT_EXISTS' },
+      409,
+    );
+  }
   if (res.ok && parsed.idToken && parsed.refreshToken) {
     return withRateLimitHeaders(
       json({
@@ -417,7 +430,8 @@ export async function handleGoogleSignIn(
       gate.headers,
     );
   }
-  if (res.status === 400) {
+  // Only a bad token is the caller's fault. A disabled provider or a bad key stays a 503.
+  if (GOOGLE_TOKEN_ERRORS.has(String(parsed.error?.message || '').split(' ')[0])) {
     return json({ ok: false, error: 'Google sign-in failed. Try again.', code: 'GOOGLE_TOKEN_REJECTED' }, 401);
   }
   return json({ ok: false, error: 'Sign-in is temporarily unavailable. Try again later.', code: 'AUTH_UNAVAILABLE' }, 503);

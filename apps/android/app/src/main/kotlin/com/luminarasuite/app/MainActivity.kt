@@ -58,6 +58,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
@@ -78,6 +79,7 @@ import com.luminarasuite.app.core.model.QuotaStatus
 import com.luminarasuite.app.core.model.ShareLink
 import com.luminarasuite.app.core.network.LuminaraRepository
 import com.luminarasuite.app.core.network.WorkspaceGateway
+import com.luminarasuite.app.core.reminders.NextFixReminder
 import com.luminarasuite.app.feature.ask.AskScreen
 import com.luminarasuite.app.feature.ask.AskViewModel
 import com.luminarasuite.app.feature.audit.AuditScreen
@@ -129,7 +131,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        sharedLink.value = ShareLink.parse(intent?.dataString)
+        // A recreated activity gets the same intent again, and that link is already handled.
+        if (savedInstanceState == null) sharedLink.value = ShareLink.parse(intent?.dataString)
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.dark(Color.Transparent.toArgb()),
             navigationBarStyle = SystemBarStyle.dark(Color.Transparent.toArgb()),
@@ -142,6 +145,7 @@ class MainActivity : ComponentActivity() {
                     repository = app.repository,
                     workspace = app.workspace,
                     sharedLinks = sharedLink,
+                    onSharedLinkOpened = { sharedLink.value = null },
                     showWelcome = !prefs.getBoolean(KEY_WELCOMED, false),
                     onWelcomed = { prefs.edit().putBoolean(KEY_WELCOMED, true).apply() },
                 )
@@ -155,6 +159,7 @@ fun LuminaraWorkbenchApp(
     repository: LuminaraRepository,
     workspace: WorkspaceGateway,
     sharedLinks: StateFlow<ShareLink?> = MutableStateFlow(null),
+    onSharedLinkOpened: () -> Unit = {},
     showWelcome: Boolean = false,
     onWelcomed: () -> Unit = {},
 ) {
@@ -193,6 +198,22 @@ fun LuminaraWorkbenchApp(
             welcome = false
             overlay = Overlay.SHARED
             sharedViewModel.open(it)
+            onSharedLinkOpened()
+        }
+    }
+
+    // Everything held for an account goes when that account leaves this device.
+    val context = LocalContext.current
+    // This reads the real vault, because `vault` above starts signed out on every recreation.
+    LaunchedEffect(Unit) {
+        var wasSignedIn = false
+        repository.vaultFlow.collect { snapshot ->
+            if (wasSignedIn && !snapshot.isSignedIn) {
+                profileViewModel.reset()
+                enquiryViewModel.reset()
+                NextFixReminder.setEnabled(context, false)
+            }
+            wasSignedIn = snapshot.isSignedIn
         }
     }
 
@@ -223,7 +244,9 @@ fun LuminaraWorkbenchApp(
         return
     }
 
-    BackHandler(enabled = overlay != null) { overlay = null }
+    BackHandler(enabled = overlay != null) {
+        overlay = if (overlay == Overlay.PROFILE || overlay == Overlay.ENQUIRIES) Overlay.SETTINGS else null
+    }
     BackHandler(enabled = overlay == null && selectedTab != LuminaraTab.HOME) { selectedTab = LuminaraTab.HOME }
 
     ObsidianBackdrop {

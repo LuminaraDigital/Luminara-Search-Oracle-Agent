@@ -36,6 +36,7 @@ import com.luminarasuite.app.core.model.EnquiryCreateRequest
 import com.luminarasuite.app.core.model.EnquiryRecord
 import com.luminarasuite.app.core.network.LuminaraRepository
 import com.luminarasuite.app.core.network.WorkspaceGateway
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -61,6 +62,7 @@ class EnquiryDeskViewModel(
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(EnquiryUiState())
     val uiState: StateFlow<EnquiryUiState> = _uiState.asStateFlow()
+    private var running: Job? = null
 
     fun updateName(value: String) = _uiState.update { it.copy(name = value) }
 
@@ -74,11 +76,22 @@ class EnquiryDeskViewModel(
 
     fun load() = act { Result.success(Unit) }
 
-    private fun act(call: suspend () -> Result<Unit>) {
+    fun reset() {
+        running?.cancel()
+        _uiState.value = EnquiryUiState()
+    }
+
+    /** One call at a time, so a slower reload cannot overwrite a newer one. */
+    private fun act(
+        onSaved: (EnquiryUiState) -> EnquiryUiState = { it },
+        call: suspend () -> Result<Unit>,
+    ) {
+        if (_uiState.value.isBusy) return
         _uiState.update { it.copy(isBusy = true, errorMessage = null) }
-        viewModelScope.launch {
+        running = viewModelScope.launch {
             val done = call()
             val desk = workspace.loadEnquiries()
+            if (done.isSuccess) _uiState.update(onSaved)
             _uiState.update { state ->
                 state.copy(
                     isBusy = false,
@@ -100,15 +113,13 @@ class EnquiryDeskViewModel(
                 email = contact.takeIf { it.contains('@') },
                 phoneE164 = contact.takeIf { it.startsWith("+") },
             )
-        _uiState.update { it.copy(name = "", message = "", contact = "") }
-        act { workspace.createEnquiry(request) }
+        act(onSaved = { it.copy(name = "", message = "", contact = "") }) { workspace.createEnquiry(request) }
     }
 
     fun sendReply() {
         val state = _uiState.value
         val id = state.selectedId ?: return
-        _uiState.update { it.copy(reply = "") }
-        act { workspace.replyToEnquiry(id, state.reply.trim()) }
+        act(onSaved = { it.copy(reply = "") }) { workspace.replyToEnquiry(id, state.reply.trim()) }
     }
 
     fun togglePause(enquiry: EnquiryRecord) = act { workspace.setEnquiryPaused(enquiry.id, !enquiry.automationPaused) }

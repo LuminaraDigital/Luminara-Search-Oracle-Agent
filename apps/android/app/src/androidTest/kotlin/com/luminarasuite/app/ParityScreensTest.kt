@@ -1,11 +1,14 @@
 package com.luminarasuite.app
 
 import android.Manifest
+import android.app.UiAutomation
 import android.graphics.Bitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
@@ -14,21 +17,32 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
 import com.luminarasuite.app.core.auth.VaultSnapshot
+import com.luminarasuite.app.core.database.LuminaraDatabase
+import com.luminarasuite.app.core.database.toEntity
+import com.luminarasuite.app.core.model.AuditFinding
 import com.luminarasuite.app.core.model.CrawlerEvaluationResult
 import com.luminarasuite.app.core.model.CrewPage
 import com.luminarasuite.app.core.model.CrewRules
 import com.luminarasuite.app.core.model.CrewSchema
 import com.luminarasuite.app.core.model.ReadinessCheck
 import com.luminarasuite.app.core.model.SearchRow
+import com.luminarasuite.app.core.model.ShareLink
 import com.luminarasuite.app.core.network.InstantAuditReport
 import com.luminarasuite.app.core.network.LuminaraRepository
 import com.luminarasuite.app.core.reminders.NextFixReminder
+import com.luminarasuite.app.core.reminders.NextFixWorker
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.runBlocking
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
+
+private const val POST_TIMEOUT_MS = 5_000L
+private const val WORKER_TIMEOUT_MS = 20_000L
 
 private val failedLlms = ReadinessCheck("llms_txt", "llms.txt present", "fail", "HTTP 404.")
 
@@ -133,13 +147,89 @@ class ParityScreensTest {
     }
 
     @Test
+    fun theSameLinkOpensAgainAfterBack() {
+        val links = MutableStateFlow<ShareLink?>(ShareLink("a".repeat(64), isTeaser = false))
+        composeRule.setContent {
+            LuminaraWorkbenchApp(
+                repository = SignedInRepository(),
+                workspace = StubWorkspace(),
+                sharedLinks = links,
+                onSharedLinkOpened = { links.value = null },
+            )
+        }
+        composeRule.onNodeWithTag("share_body").assertExists()
+        composeRule.onNodeWithTag("brand_mark").performClick()
+        composeRule.waitUntil { composeRule.onAllNodesWithTag("share_body").fetchSemanticsNodes().isEmpty() }
+        links.value = ShareLink("a".repeat(64), isTeaser = false)
+        composeRule.waitUntil { composeRule.onAllNodesWithTag("share_body").fetchSemanticsNodes().isNotEmpty() }
+    }
+
+    @Test
+    fun aRecreatedScreenKeepsTheReminderAndSignOutEndsIt() {
+        val context = instrumentation.targetContext
+        NextFixReminder.setEnabled(context, true)
+        val repository = SignedInRepository()
+        val restoration = StateRestorationTester(composeRule)
+        restoration.setContent {
+            LuminaraWorkbenchApp(repository = repository, workspace = StubWorkspace())
+        }
+        composeRule.waitForIdle()
+        restoration.emulateSavedInstanceStateRestore()
+        composeRule.waitForIdle()
+        check(NextFixReminder.isEnabled(context)) { "A recreation turned the reminder off" }
+
+        repository.vaultFlow.value = VaultSnapshot()
+        composeRule.waitUntil(POST_TIMEOUT_MS) { !NextFixReminder.isEnabled(context) }
+    }
+
+    @Test
+    fun theRealWorkerPostsTheTopOpenFixFromTheDatabase() {
+        val context = instrumentation.targetContext
+        instrumentation
+            .getUiAutomation(UiAutomation.FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES)
+            .grantRuntimePermission(context.packageName, Manifest.permission.POST_NOTIFICATIONS)
+        val notifications = context.getSystemService(android.app.NotificationManager::class.java)
+        notifications.cancelAll()
+        NextFixReminder.setEnabled(context, true)
+        val dao = LuminaraDatabase.build(context).dao()
+        runBlocking {
+            dao.upsertFindings(
+                listOf(
+                    AuditFinding(
+                        id = "worker-check",
+                        domain = "example.com",
+                        severity = "critical",
+                        title = "Add a business identity tag",
+                        description = "Seeded for this test.",
+                        createdAt = 0,
+                        updatedAt = 0,
+                    ).toEntity(),
+                ),
+            )
+        }
+        WorkManager.getInstance(context).enqueue(OneTimeWorkRequestBuilder<NextFixWorker>().build())
+        composeRule.waitUntil(WORKER_TIMEOUT_MS) {
+            notifications.activeNotifications.any { it.id == NextFixReminder.NOTIFICATION_ID }
+        }
+        runBlocking { dao.clearFindings() }
+        NextFixReminder.setEnabled(context, false)
+    }
+
+    @Test
     fun reminderPostsTheTopFix() {
         val context = instrumentation.targetContext
-        instrumentation.uiAutomation.grantRuntimePermission(context.packageName, Manifest.permission.POST_NOTIFICATIONS)
+        // Compose keeps its own connection open, and a default reconnect here can hang.
+        instrumentation
+            .getUiAutomation(UiAutomation.FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES)
+            .grantRuntimePermission(context.packageName, Manifest.permission.POST_NOTIFICATIONS)
         NextFixReminder.setEnabled(context, true)
         NextFixReminder.post(context, "example.com: Add a business identity tag")
-        val active = context.getSystemService(android.app.NotificationManager::class.java).activeNotifications
-        check(active.any { it.id == NextFixReminder.NOTIFICATION_ID })
+        check(!NextFixReminder.needsPermission(context)) { "Permission grant did not apply" }
+        val notifications = context.getSystemService(android.app.NotificationManager::class.java)
+        // The system posts on its own thread, so the notification appears a moment later.
+        composeRule.waitUntil(POST_TIMEOUT_MS) {
+            notifications.activeNotifications.any { it.id == NextFixReminder.NOTIFICATION_ID }
+        }
         NextFixReminder.setEnabled(context, false)
     }
 }

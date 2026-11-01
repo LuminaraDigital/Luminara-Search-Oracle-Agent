@@ -175,6 +175,7 @@ object EntityMatch {
 object BrandName {
     private val GENERIC =
         Regex("^(www|home|welcome|index|untitled|official site|official website)$", RegexOption.IGNORE_CASE)
+    private val HTTP_PREFIX = Regex("^https?:", RegexOption.IGNORE_CASE)
     private val SEPARATOR = Regex("\\s+[|:]\\s+|\\s+-\\s+|\\s+\u2013\\s+|\\s+\u2014\\s+")
     private val SPACES = Regex("\\s+")
     private const val MAX_NAME = 80
@@ -185,7 +186,7 @@ object BrandName {
             raw.isEmpty() ||
                 raw.length > MAX_NAME ||
                 GENERIC.matches(raw) ||
-                raw.lowercase(Locale.ROOT).startsWith("http") ||
+                HTTP_PREFIX.containsMatchIn(raw) ||
                 (raw.contains('.') && !raw.contains(' '))
         return if (rejected) "" else raw
     }
@@ -198,7 +199,7 @@ object BrandName {
 
     fun fromPage(page: CrewPage?): String? =
         named(page?.siteName)
-            ?: named(page?.schemas?.firstOrNull { isOrganizationType(it.type) && !it.name.isNullOrBlank() }?.name)
+            ?: page?.schemas.orEmpty().filter { isOrganizationType(it.type) }.firstNotNullOfOrNull { named(it.name) }
             ?: named(page?.title)
 
     fun readableStem(host: String): String {
@@ -310,6 +311,16 @@ object CrewRules {
             else -> "${items.dropLast(1).joinToString(", ")} and ${items.last()}"
         }
 
+    /** Names up to two pages and counts the rest. The title feeds the stable key, so it matches the web. */
+    private fun pageList(urls: List<String>): String {
+        val rest = urls.size - 2
+        return when {
+            urls.size <= 1 -> urls.firstOrNull() ?: "a measured page"
+            rest == 0 -> "${urls[0]} and ${urls[1]}"
+            else -> "${urls[0]}, ${urls[1]} and $rest more ${if (rest == 1) "page" else "pages"}"
+        }
+    }
+
     private fun tidy(text: String): String = text.replace(SPACED_PUNCTUATION, "$1").trim()
 
     private fun pageBlocked(page: CrewPage): Boolean {
@@ -386,7 +397,7 @@ object CrewRules {
             id = "finding-schema-org-partial",
             category = "schema",
             severity = "low",
-            title = "A business identity tag is not on every page we read",
+            title = "A business identity tag is not on ${pageList(missing.map { it.first.url })}",
             description = "Other pages we read already include a business identity tag. These do not: $quoted.",
             evidence = quoted,
         )
@@ -394,7 +405,7 @@ object CrewRules {
 
     private fun howToFinding(pages: List<CrewPage>): CrewFinding? {
         val urls = pages.filter { page ->
-            page.schemas.any { it.type.equals("howto", ignoreCase = true) }
+            page.schemas.any { it.type.trim().equals("howto", ignoreCase = true) }
         }.map { it.url }
         if (urls.isEmpty()) return null
         val where = joinList(urls.take(3))

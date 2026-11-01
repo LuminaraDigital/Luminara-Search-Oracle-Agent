@@ -300,7 +300,7 @@ fun SettingsScreen(
         if (state.vault.isSignedIn) {
             BusinessSection(onOpenProfile = onOpenProfile, onOpenEnquiries = onOpenEnquiries)
         }
-        ReminderSection()
+        ReminderSection(isSignedIn = state.vault.isSignedIn)
         ByokVaultSection(state = state, viewModel = viewModel)
         PrivacyAndLegalSection(state = state, viewModel = viewModel, context = context)
 
@@ -333,9 +333,10 @@ private fun BusinessSection(
 }
 
 @Composable
-private fun ReminderSection() {
+private fun ReminderSection(isSignedIn: Boolean) {
     val context = LocalContext.current
-    var enabled by remember { mutableStateOf(NextFixReminder.isEnabled(context)) }
+    // Sign-out turns the reminder off, so the switch rereads it when the account changes.
+    var enabled by remember(isSignedIn) { mutableStateOf(NextFixReminder.isEnabled(context)) }
     val apply = { on: Boolean ->
         NextFixReminder.setEnabled(context, on)
         enabled = on

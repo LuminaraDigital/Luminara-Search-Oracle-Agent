@@ -29,6 +29,7 @@ import com.luminarasuite.app.core.designsystem.ScreenGutter
 import com.luminarasuite.app.core.designsystem.WorkbenchCard
 import com.luminarasuite.app.core.model.BusinessDna
 import com.luminarasuite.app.core.network.WorkspaceGateway
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -49,10 +50,16 @@ class BusinessProfileViewModel(
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(ProfileUiState())
     val uiState: StateFlow<ProfileUiState> = _uiState.asStateFlow()
+    private var running: Job? = null
+
+    fun reset() {
+        running?.cancel()
+        _uiState.value = ProfileUiState()
+    }
 
     fun load() {
         _uiState.update { it.copy(isBusy = true, errorMessage = null, message = null) }
-        viewModelScope.launch {
+        running = viewModelScope.launch {
             workspace.loadProfile()
                 .onSuccess { profile ->
                     _uiState.update {
@@ -81,7 +88,7 @@ class BusinessProfileViewModel(
         val state = _uiState.value
         val profile = state.profile.copy(competitors = listOf(state.competitors), perceivedGaps = listOf(state.gaps))
         _uiState.update { it.copy(isBusy = true, errorMessage = null, message = null) }
-        viewModelScope.launch {
+        running = viewModelScope.launch {
             workspace.saveProfile(profile)
                 .onSuccess { _uiState.update { it.copy(isBusy = false, message = "Saved to your account.") } }
                 .onFailure { err -> _uiState.update { it.copy(isBusy = false, errorMessage = err.message) } }

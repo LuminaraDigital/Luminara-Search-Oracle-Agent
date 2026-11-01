@@ -51,6 +51,7 @@ Declared in `AndroidManifest.xml` or merged from libraries. Verify with `apps/an
 | `INTERNET` | App | All features. |
 | `POST_NOTIFICATIONS` | App | Weekly next-fix reminder. Off by default, asked for only when the person turns it on in Settings. It is local: the reminder reads findings already on the device and sends nothing. Not used for marketing. |
 | `ACCESS_NETWORK_STATE`, `WAKE_LOCK`, `RECEIVE_BOOT_COMPLETED`, `FOREGROUND_SERVICE` | WorkManager | Keep the weekly schedule across restarts. No foreground service is started by the app. |
+| `com.luminarasuite.app.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` | androidx.core | Internal protection for the app's own receivers. No user-visible access. |
 
 Notification copy states the top open fix. It never mentions plans, prices, or upgrades.
 

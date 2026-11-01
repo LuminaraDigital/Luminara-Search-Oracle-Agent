@@ -78,6 +78,10 @@ class CrewRulesTest {
         val result = CrewRules.assess("example.com", listOf(goodPage, bare), listOf(row(true)), emptyList())
         assertEquals(85, result.healthScore)
         assertEquals(listOf("finding-schema-org-partial"), result.findings.map { it.id })
+        assertEquals(
+            "A business identity tag is not on https://example.com/about",
+            result.findings.single().title,
+        )
         assertEquals(listOf("patch-schema-org"), result.fixes.map { it.id })
     }
 
@@ -121,6 +125,9 @@ class CrewRulesTest {
         assertEquals("Example Co", BrandName.fromPage(goodPage))
         assertNull(BrandName.fromPage(CrewPage(url = "u", title = "Home | Acme")))
         assertEquals("Ray White", BrandName.readableStem("www.ray-white.com.au"))
+        assertEquals("HTTPie", BrandName.fromPage(CrewPage(url = "u", title = "HTTPie")))
+        val schemas = listOf(CrewSchema("Organization", "https://x.test"), CrewSchema("Corporation", "Acme"))
+        assertEquals("Acme", BrandName.fromPage(CrewPage(url = "u", title = "", schemas = schemas)))
     }
 
     @Test

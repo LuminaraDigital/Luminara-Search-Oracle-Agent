@@ -3,6 +3,7 @@ package com.luminarasuite.app.core.model
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
 import java.net.URI
+import java.util.Locale
 
 @Serializable
 data class GoogleSignInRequest(
@@ -15,7 +16,7 @@ data class ShareLink(
     val isTeaser: Boolean,
 ) {
     companion object {
-        private val TOKEN = Regex("^[A-Za-z0-9_-]{16,128}$")
+        private val TOKEN = Regex("^[a-f0-9]{64}$")
 
         fun parse(url: String?): ShareLink? {
             val path = runCatching { URI(url.orEmpty()) }.getOrNull()?.takeIf { it.scheme == "https" }?.path.orEmpty()
@@ -29,7 +30,7 @@ data class ShareLink(
                     )
                     else -> return null
                 }
-            return link.takeIf { TOKEN.matches(it.token) }
+            return link.copy(token = link.token.lowercase(Locale.ROOT)).takeIf { TOKEN.matches(it.token) }
         }
     }
 }

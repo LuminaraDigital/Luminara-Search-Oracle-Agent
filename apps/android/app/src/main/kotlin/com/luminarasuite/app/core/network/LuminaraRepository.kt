@@ -34,12 +34,10 @@ import com.luminarasuite.app.core.model.ScoutRecheckResponse
 import com.luminarasuite.app.core.model.StudioSource
 import com.luminarasuite.app.core.model.TavilyResult
 import com.luminarasuite.app.core.model.TavilySearchRequest
-import com.luminarasuite.app.core.model.WorkerErrorPayload
 import com.luminarasuite.app.core.model.hostedAllowanceOpen
 import com.luminarasuite.app.core.model.hostedBlockedMessage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -49,7 +47,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import retrofit2.HttpException
 
@@ -258,7 +255,7 @@ class DefaultLuminaraRepository(
                 healthScore = crew?.healthScore,
                 receiptNote =
                 crew?.let {
-                    "Read ${CrewRules.countPhrase(it.pages.size, "page")} and " +
+                    "Read ${CrewRules.countPhrase(it.pages.count(CrewRules::pageIsLive), "page")} and " +
                         "${CrewRules.countPhrase(it.searchRows.size, "live search result")} for $domain."
                 }
                     ?: "Read live from robots.txt, llms.txt, and ai.txt on $domain.",
@@ -285,13 +282,9 @@ class DefaultLuminaraRepository(
                 val copy = unwrapWorkerError(err).message?.takeIf { it.isNotBlank() }
                 return CrewRun(null, "${copy ?: "Hosted checks are unavailable."} Crawler files were still read.")
             }
-        val result =
-            try {
-                AuditCrew(api).run(domain, run, evaluation.checks, onStage)
-            } catch (err: CancellationException) {
-                withContext(NonCancellable) { refundRun(run) }
-                throw err
-            }
+        // No token means the Worker could not hold the run and has already refunded the check.
+        if (run.token.isBlank()) return CrewRun(null, "Hosted checks are unavailable. Crawler files were still read.")
+        val result = AuditCrew(api).run(domain, run, evaluation.checks, onStage)
         if (result.healthScore == null && result.citationRatePercent == null) refundRun(run)
         refreshQuotaQuietly()
         return CrewRun(result, null)
@@ -929,17 +922,9 @@ class DefaultLuminaraRepository(
         onFailure { if (it is CancellationException) throw it }
 
     private fun unwrapWorkerError(err: Throwable): Throwable {
-        if (err is HttpException) {
-            val rawBody = runCatching { err.response()?.errorBody()?.string() }.getOrNull().orEmpty()
-            if (rawBody.isNotBlank()) {
-                val parsed = runCatching { ERROR_JSON.decodeFromString<WorkerErrorPayload>(rawBody) }.getOrNull()
-                val message = CODE_COPY[parsed?.code] ?: parsed?.error?.takeIf { it.isNotBlank() }
-                if (message != null) {
-                    return IllegalStateException(message)
-                }
-            }
-        }
-        return err
+        val parsed = (err as? HttpException)?.workerPayload()
+        val message = CODE_COPY[parsed?.code] ?: parsed?.error?.takeIf { it.isNotBlank() }
+        return if (message != null) IllegalStateException(message) else err
     }
 
     private fun fixCount(count: Int): String = if (count == 1) "1 fix" else "$count fixes"

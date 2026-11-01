@@ -4,12 +4,15 @@ import com.luminarasuite.app.core.auth.InMemoryVaultStorage
 import com.luminarasuite.app.core.model.ByokKeyBag
 import com.luminarasuite.app.core.model.CrawlerFilesSnapshot
 import com.luminarasuite.app.core.network.DefaultLuminaraRepository
+import com.luminarasuite.app.core.network.DefaultWorkspaceGateway
 import com.luminarasuite.app.core.network.FakeLuminaraApi
 import com.luminarasuite.app.core.network.FakeLuminaraDao
 import com.luminarasuite.app.feature.ask.AskViewModel
 import com.luminarasuite.app.feature.audit.AuditViewModel
 import com.luminarasuite.app.feature.dashboard.DashboardViewModel
+import com.luminarasuite.app.feature.enquiry.EnquiryDeskViewModel
 import com.luminarasuite.app.feature.settings.SettingsViewModel
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -46,6 +49,47 @@ class ViewModelsTest {
     fun tearDown() {
         Dispatchers.resetMain()
     }
+
+    private fun enquiryDesk(api: FakeLuminaraApi): EnquiryDeskViewModel {
+        val repo = DefaultLuminaraRepository(api = api, dao = FakeLuminaraDao(), vault = InMemoryVaultStorage())
+        return EnquiryDeskViewModel(DefaultWorkspaceGateway(api), repo).apply {
+            updateName("Sam")
+            updateMessage("Need an appraisal")
+        }
+    }
+
+    @Test
+    fun enquiryDesk_keepsTypedTextWhenTheSaveFails() =
+        runTest {
+            val vm = enquiryDesk(FakeLuminaraApi().apply { enquiryFails = true })
+            vm.create()
+            assertEquals("Sam", vm.uiState.value.name)
+            assertEquals("offline", vm.uiState.value.errorMessage)
+        }
+
+    @Test
+    fun enquiryDesk_clearsTheFormAfterASaveAndResetDropsTheAccountData() =
+        runTest {
+            val vm = enquiryDesk(FakeLuminaraApi())
+            vm.create()
+            assertEquals("", vm.uiState.value.name)
+            assertEquals(1, vm.uiState.value.enquiries.size)
+            vm.reset()
+            assertTrue(vm.uiState.value.enquiries.isEmpty())
+        }
+
+    @Test
+    fun enquiryDesk_resetStopsAnInFlightLoadWritingOldAccountData() =
+        runTest {
+            val gate = CompletableDeferred<Unit>()
+            val api = FakeLuminaraApi().apply { enquiriesGate = gate }
+            val vm = enquiryDesk(api)
+            vm.load()
+            vm.reset()
+            gate.complete(Unit)
+            assertTrue(vm.uiState.value.enquiries.isEmpty())
+            assertFalse(vm.uiState.value.isBusy)
+        }
 
     @Test
     fun auditViewModel_runsAuditRechecksCheckAndReportsVerdict() =
