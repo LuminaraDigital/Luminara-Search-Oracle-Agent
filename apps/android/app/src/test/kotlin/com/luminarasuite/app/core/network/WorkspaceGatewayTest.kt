@@ -109,7 +109,7 @@ class WorkspaceGatewayTest {
             ShareLink(token, isTeaser = true),
             ShareLink.parse("https://www.luminarasuite.com/share/teaser/$token"),
         )
-        assertNull(ShareLink.parse("https://www.luminarasuite.com/pricing"))
+        assertNull(ShareLink.parse("https://www.luminarasuite.com/about"))
         assertNull(ShareLink.parse("http://www.luminarasuite.com/share/$token"))
         assertNull(ShareLink.parse("https://www.luminarasuite.com/share/x"))
         assertNull(ShareLink.parse("https://www.luminarasuite.com/share/${"z".repeat(64)}"))

@@ -17,7 +17,12 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
 import com.luminarasuite.app.core.auth.VaultSnapshot
+import com.luminarasuite.app.core.database.LuminaraDatabase
+import com.luminarasuite.app.core.database.toEntity
+import com.luminarasuite.app.core.model.AuditFinding
 import com.luminarasuite.app.core.model.CrawlerEvaluationResult
 import com.luminarasuite.app.core.model.CrewPage
 import com.luminarasuite.app.core.model.CrewRules
@@ -28,13 +33,16 @@ import com.luminarasuite.app.core.model.ShareLink
 import com.luminarasuite.app.core.network.InstantAuditReport
 import com.luminarasuite.app.core.network.LuminaraRepository
 import com.luminarasuite.app.core.reminders.NextFixReminder
+import com.luminarasuite.app.core.reminders.NextFixWorker
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.runBlocking
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
 
 private const val POST_TIMEOUT_MS = 5_000L
+private const val WORKER_TIMEOUT_MS = 20_000L
 
 private val failedLlms = ReadinessCheck("llms_txt", "llms.txt present", "fail", "HTTP 404.")
 
@@ -172,6 +180,39 @@ class ParityScreensTest {
 
         repository.vaultFlow.value = VaultSnapshot()
         composeRule.waitUntil(POST_TIMEOUT_MS) { !NextFixReminder.isEnabled(context) }
+    }
+
+    @Test
+    fun theRealWorkerPostsTheTopOpenFixFromTheDatabase() {
+        val context = instrumentation.targetContext
+        instrumentation
+            .getUiAutomation(UiAutomation.FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES)
+            .grantRuntimePermission(context.packageName, Manifest.permission.POST_NOTIFICATIONS)
+        val notifications = context.getSystemService(android.app.NotificationManager::class.java)
+        notifications.cancelAll()
+        NextFixReminder.setEnabled(context, true)
+        val dao = LuminaraDatabase.build(context).dao()
+        runBlocking {
+            dao.upsertFindings(
+                listOf(
+                    AuditFinding(
+                        id = "worker-check",
+                        domain = "example.com",
+                        severity = "critical",
+                        title = "Add a business identity tag",
+                        description = "Seeded for this test.",
+                        createdAt = 0,
+                        updatedAt = 0,
+                    ).toEntity(),
+                ),
+            )
+        }
+        WorkManager.getInstance(context).enqueue(OneTimeWorkRequestBuilder<NextFixWorker>().build())
+        composeRule.waitUntil(WORKER_TIMEOUT_MS) {
+            notifications.activeNotifications.any { it.id == NextFixReminder.NOTIFICATION_ID }
+        }
+        runBlocking { dao.clearFindings() }
+        NextFixReminder.setEnabled(context, false)
     }
 
     @Test
