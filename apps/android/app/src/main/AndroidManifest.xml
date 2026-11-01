@@ -18,6 +18,12 @@
     android:name="com.google.android.finsky.permission.BIND_GET_INSTALL_REFERRER_SERVICE"
     tools:node="remove" />
 
+  <queries>
+    <intent>
+      <action android:name="android.intent.action.TTS_SERVICE" />
+    </intent>
+  </queries>
+
   <application
     android:name=".LuminaraApplication"
     android:allowBackup="true"

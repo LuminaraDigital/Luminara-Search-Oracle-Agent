@@ -12,9 +12,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -25,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
@@ -33,9 +33,12 @@ import androidx.lifecycle.viewModelScope
 import com.luminarasuite.app.BuildConfig
 import com.luminarasuite.app.core.auth.VaultSnapshot
 import com.luminarasuite.app.core.designsystem.EyebrowKicker
+import com.luminarasuite.app.core.designsystem.FoundryButton
+import com.luminarasuite.app.core.designsystem.FoundryFieldColors
+import com.luminarasuite.app.core.designsystem.LiveTrack
 import com.luminarasuite.app.core.designsystem.LuminaraColors
 import com.luminarasuite.app.core.designsystem.LuminaraTextStyles
-import com.luminarasuite.app.core.designsystem.MeasurementStatusBadge
+import com.luminarasuite.app.core.designsystem.ScreenGutter
 import com.luminarasuite.app.core.designsystem.WorkbenchCard
 import com.luminarasuite.app.core.model.ByokKeyBag
 import com.luminarasuite.app.core.model.QuotaStatus
@@ -229,20 +232,23 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
         Modifier
             .fillMaxSize()
             .verticalScroll(scrollState)
-            .padding(16.dp),
+            .padding(horizontal = ScreenGutter, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        EyebrowKicker("ACCOUNT, BYOK VAULT & PRIVACY")
+        EyebrowKicker("Account and privacy")
         Text(text = "Settings", style = LuminaraTextStyles.DisplaySerif)
+        if (state.isBusy) {
+            LiveTrack()
+        }
 
         state.statusBanner?.let { msg ->
-            WorkbenchCard {
+            WorkbenchCard(railColor = LuminaraColors.PassGreen) {
                 Text(text = msg, style = LuminaraTextStyles.Body, color = LuminaraColors.PassGreen)
             }
         }
 
         state.errorBanner?.let { err ->
-            WorkbenchCard {
+            WorkbenchCard(railColor = LuminaraColors.ErrorRed) {
                 Text(text = err, style = LuminaraTextStyles.Body, color = LuminaraColors.ErrorRed)
             }
         }
@@ -266,27 +272,29 @@ private fun AccountSection(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            EyebrowKicker("WORKSPACE ACCOUNT")
-            MeasurementStatusBadge(if (state.vault.isSignedIn) "MEASURED" else "GUEST")
+            EyebrowKicker("Workspace")
+            Text(
+                text = if (state.vault.isSignedIn) "Signed in" else "Guest",
+                style =
+                LuminaraTextStyles.EyebrowMono.copy(
+                    color = if (state.vault.isSignedIn) LuminaraColors.PassGreen else LuminaraColors.Ink2,
+                ),
+            )
         }
 
         if (state.vault.isSignedIn) {
             Text(text = state.vault.email, style = LuminaraTextStyles.SectionTitle)
-            val planLabel = state.quota?.plan?.uppercase() ?: "FREE COMPANION"
-            val remainingLabel =
-                state.quota?.let { "${it.remaining}/${it.limit} daily hosted checks remaining" }
-                    ?: "3 daily hosted checks included"
-            Text(text = "Tier: $planLabel · $remainingLabel", style = LuminaraTextStyles.Body)
+            Text(text = quotaLine(state), style = LuminaraTextStyles.Body)
             OutlinedButton(
                 onClick = viewModel::signOut,
                 shape = RoundedCornerShape(999.dp),
                 modifier = Modifier.fillMaxWidth().testTag("sign_out_button"),
             ) {
-                Text("Sign Out")
+                Text("Sign out")
             }
         } else {
             Text(
-                text = "Sign in with your Luminara account for cloud history sync and 3 hosted AI checks per day.",
+                text = "Guest mode probes live files. Sign in to sync history and use 3 hosted checks a day.",
                 style = LuminaraTextStyles.Body,
             )
             OutlinedTextField(
@@ -294,6 +302,9 @@ private fun AccountSection(
                 onValueChange = viewModel::updateEmail,
                 label = { Text("Email address") },
                 singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                shape = RoundedCornerShape(16.dp),
+                colors = FoundryFieldColors(),
                 modifier = Modifier.fillMaxWidth().testTag("settings_email_input"),
             )
             OutlinedTextField(
@@ -302,33 +313,24 @@ private fun AccountSection(
                 label = { Text("Password") },
                 singleLine = true,
                 visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                shape = RoundedCornerShape(16.dp),
+                colors = FoundryFieldColors(),
                 modifier = Modifier.fillMaxWidth().testTag("settings_password_input"),
             )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            FoundryButton(
+                text = "Sign in",
+                onClick = viewModel::signIn,
+                enabled = !state.isBusy,
+                testTag = "sign_in_button",
+            )
+            OutlinedButton(
+                onClick = viewModel::signUp,
+                enabled = !state.isBusy,
+                shape = RoundedCornerShape(999.dp),
+                modifier = Modifier.fillMaxWidth().height(48.dp).testTag("sign_up_button"),
             ) {
-                Button(
-                    onClick = viewModel::signIn,
-                    enabled = !state.isBusy,
-                    shape = RoundedCornerShape(999.dp),
-                    colors =
-                    ButtonDefaults.buttonColors(
-                        containerColor = LuminaraColors.GoldAccent,
-                        contentColor = LuminaraColors.AccentInk,
-                    ),
-                    modifier = Modifier.weight(1f).height(48.dp).testTag("sign_in_button"),
-                ) {
-                    Text("Sign In")
-                }
-                OutlinedButton(
-                    onClick = viewModel::signUp,
-                    enabled = !state.isBusy,
-                    shape = RoundedCornerShape(999.dp),
-                    modifier = Modifier.weight(1f).height(48.dp).testTag("sign_up_button"),
-                ) {
-                    Text("Create Account")
-                }
+                Text("Create account")
             }
         }
     }
@@ -340,55 +342,40 @@ private fun ByokVaultSection(
     viewModel: SettingsViewModel,
 ) {
     WorkbenchCard {
-        EyebrowKicker("BYOK API KEY VAULT (ANDROID KEYSTORE AES-GCM)")
+        EyebrowKicker("Your keys")
         Text(
-            text = "Bring your own API keys for unlimited un-metered queries. Keys are encrypted on-device.",
+            text =
+            "Groq, Tavily, Gemini, or NVIDIA NIM. " +
+                "Encrypted on this device with the Android Keystore.",
             style = LuminaraTextStyles.Body,
         )
-        OutlinedTextField(
+        SecretField(
             value = state.groqKeyInput,
             onValueChange = viewModel::updateGroqKey,
-            label = { Text("Groq API Key (gsk_...)") },
-            singleLine = true,
-            visualTransformation = PasswordVisualTransformation(),
-            modifier = Modifier.fillMaxWidth().testTag("byok_groq_input"),
+            label = "Groq API key (gsk_...)",
+            testTag = "byok_groq_input",
         )
-        OutlinedTextField(
+        SecretField(
             value = state.tavilyKeyInput,
             onValueChange = viewModel::updateTavilyKey,
-            label = { Text("Tavily Search API Key (tvly-...)") },
-            singleLine = true,
-            visualTransformation = PasswordVisualTransformation(),
-            modifier = Modifier.fillMaxWidth().testTag("byok_tavily_input"),
+            label = "Tavily search key (tvly-...)",
+            testTag = "byok_tavily_input",
         )
-        OutlinedTextField(
+        SecretField(
             value = state.geminiKeyInput,
             onValueChange = viewModel::updateGeminiKey,
-            label = { Text("Google Gemini API Key") },
-            singleLine = true,
-            visualTransformation = PasswordVisualTransformation(),
-            modifier = Modifier.fillMaxWidth(),
+            label = "Google Gemini API key",
         )
-        OutlinedTextField(
+        SecretField(
             value = state.nimKeyInput,
             onValueChange = viewModel::updateNimKey,
-            label = { Text("NVIDIA NIM API Key (nvapi-...)") },
-            singleLine = true,
-            visualTransformation = PasswordVisualTransformation(),
-            modifier = Modifier.fillMaxWidth(),
+            label = "NVIDIA NIM API key (nvapi-...)",
         )
-        Button(
+        FoundryButton(
+            text = "Save encrypted keys",
             onClick = viewModel::saveByokKeys,
-            shape = RoundedCornerShape(999.dp),
-            colors =
-            ButtonDefaults.buttonColors(
-                containerColor = LuminaraColors.GoldAccent,
-                contentColor = LuminaraColors.AccentInk,
-            ),
-            modifier = Modifier.fillMaxWidth().height(48.dp).testTag("save_byok_button"),
-        ) {
-            Text("Save Encrypted Keys")
-        }
+            testTag = "save_byok_button",
+        )
     }
 }
 
@@ -399,7 +386,7 @@ private fun PrivacyAndLegalSection(
     context: Context,
 ) {
     WorkbenchCard {
-        EyebrowKicker("PRIVACY, DATA EXPORT & ACCOUNT DELETION")
+        EyebrowKicker("Privacy")
         Text(
             text = "Operator: Luminara Digital Pty Ltd (ABN 90 693 125 281). All traffic uses HTTPS/TLS.",
             style = LuminaraTextStyles.Body,
@@ -410,21 +397,21 @@ private fun PrivacyAndLegalSection(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             OutlinedButton(
-                onClick = { openCustomTab(context, "${BuildConfig.WEB_BASE_URL}/privacy") },
+                onClick = { openCustomTab(context, "${BuildConfig.WEB_BASE_URL}/privacy?client=android") },
                 shape = RoundedCornerShape(999.dp),
                 modifier = Modifier.weight(1f),
             ) {
                 Text("Privacy Policy")
             }
             OutlinedButton(
-                onClick = { openCustomTab(context, "${BuildConfig.WEB_BASE_URL}/terms") },
+                onClick = { openCustomTab(context, "${BuildConfig.WEB_BASE_URL}/terms?client=android") },
                 shape = RoundedCornerShape(999.dp),
                 modifier = Modifier.weight(1f),
             ) {
                 Text("Terms")
             }
             OutlinedButton(
-                onClick = { openCustomTab(context, "${BuildConfig.WEB_BASE_URL}/contact") },
+                onClick = { openCustomTab(context, "${BuildConfig.WEB_BASE_URL}/contact?client=android") },
                 shape = RoundedCornerShape(999.dp),
                 modifier = Modifier.weight(1f),
             ) {
@@ -439,14 +426,16 @@ private fun PrivacyAndLegalSection(
                 shape = RoundedCornerShape(999.dp),
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text("Export Account Data (JSON)")
+                Text("Export account data")
             }
 
             OutlinedTextField(
                 value = state.deleteConfirmInput,
                 onValueChange = viewModel::updateDeleteConfirm,
-                label = { Text("Type DELETE to permanently erase account") },
+                label = { Text("Type DELETE to erase this account") },
                 singleLine = true,
+                shape = RoundedCornerShape(16.dp),
+                colors = FoundryFieldColors(),
                 modifier = Modifier.fillMaxWidth().testTag("delete_confirm_input"),
             )
             OutlinedButton(
@@ -455,10 +444,39 @@ private fun PrivacyAndLegalSection(
                 shape = RoundedCornerShape(999.dp),
                 modifier = Modifier.fillMaxWidth().testTag("delete_account_button"),
             ) {
-                Text("Permanently Delete Account & Data", color = LuminaraColors.ErrorRed)
+                Text("Delete account and data", color = LuminaraColors.ErrorRed)
             }
         }
     }
+}
+
+private fun quotaLine(state: SettingsUiState): String {
+    val quota = state.quota ?: return "3 hosted checks a day once you sign in."
+    val plan = if (quota.plan.equals("free", ignoreCase = true)) "Your account" else quota.plan
+    if (quota.isUnlimited) return "$plan. Hosted checks are not capped on this account."
+    return "$plan. ${quota.remaining} of ${quota.limit} hosted checks left today."
+}
+
+@Composable
+private fun SecretField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    testTag: String? = null,
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label) },
+        singleLine = true,
+        visualTransformation = PasswordVisualTransformation(),
+        shape = RoundedCornerShape(16.dp),
+        colors = FoundryFieldColors(),
+        modifier =
+        Modifier
+            .fillMaxWidth()
+            .then(if (testTag != null) Modifier.testTag(testTag) else Modifier),
+    )
 }
 
 private fun openCustomTab(

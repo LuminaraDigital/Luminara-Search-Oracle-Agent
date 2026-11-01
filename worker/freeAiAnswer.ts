@@ -4,6 +4,7 @@
  * A miss, a full cap, or a down meter hides the card. The answer is cached per suburb for 24h.
  * The cache is the Cache API. This module does not write KV.
  */
+import { GROQ_DEFAULT_MODEL } from '../services/llm/nativeModelDefaults';
 import type { Env } from './env';
 import { invokeDailyQuota, meterName } from './dailyQuota';
 import { getActiveSubscription } from './quotaMiddleware';
@@ -163,7 +164,7 @@ async function searchExa(env: Env, query: string): Promise<CitedSource[]> {
 async function writeAnswer(env: Env, prompt: string): Promise<string> {
   const groq = env.GROQ_API_KEY || env.GROQ_API_KEY_FALLBACK;
   if (groq) {
-    const text = await chat(GROQ_URL, groq, 'llama-3.3-70b-versatile', prompt);
+    const text = await chat(GROQ_URL, groq, GROQ_DEFAULT_MODEL, prompt);
     if (text) return text;
   }
   if (env.NVIDIA_API_KEY) {

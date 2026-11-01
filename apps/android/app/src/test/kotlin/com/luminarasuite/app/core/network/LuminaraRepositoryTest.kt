@@ -1,9 +1,11 @@
 package com.luminarasuite.app.core.network
 
 import com.luminarasuite.app.core.auth.InMemoryVaultStorage
+import com.luminarasuite.app.core.auth.VaultSnapshot
 import com.luminarasuite.app.core.database.AuditHistoryEntity
 import com.luminarasuite.app.core.database.FindingEntity
 import com.luminarasuite.app.core.database.LuminaraDao
+import com.luminarasuite.app.core.database.StudioSourceEntity
 import com.luminarasuite.app.core.model.AccountDeleteRequest
 import com.luminarasuite.app.core.model.AccountDeleteResponse
 import com.luminarasuite.app.core.model.AuditFinding
@@ -11,6 +13,8 @@ import com.luminarasuite.app.core.model.AuditHistoryEntry
 import com.luminarasuite.app.core.model.AuditHistoryListResponse
 import com.luminarasuite.app.core.model.AuditHistoryUpsertRequest
 import com.luminarasuite.app.core.model.AuditHistoryUpsertResponse
+import com.luminarasuite.app.core.model.AuditRunRequest
+import com.luminarasuite.app.core.model.AuditRunResponse
 import com.luminarasuite.app.core.model.AuthCredentialsRequest
 import com.luminarasuite.app.core.model.AuthTokenResponse
 import com.luminarasuite.app.core.model.BootResponse
@@ -28,6 +32,11 @@ import com.luminarasuite.app.core.model.GroqChatRequest
 import com.luminarasuite.app.core.model.GroqChatResponse
 import com.luminarasuite.app.core.model.GroqChoice
 import com.luminarasuite.app.core.model.GroqMessage
+import com.luminarasuite.app.core.model.IdeaCard
+import com.luminarasuite.app.core.model.IdeaCreateRequest
+import com.luminarasuite.app.core.model.IdeaCreateResponse
+import com.luminarasuite.app.core.model.IdeaDetailResponse
+import com.luminarasuite.app.core.model.IdeaListResponse
 import com.luminarasuite.app.core.model.PrivacyExportResponse
 import com.luminarasuite.app.core.model.ProbeCrawlData
 import com.luminarasuite.app.core.model.ProbeCrawlResponse
@@ -40,7 +49,12 @@ import com.luminarasuite.app.core.model.TavilySearchResponse
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.JsonObject
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.ResponseBody
+import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -84,6 +98,29 @@ class FakeLuminaraDao : LuminaraDao {
 
     override suspend fun clearAuditHistory() {
         historyState.value = emptyList()
+    }
+
+    private val studioState = MutableStateFlow<List<StudioSourceEntity>>(emptyList())
+
+    override fun observeStudioSources(): Flow<List<StudioSourceEntity>> = studioState
+
+    override suspend fun upsertStudioSource(source: StudioSourceEntity) {
+        studioState.value = listOf(source) + studioState.value.filter { it.id != source.id }
+    }
+
+    override suspend fun setStudioSourceSelected(
+        id: String,
+        selected: Boolean,
+    ) {
+        studioState.value = studioState.value.map { if (it.id == id) it.copy(selected = selected) else it }
+    }
+
+    override suspend fun deleteStudioSource(id: String) {
+        studioState.value = studioState.value.filter { it.id != id }
+    }
+
+    override suspend fun clearStudioSources() {
+        studioState.value = emptyList()
     }
 
     override suspend fun clearFindings() {
@@ -242,9 +279,36 @@ class FakeLuminaraApi : LuminaraApi {
             ),
         )
 
+    var streamBody: String =
+        "data: {\"choices\":[{\"delta\":{\"content\":\"VERDICT: Publish /llms.txt \\u2014 now.\\n\"}}]}\n\n" +
+            "data: {\"choices\":[{\"delta\":{\"content\":\"NEXT_ACTION: Add H1.\"}}]}\n\n" +
+            "data: [DONE]\n\n"
+
+    override suspend fun streamGroq(
+        providerKey: String?,
+        acceptFallback: String,
+        body: GroqChatRequest,
+    ): ResponseBody = streamBody.toResponseBody("text/event-stream".toMediaType())
+
+    override suspend fun beginAuditRun(body: AuditRunRequest): AuditRunResponse =
+        AuditRunResponse(token = "run", domain = body.domain)
+
+    override suspend fun refundAuditRun(body: JsonObject): AuditRunResponse = AuditRunResponse()
+
+    override suspend fun listIdeas(): IdeaListResponse = IdeaListResponse(ok = true)
+
+    override suspend fun createIdea(
+        providerKey: String?,
+        body: IdeaCreateRequest,
+    ): IdeaCreateResponse = IdeaCreateResponse(ok = true, id = "is_1", card = IdeaCard(problem = body.idea))
+
+    override suspend fun getIdea(id: String): IdeaDetailResponse = IdeaDetailResponse(ok = true, card = IdeaCard())
+
     override suspend fun chatGroq(
         providerKey: String?,
         acceptFallback: String,
+        auditRun: String?,
+        auditDomain: String?,
         body: GroqChatRequest,
     ): GroqChatResponse =
         GroqChatResponse(
@@ -404,5 +468,41 @@ class LuminaraRepositoryTest {
             assertFalse(vault.getSnapshot().isSignedIn)
             assertTrue(repo.auditHistoryFlow.first().isEmpty())
             assertTrue(repo.findingsFlow.first().isEmpty())
+        }
+
+    @Test
+    fun streamOracle_emitsPartialsThenStructuredTurn() =
+        runTest {
+            val repo =
+                DefaultLuminaraRepository(
+                    api = FakeLuminaraApi(),
+                    dao = FakeLuminaraDao(),
+                    vault = InMemoryVaultStorage(VaultSnapshot(idToken = "t", email = "a@b.co")),
+                )
+
+            val events = repo.streamOracle("Check citations", emptyList()).toList()
+
+            assertTrue(events.any { it is OracleEvent.Partial })
+            val turn = (events.last() as OracleEvent.Complete).turn
+            assertEquals("Publish /llms.txt - now.", turn.verdict)
+            assertEquals("Add H1.", turn.nextAction)
+        }
+
+    @Test
+    fun streamOracle_acceptsPlainJsonFallback() =
+        runTest {
+            val api = FakeLuminaraApi()
+            api.streamBody =
+                "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"VERDICT: Yes\\nNEXT_ACTION: Go\"}}]}"
+            val repo =
+                DefaultLuminaraRepository(
+                    api = api,
+                    dao = FakeLuminaraDao(),
+                    vault = InMemoryVaultStorage(VaultSnapshot(idToken = "t", email = "a@b.co")),
+                )
+
+            val turn = (repo.streamOracle("Q", emptyList()).toList().last() as OracleEvent.Complete).turn
+
+            assertEquals("Yes", turn.verdict)
         }
 }

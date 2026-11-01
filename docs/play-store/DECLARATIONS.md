@@ -16,7 +16,7 @@ App: **Luminara Suite** (`com.luminarasuite.app`) · Operator: **LUMINARA DIGITA
 | **Health apps** | **My app does not provide any health features** | Search engine and AI visibility auditing tool only. |
 | **App category** | **Business** (or **Productivity**) | B2B SEO, AEO, and GEO domain auditing workbench. |
 | **Contact details** | Email: `support@luminarasuite.com` · Website: `https://www.luminarasuite.com` | Published operator contact channels. |
-| **Content rating (IARC)** | Category: **Utility, Productivity, Communication, or Other** · Online content: **Yes** (AI-generated audit outputs) · UGC: **No** | Every AI output includes an in-app **Report AI Output** button (`AskScreen.kt`). |
+| **Content rating (IARC)** | Category: **Utility, Productivity, Communication, or Other** · Online content: **Yes** (AI-generated audit outputs) · UGC: **No** | Every AI output includes an in-app **Report AI Output** button (Ask, Audit, Idea Scout, Studio answers, Studio audio overview). |
 | **Target audience** | **18 and over only** | Business and website operator tool (`services/legal/privacyCopy.ts`). Outside Google Play Families Policy. |
 
 ---
@@ -33,8 +33,8 @@ App: **Luminara Suite** (`com.luminarasuite.app`) · Operator: **LUMINARA DIGITA
 | :--- | :--- | :---: | :---: | :--- | :--- |
 | **Personal info** | Email address | Yes | Yes | Optional (Guest mode works without sign-in; required only if signing in) | App functionality, Account management (Firebase Auth + Cloudflare D1) |
 | **Personal info** | User IDs (`firebase_uid`, `accountId`) | Yes | Yes | Optional (Signed-in mode only) | App functionality, Account management, Fraud/abuse prevention |
-| **Messages** | Other in-app messages (Oracle prompts & queries) | Yes | Yes | Optional | App functionality (sent to configured AI/search providers: Groq, Tavily, Gemini, NVIDIA NIM) |
-| **App activity** | Other user-generated content (audited domains, audit history, findings) | Yes | Yes | Optional | App functionality (stored locally in Room 3 and synced to Cloudflare D1 when signed in) |
+| **Messages** | Other in-app messages (Oracle prompts & queries, Studio questions) | Yes | Yes | Optional | App functionality (sent to configured AI/search providers: Groq, Tavily, Gemini, NVIDIA NIM) |
+| **App activity** | Other user-generated content (audited domains, audit history, findings, idea text, Studio notes) | Yes | Yes | Optional | App functionality (audits and findings stored locally in Room 3 and synced to Cloudflare D1 when signed in. Idea text stored in the account. Studio notes stay on the device, and sources the user selects are sent to the AI provider to answer) |
 | **Device or other IDs** | Device or other IDs | **No** | **No** | N/A | Zero third-party analytics, crash, or advertising SDKs are bundled in `apps/android`. |
 | **App info and performance** | Crash logs / Diagnostics | **No** | **No** | N/A | Zero third-party crash reporting SDKs bundled in v1. |
 
