@@ -35,6 +35,8 @@ import com.luminarasuite.app.core.model.StudioSource
 import com.luminarasuite.app.core.model.TavilyResult
 import com.luminarasuite.app.core.model.TavilySearchRequest
 import com.luminarasuite.app.core.model.WorkerErrorPayload
+import com.luminarasuite.app.core.model.hostedAllowanceOpen
+import com.luminarasuite.app.core.model.hostedBlockedMessage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -465,8 +467,14 @@ class DefaultLuminaraRepository(
             val snap = vault.getSnapshot()
             val groqKey = snap.byokKeys.groqKey.takeIf { it.isNotBlank() }
             val tavilyKey = snap.byokKeys.tavilyKey.takeIf { it.isNotBlank() }
-            if (!snap.isSignedIn && groqKey == null) {
-                throw IllegalStateException("Sign in to use hosted AI, or add your Groq API key in Settings.")
+            if (groqKey == null) {
+                if (!snap.isSignedIn) {
+                    throw IllegalStateException("Sign in to use hosted AI, or add your Groq API key in Settings.")
+                }
+                val quota = api.getAccountBoot().quota
+                if (!hostedAllowanceOpen(quota)) {
+                    throw IllegalStateException(hostedBlockedMessage(quota))
+                }
             }
 
             val searchResults = fetchOracleEvidence(trimmed, tavilyKey, snap.isSignedIn)

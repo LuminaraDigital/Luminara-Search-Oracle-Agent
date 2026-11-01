@@ -3,6 +3,7 @@ import type { HostedIdentity } from './userTypes';
 import { resolveAccountId } from './userStore';
 import { referralBonusRemaining, tryConsumeReferralCredit } from './referrals';
 import { invokeDailyQuota, meterName, QUOTA_CAPACITY_ERROR } from './dailyQuota';
+import { entitlementsFor, normalizePlanId, type PlanId } from '../services/plans/planEntitlements';
 
 export { QUOTA_CAPACITY_ERROR };
 
@@ -70,25 +71,82 @@ export async function readFreeUsed(env: Env, quotaKeyId: string, limit: number):
 /**
  * Checks whether a user has an active paid subscription stored in KV (sub:<accountId>).
  * Also accepts legacy sub:<loginId> rows written before account linking.
- * Stars, TON, and (later) Stripe all write the same key shape.
+ * Stars, TON, Stripe, and license keys write the same key shape.
  */
-export type SubRow = { plan?: string; expiresAt?: number; paymentMethod?: string };
+export type SubRow = {
+  plan?: string;
+  expiresAt?: number;
+  paymentMethod?: string;
+  reversedAt?: number;
+  reversedStripeSessions?: unknown;
+};
+
+/** Account key first, then the legacy login key. A KV miss or fault is an empty list. */
+async function readStoredSubs(env: Env, user: HostedIdentity | null): Promise<SubRow[]> {
+  if (!user || !env.LUMINARA_KV) return [];
+  try {
+    const accountId = user.accountId || (await resolveAccountId(env, user.id));
+    const rows: SubRow[] = [];
+    const seen = new Set<string>();
+    for (const key of [`sub:${accountId}`, `sub:${user.id}`]) {
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const sub = (await env.LUMINARA_KV.get(key, 'json')) as SubRow | null;
+      if (sub) rows.push(sub);
+    }
+    return rows;
+  } catch {
+    return [];
+  }
+}
 
 export async function getActiveSubscription(
   env: Env,
   user: HostedIdentity | null,
 ): Promise<SubRow | null> {
-  if (!user || !env.LUMINARA_KV) return null;
-  try {
-    const accountId = user.accountId || (await resolveAccountId(env, user.id));
-    for (const key of [`sub:${accountId}`, `sub:${user.id}`]) {
-      const sub = (await env.LUMINARA_KV.get(key, 'json')) as SubRow | null;
-      if (sub?.expiresAt && sub.expiresAt > Date.now()) return sub;
+  const now = Date.now();
+  const active = (await readStoredSubs(env, user)).find((sub) => sub.expiresAt && sub.expiresAt > now);
+  return active ?? null;
+}
+
+export type HostedEntitlementStatus = 'none' | 'active' | 'canceled';
+
+/** guest: signed out. free: signed in without a live paid term. Otherwise the stored plan id. */
+export type HostedEntitlement = {
+  tier: 'guest' | PlanId;
+  name: string;
+  status: HostedEntitlementStatus;
+};
+
+function stripeTermCanceled(row: SubRow, now: number): boolean {
+  if (row.paymentMethod !== 'stripe') return false;
+  const expiresAt = Number(row.expiresAt);
+  if (!Number.isFinite(expiresAt) || expiresAt > now) return false;
+  if (typeof row.reversedAt === 'number') return true;
+  return Array.isArray(row.reversedStripeSessions) && row.reversedStripeSessions.length > 0;
+}
+
+/**
+ * Plan the Worker already stored. Stripe Checkout is a prepaid term (mode=payment), so a
+ * refund or dispute that ends the term is canceled. Invoice past_due is not stored and is not returned.
+ */
+export function mapHostedEntitlement(input: {
+  signedIn: boolean;
+  active: SubRow | null;
+  records: SubRow[];
+  now: number;
+}): HostedEntitlement {
+  if (!input.signedIn) return { tier: 'guest', name: 'Guest', status: 'none' };
+  if (input.active?.expiresAt && input.active.expiresAt > input.now) {
+    const planId = normalizePlanId(input.active.plan);
+    if (planId !== 'free') {
+      return { tier: planId, name: entitlementsFor(planId).title, status: 'active' };
     }
-    return null;
-  } catch {
-    return null;
   }
+  if (input.records.some((row) => stripeTermCanceled(row, input.now))) {
+    return { tier: 'free', name: 'Free', status: 'canceled' };
+  }
+  return { tier: 'free', name: 'Free', status: 'none' };
 }
 
 export async function isUserSubscribed(env: Env, user: HostedIdentity | null): Promise<boolean> {
@@ -251,6 +309,7 @@ export type QuotaView =
       resetSec: number;
       isUnlimited: boolean;
       bonusRemaining?: number;
+      entitlement: HostedEntitlement;
     }
   | { ok: false; error: string; code: 'HOSTED_CAPACITY' };
 
@@ -261,8 +320,11 @@ export async function readQuotaSnapshot(env: Env, user: HostedIdentity): Promise
   const midnightUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
   const resetSec = Math.max(0, Math.floor((midnightUtc.getTime() - now.getTime()) / 1000));
   const accountId = user.accountId || user.id;
-  const sub = await getActiveSubscription(env, user);
-  if (sub?.expiresAt && sub.expiresAt > Date.now()) {
+  const nowMs = now.getTime();
+  const records = await readStoredSubs(env, user);
+  const sub = records.find((row) => row.expiresAt && row.expiresAt > nowMs) ?? null;
+  const entitlement = mapHostedEntitlement({ signedIn: true, active: sub, records, now: nowMs });
+  if (sub?.expiresAt && sub.expiresAt > nowMs) {
     return {
       ok: true,
       authenticated: true,
@@ -274,6 +336,7 @@ export async function readQuotaSnapshot(env: Env, user: HostedIdentity): Promise
       remaining: -1,
       resetSec,
       isUnlimited: true,
+      entitlement,
     };
   }
   const used = await readFreeUsed(env, accountId, limit);
@@ -290,5 +353,6 @@ export async function readQuotaSnapshot(env: Env, user: HostedIdentity): Promise
     bonusRemaining,
     resetSec,
     isUnlimited: limit <= 0,
+    entitlement,
   };
 }

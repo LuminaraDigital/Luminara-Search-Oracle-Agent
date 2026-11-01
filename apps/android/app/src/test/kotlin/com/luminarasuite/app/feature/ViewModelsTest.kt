@@ -162,8 +162,13 @@ class ViewModelsTest {
             vm.exportData()
             assertEquals("Export ready.", vm.uiState.value.statusBanner)
 
+            assertEquals("free", vm.uiState.value.quota?.plan)
+            assertEquals("free", vm.uiState.value.quota?.entitlement?.tier)
+            assertEquals(2, vm.uiState.value.quota?.remaining)
+
             vm.signOut()
             assertFalse(vm.uiState.value.vault.isSignedIn)
+            assertNull(vm.uiState.value.quota)
 
             vm.updateEmail("user@luminarasuite.com")
             vm.updatePassword("password123")

@@ -249,6 +249,13 @@ data class HostedIdentity(
 )
 
 @Serializable
+data class HostedEntitlement(
+    val tier: String = "free",
+    val name: String = "Free",
+    val status: String = "none",
+)
+
+@Serializable
 data class QuotaStatus(
     val ok: Boolean = false,
     val authenticated: Boolean = false,
@@ -260,6 +267,7 @@ data class QuotaStatus(
     val bonusRemaining: Int = 0,
     val resetSec: Int = 0,
     val isUnlimited: Boolean = false,
+    val entitlement: HostedEntitlement? = null,
 )
 
 @Serializable
