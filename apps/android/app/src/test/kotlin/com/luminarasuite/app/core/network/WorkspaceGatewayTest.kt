@@ -112,6 +112,7 @@ class WorkspaceGatewayTest {
         assertNull(ShareLink.parse("https://www.luminarasuite.com/pricing"))
         assertNull(ShareLink.parse("http://www.luminarasuite.com/share/$token"))
         assertNull(ShareLink.parse("https://www.luminarasuite.com/share/x"))
+        assertNull(ShareLink.parse("https://www.luminarasuite.com/share/${"z".repeat(64)}"))
         assertNull(ShareLink.parse(null))
     }
 }

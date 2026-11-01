@@ -300,7 +300,10 @@ class FakeLuminaraApi : LuminaraApi {
     override suspend fun getEnquiries(projectId: String): EnquiryDeskResponse =
         EnquiryDeskResponse(ok = true, enquiries = listOf(EnquiryRecord(id = "e1", contactName = "Sam")))
 
-    override suspend fun createEnquiry(body: EnquiryCreateRequest): JsonObject = JsonObject(emptyMap())
+    override suspend fun createEnquiry(body: EnquiryCreateRequest): JsonObject {
+        check(!enquiryFails) { "offline" }
+        return JsonObject(emptyMap())
+    }
 
     override suspend fun enquiryTurn(
         id: String,
@@ -396,10 +399,12 @@ class FakeLuminaraApi : LuminaraApi {
     ): ResponseBody = streamBody.toResponseBody("text/event-stream".toMediaType())
 
     override suspend fun beginAuditRun(body: AuditRunRequest): AuditRunResponse =
-        AuditRunResponse(token = "run", domain = body.domain)
+        AuditRunResponse(token = auditRunToken, domain = body.domain)
 
     var scrapedPage: FirecrawlPage? = null
     var searchFails = false
+    var enquiryFails = false
+    var auditRunToken = "run"
     val refundBodies = mutableListOf<JsonObject>()
     val providerRunTokens = mutableListOf<String?>()
 
@@ -528,6 +533,20 @@ class LuminaraRepositoryTest {
             assertEquals("not_measured", report.crew?.measurementStatus)
             assertEquals(1, api.refundBodies.size)
             assertNull(repo.auditHistoryFlow.first().first().citationRatePercent)
+        }
+
+    @Test
+    fun runInstantAudit_keepsCrawlerResultsWhenTheWorkerHoldsNoRunToken() =
+        runTest {
+            val api = FakeLuminaraApi().apply { auditRunToken = "" }
+            val repo = DefaultLuminaraRepository(api = api, dao = FakeLuminaraDao(), vault = InMemoryVaultStorage())
+            repo.signIn("operator@luminarasuite.com", "password123")
+
+            val report = repo.runInstantAudit("example.com").getOrThrow()
+
+            assertNull(report.crew)
+            assertTrue(api.providerRunTokens.isEmpty())
+            assertTrue(api.refundBodies.isEmpty())
         }
 
     @Test

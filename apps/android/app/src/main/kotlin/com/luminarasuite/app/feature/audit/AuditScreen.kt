@@ -3,7 +3,6 @@ package com.luminarasuite.app.feature.audit
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
-import android.content.Intent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -64,6 +63,7 @@ import com.luminarasuite.app.core.model.ReadinessCheck
 import com.luminarasuite.app.core.network.AuditRead
 import com.luminarasuite.app.core.network.InstantAuditReport
 import com.luminarasuite.app.core.network.LuminaraRepository
+import com.luminarasuite.app.feature.share.ShareActions
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -236,19 +236,6 @@ private fun reportAsText(report: InstantAuditReport): String =
         appendLine("This week: ${report.oneMoveThisWeek}")
     }
 
-private fun shareReport(
-    context: Context,
-    domain: String,
-    text: String,
-) {
-    val send =
-        Intent(Intent.ACTION_SEND)
-            .setType("text/plain")
-            .putExtra(Intent.EXTRA_SUBJECT, "AI visibility check: $domain")
-            .putExtra(Intent.EXTRA_TEXT, text)
-    context.startActivity(Intent.createChooser(send, "Share report"))
-}
-
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AuditScreen(
@@ -382,8 +369,6 @@ private fun AuditReportContent(
             checks = evaluation.checks,
             failCount = evaluation.failCount,
         )
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         WorkbenchCard(emphasized = true) {
             Row(
@@ -468,28 +453,20 @@ private fun AuditReportContent(
             }
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            GhostPillButton(
-                text = "Share",
-                onClick = {
-                    // A guest has no account to hold a link, so the report goes out as text.
-                    val text = reportAsText(report)
-                    scope.launch {
-                        val link = onShareLink(text, report.domain).getOrNull()
-                        shareReport(context, report.domain, link ?: text)
-                    }
-                },
-                modifier = Modifier.weight(1f),
-                testTag = "audit_share_button",
-            )
-            GhostPillButton(
-                text = if (state.savedToStudio) "In Studio" else "Send to Studio",
-                onClick = onSendToStudio,
-                enabled = !state.savedToStudio,
-                modifier = Modifier.weight(1f),
-                testTag = "audit_studio_button",
-            )
-        }
+        ShareActions(
+            subject = "AI visibility check: ${report.domain}",
+            text = reportAsText(report),
+            domain = report.domain,
+            testTagPrefix = "audit",
+            onShareLink = onShareLink,
+        )
+        GhostPillButton(
+            text = if (state.savedToStudio) "In Studio" else "Send to Studio",
+            onClick = onSendToStudio,
+            enabled = !state.savedToStudio,
+            modifier = Modifier.fillMaxWidth(),
+            testTag = "audit_studio_button",
+        )
 
         if (clear) {
             WorkbenchCard(emphasized = true, railColor = LuminaraColors.PassGreen) {

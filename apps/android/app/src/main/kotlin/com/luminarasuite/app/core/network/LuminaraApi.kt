@@ -44,6 +44,7 @@ import com.luminarasuite.app.core.model.SharedReportResponse
 import com.luminarasuite.app.core.model.SharedTeaserResponse
 import com.luminarasuite.app.core.model.TavilySearchRequest
 import com.luminarasuite.app.core.model.TavilySearchResponse
+import com.luminarasuite.app.core.model.WorkerErrorPayload
 import com.luminarasuite.app.core.model.WorkspacePutRequest
 import com.luminarasuite.app.core.model.WorkspacePutResponse
 import com.luminarasuite.app.core.model.WorkspaceResponse
@@ -53,6 +54,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import okhttp3.ResponseBody
+import retrofit2.HttpException
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.Header
@@ -74,6 +76,12 @@ val LuminaraWireJson =
         explicitNulls = false
         encodeDefaults = true
     }
+
+/** The Worker's error body. It can be read only once, so callers keep the result. */
+fun HttpException.workerPayload(): WorkerErrorPayload? {
+    val raw = runCatching { response()?.errorBody()?.string() }.getOrNull().orEmpty()
+    return runCatching { LuminaraWireJson.decodeFromString<WorkerErrorPayload>(raw) }.getOrNull()
+}
 
 /** The Worker refunds only when both scores are explicit nulls, meaning nothing was measured. */
 fun auditRefundBody(

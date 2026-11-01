@@ -50,7 +50,7 @@ class LuminaraApplication : Application() {
                 .addInterceptor(authInterceptor)
                 .authenticator(SessionAuthenticator(vault, refreshOverHttp(BuildConfig.API_BASE_URL, json)))
                 .connectTimeout(20, TimeUnit.SECONDS)
-                .readTimeout(30, TimeUnit.SECONDS)
+                .readTimeout(60, TimeUnit.SECONDS)
                 .build()
 
         val api =

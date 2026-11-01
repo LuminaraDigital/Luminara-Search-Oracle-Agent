@@ -15,7 +15,7 @@ data class ShareLink(
     val isTeaser: Boolean,
 ) {
     companion object {
-        private val TOKEN = Regex("^[A-Za-z0-9_-]{16,128}$")
+        private val TOKEN = Regex("^[a-f0-9]{64}$")
 
         fun parse(url: String?): ShareLink? {
             val path = runCatching { URI(url.orEmpty()) }.getOrNull()?.takeIf { it.scheme == "https" }?.path.orEmpty()

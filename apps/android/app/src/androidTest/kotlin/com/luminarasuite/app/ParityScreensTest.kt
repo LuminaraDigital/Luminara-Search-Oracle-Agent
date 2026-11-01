@@ -6,6 +6,7 @@ import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
@@ -21,6 +22,7 @@ import com.luminarasuite.app.core.model.CrewRules
 import com.luminarasuite.app.core.model.CrewSchema
 import com.luminarasuite.app.core.model.ReadinessCheck
 import com.luminarasuite.app.core.model.SearchRow
+import com.luminarasuite.app.core.model.ShareLink
 import com.luminarasuite.app.core.network.InstantAuditReport
 import com.luminarasuite.app.core.network.LuminaraRepository
 import com.luminarasuite.app.core.reminders.NextFixReminder
@@ -130,6 +132,24 @@ class ParityScreensTest {
         composeRule.onNodeWithText("Sam").performClick()
         composeRule.onNodeWithTag("enquiry_takeover_button").assertExists()
         capture("enquiry-desk")
+    }
+
+    @Test
+    fun theSameLinkOpensAgainAfterBack() {
+        val links = MutableStateFlow<ShareLink?>(ShareLink("a".repeat(64), isTeaser = false))
+        composeRule.setContent {
+            LuminaraWorkbenchApp(
+                repository = SignedInRepository(),
+                workspace = StubWorkspace(),
+                sharedLinks = links,
+                onSharedLinkOpened = { links.value = null },
+            )
+        }
+        composeRule.onNodeWithTag("share_body").assertExists()
+        composeRule.onNodeWithTag("brand_mark").performClick()
+        composeRule.waitUntil { composeRule.onAllNodesWithTag("share_body").fetchSemanticsNodes().isEmpty() }
+        links.value = ShareLink("a".repeat(64), isTeaser = false)
+        composeRule.waitUntil { composeRule.onAllNodesWithTag("share_body").fetchSemanticsNodes().isNotEmpty() }
     }
 
     @Test

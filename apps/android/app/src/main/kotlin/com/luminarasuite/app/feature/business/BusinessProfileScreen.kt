@@ -50,6 +50,10 @@ class BusinessProfileViewModel(
     private val _uiState = MutableStateFlow(ProfileUiState())
     val uiState: StateFlow<ProfileUiState> = _uiState.asStateFlow()
 
+    fun reset() {
+        _uiState.value = ProfileUiState()
+    }
+
     fun load() {
         _uiState.update { it.copy(isBusy = true, errorMessage = null, message = null) }
         viewModelScope.launch {

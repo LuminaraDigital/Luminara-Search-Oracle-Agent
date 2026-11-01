@@ -56,6 +56,29 @@ describe('handleGoogleSignIn', () => {
     expect(res.status).toBe(401);
   });
 
+  it('returns 503 when the provider is misconfigured, not a token error', async () => {
+    const fetchImpl = vi.fn(
+      async () => new Response(JSON.stringify({ error: { message: 'OPERATION_NOT_ALLOWED' } }), { status: 400 }),
+    );
+
+    const res = await handleGoogleSignIn(googleRequest({ googleIdToken: 'g.t' }), env, ip, {
+      fetchImpl: asFetch(fetchImpl),
+    });
+
+    expect(res.status).toBe(503);
+  });
+
+  it('explains when the email already has a password account', async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ needConfirmation: true })));
+
+    const res = await handleGoogleSignIn(googleRequest({ googleIdToken: 'g.t' }), env, ip, {
+      fetchImpl: asFetch(fetchImpl),
+    });
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ code: 'GOOGLE_ACCOUNT_EXISTS' });
+  });
+
   it('refuses an empty body without calling Firebase', async () => {
     const fetchImpl = vi.fn();
 

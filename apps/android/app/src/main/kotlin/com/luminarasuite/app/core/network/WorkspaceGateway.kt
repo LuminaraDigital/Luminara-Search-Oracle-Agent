@@ -9,7 +9,6 @@ import com.luminarasuite.app.core.model.EnquiryTurnRequest
 import com.luminarasuite.app.core.model.ShareCreateRequest
 import com.luminarasuite.app.core.model.ShareLink
 import com.luminarasuite.app.core.model.SharedDocument
-import com.luminarasuite.app.core.model.WorkerErrorPayload
 import com.luminarasuite.app.core.model.WorkspacePutRequest
 import com.luminarasuite.app.core.model.WorkspaceResponse
 import kotlinx.coroutines.CancellationException
@@ -185,8 +184,7 @@ class DefaultWorkspaceGateway(
 
     private fun friendly(err: Throwable): Throwable {
         if (err !is HttpException) return err
-        val raw = runCatching { err.response()?.errorBody()?.string() }.getOrNull().orEmpty()
-        val parsed = runCatching { LuminaraWireJson.decodeFromString<WorkerErrorPayload>(raw) }.getOrNull()
+        val parsed = err.workerPayload()
         return when {
             parsed?.code == "SHARE_PASSWORD_REQUIRED" || parsed?.code == "SHARE_PASSWORD_INVALID" ->
                 SharePasswordRequired()
