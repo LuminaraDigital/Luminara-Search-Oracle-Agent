@@ -50,6 +50,7 @@ import com.luminarasuite.app.core.designsystem.ScreenGutter
 import com.luminarasuite.app.core.designsystem.WorkbenchCard
 import com.luminarasuite.app.core.model.ByokKeyBag
 import com.luminarasuite.app.core.model.QuotaStatus
+import com.luminarasuite.app.core.model.hostedPlanCopy
 import com.luminarasuite.app.core.network.LuminaraRepository
 import com.luminarasuite.app.core.reminders.NextFixReminder
 import kotlinx.coroutines.CancellationException
@@ -390,8 +391,25 @@ private fun AccountSection(
         }
 
         if (state.vault.isSignedIn) {
+            val plan = hostedPlanCopy(signedIn = true, quota = state.quota)
             Text(text = state.vault.email, style = LuminaraTextStyles.SectionTitle)
-            Text(text = quotaLine(state), style = LuminaraTextStyles.Body)
+            Text(
+                text = plan.title,
+                style = LuminaraTextStyles.Body,
+                modifier = Modifier.testTag("plan_title"),
+            )
+            Text(
+                text = plan.detail,
+                style = LuminaraTextStyles.Body,
+                modifier = Modifier.testTag("plan_detail"),
+            )
+            plan.manage?.let { note ->
+                Text(
+                    text = note,
+                    style = LuminaraTextStyles.Body,
+                    modifier = Modifier.testTag("plan_manage_note"),
+                )
+            }
             OutlinedButton(
                 onClick = viewModel::signOut,
                 shape = RoundedCornerShape(999.dp),
@@ -401,7 +419,7 @@ private fun AccountSection(
             }
         } else {
             Text(
-                text = "Guest mode probes live files. Sign in to sync history and use 3 hosted checks a day.",
+                text = "Guest mode probes live files. ${hostedPlanCopy(signedIn = false, quota = null).detail}",
                 style = LuminaraTextStyles.Body,
             )
             if (BuildConfig.GOOGLE_WEB_CLIENT_ID.isNotBlank()) {
@@ -564,13 +582,6 @@ private fun PrivacyAndLegalSection(
             }
         }
     }
-}
-
-private fun quotaLine(state: SettingsUiState): String {
-    val quota = state.quota ?: return "3 hosted checks a day once you sign in."
-    val plan = if (quota.plan.equals("free", ignoreCase = true)) "Your account" else quota.plan
-    if (quota.isUnlimited) return "$plan. Hosted checks are not capped on this account."
-    return "$plan. ${quota.remaining} of ${quota.limit} hosted checks left today."
 }
 
 @Composable

@@ -44,6 +44,7 @@ import com.luminarasuite.app.core.model.GroqChatRequest
 import com.luminarasuite.app.core.model.GroqChatResponse
 import com.luminarasuite.app.core.model.GroqChoice
 import com.luminarasuite.app.core.model.GroqMessage
+import com.luminarasuite.app.core.model.HostedEntitlement
 import com.luminarasuite.app.core.model.IdeaCard
 import com.luminarasuite.app.core.model.IdeaCreateRequest
 import com.luminarasuite.app.core.model.IdeaCreateResponse
@@ -337,11 +338,22 @@ class FakeLuminaraApi : LuminaraApi {
             email = body.email,
         )
 
+    var bootQuota: QuotaStatus =
+        QuotaStatus(
+            ok = true,
+            authenticated = true,
+            plan = "free",
+            limit = 3,
+            remaining = 2,
+            entitlement = HostedEntitlement(tier = "free", name = "Free", status = "none"),
+        )
+    var groqCalls: Int = 0
+
     override suspend fun getAccountBoot(): BootResponse =
         BootResponse(
             ok = true,
             accountId = "fb:uid123",
-            quota = QuotaStatus(ok = true, authenticated = true, plan = "free", limit = 3, remaining = 2),
+            quota = bootQuota,
         )
 
     override suspend fun deleteAccount(body: AccountDeleteRequest): AccountDeleteResponse =
@@ -429,8 +441,9 @@ class FakeLuminaraApi : LuminaraApi {
         auditRun: String?,
         auditDomain: String?,
         body: GroqChatRequest,
-    ): GroqChatResponse =
-        GroqChatResponse(
+    ): GroqChatResponse {
+        groqCalls += 1
+        return GroqChatResponse(
             choices =
             listOf(
                 GroqChoice(
@@ -444,6 +457,7 @@ class FakeLuminaraApi : LuminaraApi {
                 ),
             ),
         )
+    }
 }
 
 class LuminaraRepositoryTest {
@@ -539,6 +553,51 @@ class LuminaraRepositoryTest {
             assertFalse(turn.verdict.contains("\u2014"))
             assertEquals("Groq LPU (BYOK)", turn.modelLabel)
             assertEquals("measured", turn.measurementStatus)
+        }
+
+    @Test
+    fun askOracle_gatesHostedCallsOnTheWorkerAllowance() =
+        runTest {
+            val api = FakeLuminaraApi()
+            val vault = InMemoryVaultStorage()
+            val repo = DefaultLuminaraRepository(api = api, dao = FakeLuminaraDao(), vault = vault)
+
+            repo.signIn("operator@luminarasuite.com", "password123")
+            val hosted = repo.askOracle("How do I fix llms.txt?")
+            assertTrue(hosted.isSuccess)
+            assertEquals("Groq LPU (Hosted)", hosted.getOrThrow().modelLabel)
+            assertEquals(1, api.groqCalls)
+
+            api.bootQuota =
+                api.bootQuota.copy(
+                    remaining = 0,
+                    used = 3,
+                    entitlement = HostedEntitlement(tier = "free", name = "Free", status = "none"),
+                )
+            val blocked = repo.askOracle("How do I fix llms.txt?")
+            assertTrue(blocked.isFailure)
+            assertEquals(1, api.groqCalls)
+
+            api.bootQuota =
+                QuotaStatus(
+                    ok = true,
+                    authenticated = true,
+                    plan = "growth",
+                    limit = -1,
+                    remaining = -1,
+                    isUnlimited = true,
+                    entitlement = HostedEntitlement(tier = "growth", name = "Growth", status = "active"),
+                )
+            val paid = repo.askOracle("How do I fix llms.txt?")
+            assertTrue(paid.isSuccess)
+            assertEquals(2, api.groqCalls)
+
+            api.bootQuota = api.bootQuota.copy(remaining = 0, isUnlimited = false, limit = 3, plan = "free")
+            repo.saveByokKeys(ByokKeyBag(groqKey = "gsk_test_key"))
+            val byok = repo.askOracle("How do I fix llms.txt?")
+            assertTrue(byok.isSuccess)
+            assertEquals("Groq LPU (BYOK)", byok.getOrThrow().modelLabel)
+            assertEquals(3, api.groqCalls)
         }
 
     @Test

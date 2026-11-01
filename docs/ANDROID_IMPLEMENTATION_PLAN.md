@@ -11,7 +11,7 @@
 
 | Decision | Choice | Consequence |
 | :--- | :--- | :--- |
-| Monetization on Android | **Free companion + BYOK (no in-app purchases)** | Strips Stripe web checkout, Telegram Stars, TON Connect, XDC, and Q402 from the Android binary. Satisfies Google Play Payments & Financial Features policies with zero external payment links. |
+| Monetization on Android | **Free companion + BYOK (no in-app purchases)** | Strips Stripe web checkout, Telegram Stars, TON Connect, XDC, and Q402 from the Android binary. Satisfies Google Play Payments & Financial Features policies with zero external payment links. Signed-in Settings reads the Worker entitlement (Guest, Free, or the named plan) and today's hosted checks. No Upgrade control, and no checkout or pricing Intent. |
 | Authentication | **Guest Mode + Firebase Email/Password + BYOK** | Visitors can run live crawl checks (`GET /api/visibility/probe-crawl`) and BYOK audits without signing in. Signed-in users receive hosted daily checks (`3/day`) and cloud workspace sync. |
 | Permissions | **`INTERNET` only** | Ultra-lean manifest. Explicitly strips `com.google.android.gms.permission.AD_ID`, `ACCESS_ADSERVICES_AD_ID`, `ACCESS_ADSERVICES_ATTRIBUTION`, and `BIND_GET_INSTALL_REFERRER_SERVICE` via `tools:node="remove"`. |
 | Telemetry / Ad SDKs | **Zero third-party ad or crash SDKs** | No Advertising ID, no Firebase Crashlytics/Analytics device IDs collected on Android v1. |

@@ -88,7 +88,7 @@ import { auditOrgIdFor, recordAuditLog, getAuditLogs, recordAuditLogBestEffort, 
 import { isAdminAuthorized } from './adminAuth';
 
 import { applyCorsHeaders, corsHeaders, getSessionCookieToken, identify, json, secretEquals, billingId, sha256Hex } from './workerUtils';
-import { getActiveSubscription, readQuotaSnapshot } from './quotaMiddleware';
+import { getActiveSubscription, mapHostedEntitlement, readQuotaSnapshot } from './quotaMiddleware';
 import { handleReferralRoute } from './referrals';
 import { handleIdeaScoutRoute } from './ideaScout';
 import { proxySidecar, isSidecarConfigured, type SidecarId } from './sidecarRelay';
@@ -915,6 +915,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
         remaining: limit,
         resetSec,
         isUnlimited: false,
+        entitlement: mapHostedEntitlement({ signedIn: false, active: null, records: [], now: Date.now() }),
       })));
     }
 
