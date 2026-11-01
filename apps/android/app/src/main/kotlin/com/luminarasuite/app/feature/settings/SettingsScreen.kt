@@ -113,10 +113,6 @@ class SettingsViewModel(
 
     fun updateGroqKey(value: String) = _uiState.update { it.copy(groqKeyInput = value) }
 
-    fun updateNimKey(value: String) = _uiState.update { it.copy(nimKeyInput = value) }
-
-    fun updateGeminiKey(value: String) = _uiState.update { it.copy(geminiKeyInput = value) }
-
     fun updateTavilyKey(value: String) = _uiState.update { it.copy(tavilyKeyInput = value) }
 
     fun updateDeleteConfirm(value: String) = _uiState.update { it.copy(deleteConfirmInput = value) }
@@ -478,9 +474,7 @@ private fun ByokVaultSection(
     WorkbenchCard {
         EyebrowKicker("Your keys")
         Text(
-            text =
-            "Groq, Tavily, Gemini, or NVIDIA NIM. " +
-                "Encrypted on this device with the Android Keystore.",
+            text = "Groq for answers, Tavily for live search. Encrypted on this device with the Android Keystore.",
             style = LuminaraTextStyles.Body,
         )
         SecretField(
@@ -494,16 +488,6 @@ private fun ByokVaultSection(
             onValueChange = viewModel::updateTavilyKey,
             label = "Tavily search key (tvly-...)",
             testTag = "byok_tavily_input",
-        )
-        SecretField(
-            value = state.geminiKeyInput,
-            onValueChange = viewModel::updateGeminiKey,
-            label = "Google Gemini API key",
-        )
-        SecretField(
-            value = state.nimKeyInput,
-            onValueChange = viewModel::updateNimKey,
-            label = "NVIDIA NIM API key (nvapi-...)",
         )
         FoundryButton(
             text = "Save encrypted keys",
