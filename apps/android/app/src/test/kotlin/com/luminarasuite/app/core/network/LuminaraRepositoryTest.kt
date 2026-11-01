@@ -8,6 +8,7 @@ import com.luminarasuite.app.core.database.LuminaraDao
 import com.luminarasuite.app.core.database.StudioSourceEntity
 import com.luminarasuite.app.core.model.AccountDeleteRequest
 import com.luminarasuite.app.core.model.AccountDeleteResponse
+import com.luminarasuite.app.core.model.AppointmentDecisionRequest
 import com.luminarasuite.app.core.model.AuditFinding
 import com.luminarasuite.app.core.model.AuditHistoryEntry
 import com.luminarasuite.app.core.model.AuditHistoryListResponse
@@ -21,6 +22,11 @@ import com.luminarasuite.app.core.model.BootResponse
 import com.luminarasuite.app.core.model.ByokKeyBag
 import com.luminarasuite.app.core.model.CrawlerFilesResponse
 import com.luminarasuite.app.core.model.CrawlerFilesSnapshot
+import com.luminarasuite.app.core.model.EnquiryCreateRequest
+import com.luminarasuite.app.core.model.EnquiryDeskResponse
+import com.luminarasuite.app.core.model.EnquiryRecord
+import com.luminarasuite.app.core.model.EnquiryTakeoverRequest
+import com.luminarasuite.app.core.model.EnquiryTurnRequest
 import com.luminarasuite.app.core.model.FindingPatchRequest
 import com.luminarasuite.app.core.model.FindingPatchResponse
 import com.luminarasuite.app.core.model.FindingsBulkRequest
@@ -33,6 +39,7 @@ import com.luminarasuite.app.core.model.FirecrawlScrapeRequest
 import com.luminarasuite.app.core.model.FirecrawlScrapeResponse
 import com.luminarasuite.app.core.model.GatewayExecuteRequest
 import com.luminarasuite.app.core.model.GatewayExecuteResponse
+import com.luminarasuite.app.core.model.GoogleSignInRequest
 import com.luminarasuite.app.core.model.GroqChatRequest
 import com.luminarasuite.app.core.model.GroqChatResponse
 import com.luminarasuite.app.core.model.GroqChoice
@@ -48,9 +55,18 @@ import com.luminarasuite.app.core.model.ProbeCrawlResponse
 import com.luminarasuite.app.core.model.QuotaStatus
 import com.luminarasuite.app.core.model.ScoutRecheckRequest
 import com.luminarasuite.app.core.model.ScoutRecheckResponse
+import com.luminarasuite.app.core.model.ShareCreateRequest
+import com.luminarasuite.app.core.model.ShareCreateResponse
+import com.luminarasuite.app.core.model.SharedReportBody
+import com.luminarasuite.app.core.model.SharedReportResponse
+import com.luminarasuite.app.core.model.SharedTeaserBody
+import com.luminarasuite.app.core.model.SharedTeaserResponse
 import com.luminarasuite.app.core.model.TavilyResult
 import com.luminarasuite.app.core.model.TavilySearchRequest
 import com.luminarasuite.app.core.model.TavilySearchResponse
+import com.luminarasuite.app.core.model.WorkspacePutRequest
+import com.luminarasuite.app.core.model.WorkspacePutResponse
+import com.luminarasuite.app.core.model.WorkspaceResponse
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
@@ -65,6 +81,8 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import retrofit2.HttpException
+import retrofit2.Response
 
 class FakeLuminaraDao : LuminaraDao {
     private val historyState = MutableStateFlow<List<AuditHistoryEntity>>(emptyList())
@@ -237,6 +255,70 @@ class FakeLuminaraApi : LuminaraApi {
         return FindingPatchResponse(ok = true)
     }
 
+    var workspace = WorkspaceResponse(ok = true, updatedAt = 5L)
+    var conflictsLeft = 0
+    var lastWorkspacePut: WorkspacePutRequest? = null
+    var enquiryTurns = mutableListOf<Pair<String, EnquiryTurnRequest>>()
+
+    override suspend fun signInWithGoogle(body: GoogleSignInRequest): AuthTokenResponse =
+        AuthTokenResponse(ok = true, idToken = "id", refreshToken = "r", localId = "g1", email = "g@example.com")
+
+    override suspend fun getSharedReport(
+        token: String,
+        password: String?,
+    ): SharedReportResponse =
+        if (token == "locked" && password == null) {
+            throw HttpException(
+                Response.error<Unit>(
+                    401,
+                    """{"code":"SHARE_PASSWORD_REQUIRED"}""".toResponseBody("application/json".toMediaType()),
+                ),
+            )
+        } else {
+            SharedReportResponse(ok = true, report = SharedReportBody(domain = "example.com", markdownText = "Body"))
+        }
+
+    override suspend fun getSharedTeaser(token: String): SharedTeaserResponse =
+        SharedTeaserResponse(ok = true, teaser = SharedTeaserBody(domain = "example.com", verdict = "V", topFix = "F"))
+
+    override suspend fun createShare(body: ShareCreateRequest): ShareCreateResponse =
+        ShareCreateResponse(ok = true, url = "https://www.luminarasuite.com/share/abc")
+
+    override suspend fun getWorkspace(): WorkspaceResponse = workspace
+
+    override suspend fun putWorkspace(body: WorkspacePutRequest): WorkspacePutResponse {
+        if (conflictsLeft > 0) {
+            conflictsLeft -= 1
+            workspace = workspace.copy(updatedAt = workspace.updatedAt + 1)
+            throw HttpException(Response.error<Unit>(409, "{}".toResponseBody("application/json".toMediaType())))
+        }
+        lastWorkspacePut = body
+        return WorkspacePutResponse(ok = true, updatedAt = body.baseVersion + 1)
+    }
+
+    override suspend fun getEnquiries(projectId: String): EnquiryDeskResponse =
+        EnquiryDeskResponse(ok = true, enquiries = listOf(EnquiryRecord(id = "e1", contactName = "Sam")))
+
+    override suspend fun createEnquiry(body: EnquiryCreateRequest): JsonObject = JsonObject(emptyMap())
+
+    override suspend fun enquiryTurn(
+        id: String,
+        body: EnquiryTurnRequest,
+    ): JsonObject {
+        enquiryTurns += id to body
+        return JsonObject(emptyMap())
+    }
+
+    override suspend fun enquiryTakeover(
+        id: String,
+        body: EnquiryTakeoverRequest,
+    ): JsonObject = JsonObject(emptyMap())
+
+    override suspend fun decideAppointment(
+        id: String,
+        body: AppointmentDecisionRequest,
+    ): JsonObject = JsonObject(emptyMap())
+
     override suspend fun signIn(body: AuthCredentialsRequest): AuthTokenResponse =
         AuthTokenResponse(
             ok = true,
@@ -274,17 +356,21 @@ class FakeLuminaraApi : LuminaraApi {
         auditDomain: String?,
         body: TavilySearchRequest,
     ): TavilySearchResponse =
-        if (searchFails) throw IllegalStateException("search down") else TavilySearchResponse(
-            answer = "Grounded summary",
-            results =
-            listOf(
-                TavilyResult(
-                    title = "LLM Crawl Guide",
-                    url = "https://www.luminarasuite.com/methodology",
-                    content = "Publish /llms.txt with canonical URLs.",
+        if (searchFails) {
+            throw IllegalStateException("search down")
+        } else {
+            TavilySearchResponse(
+                answer = "Grounded summary",
+                results =
+                listOf(
+                    TavilyResult(
+                        title = "LLM Crawl Guide",
+                        url = "https://www.luminarasuite.com/methodology",
+                        content = "Publish /llms.txt with canonical URLs.",
+                    ),
                 ),
-            ),
-        )
+            )
+        }
 
     var streamBody: String =
         "data: {\"choices\":[{\"delta\":{\"content\":\"VERDICT: Publish /llms.txt \\u2014 now.\\n\"}}]}\n\n" +
@@ -393,7 +479,7 @@ class LuminaraRepositoryTest {
                         FirecrawlPage(
                             markdown = List(300) { "word" }.joinToString(" "),
                             rawHtml =
-                            "<script type=\"application/ld+json\">{\"@type\":\"Organization\",\"name\":\"Ex\"}</script>",
+                            """<script type="application/ld+json">{"@type":"Organization"}</script>""",
                         )
                 }
             val repo = DefaultLuminaraRepository(api = api, dao = dao, vault = InMemoryVaultStorage())

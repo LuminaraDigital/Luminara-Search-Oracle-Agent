@@ -1,6 +1,7 @@
 package com.luminarasuite.app
 
 import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
@@ -74,21 +75,31 @@ import com.luminarasuite.app.core.designsystem.LuminaraTheme
 import com.luminarasuite.app.core.designsystem.ObsidianBackdrop
 import com.luminarasuite.app.core.designsystem.ScreenGutter
 import com.luminarasuite.app.core.model.QuotaStatus
+import com.luminarasuite.app.core.model.ShareLink
 import com.luminarasuite.app.core.network.LuminaraRepository
+import com.luminarasuite.app.core.network.WorkspaceGateway
 import com.luminarasuite.app.feature.ask.AskScreen
 import com.luminarasuite.app.feature.ask.AskViewModel
 import com.luminarasuite.app.feature.audit.AuditScreen
 import com.luminarasuite.app.feature.audit.AuditViewModel
+import com.luminarasuite.app.feature.business.BusinessProfileScreen
+import com.luminarasuite.app.feature.business.BusinessProfileViewModel
 import com.luminarasuite.app.feature.dashboard.DashboardScreen
 import com.luminarasuite.app.feature.dashboard.DashboardViewModel
+import com.luminarasuite.app.feature.enquiry.EnquiryDeskScreen
+import com.luminarasuite.app.feature.enquiry.EnquiryDeskViewModel
 import com.luminarasuite.app.feature.memory.MemoryScreen
 import com.luminarasuite.app.feature.onboarding.WelcomeScreen
 import com.luminarasuite.app.feature.scout.ScoutScreen
 import com.luminarasuite.app.feature.scout.ScoutViewModel
 import com.luminarasuite.app.feature.settings.SettingsScreen
 import com.luminarasuite.app.feature.settings.SettingsViewModel
+import com.luminarasuite.app.feature.share.SharedReportScreen
+import com.luminarasuite.app.feature.share.SharedViewModel
 import com.luminarasuite.app.feature.studio.StudioScreen
 import com.luminarasuite.app.feature.studio.StudioViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 
 enum class LuminaraTab(
@@ -103,14 +114,22 @@ enum class LuminaraTab(
     STUDIO("Studio", Icons.Outlined.Headphones, "nav_tab_studio"),
 }
 
-private enum class Overlay { MEMORY, SETTINGS }
+private enum class Overlay { MEMORY, SETTINGS, SHARED, PROFILE, ENQUIRIES }
 
 private const val PREFS = "luminara_app"
 private const val KEY_WELCOMED = "welcomed"
 
 class MainActivity : ComponentActivity() {
+    private val sharedLink = MutableStateFlow<ShareLink?>(null)
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        sharedLink.value = ShareLink.parse(intent.dataString)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        sharedLink.value = ShareLink.parse(intent?.dataString)
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.dark(Color.Transparent.toArgb()),
             navigationBarStyle = SystemBarStyle.dark(Color.Transparent.toArgb()),
@@ -121,6 +140,8 @@ class MainActivity : ComponentActivity() {
             LuminaraTheme {
                 LuminaraWorkbenchApp(
                     repository = app.repository,
+                    workspace = app.workspace,
+                    sharedLinks = sharedLink,
                     showWelcome = !prefs.getBoolean(KEY_WELCOMED, false),
                     onWelcomed = { prefs.edit().putBoolean(KEY_WELCOMED, true).apply() },
                 )
@@ -132,6 +153,8 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun LuminaraWorkbenchApp(
     repository: LuminaraRepository,
+    workspace: WorkspaceGateway,
+    sharedLinks: StateFlow<ShareLink?> = MutableStateFlow(null),
     showWelcome: Boolean = false,
     onWelcomed: () -> Unit = {},
 ) {
@@ -146,6 +169,9 @@ fun LuminaraWorkbenchApp(
     val settingsViewModel = viewModel { SettingsViewModel(repository) }
     val scoutViewModel = viewModel { ScoutViewModel(repository) }
     val studioViewModel = viewModel { StudioViewModel(repository) }
+    val sharedViewModel = viewModel { SharedViewModel(workspace, repository) }
+    val profileViewModel = viewModel { BusinessProfileViewModel(workspace) }
+    val enquiryViewModel = viewModel { EnquiryDeskViewModel(workspace, repository) }
 
     val quota by repository.quotaFlow.collectAsState()
     val vault by repository.vaultFlow.collectAsState(initial = VaultSnapshot())
@@ -158,6 +184,15 @@ fun LuminaraWorkbenchApp(
         if (hasHistory && welcome) {
             welcome = false
             onWelcomed()
+        }
+    }
+
+    val sharedLink by sharedLinks.collectAsState()
+    LaunchedEffect(sharedLink) {
+        sharedLink?.let {
+            welcome = false
+            overlay = Overlay.SHARED
+            sharedViewModel.open(it)
         }
     }
 
@@ -226,7 +261,15 @@ fun LuminaraWorkbenchApp(
                                 onRunAudit = { auditHost(null) },
                                 onAskAbout = ::askAbout,
                             )
-                        Overlay.SETTINGS.name -> SettingsScreen(viewModel = settingsViewModel)
+                        Overlay.SETTINGS.name ->
+                            SettingsScreen(
+                                viewModel = settingsViewModel,
+                                onOpenProfile = { overlay = Overlay.PROFILE },
+                                onOpenEnquiries = { overlay = Overlay.ENQUIRIES },
+                            )
+                        Overlay.SHARED.name -> SharedReportScreen(viewModel = sharedViewModel)
+                        Overlay.PROFILE.name -> BusinessProfileScreen(viewModel = profileViewModel)
+                        Overlay.ENQUIRIES.name -> EnquiryDeskScreen(viewModel = enquiryViewModel)
                         LuminaraTab.ASK.name ->
                             AskScreen(
                                 viewModel = askViewModel,
@@ -240,11 +283,13 @@ fun LuminaraWorkbenchApp(
                                 isSignedIn = vault.isSignedIn,
                                 onSignIn = { overlay = Overlay.SETTINGS },
                                 onAuditDomain = ::auditHost,
+                                onShareLink = workspace::createShareLink,
                             )
                         LuminaraTab.AUDIT.name ->
                             AuditScreen(
                                 viewModel = auditViewModel,
                                 onAskAbout = ::askAbout,
+                                onShareLink = workspace::createShareLink,
                             )
                         LuminaraTab.STUDIO.name -> StudioScreen(viewModel = studioViewModel)
                         else ->

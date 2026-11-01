@@ -81,6 +81,8 @@ export interface Env extends DataPlaneEnv {
    * behind IP rate limits. Not a secret; still keep it out of commit diffs when rotated.
    */
   FIREBASE_WEB_API_KEY?: string;
+  /** Comma-separated SHA-256 app signing fingerprints served in assetlinks.json. */
+  ANDROID_APP_CERT_SHA256?: string;
   /** Soft daily cap on outbound password-reset / OTP emails (default 200). */
   OUTBOUND_EMAIL_DAILY_LIMIT?: string;
   /** Resend API key (Worker secret). Welcome mail is skipped when it is unset. */

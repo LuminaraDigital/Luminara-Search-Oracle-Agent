@@ -20,6 +20,7 @@ import com.luminarasuite.app.core.model.EvaluationEngine
 import com.luminarasuite.app.core.model.FindingPatchRequest
 import com.luminarasuite.app.core.model.FindingsBulkItem
 import com.luminarasuite.app.core.model.FindingsBulkRequest
+import com.luminarasuite.app.core.model.GoogleSignInRequest
 import com.luminarasuite.app.core.model.GroqChatRequest
 import com.luminarasuite.app.core.model.GroqMessage
 import com.luminarasuite.app.core.model.IdeaCard
@@ -150,6 +151,8 @@ interface LuminaraRepository {
         password: String,
     ): Result<QuotaStatus?>
 
+    suspend fun signInWithGoogle(googleIdToken: String): Result<QuotaStatus?>
+
     suspend fun refreshQuota(): Result<QuotaStatus?>
 
     suspend fun saveByokKeys(bag: ByokKeyBag)
@@ -220,7 +223,15 @@ class DefaultLuminaraRepository(
             val evaluation = EvaluationEngine.evaluateCrawlerFiles(domain, files.snapshot)
             val vaultSnap = vault.getSnapshot()
 
-            val crewRun = if (vaultSnap.isSignedIn) runCrew(domain, evaluation, onStage) else CrewRun(null, SIGN_IN_NOTE)
+            val crewRun = if (vaultSnap.isSignedIn) {
+                runCrew(
+                    domain,
+                    evaluation,
+                    onStage,
+                )
+            } else {
+                CrewRun(null, SIGN_IN_NOTE)
+            }
             val crew = crewRun.result
             val verdict = crew?.brief?.takeaway ?: buildDeterministicVerdict(domain, evaluation)
             val oneMove =
@@ -244,8 +255,10 @@ class DefaultLuminaraRepository(
                 oneMoveThisWeek = oneMove,
                 healthScore = crew?.healthScore,
                 receiptNote =
-                crew?.let { "Read ${CrewRules.countPhrase(it.pages.size, "page")} and " +
-                    "${CrewRules.countPhrase(it.searchRows.size, "live search result")} for $domain." }
+                crew?.let {
+                    "Read ${CrewRules.countPhrase(it.pages.size, "page")} and " +
+                        "${CrewRules.countPhrase(it.searchRows.size, "live search result")} for $domain."
+                }
                     ?: "Read live from robots.txt, llms.txt, and ai.txt on $domain.",
                 crew = crew,
                 crewNote = crewRun.note,
@@ -829,6 +842,19 @@ class DefaultLuminaraRepository(
                 idToken = res.idToken,
                 refreshToken = res.refreshToken,
                 email = res.email.ifBlank { cleanEmail },
+                accountId = "fb:${res.localId}",
+            )
+            refreshQuota().getOrNull()
+        }
+
+    override suspend fun signInWithGoogle(googleIdToken: String): Result<QuotaStatus?> =
+        safeCall {
+            val res = api.signInWithGoogle(GoogleSignInRequest(googleIdToken))
+            check(res.ok && res.idToken.isNotBlank()) { res.error ?: "Google sign-in failed. Try again." }
+            vault.saveSession(
+                idToken = res.idToken,
+                refreshToken = res.refreshToken,
+                email = res.email,
                 accountId = "fb:${res.localId}",
             )
             refreshQuota().getOrNull()

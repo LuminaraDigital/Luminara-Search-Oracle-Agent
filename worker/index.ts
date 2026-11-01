@@ -180,6 +180,7 @@ import {
 } from './securityHardening';
 import { handlePasswordResetRequest, handleSendVerification } from './authTollFraud';
 import { handleRequestOtp, handleVerifyOtp } from './authOtpSms';
+import { handleAssetLinks } from './assetLinks';
 import { handleSignIn, handleGoogleSignIn, handleTokenRefresh, handleSignUp } from './authCredentialGateway';
 import { settleFirebaseErase } from './accountDeletion';
 import { handleEmailUnsubscribe, runWithWaitUntil } from './welcomeEmail';
@@ -2250,6 +2251,9 @@ const handler = {
 
     const oauthDiscovery = handleOAuthDiscovery(request);
     if (oauthDiscovery) return guard(oauthDiscovery);
+
+    const assetLinks = handleAssetLinks(request, env);
+    if (assetLinks) return guard(assetLinks);
 
     // Canonical redirect: redirect naked domain to www.luminarasuite.com for web/marketing traffic in production
     if (env.ENVIRONMENT === 'production' && url.hostname === 'luminarasuite.com' && !url.pathname.startsWith('/api/')) {

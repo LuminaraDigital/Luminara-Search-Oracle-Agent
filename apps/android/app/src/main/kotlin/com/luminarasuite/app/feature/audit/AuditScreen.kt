@@ -238,13 +238,14 @@ private fun reportAsText(report: InstantAuditReport): String =
 
 private fun shareReport(
     context: Context,
-    report: InstantAuditReport,
+    domain: String,
+    text: String,
 ) {
     val send =
         Intent(Intent.ACTION_SEND)
             .setType("text/plain")
-            .putExtra(Intent.EXTRA_SUBJECT, "AI visibility check: ${report.domain}")
-            .putExtra(Intent.EXTRA_TEXT, reportAsText(report))
+            .putExtra(Intent.EXTRA_SUBJECT, "AI visibility check: $domain")
+            .putExtra(Intent.EXTRA_TEXT, text)
     context.startActivity(Intent.createChooser(send, "Share report"))
 }
 
@@ -253,6 +254,9 @@ private fun shareReport(
 fun AuditScreen(
     viewModel: AuditViewModel,
     onAskAbout: (String) -> Unit = {},
+    onShareLink: suspend (String, String?) -> Result<String> = { _, _ ->
+        Result.failure(IllegalStateException("Sign in to create a link."))
+    },
 ) {
     val state by viewModel.uiState.collectAsState()
     val scrollState = rememberScrollState()
@@ -344,6 +348,7 @@ fun AuditScreen(
                     onRecheck = viewModel::recheckCheck,
                     onReportVerdict = viewModel::reportAuditVerdict,
                     onAskAbout = onAskAbout,
+                    onShareLink = onShareLink,
                     onProbeAnother = {
                         viewModel.prepareAnotherProbe()
                         scope.launch { scrollState.animateScrollTo(0) }
@@ -367,6 +372,7 @@ private fun AuditReportContent(
     onRecheck: (String) -> Unit,
     onReportVerdict: () -> Unit,
     onAskAbout: (String) -> Unit,
+    onShareLink: suspend (String, String?) -> Result<String>,
     onProbeAnother: () -> Unit,
 ) {
     val evaluation = report.evaluation
@@ -377,6 +383,7 @@ private fun AuditReportContent(
             failCount = evaluation.failCount,
         )
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         WorkbenchCard(emphasized = true) {
             Row(
@@ -464,7 +471,14 @@ private fun AuditReportContent(
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             GhostPillButton(
                 text = "Share",
-                onClick = { shareReport(context, report) },
+                onClick = {
+                    // A guest has no account to hold a link, so the report goes out as text.
+                    val text = reportAsText(report)
+                    scope.launch {
+                        val link = onShareLink(text, report.domain).getOrNull()
+                        shareReport(context, report.domain, link ?: text)
+                    }
+                },
                 modifier = Modifier.weight(1f),
                 testTag = "audit_share_button",
             )

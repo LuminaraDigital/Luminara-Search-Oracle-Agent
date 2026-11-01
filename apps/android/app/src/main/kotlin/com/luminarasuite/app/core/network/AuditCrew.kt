@@ -153,15 +153,14 @@ class AuditCrew(
                 .flatten()
         }
 
+    // Any provider failure means this evidence is not_measured.
+    @Suppress("TooGenericExceptionCaught")
     private suspend fun <T> attempt(block: suspend () -> T): T? =
         try {
             block()
         } catch (err: CancellationException) {
             throw err
-        } catch (
-            @Suppress("TooGenericExceptionCaught") // Any provider failure means this evidence is not_measured.
-            _: Exception,
-        ) {
+        } catch (_: Exception) {
             null
         }
 }

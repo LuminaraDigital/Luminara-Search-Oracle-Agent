@@ -1,5 +1,6 @@
 package com.luminarasuite.app.feature.scout
 
+import android.content.Intent
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -23,8 +24,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -168,8 +171,13 @@ fun ScoutScreen(
     isSignedIn: Boolean,
     onSignIn: () -> Unit,
     onAuditDomain: (String?) -> Unit,
+    onShareLink: suspend (String, String?) -> Result<String> = { _, _ ->
+        Result.failure(IllegalStateException("Sign in to create a link."))
+    },
 ) {
     val state by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     LaunchedEffect(isSignedIn) { viewModel.loadDrafts() }
 
     Column(
@@ -219,6 +227,16 @@ fun ScoutScreen(
                 onReport = viewModel::reportCard,
                 onSendToStudio = viewModel::sendToStudio,
                 onAudit = { onAuditDomain(null) },
+                onShare = {
+                    val text = ideaAsSource(card)
+                    scope.launch {
+                        val send =
+                            Intent(Intent.ACTION_SEND)
+                                .setType("text/plain")
+                                .putExtra(Intent.EXTRA_TEXT, onShareLink(text, null).getOrNull() ?: text)
+                        context.startActivity(Intent.createChooser(send, "Share idea card"))
+                    }
+                },
             )
         }
         if (state.drafts.isNotEmpty()) {
@@ -313,6 +331,7 @@ private fun IdeaCardView(
     onReport: () -> Unit,
     onSendToStudio: () -> Unit,
     onAudit: () -> Unit,
+    onShare: () -> Unit,
 ) {
     WorkbenchCard(emphasized = true) {
         EyebrowKicker("Hypothesis card")
@@ -371,6 +390,7 @@ private fun IdeaCardView(
             )
             GhostPillButton(text = "I have a site", onClick = onAudit, modifier = Modifier.weight(1f))
         }
+        GhostPillButton(text = "Share card", onClick = onShare, testTag = "scout_share_button")
         ReportAiOutput(reported = isReported, onReport = onReport)
     }
 }

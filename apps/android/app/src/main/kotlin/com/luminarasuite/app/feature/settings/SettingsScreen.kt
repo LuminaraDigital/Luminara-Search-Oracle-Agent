@@ -1,6 +1,9 @@
 package com.luminarasuite.app.feature.settings
 
+import android.Manifest
 import android.content.Context
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -16,10 +19,14 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -32,6 +39,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.luminarasuite.app.BuildConfig
 import com.luminarasuite.app.core.auth.VaultSnapshot
+import com.luminarasuite.app.core.auth.requestGoogleIdToken
 import com.luminarasuite.app.core.designsystem.EyebrowKicker
 import com.luminarasuite.app.core.designsystem.FoundryButton
 import com.luminarasuite.app.core.designsystem.FoundryFieldColors
@@ -43,6 +51,8 @@ import com.luminarasuite.app.core.designsystem.WorkbenchCard
 import com.luminarasuite.app.core.model.ByokKeyBag
 import com.luminarasuite.app.core.model.QuotaStatus
 import com.luminarasuite.app.core.network.LuminaraRepository
+import com.luminarasuite.app.core.reminders.NextFixReminder
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -134,6 +144,34 @@ class SettingsViewModel(
         }
     }
 
+    fun signInWithGoogle(activityContext: Context) {
+        _uiState.update { it.copy(isBusy = true, errorBanner = null, statusBanner = null) }
+        viewModelScope.launch {
+            val result =
+                runCatching { requestGoogleIdToken(activityContext, BuildConfig.GOOGLE_WEB_CLIENT_ID) }
+                    .onFailure { if (it is CancellationException) throw it }
+            val token = result.getOrNull()
+            when {
+                result.isFailure ->
+                    _uiState.update {
+                        it.copy(isBusy = false, errorBanner = "Google sign-in is unavailable on this device.")
+                    }
+                token == null -> _uiState.update { it.copy(isBusy = false) }
+                else ->
+                    repository.signInWithGoogle(token)
+                        .onSuccess { quota ->
+                            _uiState.update {
+                                it.copy(isBusy = false, quota = quota, statusBanner = "Signed in with Google.")
+                            }
+                        }.onFailure { err ->
+                            _uiState.update {
+                                it.copy(isBusy = false, errorBanner = err.message ?: "Google sign-in failed.")
+                            }
+                        }
+            }
+        }
+    }
+
     fun signUp() {
         val email = _uiState.value.emailInput
         val pass = _uiState.value.passwordInput
@@ -222,7 +260,11 @@ class SettingsViewModel(
 }
 
 @Composable
-fun SettingsScreen(viewModel: SettingsViewModel) {
+fun SettingsScreen(
+    viewModel: SettingsViewModel,
+    onOpenProfile: () -> Unit = {},
+    onOpenEnquiries: () -> Unit = {},
+) {
     val state by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     val scrollState = rememberScrollState()
@@ -254,10 +296,75 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
         }
 
         AccountSection(state = state, viewModel = viewModel)
+        if (state.vault.isSignedIn) {
+            BusinessSection(onOpenProfile = onOpenProfile, onOpenEnquiries = onOpenEnquiries)
+        }
+        ReminderSection()
         ByokVaultSection(state = state, viewModel = viewModel)
         PrivacyAndLegalSection(state = state, viewModel = viewModel, context = context)
 
         Spacer(modifier = Modifier.height(16.dp))
+    }
+}
+
+@Composable
+private fun BusinessSection(
+    onOpenProfile: () -> Unit,
+    onOpenEnquiries: () -> Unit,
+) {
+    WorkbenchCard {
+        EyebrowKicker("Your business")
+        OutlinedButton(
+            onClick = onOpenProfile,
+            shape = RoundedCornerShape(999.dp),
+            modifier = Modifier.fillMaxWidth().testTag("open_profile_button"),
+        ) {
+            Text("Business Profile")
+        }
+        OutlinedButton(
+            onClick = onOpenEnquiries,
+            shape = RoundedCornerShape(999.dp),
+            modifier = Modifier.fillMaxWidth().testTag("open_enquiries_button"),
+        ) {
+            Text("Enquiry Desk")
+        }
+    }
+}
+
+@Composable
+private fun ReminderSection() {
+    val context = LocalContext.current
+    var enabled by remember { mutableStateOf(NextFixReminder.isEnabled(context)) }
+    val apply = { on: Boolean ->
+        NextFixReminder.setEnabled(context, on)
+        enabled = on
+    }
+    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { apply(it) }
+    WorkbenchCard {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                EyebrowKicker("Weekly next fix")
+                Text(
+                    text = "A weekly nudge with your top open fix. It stays on this device.",
+                    style = LuminaraTextStyles.Body,
+                )
+            }
+            Switch(
+                checked = enabled,
+                onCheckedChange = { on ->
+                    if (on && NextFixReminder.needsPermission(context)) {
+                        permission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    } else {
+                        apply(on)
+                    }
+                },
+                modifier = Modifier.testTag("reminder_switch"),
+            )
+        }
     }
 }
 
@@ -297,6 +404,15 @@ private fun AccountSection(
                 text = "Guest mode probes live files. Sign in to sync history and use 3 hosted checks a day.",
                 style = LuminaraTextStyles.Body,
             )
+            if (BuildConfig.GOOGLE_WEB_CLIENT_ID.isNotBlank()) {
+                val context = LocalContext.current
+                FoundryButton(
+                    text = "Continue with Google",
+                    onClick = { viewModel.signInWithGoogle(context) },
+                    enabled = !state.isBusy,
+                    testTag = "google_sign_in_button",
+                )
+            }
             OutlinedTextField(
                 value = state.emailInput,
                 onValueChange = viewModel::updateEmail,

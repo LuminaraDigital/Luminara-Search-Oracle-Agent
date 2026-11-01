@@ -112,7 +112,7 @@ object EntityMatch {
     ): Boolean {
         val left = auditedHost(host)
         val right = auditedHost(auditedDomain)
-        if (left.isEmpty() || right.isEmpty() || !left.contains('.') || sameSite(left, right)) return false
+        if (!left.contains('.') || right.isEmpty() || sameSite(left, right)) return false
         val stem = right.substringBefore('.')
         if (stem.length < MIN_STEM) return false
         return left.split('.').dropLast(1).contains(stem)
@@ -258,6 +258,7 @@ object PageSchemas {
  * serpRadarAgent, remediationArchitectAgent, executiveTranslatorAgent). A number exists only when a live
  * page and live search rows both exist, otherwise it stays null and the UI shows not_measured.
  */
+@Suppress("TooManyFunctions") // One function per rule, mirroring the crew sources named above.
 object CrewRules {
     const val HEALTH_SCORE_START = 85
     private const val HEALTH_FLOOR = 20
@@ -358,7 +359,9 @@ object CrewRules {
     }
 
     private fun identityFinding(pages: List<CrewPage>): CrewFinding? {
-        val measured = pages.map { page -> page to page.schemas.map { it.type.trim().lowercase(Locale.ROOT) }.distinct() }
+        val measured = pages.map { page ->
+            page to page.schemas.map { it.type.trim().lowercase(Locale.ROOT) }.distinct()
+        }
         val hasOrg = { types: List<String> -> types.any(BrandName::isOrganizationType) }
         if (measured.none { hasOrg(it.second) }) {
             val urls = joinList(measured.map { it.first.url }.take(3))
@@ -390,7 +393,9 @@ object CrewRules {
     }
 
     private fun howToFinding(pages: List<CrewPage>): CrewFinding? {
-        val urls = pages.filter { page -> page.schemas.any { it.type.equals("howto", ignoreCase = true) } }.map { it.url }
+        val urls = pages.filter { page ->
+            page.schemas.any { it.type.equals("howto", ignoreCase = true) }
+        }.map { it.url }
         if (urls.isEmpty()) return null
         val where = joinList(urls.take(3))
         return CrewFinding(

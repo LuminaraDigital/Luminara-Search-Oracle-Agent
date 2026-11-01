@@ -2,6 +2,7 @@ package com.luminarasuite.app.core.network
 
 import com.luminarasuite.app.core.model.AccountDeleteRequest
 import com.luminarasuite.app.core.model.AccountDeleteResponse
+import com.luminarasuite.app.core.model.AppointmentDecisionRequest
 import com.luminarasuite.app.core.model.AuditHistoryListResponse
 import com.luminarasuite.app.core.model.AuditHistoryUpsertRequest
 import com.luminarasuite.app.core.model.AuditHistoryUpsertResponse
@@ -11,6 +12,10 @@ import com.luminarasuite.app.core.model.AuthCredentialsRequest
 import com.luminarasuite.app.core.model.AuthTokenResponse
 import com.luminarasuite.app.core.model.BootResponse
 import com.luminarasuite.app.core.model.CrawlerFilesResponse
+import com.luminarasuite.app.core.model.EnquiryCreateRequest
+import com.luminarasuite.app.core.model.EnquiryDeskResponse
+import com.luminarasuite.app.core.model.EnquiryTakeoverRequest
+import com.luminarasuite.app.core.model.EnquiryTurnRequest
 import com.luminarasuite.app.core.model.FindingPatchRequest
 import com.luminarasuite.app.core.model.FindingPatchResponse
 import com.luminarasuite.app.core.model.FindingsBulkRequest
@@ -22,6 +27,7 @@ import com.luminarasuite.app.core.model.FirecrawlScrapeRequest
 import com.luminarasuite.app.core.model.FirecrawlScrapeResponse
 import com.luminarasuite.app.core.model.GatewayExecuteRequest
 import com.luminarasuite.app.core.model.GatewayExecuteResponse
+import com.luminarasuite.app.core.model.GoogleSignInRequest
 import com.luminarasuite.app.core.model.GroqChatRequest
 import com.luminarasuite.app.core.model.GroqChatResponse
 import com.luminarasuite.app.core.model.IdeaCreateRequest
@@ -32,8 +38,15 @@ import com.luminarasuite.app.core.model.PrivacyExportResponse
 import com.luminarasuite.app.core.model.ProbeCrawlResponse
 import com.luminarasuite.app.core.model.ScoutRecheckRequest
 import com.luminarasuite.app.core.model.ScoutRecheckResponse
+import com.luminarasuite.app.core.model.ShareCreateRequest
+import com.luminarasuite.app.core.model.ShareCreateResponse
+import com.luminarasuite.app.core.model.SharedReportResponse
+import com.luminarasuite.app.core.model.SharedTeaserResponse
 import com.luminarasuite.app.core.model.TavilySearchRequest
 import com.luminarasuite.app.core.model.TavilySearchResponse
+import com.luminarasuite.app.core.model.WorkspacePutRequest
+import com.luminarasuite.app.core.model.WorkspacePutResponse
+import com.luminarasuite.app.core.model.WorkspaceResponse
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -142,6 +155,63 @@ interface LuminaraApi {
     suspend fun signUp(
         @Body body: AuthCredentialsRequest,
     ): AuthTokenResponse
+
+    @POST("api/auth/google")
+    suspend fun signInWithGoogle(
+        @Body body: GoogleSignInRequest,
+    ): AuthTokenResponse
+
+    @GET("api/share/reports/{token}")
+    suspend fun getSharedReport(
+        @Path("token") token: String,
+        @Header("x-share-password") password: String? = null,
+    ): SharedReportResponse
+
+    @GET("api/share/teasers/{token}")
+    suspend fun getSharedTeaser(
+        @Path("token") token: String,
+    ): SharedTeaserResponse
+
+    @POST("api/share/reports")
+    suspend fun createShare(
+        @Body body: ShareCreateRequest,
+    ): ShareCreateResponse
+
+    @GET("api/workspace")
+    suspend fun getWorkspace(): WorkspaceResponse
+
+    @PUT("api/workspace")
+    suspend fun putWorkspace(
+        @Body body: WorkspacePutRequest,
+    ): WorkspacePutResponse
+
+    @GET("api/enquiries")
+    suspend fun getEnquiries(
+        @Query("projectId") projectId: String = "default",
+    ): EnquiryDeskResponse
+
+    @POST("api/enquiries")
+    suspend fun createEnquiry(
+        @Body body: EnquiryCreateRequest,
+    ): JsonObject
+
+    @POST("api/enquiries/{id}/turn")
+    suspend fun enquiryTurn(
+        @Path("id") id: String,
+        @Body body: EnquiryTurnRequest,
+    ): JsonObject
+
+    @POST("api/enquiries/{id}/takeover")
+    suspend fun enquiryTakeover(
+        @Path("id") id: String,
+        @Body body: EnquiryTakeoverRequest,
+    ): JsonObject
+
+    @POST("api/enquiries/appointments/{id}/decision")
+    suspend fun decideAppointment(
+        @Path("id") id: String,
+        @Body body: AppointmentDecisionRequest,
+    ): JsonObject
 
     @GET("api/boot")
     suspend fun getAccountBoot(): BootResponse
