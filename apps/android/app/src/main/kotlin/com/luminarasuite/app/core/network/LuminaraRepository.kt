@@ -10,9 +10,12 @@ import com.luminarasuite.app.core.model.AuditFinding
 import com.luminarasuite.app.core.model.AuditHistoryEntry
 import com.luminarasuite.app.core.model.AuditHistoryUpsertRequest
 import com.luminarasuite.app.core.model.AuditRunRequest
+import com.luminarasuite.app.core.model.AuditRunResponse
 import com.luminarasuite.app.core.model.AuthCredentialsRequest
 import com.luminarasuite.app.core.model.ByokKeyBag
 import com.luminarasuite.app.core.model.CrawlerEvaluationResult
+import com.luminarasuite.app.core.model.CrewResult
+import com.luminarasuite.app.core.model.CrewRules
 import com.luminarasuite.app.core.model.EvaluationEngine
 import com.luminarasuite.app.core.model.FindingPatchRequest
 import com.luminarasuite.app.core.model.FindingsBulkItem
@@ -33,6 +36,7 @@ import com.luminarasuite.app.core.model.TavilySearchRequest
 import com.luminarasuite.app.core.model.WorkerErrorPayload
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -42,6 +46,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import retrofit2.HttpException
 
@@ -53,6 +58,8 @@ data class InstantAuditReport(
     val oneMoveThisWeek: String,
     val healthScore: Int?,
     val receiptNote: String,
+    val crew: CrewResult? = null,
+    val crewNote: String? = null,
 )
 
 data class AuditRead(
@@ -82,7 +89,10 @@ interface LuminaraRepository {
     val studioSourcesFlow: Flow<List<StudioSource>>
     val quotaFlow: StateFlow<QuotaStatus?>
 
-    suspend fun runInstantAudit(rawDomain: String): Result<InstantAuditReport>
+    suspend fun runInstantAudit(
+        rawDomain: String,
+        onStage: (String) -> Unit = {},
+    ): Result<InstantAuditReport>
 
     suspend fun recheckSingleCheck(
         domain: String,
@@ -172,6 +182,8 @@ class DefaultLuminaraRepository(
                 "TIER_UPGRADE_REQUIRED" to "This engine needs your own key. Add one in Settings.",
                 "HOSTED_CAPACITY" to "Hosted AI is busy right now. Try again in a minute.",
             )
+        private const val SIGN_IN_NOTE =
+            "Sign in for the full audit: your pages, live search, a health score, and paste-ready fixes."
         private const val MAX_SOURCE_CHARS = 2500
         private const val EARLIER_TURNS = 3
         private const val UNTRUSTED_RULE =
@@ -192,27 +204,35 @@ class DefaultLuminaraRepository(
     private val quotaState = MutableStateFlow<QuotaStatus?>(null)
     override val quotaFlow: StateFlow<QuotaStatus?> = quotaState.asStateFlow()
 
-    override suspend fun runInstantAudit(rawDomain: String): Result<InstantAuditReport> =
+    override suspend fun runInstantAudit(
+        rawDomain: String,
+        onStage: (String) -> Unit,
+    ): Result<InstantAuditReport> =
         safeCall {
             val domain =
                 EvaluationEngine.normalizeDomain(rawDomain)
                     ?: throw IllegalArgumentException("Enter a valid domain such as example.com.")
             val targetUrl = "https://$domain"
 
+            onStage("Reading crawler files")
             val probe = runCatching { api.probeCrawl(targetUrl) }.rethrowCancellation().getOrNull()
             val files = api.fetchCrawlerFiles(targetUrl)
             val evaluation = EvaluationEngine.evaluateCrawlerFiles(domain, files.snapshot)
             val vaultSnap = vault.getSnapshot()
 
-            val verdict = buildDeterministicVerdict(domain, evaluation)
-            val oneMove = buildDeterministicOneMove(domain, evaluation)
+            val crewRun = if (vaultSnap.isSignedIn) runCrew(domain, evaluation, onStage) else CrewRun(null, SIGN_IN_NOTE)
+            val crew = crewRun.result
+            val verdict = crew?.brief?.takeaway ?: buildDeterministicVerdict(domain, evaluation)
+            val oneMove =
+                crew?.findings?.firstOrNull()?.title?.takeIf { crew.healthScore != null }
+                    ?: buildDeterministicOneMove(domain, evaluation)
 
             persistAuditArtifacts(
                 domain = domain,
                 evaluation = evaluation,
                 verdict = verdict,
                 oneMove = oneMove,
-                healthScore = null,
+                crew = crew,
                 isSignedIn = vaultSnap.isSignedIn,
             )
 
@@ -222,38 +242,81 @@ class DefaultLuminaraRepository(
                 evaluation = evaluation,
                 verdict = verdict,
                 oneMoveThisWeek = oneMove,
-                healthScore = null,
-                receiptNote = "Read live from robots.txt, llms.txt, and ai.txt on $domain.",
+                healthScore = crew?.healthScore,
+                receiptNote =
+                crew?.let { "Read ${CrewRules.countPhrase(it.pages.size, "page")} and " +
+                    "${CrewRules.countPhrase(it.searchRows.size, "live search result")} for $domain." }
+                    ?: "Read live from robots.txt, llms.txt, and ai.txt on $domain.",
+                crew = crew,
+                crewNote = crewRun.note,
             )
         }
+
+    private data class CrewRun(
+        val result: CrewResult?,
+        val note: String?,
+    )
+
+    /** One check pays for the run. Crawler files stay free, so a spent allowance still gives that part. */
+    private suspend fun runCrew(
+        domain: String,
+        evaluation: CrawlerEvaluationResult,
+        onStage: (String) -> Unit,
+    ): CrewRun {
+        val run =
+            try {
+                api.beginAuditRun(AuditRunRequest(domain))
+            } catch (err: HttpException) {
+                val copy = unwrapWorkerError(err).message?.takeIf { it.isNotBlank() }
+                return CrewRun(null, "${copy ?: "Hosted checks are unavailable."} Crawler files were still read.")
+            }
+        val result =
+            try {
+                AuditCrew(api).run(domain, run, evaluation.checks, onStage)
+            } catch (err: CancellationException) {
+                withContext(NonCancellable) { refundRun(run) }
+                throw err
+            }
+        if (result.healthScore == null && result.citationRatePercent == null) refundRun(run)
+        refreshQuotaQuietly()
+        return CrewRun(result, null)
+    }
+
+    private suspend fun refundRun(run: AuditRunResponse) {
+        runCatching { api.refundAuditRun(auditRefundBody(run.token, run.domain)) }.rethrowCancellation()
+    }
 
     private suspend fun persistAuditArtifacts(
         domain: String,
         evaluation: CrawlerEvaluationResult,
         verdict: String,
         oneMove: String,
-        healthScore: Int?,
+        crew: CrewResult?,
         isSignedIn: Boolean,
     ) {
         val now = clockMs()
-        val gapCount = evaluation.failCount.takeIf { evaluation.measurementStatus == "measured" }
+        val gapCount =
+            crew?.takeIf { it.healthScore != null }?.findings?.count { it.category == "schema" }
+                ?: evaluation.failCount.takeIf { evaluation.measurementStatus == "measured" }
         val historyEntry =
             AuditHistoryEntry(
                 id = "audit-$now-${domain.hashCode().toUInt().toString(16)}",
                 domain = domain,
                 focus = "AEO",
                 measuredAt = now,
-                healthScore = healthScore,
-                citationRatePercent = null,
+                healthScore = crew?.healthScore,
+                citationRatePercent = crew?.citationRatePercent,
                 schemaGapCount = gapCount,
                 topCompetitor = null,
                 title = "AEO audit · $domain",
                 summary = verdict,
-                reportExcerpt = "$verdict\n\nNext action: $oneMove",
+                reportExcerpt = crew?.brief?.asText() ?: "$verdict\n\nNext action: $oneMove",
             )
         dao.upsertAuditHistory(listOf(historyEntry.toEntity()))
 
-        val newFindings = buildFindingsForEvaluation(domain, historyEntry.id, evaluation, now)
+        val newFindings =
+            buildFindingsForEvaluation(domain, historyEntry.id, evaluation, now) +
+                buildCrewFindings(domain, historyEntry.id, crew, now)
         if (newFindings.isNotEmpty()) {
             dao.upsertFindings(newFindings.map { it.toEntity() })
         }
@@ -287,6 +350,28 @@ class DefaultLuminaraRepository(
                     updatedAt = timestampMs,
                 )
             }
+
+    private fun buildCrewFindings(
+        domain: String,
+        auditRunId: String,
+        crew: CrewResult?,
+        timestampMs: Long,
+    ): List<AuditFinding> =
+        crew?.findings.orEmpty().map { finding ->
+            AuditFinding(
+                id = "fnd_${domain}_${finding.id}",
+                auditRunId = auditRunId,
+                domain = domain,
+                stableKey = CrewRules.stableKey(domain, finding.category, finding.title),
+                category = finding.category,
+                severity = finding.severity,
+                title = finding.title,
+                description = finding.description,
+                status = "open",
+                createdAt = timestampMs,
+                updatedAt = timestampMs,
+            )
+        }
 
     private suspend fun syncAuditToCloud(
         domain: String,

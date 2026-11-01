@@ -26,6 +26,11 @@ import com.luminarasuite.app.core.model.FindingPatchResponse
 import com.luminarasuite.app.core.model.FindingsBulkRequest
 import com.luminarasuite.app.core.model.FindingsBulkResponse
 import com.luminarasuite.app.core.model.FindingsListResponse
+import com.luminarasuite.app.core.model.FirecrawlMapRequest
+import com.luminarasuite.app.core.model.FirecrawlMapResponse
+import com.luminarasuite.app.core.model.FirecrawlPage
+import com.luminarasuite.app.core.model.FirecrawlScrapeRequest
+import com.luminarasuite.app.core.model.FirecrawlScrapeResponse
 import com.luminarasuite.app.core.model.GatewayExecuteRequest
 import com.luminarasuite.app.core.model.GatewayExecuteResponse
 import com.luminarasuite.app.core.model.GroqChatRequest
@@ -265,9 +270,11 @@ class FakeLuminaraApi : LuminaraApi {
 
     override suspend fun searchTavily(
         providerKey: String?,
+        auditRun: String?,
+        auditDomain: String?,
         body: TavilySearchRequest,
     ): TavilySearchResponse =
-        TavilySearchResponse(
+        if (searchFails) throw IllegalStateException("search down") else TavilySearchResponse(
             answer = "Grounded summary",
             results =
             listOf(
@@ -293,7 +300,33 @@ class FakeLuminaraApi : LuminaraApi {
     override suspend fun beginAuditRun(body: AuditRunRequest): AuditRunResponse =
         AuditRunResponse(token = "run", domain = body.domain)
 
-    override suspend fun refundAuditRun(body: JsonObject): AuditRunResponse = AuditRunResponse()
+    var scrapedPage: FirecrawlPage? = null
+    var searchFails = false
+    val refundBodies = mutableListOf<JsonObject>()
+    val providerRunTokens = mutableListOf<String?>()
+
+    override suspend fun firecrawlMap(
+        auditRun: String,
+        auditDomain: String,
+        body: FirecrawlMapRequest,
+    ): FirecrawlMapResponse {
+        providerRunTokens += auditRun
+        return FirecrawlMapResponse()
+    }
+
+    override suspend fun firecrawlScrape(
+        auditRun: String,
+        auditDomain: String,
+        body: FirecrawlScrapeRequest,
+    ): FirecrawlScrapeResponse {
+        providerRunTokens += auditRun
+        return FirecrawlScrapeResponse(data = scrapedPage)
+    }
+
+    override suspend fun refundAuditRun(body: JsonObject): AuditRunResponse {
+        refundBodies += body
+        return AuditRunResponse()
+    }
 
     override suspend fun listIdeas(): IdeaListResponse = IdeaListResponse(ok = true)
 
@@ -348,6 +381,53 @@ class LuminaraRepositoryTest {
 
             val storedFindings = repo.findingsFlow.first()
             assertTrue(storedFindings.isNotEmpty())
+        }
+
+    @Test
+    fun runInstantAudit_signedInStoresRealScoresAndMetersEveryProviderCall() =
+        runTest {
+            val dao = FakeLuminaraDao()
+            val api =
+                FakeLuminaraApi().apply {
+                    scrapedPage =
+                        FirecrawlPage(
+                            markdown = List(300) { "word" }.joinToString(" "),
+                            rawHtml =
+                            "<script type=\"application/ld+json\">{\"@type\":\"Organization\",\"name\":\"Ex\"}</script>",
+                        )
+                }
+            val repo = DefaultLuminaraRepository(api = api, dao = dao, vault = InMemoryVaultStorage())
+            repo.signIn("operator@luminarasuite.com", "password123")
+
+            val stages = mutableListOf<String>()
+            val report = repo.runInstantAudit("example.com") { stages += it }.getOrThrow()
+
+            val crew = requireNotNull(report.crew)
+            assertEquals("measured", crew.measurementStatus)
+            assertEquals(crew.healthScore, report.healthScore)
+            assertTrue(api.refundBodies.isEmpty())
+            assertTrue(api.providerRunTokens.all { it == "run" })
+            assertTrue("Reading your pages" in stages)
+            val stored = repo.auditHistoryFlow.first().first()
+            assertEquals(crew.healthScore, stored.healthScore)
+            assertEquals(crew.citationRatePercent, stored.citationRatePercent)
+        }
+
+    @Test
+    fun runInstantAudit_refundsTheCheckWhenNothingWasMeasured() =
+        runTest {
+            val api = FakeLuminaraApi().apply { scrapedPage = null }
+            val repo = DefaultLuminaraRepository(api = api, dao = FakeLuminaraDao(), vault = InMemoryVaultStorage())
+            repo.signIn("operator@luminarasuite.com", "password123")
+            api.searchFails = true
+
+            val report = repo.runInstantAudit("example.com").getOrThrow()
+
+            assertNull(report.healthScore)
+            assertNull(report.crew?.citationRatePercent)
+            assertEquals("not_measured", report.crew?.measurementStatus)
+            assertEquals(1, api.refundBodies.size)
+            assertNull(repo.auditHistoryFlow.first().first().citationRatePercent)
         }
 
     @Test

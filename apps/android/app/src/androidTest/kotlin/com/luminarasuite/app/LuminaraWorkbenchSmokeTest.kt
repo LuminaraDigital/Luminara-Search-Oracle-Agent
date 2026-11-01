@@ -43,7 +43,10 @@ class StubInstrumentationRepository : LuminaraRepository {
 
     override val quotaFlow: StateFlow<QuotaStatus?> = MutableStateFlow(null)
 
-    override suspend fun runInstantAudit(rawDomain: String): Result<InstantAuditReport> =
+    override suspend fun runInstantAudit(
+        rawDomain: String,
+        onStage: (String) -> Unit,
+    ): Result<InstantAuditReport> =
         Result.success(
             InstantAuditReport(
                 domain = "luminarasuite.com",

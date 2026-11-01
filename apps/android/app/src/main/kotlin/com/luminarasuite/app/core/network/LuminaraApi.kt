@@ -16,6 +16,10 @@ import com.luminarasuite.app.core.model.FindingPatchResponse
 import com.luminarasuite.app.core.model.FindingsBulkRequest
 import com.luminarasuite.app.core.model.FindingsBulkResponse
 import com.luminarasuite.app.core.model.FindingsListResponse
+import com.luminarasuite.app.core.model.FirecrawlMapRequest
+import com.luminarasuite.app.core.model.FirecrawlMapResponse
+import com.luminarasuite.app.core.model.FirecrawlScrapeRequest
+import com.luminarasuite.app.core.model.FirecrawlScrapeResponse
 import com.luminarasuite.app.core.model.GatewayExecuteRequest
 import com.luminarasuite.app.core.model.GatewayExecuteResponse
 import com.luminarasuite.app.core.model.GroqChatRequest
@@ -153,8 +157,24 @@ interface LuminaraApi {
     @POST("api/providers/tavily/search")
     suspend fun searchTavily(
         @Header("x-provider-key") providerKey: String? = null,
+        @Header("x-audit-run") auditRun: String? = null,
+        @Header("x-audit-domain") auditDomain: String? = null,
         @Body body: TavilySearchRequest,
     ): TavilySearchResponse
+
+    @POST("api/providers/firecrawl/map")
+    suspend fun firecrawlMap(
+        @Header("x-audit-run") auditRun: String,
+        @Header("x-audit-domain") auditDomain: String,
+        @Body body: FirecrawlMapRequest,
+    ): FirecrawlMapResponse
+
+    @POST("api/providers/firecrawl/scrape")
+    suspend fun firecrawlScrape(
+        @Header("x-audit-run") auditRun: String,
+        @Header("x-audit-domain") auditDomain: String,
+        @Body body: FirecrawlScrapeRequest,
+    ): FirecrawlScrapeResponse
 
     @POST("api/providers/groq/chat/completions")
     suspend fun chatGroq(
