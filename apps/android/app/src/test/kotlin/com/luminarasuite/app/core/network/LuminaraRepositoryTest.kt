@@ -1,5 +1,7 @@
 package com.luminarasuite.app.core.network
 
+import com.luminarasuite.app.core.auth.FIREBASE_SDK_REFRESH
+import com.luminarasuite.app.core.auth.FirebaseAccount
 import com.luminarasuite.app.core.auth.InMemoryVaultStorage
 import com.luminarasuite.app.core.auth.VaultSnapshot
 import com.luminarasuite.app.core.database.AuditHistoryEntity
@@ -729,5 +731,92 @@ class LuminaraRepositoryTest {
             val turn = (repo.streamOracle("Q", emptyList()).toList().last() as OracleEvent.Complete).turn
 
             assertEquals("Yes", turn.verdict)
+        }
+
+    @Test
+    fun explainAudit_givesOneLocalTasteThenRequiresSignIn() =
+        runTest {
+            val vault = InMemoryVaultStorage()
+            val api = FakeLuminaraApi()
+            val repo = DefaultLuminaraRepository(api = api, dao = FakeLuminaraDao(), vault = vault)
+            val report = repo.runInstantAudit("example.com").getOrThrow()
+            assertTrue(report.crewNote.orEmpty().contains("plain-English"))
+
+            val read = repo.explainAudit(report).getOrThrow()
+            assertTrue(read.verdict.isNotBlank())
+            assertTrue(read.nextAction.isNotBlank())
+            assertEquals(0, api.groqCalls)
+            assertTrue(vault.getSnapshot().guestTrialUsed)
+            assertFalse(read.verdict.contains("\u2014"))
+
+            val again = repo.explainAudit(report)
+            assertTrue(again.isFailure)
+            val message = again.exceptionOrNull()?.message.orEmpty()
+            assertTrue(message.contains("luminarasuite.com"))
+            assertFalse(message.contains("Stripe"))
+            assertFalse(message.contains("checkout"))
+            assertEquals(0, api.groqCalls)
+
+            val blockedAsk = repo.askOracle("How do I fix llms.txt?")
+            assertTrue(blockedAsk.exceptionOrNull()?.message.orEmpty().contains("luminarasuite.com"))
+
+            repo.signOut()
+            assertTrue(vault.getSnapshot().guestTrialUsed)
+
+            repo.saveByokKeys(ByokKeyBag(groqKey = "gsk_test_key"))
+            assertTrue(repo.explainAudit(report).isSuccess)
+            assertEquals(1, api.groqCalls)
+        }
+
+    @Test
+    fun signIn_storesTheFirebaseIdTokenAndSignsTheSdkOut() =
+        runTest {
+            var signedOut = false
+            val firebase =
+                object : FirebaseAccount {
+                    override suspend fun adoptPassword(
+                        email: String,
+                        password: String,
+                        issued: AuthTokenResponse,
+                    ) = issued.copy(idToken = "sdk-id")
+
+                    override suspend fun signInWithGoogle(googleIdToken: String) =
+                        AuthTokenResponse(
+                            ok = true,
+                            idToken = "google-id",
+                            refreshToken = FIREBASE_SDK_REFRESH,
+                            localId = "g1",
+                            email = "g@example.com",
+                        )
+
+                    override suspend fun forceRefresh(): RefreshOutcome = RefreshOutcome.Unavailable
+
+                    override fun signOut() {
+                        signedOut = true
+                    }
+                }
+            val vault = InMemoryVaultStorage()
+            val repo =
+                DefaultLuminaraRepository(
+                    api = FakeLuminaraApi(),
+                    dao = FakeLuminaraDao(),
+                    vault = vault,
+                    firebase = firebase,
+                )
+
+            repo.signIn("operator@luminarasuite.com", "password123").getOrThrow()
+            val snap = vault.getSnapshot()
+            assertEquals("sdk-id", snap.idToken)
+            assertEquals("refresh-123", snap.refreshToken)
+            assertEquals("fb:uid123", snap.accountId)
+
+            repo.signOut()
+            assertTrue(signedOut)
+            assertFalse(vault.getSnapshot().isSignedIn)
+
+            repo.signInWithGoogle("google-token").getOrThrow()
+            assertEquals("google-id", vault.getSnapshot().idToken)
+            assertEquals(FIREBASE_SDK_REFRESH, vault.getSnapshot().refreshToken)
+            assertEquals("g@example.com", vault.getSnapshot().email)
         }
 }

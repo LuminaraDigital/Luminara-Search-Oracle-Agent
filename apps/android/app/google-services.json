@@ -1,0 +1,55 @@
+{
+  "project_info": {
+    "project_number": "274315225068",
+    "project_id": "luminara-suite",
+    "storage_bucket": "luminara-suite.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:274315225068:android:f1a023ea9c7cde67f482c9",
+        "android_client_info": {
+          "package_name": "com.luminarasuite.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "274315225068-che7teqeta31upe8grtj5r2v3d82s0hl.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.luminarasuite.app",
+            "certificate_hash": "f5cb28043a164f9eddcddfe1e34dac0795a21590"
+          }
+        },
+        {
+          "client_id": "274315225068-n0hp6jh9l3lf6uchpunukum7kojdgfq5.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.luminarasuite.app",
+            "certificate_hash": "262a67875a97f44ab7a00e35c03b4f8b2007d705"
+          }
+        },
+        {
+          "client_id": "274315225068-9toi5s5bvte2gds71o3bvi6k57kb0m7q.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAA63Ed5OzDhXYJ1GIQWVhOxHkK0Ds6ROc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "274315225068-9toi5s5bvte2gds71o3bvi6k57kb0m7q.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
