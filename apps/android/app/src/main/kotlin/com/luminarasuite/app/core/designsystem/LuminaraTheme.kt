@@ -28,6 +28,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
@@ -42,28 +43,63 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.luminarasuite.app.R
 
 object LuminaraColors {
-    val Paper = Color(0xFF070706)
-    val Paper2 = Color(0xFF10100E)
-    val Paper3 = Color(0xFF181714)
-    val Ink = Color(0xFFF3F1EA)
-    val Ink2 = Color(0xFFA7A297)
-    val GoldAccent = Color(0xFFD4B15A)
-    val GoldLight = Color(0xFFF3E2A4)
+    val Paper = Color(0xFF08080A)
+    val Paper2 = Color(0xFF0F0F12)
+    val Paper3 = Color(0xFF16161B)
+    val Ink = Color(0xFFFFFFFF)
+    val Ink2 = Color(0xFFA1A1AA)
+    val Ink3 = Color(0xFF71717A)
+    val GoldAccent = Color(0xFFF5A623)
+    val GoldLight = Color(0xFFFFD166)
     val GoldDark = Color(0xFFAA771C)
-    val AccentInk = Color(0xFF14110A)
+    val AccentInk = Color(0xFF08080A)
     val RuleBorder = Color(0x14FFFFFF)
-    val RuleStrong = Color(0x24FFFFFF)
-    val PassGreen = Color(0xFF3DDC97)
+    val RuleStrong = Color(0x1FFFFFFF)
+    val GoldRule = Color(0x59F5A623)
+    val PassGreen = Color(0xFF10B981)
     val WarnAmber = Color(0xFFE2A23A)
     val ErrorRed = Color(0xFFF87171)
 }
+
+@OptIn(ExperimentalTextApi::class)
+private fun jakarta(weight: Int) =
+    Font(
+        R.font.plus_jakarta_sans,
+        FontWeight(weight),
+        variationSettings = FontVariation.Settings(FontVariation.weight(weight)),
+    )
+
+@OptIn(ExperimentalTextApi::class)
+private fun playfair(weight: Int) =
+    Font(
+        R.font.playfair_display,
+        FontWeight(weight),
+        variationSettings = FontVariation.Settings(FontVariation.weight(weight)),
+    )
+
+@OptIn(ExperimentalTextApi::class)
+private fun playfairItalic(weight: Int) =
+    Font(
+        resId = R.font.playfair_display_italic,
+        weight = FontWeight(weight),
+        style = FontStyle.Italic,
+        variationSettings = FontVariation.Settings(FontVariation.weight(weight)),
+    )
+
+val JakartaFamily = FontFamily(jakarta(400), jakarta(500), jakarta(600), jakarta(700))
+val PlayfairFamily = FontFamily(playfair(500), playfair(600), playfairItalic(500), playfairItalic(600))
 
 private val NightFoundryColorScheme =
     darkColorScheme(
@@ -86,44 +122,55 @@ private val NightFoundryColorScheme =
 object LuminaraTextStyles {
     val DisplaySerif =
         TextStyle(
-            fontFamily = FontFamily.Serif,
-            fontWeight = FontWeight.Normal,
+            fontFamily = PlayfairFamily,
+            fontWeight = FontWeight.SemiBold,
             fontSize = 32.sp,
-            lineHeight = 36.sp,
-            letterSpacing = (-0.6).sp,
+            lineHeight = 38.sp,
+            letterSpacing = (-0.3).sp,
+            color = LuminaraColors.Ink,
+        )
+
+    val HeadlineSerif =
+        TextStyle(
+            fontFamily = PlayfairFamily,
+            fontWeight = FontWeight.Medium,
+            fontSize = 22.sp,
+            lineHeight = 28.sp,
             color = LuminaraColors.Ink,
         )
 
     val SectionTitle =
         TextStyle(
-            fontFamily = FontFamily.SansSerif,
+            fontFamily = JakartaFamily,
             fontWeight = FontWeight.SemiBold,
             fontSize = 16.sp,
             lineHeight = 22.sp,
+            letterSpacing = (-0.1).sp,
             color = LuminaraColors.Ink,
         )
 
     val Body =
         TextStyle(
-            fontFamily = FontFamily.SansSerif,
+            fontFamily = JakartaFamily,
             fontWeight = FontWeight.Normal,
             fontSize = 14.sp,
-            lineHeight = 20.sp,
+            lineHeight = 21.sp,
             color = LuminaraColors.Ink2,
         )
 
     val EyebrowMono =
         TextStyle(
-            fontFamily = FontFamily.Monospace,
-            fontWeight = FontWeight.Medium,
+            fontFamily = JakartaFamily,
+            fontWeight = FontWeight.Bold,
             fontSize = 11.sp,
-            letterSpacing = 1.4.sp,
-            color = LuminaraColors.Ink2,
+            lineHeight = 14.sp,
+            letterSpacing = 0.9.sp,
+            color = LuminaraColors.GoldAccent,
         )
 
     val MetricTabular =
         TextStyle(
-            fontFamily = FontFamily.Monospace,
+            fontFamily = JakartaFamily,
             fontWeight = FontWeight.SemiBold,
             fontSize = 16.sp,
             fontFeatureSettings = "tnum",
@@ -139,10 +186,23 @@ fun toneColor(tone: ProbeTone): Color =
         ProbeTone.Idle, ProbeTone.Unknown -> LuminaraColors.Ink2
     }
 
+private val LuminaraTypography =
+    Typography().run {
+        copy(
+            labelLarge = labelLarge.copy(fontFamily = JakartaFamily),
+            labelMedium = labelMedium.copy(fontFamily = JakartaFamily),
+            labelSmall = labelSmall.copy(fontFamily = JakartaFamily),
+            bodyLarge = bodyLarge.copy(fontFamily = JakartaFamily),
+            bodyMedium = bodyMedium.copy(fontFamily = JakartaFamily),
+            bodySmall = bodySmall.copy(fontFamily = JakartaFamily),
+        )
+    }
+
 @Composable
 fun LuminaraTheme(content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme = NightFoundryColorScheme,
+        typography = LuminaraTypography,
         content = content,
     )
 }
@@ -162,7 +222,7 @@ fun WorkbenchCard(
         animationSpec = spring(dampingRatio = 0.7f, stiffness = Spring.StiffnessMedium),
         label = "plateScale",
     )
-    val shape = RoundedCornerShape(18.dp)
+    val shape = RoundedCornerShape(24.dp)
     val press =
         if (onClick != null) {
             Modifier.clickable(
@@ -184,9 +244,9 @@ fun WorkbenchCard(
             }
             .clip(shape)
             .then(press),
-        color = if (emphasized) LuminaraColors.Paper3 else LuminaraColors.Paper2,
+        color = LuminaraColors.Paper2,
         shape = shape,
-        border = BorderStroke(1.dp, LuminaraColors.RuleBorder),
+        border = BorderStroke(1.dp, if (emphasized) LuminaraColors.GoldRule else LuminaraColors.RuleBorder),
     ) {
         Row(
             modifier =
@@ -229,6 +289,10 @@ fun MeasurementStatusBadge(status: String) {
     val tone = toneForStatus(status)
     val color by animateColorAsState(targetValue = toneColor(tone), label = "statusColor")
     Row(
+        modifier =
+        Modifier
+            .background(color.copy(alpha = 0.12f), CircleShape)
+            .padding(horizontal = 10.dp, vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -240,15 +304,8 @@ fun MeasurementStatusBadge(status: String) {
                 .background(color, CircleShape),
         )
         Text(
-            text = status.uppercase(),
-            style =
-            TextStyle(
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Medium,
-                fontSize = 11.sp,
-                fontFeatureSettings = "tnum",
-                color = color,
-            ),
+            text = status.replace('_', ' ').uppercase(),
+            style = LuminaraTextStyles.EyebrowMono.copy(fontSize = 10.sp, color = color),
         )
     }
 }
@@ -256,7 +313,7 @@ fun MeasurementStatusBadge(status: String) {
 @Composable
 fun AiEvidenceDisclosureBar(
     modifier: Modifier = Modifier,
-    note: String = "Evidence-bound. Unverified metrics stay NOT_MEASURED.",
+    note: String = "Evidence only. Anything we cannot verify is marked not measured.",
 ) {
     Text(
         text = note,
@@ -294,7 +351,7 @@ fun FoundryButton(
             .height(52.dp)
             .then(if (testTag != null) Modifier.testTag(testTag) else Modifier),
     ) {
-        Text(text = text, fontWeight = FontWeight.SemiBold)
+        Text(text = text, fontFamily = JakartaFamily, fontWeight = FontWeight.Bold, fontSize = 15.sp)
     }
 }
 
@@ -303,11 +360,11 @@ fun FoundryFieldColors() =
     OutlinedTextFieldDefaults.colors(
         focusedTextColor = LuminaraColors.Ink,
         unfocusedTextColor = LuminaraColors.Ink,
-        focusedBorderColor = LuminaraColors.Ink2.copy(alpha = 0.55f),
-        unfocusedBorderColor = LuminaraColors.RuleStrong,
-        cursorColor = LuminaraColors.GoldLight,
-        focusedLabelColor = LuminaraColors.Ink2,
-        unfocusedLabelColor = LuminaraColors.Ink2,
-        focusedContainerColor = Color.Transparent,
-        unfocusedContainerColor = Color.Transparent,
+        focusedBorderColor = LuminaraColors.GoldAccent.copy(alpha = 0.5f),
+        unfocusedBorderColor = LuminaraColors.RuleBorder,
+        cursorColor = LuminaraColors.GoldAccent,
+        focusedLabelColor = LuminaraColors.GoldLight,
+        unfocusedLabelColor = LuminaraColors.GoldLight,
+        focusedContainerColor = LuminaraColors.Paper3,
+        unfocusedContainerColor = LuminaraColors.Paper3,
     )

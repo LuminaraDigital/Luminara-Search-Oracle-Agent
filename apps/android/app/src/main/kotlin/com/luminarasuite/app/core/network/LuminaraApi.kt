@@ -5,6 +5,8 @@ import com.luminarasuite.app.core.model.AccountDeleteResponse
 import com.luminarasuite.app.core.model.AuditHistoryListResponse
 import com.luminarasuite.app.core.model.AuditHistoryUpsertRequest
 import com.luminarasuite.app.core.model.AuditHistoryUpsertResponse
+import com.luminarasuite.app.core.model.AuditRunRequest
+import com.luminarasuite.app.core.model.AuditRunResponse
 import com.luminarasuite.app.core.model.AuthCredentialsRequest
 import com.luminarasuite.app.core.model.AuthTokenResponse
 import com.luminarasuite.app.core.model.BootResponse
@@ -18,12 +20,22 @@ import com.luminarasuite.app.core.model.GatewayExecuteRequest
 import com.luminarasuite.app.core.model.GatewayExecuteResponse
 import com.luminarasuite.app.core.model.GroqChatRequest
 import com.luminarasuite.app.core.model.GroqChatResponse
+import com.luminarasuite.app.core.model.IdeaCreateRequest
+import com.luminarasuite.app.core.model.IdeaCreateResponse
+import com.luminarasuite.app.core.model.IdeaDetailResponse
+import com.luminarasuite.app.core.model.IdeaListResponse
 import com.luminarasuite.app.core.model.PrivacyExportResponse
 import com.luminarasuite.app.core.model.ProbeCrawlResponse
 import com.luminarasuite.app.core.model.ScoutRecheckRequest
 import com.luminarasuite.app.core.model.ScoutRecheckResponse
 import com.luminarasuite.app.core.model.TavilySearchRequest
 import com.luminarasuite.app.core.model.TavilySearchResponse
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import okhttp3.ResponseBody
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.Header
@@ -32,7 +44,34 @@ import retrofit2.http.POST
 import retrofit2.http.PUT
 import retrofit2.http.Path
 import retrofit2.http.Query
+import retrofit2.http.Streaming
 
+/**
+ * Defaults must reach the wire: the Worker needs flags like recheck and refund, and the relay
+ * needs the model and search settings.
+ */
+val LuminaraWireJson =
+    Json {
+        ignoreUnknownKeys = true
+        coerceInputValues = true
+        explicitNulls = false
+        encodeDefaults = true
+    }
+
+/** The Worker refunds only when both scores are explicit nulls, meaning nothing was measured. */
+fun auditRefundBody(
+    token: String,
+    domain: String,
+): JsonObject =
+    buildJsonObject {
+        put("token", token)
+        put("domain", domain)
+        put("refund", true)
+        put("healthScore", JsonNull)
+        put("citationRate", JsonNull)
+    }
+
+@Suppress("TooManyFunctions") // One method per Worker route.
 interface LuminaraApi {
     @GET("api/visibility/probe-crawl")
     suspend fun probeCrawl(
@@ -53,6 +92,16 @@ interface LuminaraApi {
     suspend fun recheckFix(
         @Body body: ScoutRecheckRequest,
     ): ScoutRecheckResponse
+
+    @POST("api/audit/scout-run")
+    suspend fun beginAuditRun(
+        @Body body: AuditRunRequest,
+    ): AuditRunResponse
+
+    @POST("api/audit/scout-run")
+    suspend fun refundAuditRun(
+        @Body body: JsonObject,
+    ): AuditRunResponse
 
     @GET("api/audits/history")
     suspend fun getAuditHistory(
@@ -111,6 +160,30 @@ interface LuminaraApi {
     suspend fun chatGroq(
         @Header("x-provider-key") providerKey: String? = null,
         @Header("x-accept-fallback") acceptFallback: String = "true",
+        @Header("x-audit-run") auditRun: String? = null,
+        @Header("x-audit-domain") auditDomain: String? = null,
         @Body body: GroqChatRequest,
     ): GroqChatResponse
+
+    @Streaming
+    @POST("api/providers/groq/chat/completions")
+    suspend fun streamGroq(
+        @Header("x-provider-key") providerKey: String? = null,
+        @Header("x-accept-fallback") acceptFallback: String = "true",
+        @Body body: GroqChatRequest,
+    ): ResponseBody
+
+    @GET("api/idea-scout")
+    suspend fun listIdeas(): IdeaListResponse
+
+    @POST("api/idea-scout")
+    suspend fun createIdea(
+        @Header("x-provider-key") providerKey: String? = null,
+        @Body body: IdeaCreateRequest,
+    ): IdeaCreateResponse
+
+    @GET("api/idea-scout/{id}")
+    suspend fun getIdea(
+        @Path("id") id: String,
+    ): IdeaDetailResponse
 }

@@ -306,6 +306,7 @@ data class GroqChatRequest(
     val temperature: Double = 0.2,
     @SerialName("max_tokens")
     val maxTokens: Int = 1024,
+    val stream: Boolean = false,
 )
 
 @Serializable
@@ -362,4 +363,144 @@ data class OracleTurn(
     val measurementStatus: String,
     val timestampMs: Long,
     val isReported: Boolean = false,
+)
+
+@Serializable
+data class GroqStreamChunk(
+    val choices: List<GroqStreamChoice> = emptyList(),
+)
+
+@Serializable
+data class GroqStreamChoice(
+    val delta: GroqStreamDelta = GroqStreamDelta(),
+)
+
+@Serializable
+data class GroqStreamDelta(
+    val content: String? = null,
+)
+
+@Serializable
+data class AuthRefreshRequest(
+    val refreshToken: String,
+)
+
+@Serializable
+data class AuthRefreshResponse(
+    val ok: Boolean = false,
+    val idToken: String = "",
+    val refreshToken: String = "",
+    val error: String? = null,
+)
+
+@Serializable
+data class AuditRunRequest(
+    val domain: String,
+)
+
+@Serializable
+data class AuditRunResponse(
+    val token: String = "",
+    val domain: String = "",
+)
+
+@Serializable
+data class IdeaCreateRequest(
+    val idea: String,
+    val niche: String? = null,
+    val competitorUrls: List<String> = emptyList(),
+    val pulseOptIn: Boolean = false,
+)
+
+@Serializable
+data class IdeaCreateResponse(
+    val ok: Boolean = false,
+    val id: String = "",
+    val card: IdeaCard? = null,
+    val ideaCardsRemaining: Int? = null,
+)
+
+@Serializable
+data class IdeaDetailResponse(
+    val ok: Boolean = false,
+    val card: IdeaCard? = null,
+    val niche: String? = null,
+)
+
+@Serializable
+data class IdeaListResponse(
+    val ok: Boolean = false,
+    val ideas: List<IdeaSummary> = emptyList(),
+)
+
+@Serializable
+data class IdeaSummary(
+    val id: String = "",
+    val ideaText: String = "",
+    val niche: String? = null,
+    val status: String = "",
+    val createdAt: Long = 0L,
+    val linkedDomain: String? = null,
+)
+
+@Serializable
+data class IdeaCard(
+    val problem: String = "",
+    val whoAsksAi: IdeaWhoAsks = IdeaWhoAsks(),
+    val competitorCitation: IdeaCitation = IdeaCitation(),
+    val contentBets: List<IdeaBet> = emptyList(),
+    val siteChecklist: List<IdeaChecklistRow> = emptyList(),
+)
+
+@Serializable
+data class IdeaWhoAsks(
+    val persona: String = "",
+    val promptPatterns: List<String> = emptyList(),
+)
+
+@Serializable
+data class IdeaCitation(
+    val status: String = "not_measured",
+    val snapshots: List<IdeaSnapshot> = emptyList(),
+)
+
+@Serializable
+data class IdeaSnapshot(
+    val hostname: String = "",
+    val title: String? = null,
+    val fetchStatus: String = "not_measured",
+)
+
+@Serializable
+data class IdeaBet(
+    val hypothesis: String = "",
+)
+
+@Serializable
+data class IdeaChecklistRow(
+    val id: String = "",
+    val label: String = "",
+    val status: String = "not_measured",
+)
+
+data class StudioSource(
+    val id: String,
+    val title: String,
+    val content: String,
+    val kind: String,
+    val selected: Boolean,
+    val addedAt: Long,
+)
+
+@Serializable
+data class AudioOverviewTurn(
+    val speaker: String = "Alex",
+    val text: String = "",
+)
+
+@Serializable
+data class AudioOverview(
+    val title: String = "",
+    val summary: String = "",
+    val script: List<AudioOverviewTurn> = emptyList(),
 )

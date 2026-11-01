@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools">
   <!--
-    Transparent system bars so the foundry background draws edge to edge.
+    Transparent system bars so the obsidian background draws edge to edge.
     Scaffold insets keep controls off the status bar, cutout, and gesture nav.
   -->
-  <style name="Theme.Luminara" parent="android:Theme.Material.NoActionBar">
-    <item name="android:windowBackground">@android:color/black</item>
+  <style name="Theme.Luminara.Base" parent="android:Theme.Material.NoActionBar">
+    <item name="android:windowBackground">#08080A</item>
     <item name="android:windowDrawsSystemBarBackgrounds">true</item>
     <item name="android:statusBarColor">@android:color/transparent</item>
     <item name="android:navigationBarColor">@android:color/transparent</item>
@@ -14,4 +14,6 @@
     <item name="android:enforceNavigationBarContrast" tools:targetApi="29">false</item>
     <item name="android:windowLayoutInDisplayCutoutMode" tools:targetApi="27">shortEdges</item>
   </style>
+
+  <style name="Theme.Luminara" parent="Theme.Luminara.Base" />
 </resources>

@@ -1,9 +1,9 @@
 package com.luminarasuite.app.feature.ask
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -12,11 +12,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -25,34 +21,46 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.luminarasuite.app.core.designsystem.AccentHeadline
 import com.luminarasuite.app.core.designsystem.AiEvidenceDisclosureBar
 import com.luminarasuite.app.core.designsystem.EyebrowKicker
-import com.luminarasuite.app.core.designsystem.FoundryButton
-import com.luminarasuite.app.core.designsystem.FoundryFieldColors
-import com.luminarasuite.app.core.designsystem.LiveTrack
+import com.luminarasuite.app.core.designsystem.GhostPillButton
 import com.luminarasuite.app.core.designsystem.LuminaraColors
+import com.luminarasuite.app.core.designsystem.LuminaraOrb
 import com.luminarasuite.app.core.designsystem.LuminaraTextStyles
 import com.luminarasuite.app.core.designsystem.MeasurementStatusBadge
+import com.luminarasuite.app.core.designsystem.PromptBar
+import com.luminarasuite.app.core.designsystem.ScreenGutter
 import com.luminarasuite.app.core.designsystem.WorkbenchCard
-import com.luminarasuite.app.core.designsystem.toneColor
-import com.luminarasuite.app.core.designsystem.toneForStatus
 import com.luminarasuite.app.core.model.OracleTurn
 import com.luminarasuite.app.core.network.LuminaraRepository
+import com.luminarasuite.app.core.network.OracleEvent
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+
+private val STARTERS =
+    listOf(
+        "Audit my website",
+        "Where do I show up in AI answers?",
+        "What is missing on my site?",
+        "How should I structure /llms.txt?",
+    )
 
 data class AskUiState(
     val promptInput: String = "",
     val isLoading: Boolean = false,
+    val statusLine: String? = null,
+    val pendingQuestion: String? = null,
+    val partialAnswer: String = "",
     val errorMessage: String? = null,
     val turns: List<OracleTurn> = emptyList(),
 )
@@ -73,26 +81,42 @@ class AskViewModel(
             _uiState.update { it.copy(errorMessage = "Enter an SEO, AEO, or GEO question.") }
             return
         }
-        _uiState.update { it.copy(promptInput = "", isLoading = true, errorMessage = null) }
+        val earlier = _uiState.value.turns
+        _uiState.update {
+            it.copy(
+                promptInput = "",
+                isLoading = true,
+                errorMessage = null,
+                pendingQuestion = question,
+                partialAnswer = "",
+                statusLine = null,
+            )
+        }
         viewModelScope.launch {
-            repository.askOracle(question)
-                .onSuccess { turn ->
+            repository.streamOracle(question, earlier)
+                .catch { err ->
                     _uiState.update {
                         it.copy(
                             isLoading = false,
-                            turns = listOf(turn) + it.turns,
-                            errorMessage = null,
+                            pendingQuestion = null,
+                            errorMessage =
+                            err.message ?: "That did not go through. Sign in or add a Groq key in Settings.",
                         )
                     }
-                }
-                .onFailure { err ->
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            errorMessage =
-                            err.message
-                                ?: "Oracle request failed. Sign in or add a Groq API key in Settings.",
-                        )
+                }.collect { event ->
+                    when (event) {
+                        is OracleEvent.Status -> _uiState.update { it.copy(statusLine = event.text) }
+                        is OracleEvent.Partial -> _uiState.update { it.copy(partialAnswer = event.text) }
+                        is OracleEvent.Complete ->
+                            _uiState.update {
+                                it.copy(
+                                    isLoading = false,
+                                    pendingQuestion = null,
+                                    partialAnswer = "",
+                                    statusLine = null,
+                                    turns = listOf(event.turn) + it.turns,
+                                )
+                            }
                     }
                 }
         }
@@ -113,12 +137,12 @@ class AskViewModel(
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AskScreen(
     viewModel: AskViewModel,
     seedPrompt: String? = null,
     onSeedConsumed: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsState()
     val scrollState = rememberScrollState()
@@ -129,92 +153,110 @@ fun AskScreen(
             onSeedConsumed()
         }
     }
+    LaunchedEffect(state.turns.size, state.pendingQuestion) { scrollState.animateScrollTo(scrollState.maxValue) }
 
-    Column(
-        modifier =
-        Modifier
-            .fillMaxSize()
-            .verticalScroll(scrollState)
-            .padding(horizontal = 20.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        EyebrowKicker("Search oracle")
-        Text(text = "Ask the Search Oracle", style = LuminaraTextStyles.DisplaySerif)
-        Text(
-            text = "One verdict, one next action, and sources when search returns them.",
-            style = LuminaraTextStyles.Body,
-        )
-
-        WorkbenchCard(emphasized = true) {
-            OutlinedTextField(
-                value = state.promptInput,
-                onValueChange = viewModel::updatePrompt,
-                label = { Text("Ask about llms.txt, schema, or citations") },
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                keyboardActions = KeyboardActions(onSend = { viewModel.submitQuestion() }),
-                colors = FoundryFieldColors(),
-                modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .testTag("ask_prompt_input"),
-            )
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                listOf(
-                    "How should I structure /llms.txt for AI crawlers?",
-                    "Which schema.org types improve Perplexity and ChatGPT citations?",
-                ).forEach { starter ->
-                    TextButton(
-                        onClick = { viewModel.submitQuestion(starter) },
-                        enabled = !state.isLoading,
-                    ) {
-                        Text(
-                            text = starter,
-                            color = LuminaraColors.Ink2,
-                            style = LuminaraTextStyles.Body.copy(fontSize = 13.sp),
-                        )
+    Column(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier =
+            Modifier
+                .weight(1f)
+                .verticalScroll(scrollState)
+                .padding(horizontal = ScreenGutter, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            if (state.turns.isEmpty() && state.pendingQuestion == null) {
+                AskIntro(enabled = !state.isLoading, onStarter = viewModel::submitQuestion)
+            }
+            state.turns.reversed().forEach { turn ->
+                UserBubble(turn.question)
+                TurnPlate(turn = turn, onReport = { viewModel.reportTurn(turn.id) })
+            }
+            state.pendingQuestion?.let { question ->
+                UserBubble(question)
+                LiveReply(status = state.statusLine, partial = state.partialAnswer)
+            }
+            state.errorMessage?.let { errorMsg ->
+                WorkbenchCard(railColor = LuminaraColors.ErrorRed) {
+                    Text(text = errorMsg, style = LuminaraTextStyles.Body, color = LuminaraColors.ErrorRed)
+                    if (errorMsg.contains("Settings")) {
+                        GhostPillButton(text = "Open Settings", onClick = onOpenSettings)
                     }
                 }
             }
-            FoundryButton(
-                text = if (state.isLoading) "Grounding the reply" else "Ask",
-                onClick = { viewModel.submitQuestion() },
-                enabled = !state.isLoading,
-                testTag = "ask_submit_button",
+            AiEvidenceDisclosureBar(
+                note = "AI output can be wrong. Report AI output flags a reply for review.",
             )
-            if (state.isLoading) {
-                LiveTrack()
-                Text(
-                    text = "Grounding the reply. Unverified numbers stay NOT_MEASURED.",
-                    style = LuminaraTextStyles.Body,
-                )
-            }
+            Spacer(modifier = Modifier.height(4.dp))
         }
-
-        state.errorMessage?.let { errorMsg ->
-            WorkbenchCard(railColor = LuminaraColors.ErrorRed) {
-                EyebrowKicker("Oracle notice")
-                Text(text = errorMsg, style = LuminaraTextStyles.Body, color = LuminaraColors.ErrorRed)
-            }
-        }
-
-        if (state.turns.isEmpty() && !state.isLoading && state.errorMessage == null) {
-            WorkbenchCard {
-                EyebrowKicker("No verdict yet")
-                Text(
-                    text = "Sign in for hosted checks, or add a Groq key in Settings. Then ask one question.",
-                    style = LuminaraTextStyles.Body,
-                )
-            }
-        }
-
-        state.turns.forEach { turn ->
-            TurnPlate(turn = turn, onReport = { viewModel.reportTurn(turn.id) })
-        }
-
-        AiEvidenceDisclosureBar(
-            note = "AI output can be wrong. Report AI output flags a reply for review.",
+        PromptBar(
+            value = state.promptInput,
+            onValueChange = viewModel::updatePrompt,
+            placeholder = "Ask about your visibility",
+            onSend = { viewModel.submitQuestion() },
+            busy = state.isLoading,
+            modifier = Modifier.padding(horizontal = ScreenGutter, vertical = 8.dp),
+            inputTag = "ask_prompt_input",
+            sendTag = "ask_submit_button",
         )
-        Spacer(modifier = Modifier.height(8.dp))
+    }
+}
+
+@Composable
+private fun AskIntro(
+    enabled: Boolean,
+    onStarter: (String) -> Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Spacer(modifier = Modifier.height(12.dp))
+        LuminaraOrb(size = 168.dp, thinking = false)
+        AccentHeadline(lead = "Ask ", accent = "Luminara")
+        Text(
+            text = "One verdict, one next action, and live sources when search returns them.",
+            style = LuminaraTextStyles.Body.copy(textAlign = TextAlign.Center),
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        STARTERS.forEach { starter ->
+            GhostPillButton(
+                text = starter,
+                onClick = { onStarter(starter) },
+                enabled = enabled,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+}
+
+@Composable
+private fun UserBubble(text: String) {
+    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+        Text(
+            text = text,
+            style = LuminaraTextStyles.Body.copy(color = LuminaraColors.Ink),
+            modifier =
+            Modifier
+                .background(LuminaraColors.Paper3, RoundedCornerShape(20.dp, 20.dp, 4.dp, 20.dp))
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+        )
+    }
+}
+
+@Composable
+private fun LiveReply(
+    status: String?,
+    partial: String,
+) {
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
+        LuminaraOrb(size = 44.dp, thinking = true)
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            status?.let { EyebrowKicker(it) }
+            if (partial.isNotBlank()) {
+                Text(text = partial, style = LuminaraTextStyles.SectionTitle)
+            }
+        }
     }
 }
 
@@ -223,39 +265,48 @@ private fun TurnPlate(
     turn: OracleTurn,
     onReport: () -> Unit,
 ) {
-    WorkbenchCard(railColor = toneColor(toneForStatus(turn.measurementStatus))) {
+    WorkbenchCard {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            EyebrowKicker(turn.modelLabel)
+            EyebrowKicker("Verdict")
             MeasurementStatusBadge(turn.measurementStatus)
         }
-        Text(text = turn.question, style = LuminaraTextStyles.Body)
-        Text(text = turn.verdict, style = LuminaraTextStyles.SectionTitle, color = LuminaraColors.Ink)
-        Text(
-            text = "Next: ${turn.nextAction}",
-            style = LuminaraTextStyles.Body.copy(color = LuminaraColors.GoldLight),
-        )
+        Text(text = turn.verdict, style = LuminaraTextStyles.HeadlineSerif.copy(fontSize = 19.sp, lineHeight = 26.sp))
+        EyebrowKicker("Your next move")
+        Text(text = turn.nextAction, style = LuminaraTextStyles.Body.copy(color = LuminaraColors.GoldLight))
         if (turn.sources.isEmpty()) {
             Text(
-                text = "No grounded sources. Search evidence is NOT_MEASURED.",
-                style = LuminaraTextStyles.Body,
+                text = "No live sources. Search evidence is not measured.",
+                style = LuminaraTextStyles.Body.copy(fontSize = 12.sp, color = LuminaraColors.Ink3),
             )
         } else {
             EyebrowKicker("Sources ${turn.sources.size}")
-            turn.sources.forEach { src ->
-                Text(text = "${src.title}. ${src.url}", style = LuminaraTextStyles.Body)
+            turn.sources.forEachIndexed { index, src ->
+                Text(
+                    text = "[${index + 1}] ${src.title}",
+                    style = LuminaraTextStyles.Body.copy(fontSize = 12.sp),
+                    maxLines = 1,
+                )
             }
         }
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            OutlinedButton(
-                onClick = onReport,
-                enabled = !turn.isReported,
-                shape = RoundedCornerShape(999.dp),
-            ) {
-                Text(if (turn.isReported) "Reported for review" else "Report AI output")
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = turn.modelLabel,
+                style = LuminaraTextStyles.Body.copy(fontSize = 11.sp, color = LuminaraColors.Ink3),
+            )
+            TextButton(onClick = onReport, enabled = !turn.isReported) {
+                Text(
+                    text = if (turn.isReported) "Reported" else "Report AI output",
+                    color = LuminaraColors.Ink2,
+                    fontSize = 12.sp,
+                )
             }
         }
     }

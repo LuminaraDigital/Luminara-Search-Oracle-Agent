@@ -38,6 +38,7 @@ import com.luminarasuite.app.core.designsystem.FoundryFieldColors
 import com.luminarasuite.app.core.designsystem.LiveTrack
 import com.luminarasuite.app.core.designsystem.LuminaraColors
 import com.luminarasuite.app.core.designsystem.LuminaraTextStyles
+import com.luminarasuite.app.core.designsystem.ScreenGutter
 import com.luminarasuite.app.core.designsystem.WorkbenchCard
 import com.luminarasuite.app.core.model.ByokKeyBag
 import com.luminarasuite.app.core.model.QuotaStatus
@@ -231,7 +232,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
         Modifier
             .fillMaxSize()
             .verticalScroll(scrollState)
-            .padding(horizontal = 20.dp, vertical = 12.dp),
+            .padding(horizontal = ScreenGutter, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         EyebrowKicker("Account and privacy")
@@ -302,6 +303,7 @@ private fun AccountSection(
                 label = { Text("Email address") },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                shape = RoundedCornerShape(16.dp),
                 colors = FoundryFieldColors(),
                 modifier = Modifier.fillMaxWidth().testTag("settings_email_input"),
             )
@@ -312,6 +314,7 @@ private fun AccountSection(
                 singleLine = true,
                 visualTransformation = PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                shape = RoundedCornerShape(16.dp),
                 colors = FoundryFieldColors(),
                 modifier = Modifier.fillMaxWidth().testTag("settings_password_input"),
             )
@@ -343,7 +346,7 @@ private fun ByokVaultSection(
         Text(
             text =
             "Groq, Tavily, Gemini, or NVIDIA NIM. " +
-                "Encrypted on this device with the Android Keystore. Not a paid upgrade.",
+                "Encrypted on this device with the Android Keystore.",
             style = LuminaraTextStyles.Body,
         )
         SecretField(
@@ -431,6 +434,7 @@ private fun PrivacyAndLegalSection(
                 onValueChange = viewModel::updateDeleteConfirm,
                 label = { Text("Type DELETE to erase this account") },
                 singleLine = true,
+                shape = RoundedCornerShape(16.dp),
                 colors = FoundryFieldColors(),
                 modifier = Modifier.fillMaxWidth().testTag("delete_confirm_input"),
             )
@@ -447,8 +451,8 @@ private fun PrivacyAndLegalSection(
 }
 
 private fun quotaLine(state: SettingsUiState): String {
-    val quota = state.quota ?: return "Free companion. 3 hosted checks a day once you sign in."
-    val plan = if (quota.plan.equals("free", ignoreCase = true)) "Free companion" else quota.plan
+    val quota = state.quota ?: return "3 hosted checks a day once you sign in."
+    val plan = if (quota.plan.equals("free", ignoreCase = true)) "Your account" else quota.plan
     if (quota.isUnlimited) return "$plan. Hosted checks are not capped on this account."
     return "$plan. ${quota.remaining} of ${quota.limit} hosted checks left today."
 }
@@ -466,6 +470,7 @@ private fun SecretField(
         label = { Text(label) },
         singleLine = true,
         visualTransformation = PasswordVisualTransformation(),
+        shape = RoundedCornerShape(16.dp),
         colors = FoundryFieldColors(),
         modifier =
         Modifier

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <style name="Theme.Luminara" parent="Theme.Luminara.Base">
+    <item name="android:windowSplashScreenBackground">#08080A</item>
+    <item name="android:windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_foreground</item>
+  </style>
+</resources>

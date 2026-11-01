@@ -7,8 +7,10 @@ import com.luminarasuite.app.core.database.LuminaraDatabase
 import com.luminarasuite.app.core.network.DefaultLuminaraRepository
 import com.luminarasuite.app.core.network.LuminaraApi
 import com.luminarasuite.app.core.network.LuminaraRepository
+import com.luminarasuite.app.core.network.LuminaraWireJson
+import com.luminarasuite.app.core.network.SessionAuthenticator
+import com.luminarasuite.app.core.network.refreshOverHttp
 import kotlinx.coroutines.runBlocking
-import kotlinx.serialization.json.Json
 import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -24,12 +26,7 @@ class LuminaraApplication : Application() {
         super.onCreate()
         val vault: VaultStorage = KeystoreCredentialVault(this)
         val database = LuminaraDatabase.build(this)
-        val json =
-            Json {
-                ignoreUnknownKeys = true
-                coerceInputValues = true
-                explicitNulls = false
-            }
+        val json = LuminaraWireJson
 
         val authInterceptor =
             Interceptor { chain ->
@@ -46,6 +43,7 @@ class LuminaraApplication : Application() {
         val okHttp =
             OkHttpClient.Builder()
                 .addInterceptor(authInterceptor)
+                .authenticator(SessionAuthenticator(vault, refreshOverHttp(BuildConfig.API_BASE_URL, json)))
                 .connectTimeout(20, TimeUnit.SECONDS)
                 .readTimeout(30, TimeUnit.SECONDS)
                 .build()

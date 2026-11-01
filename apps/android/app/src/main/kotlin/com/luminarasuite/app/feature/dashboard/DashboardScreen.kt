@@ -1,44 +1,52 @@
 package com.luminarasuite.app.feature.dashboard
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Explore
+import androidx.compose.material.icons.outlined.Headphones
+import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.PersonAdd
+import androidx.compose.material.icons.outlined.Radar
+import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.luminarasuite.app.core.designsystem.EyebrowKicker
+import com.luminarasuite.app.core.designsystem.AccentHeadline
+import com.luminarasuite.app.core.designsystem.DoorRow
+import com.luminarasuite.app.core.designsystem.EmptyStateCard
+import com.luminarasuite.app.core.designsystem.FoundryButton
+import com.luminarasuite.app.core.designsystem.GhostPillButton
+import com.luminarasuite.app.core.designsystem.LiveEyebrow
 import com.luminarasuite.app.core.designsystem.LiveTrack
 import com.luminarasuite.app.core.designsystem.LuminaraColors
 import com.luminarasuite.app.core.designsystem.LuminaraTextStyles
 import com.luminarasuite.app.core.designsystem.MeasurementStatusBadge
+import com.luminarasuite.app.core.designsystem.ProgressRing
+import com.luminarasuite.app.core.designsystem.ScreenGutter
+import com.luminarasuite.app.core.designsystem.SectionHeader
 import com.luminarasuite.app.core.designsystem.WorkbenchCard
 import com.luminarasuite.app.core.designsystem.toneColor
 import com.luminarasuite.app.core.designsystem.toneForStatus
 import com.luminarasuite.app.core.model.AuditFinding
 import com.luminarasuite.app.core.model.AuditHistoryEntry
+import com.luminarasuite.app.core.model.fixesShipped
 import com.luminarasuite.app.core.network.LuminaraRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -46,8 +54,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import java.time.Instant
-import java.time.ZoneId
 
 data class DashboardUiState(
     val isRefreshing: Boolean = false,
@@ -88,11 +94,11 @@ class DashboardViewModel(
             repository.refreshDashboard()
                 .onSuccess {
                     refreshing.value = false
-                    syncMessage.value = "Workspace synced with local Room 3 cache."
+                    syncMessage.value = "Workspace synced."
                 }
                 .onFailure { err ->
                     refreshing.value = false
-                    syncMessage.value = err.message ?: "Offline mode active: showing local Room 3 history."
+                    syncMessage.value = err.message ?: "Offline. Showing what is saved on this phone."
                 }
         }
     }
@@ -111,182 +117,213 @@ class DashboardViewModel(
 }
 
 @Composable
-fun DashboardScreen(viewModel: DashboardViewModel) {
+fun DashboardScreen(
+    viewModel: DashboardViewModel,
+    isSignedIn: Boolean = false,
+    onRunAudit: (String?) -> Unit = {},
+    onAskAbout: (String) -> Unit = {},
+    onOpenMemory: () -> Unit = {},
+    onOpenScout: () -> Unit = {},
+    onOpenStudio: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
+) {
     val state by viewModel.uiState.collectAsState()
-    val scrollState = rememberScrollState()
-    val openCount = state.findings.count { it.status != "done" }
+    val latest = state.history.firstOrNull()
 
     Column(
         modifier =
         Modifier
             .fillMaxSize()
-            .verticalScroll(scrollState)
-            .padding(horizontal = 20.dp, vertical = 12.dp),
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = ScreenGutter, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+        if (latest == null) {
+            FirstRunHero(onRunAudit = { onRunAudit(null) })
+        } else {
+            VisibilityHero(
+                latest = latest,
+                findings = state.findings,
+                onRecheck = { onRunAudit(latest.domain) },
+            )
+            FixQueue(
+                findings = state.findings.filter { it.domain == latest.domain && it.status != "done" }.take(3),
+                onAdvance = viewModel::cycleFindingStatus,
+                onAsk = { finding ->
+                    onAskAbout("How do I fix this on ${finding.domain}: ${finding.title}? ${finding.description}")
+                },
+            )
+        }
+
+        if (!isSignedIn) {
+            DoorRow(
+                title = "Keep this across devices",
+                subtitle = "Sign in for 3 hosted AI checks a day and synced history.",
+                icon = Icons.Outlined.PersonAdd,
+                onClick = onOpenSettings,
+            )
+        }
+
+        SectionHeader(title = "Your workspace")
+        DoorRow(
+            title = "Brand memory",
+            subtitle = "What changed, saved reports, and your timeline.",
+            icon = Icons.Outlined.History,
+            onClick = onOpenMemory,
+            testTag = "home_memory_door",
+        )
+        DoorRow(
+            title = "Idea Scout",
+            subtitle = "Turn an idea into a hypothesis before you build a page.",
+            icon = Icons.Outlined.Explore,
+            onClick = onOpenScout,
+        )
+        DoorRow(
+            title = "Studio",
+            subtitle = "Ask your sources, or listen to a two-host briefing.",
+            icon = Icons.Outlined.Headphones,
+            onClick = onOpenStudio,
+        )
+
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                EyebrowKicker("Offline first")
-                Text(text = "Action board", style = LuminaraTextStyles.DisplaySerif)
-            }
-            OutlinedButton(
+            Text(
+                text = state.syncMessage ?: if (isSignedIn) "Saved here and synced." else "Saved on this phone.",
+                style = LuminaraTextStyles.Body.copy(fontSize = 12.sp),
+                modifier = Modifier.weight(1f),
+            )
+            GhostPillButton(
+                text = if (state.isRefreshing) "Syncing" else "Sync",
                 onClick = viewModel::syncFromCloud,
                 enabled = !state.isRefreshing,
-                modifier = Modifier.testTag("dashboard_sync_button"),
-            ) {
-                Text(if (state.isRefreshing) "Syncing" else "Sync")
-            }
+                icon = Icons.Outlined.Sync,
+                testTag = "dashboard_sync_button",
+            )
         }
-        Text(
-            text = "Fixes stay on this device. Sync when you are signed in.",
-            style = LuminaraTextStyles.Body,
-        )
-        if (state.isRefreshing) {
-            LiveTrack()
-        }
-
-        state.syncMessage?.let { msg ->
-            WorkbenchCard {
-                Text(text = msg, style = LuminaraTextStyles.Body, color = LuminaraColors.Ink)
-            }
-        }
-
-        EyebrowKicker(if (openCount == 0) "No open fixes" else "$openCount open")
-        if (state.findings.isEmpty()) {
-            WorkbenchCard {
-                Text(
-                    text = "No moves yet. Probe a host and the first fix lands here.",
-                    style = LuminaraTextStyles.Body,
-                )
-            }
-        } else {
-            state.findings.forEach { finding ->
-                FindingPlate(
-                    finding = finding,
-                    onAdvance = { viewModel.cycleFindingStatus(finding) },
-                )
-            }
-        }
-
-        EyebrowKicker("Cached audits ${state.history.size}")
-        if (state.history.isEmpty()) {
-            WorkbenchCard {
-                Text(
-                    text = "Audits you run are cached in Room 3 and sync to your workspace when signed in.",
-                    style = LuminaraTextStyles.Body,
-                )
-            }
-        } else {
-            state.history.forEachIndexed { index, item ->
-                HistoryRow(item = item, continueRail = index < state.history.lastIndex)
-            }
-        }
-
+        if (state.isRefreshing) LiveTrack()
         Spacer(modifier = Modifier.height(8.dp))
     }
 }
 
 @Composable
-private fun FindingPlate(
-    finding: AuditFinding,
-    onAdvance: () -> Unit,
+private fun FirstRunHero(onRunAudit: () -> Unit) {
+    LiveEyebrow("Your AI visibility")
+    AccentHeadline(lead = "Will AI mention ", accent = "your brand", trail = "?")
+    EmptyStateCard(
+        title = "Nothing measured yet",
+        body = "Run your first check. Your fixes, what changed, and your weekly next move will live here.",
+        icon = Icons.Outlined.Radar,
+        action = "Run Instant Audit",
+        onAction = onRunAudit,
+    )
+}
+
+@Composable
+private fun VisibilityHero(
+    latest: AuditHistoryEntry,
+    findings: List<AuditFinding>,
+    onRecheck: () -> Unit,
 ) {
-    WorkbenchCard(
-        railColor = toneColor(toneForStatus(finding.status)),
-        onClick = onAdvance,
-    ) {
+    val shipped = fixesShipped(findings, latest.domain)
+    LiveEyebrow("Your AI visibility")
+    Text(text = latest.domain, style = LuminaraTextStyles.DisplaySerif.copy(fontSize = 28.sp, lineHeight = 34.sp))
+    WorkbenchCard(emphasized = true) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            if (shipped != null) {
+                ProgressRing(
+                    fraction = shipped.first.toFloat() / shipped.second,
+                    label = "${shipped.first}/${shipped.second}",
+                )
+            }
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = if (shipped != null) "Fixes shipped" else "No open gaps",
+                    style = LuminaraTextStyles.SectionTitle,
+                )
+                Text(text = latest.summary, style = LuminaraTextStyles.Body)
+            }
+        }
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = "${finding.domain}: ${finding.title}",
-                style = LuminaraTextStyles.SectionTitle,
-                modifier = Modifier.weight(1f),
-            )
-            MeasurementStatusBadge(finding.status)
+            Text(text = "AI citation rate", style = LuminaraTextStyles.Body)
+            val rate = latest.citationRatePercent
+            if (rate != null) {
+                Text(text = "$rate%", style = LuminaraTextStyles.MetricTabular)
+            } else {
+                MeasurementStatusBadge("not_measured")
+            }
         }
-        Text(text = finding.description, style = LuminaraTextStyles.Body)
-        Text(
-            text = "Tap to advance",
-            style = LuminaraTextStyles.Body.copy(fontSize = 12.sp),
-        )
+        FoundryButton(text = "Re-check ${latest.domain}", onClick = onRecheck)
     }
 }
 
 @Composable
-private fun HistoryRow(
-    item: AuditHistoryEntry,
-    continueRail: Boolean,
+private fun FixQueue(
+    findings: List<AuditFinding>,
+    onAdvance: (AuditFinding) -> Unit,
+    onAsk: (AuditFinding) -> Unit,
 ) {
-    val measuredOn =
-        Instant.ofEpochMilli(item.measuredAt)
-            .atZone(ZoneId.systemDefault())
-            .toLocalDate()
-            .toString()
-    Row(
-        modifier =
-        Modifier
-            .fillMaxWidth()
-            .height(IntrinsicSize.Min),
-    ) {
-        Column(
-            modifier = Modifier.width(18.dp).fillMaxHeight(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Box(
-                modifier =
-                Modifier
-                    .padding(top = 6.dp)
-                    .width(8.dp)
-                    .height(8.dp)
-                    .background(LuminaraColors.Ink2, CircleShape),
+    SectionHeader(
+        title = "Next fix",
+        trailing = if (findings.isEmpty()) null else "${findings.size} in queue",
+    )
+    if (findings.isEmpty()) {
+        WorkbenchCard {
+            Text(text = "Queue clear", style = LuminaraTextStyles.SectionTitle)
+            Text(
+                text = "Every fix on this site is marked done. Re-check to confirm it live.",
+                style = LuminaraTextStyles.Body,
             )
-            if (continueRail) {
-                Box(
-                    modifier =
-                    Modifier
-                        .padding(top = 4.dp)
-                        .width(1.dp)
-                        .weight(1f)
-                        .background(Color.White.copy(alpha = 0.12f)),
-                )
-            }
         }
-        Column(
-            modifier =
-            Modifier
-                .weight(1f)
-                .padding(start = 8.dp, bottom = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
+        return
+    }
+    findings.forEach { finding ->
+        WorkbenchCard(railColor = toneColor(toneForStatus(finding.status))) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(text = item.title, style = LuminaraTextStyles.SectionTitle, modifier = Modifier.weight(1f))
-                if (item.healthScore != null) {
-                    Text(text = "${item.healthScore}/100", style = LuminaraTextStyles.MetricTabular)
-                } else {
-                    MeasurementStatusBadge("not_measured")
-                }
+                Text(
+                    text = finding.title,
+                    style = LuminaraTextStyles.SectionTitle,
+                    modifier = Modifier.weight(1f),
+                )
+                MeasurementStatusBadge(finding.status)
             }
-            Text(text = measuredOn, style = LuminaraTextStyles.EyebrowMono.copy(letterSpacing = 0.sp))
-            Text(text = item.summary, style = LuminaraTextStyles.Body)
-            Text(
-                text = "Citation rate: ${item.citationRatePercent?.let { "$it%" } ?: "NOT_MEASURED"}",
-                style = LuminaraTextStyles.Body,
-            )
-            Text(
-                text = "Schema gaps: ${item.schemaGapCount?.toString() ?: "NOT_MEASURED"}",
-                style = LuminaraTextStyles.Body,
-            )
+            Text(text = finding.description, style = LuminaraTextStyles.Body, maxLines = 3)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                GhostPillButton(
+                    text = if (finding.status == "open") "Start" else "Mark done",
+                    onClick = { onAdvance(finding) },
+                    modifier = Modifier.weight(1f),
+                )
+                GhostPillButton(
+                    text = "How to fix",
+                    onClick = { onAsk(finding) },
+                    modifier = Modifier.weight(1f),
+                )
+            }
         }
+    }
+}
+
+@Composable
+fun AuditTimelineRow(item: AuditHistoryEntry) {
+    WorkbenchCard {
+        Text(text = item.domain, style = LuminaraTextStyles.SectionTitle)
+        Text(text = item.summary, style = LuminaraTextStyles.Body)
+        Text(
+            text = "${java.time.Instant.ofEpochMilli(
+                item.measuredAt,
+            ).atZone(java.time.ZoneId.systemDefault()).toLocalDate()}",
+            style = LuminaraTextStyles.Body.copy(fontSize = 12.sp, color = LuminaraColors.Ink3),
+        )
     }
 }

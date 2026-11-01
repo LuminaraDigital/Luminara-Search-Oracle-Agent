@@ -1,5 +1,7 @@
 package com.luminarasuite.app.feature.audit
 
+import android.content.Context
+import android.content.Intent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -17,7 +19,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -27,21 +28,27 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.luminarasuite.app.core.designsystem.AccentHeadline
 import com.luminarasuite.app.core.designsystem.AiEvidenceDisclosureBar
 import com.luminarasuite.app.core.designsystem.EyebrowKicker
 import com.luminarasuite.app.core.designsystem.FoundryButton
 import com.luminarasuite.app.core.designsystem.FoundryFieldColors
+import com.luminarasuite.app.core.designsystem.GhostPillButton
+import com.luminarasuite.app.core.designsystem.LiveEyebrow
 import com.luminarasuite.app.core.designsystem.LuminaraColors
 import com.luminarasuite.app.core.designsystem.LuminaraTextStyles
 import com.luminarasuite.app.core.designsystem.MeasurementStatusBadge
+import com.luminarasuite.app.core.designsystem.PillChip
 import com.luminarasuite.app.core.designsystem.ProbeTone
 import com.luminarasuite.app.core.designsystem.ProbeWell
+import com.luminarasuite.app.core.designsystem.ScreenGutter
 import com.luminarasuite.app.core.designsystem.WorkbenchCard
 import com.luminarasuite.app.core.designsystem.auditIsClear
 import com.luminarasuite.app.core.designsystem.botAllowanceLabel
@@ -51,6 +58,7 @@ import com.luminarasuite.app.core.designsystem.toneColor
 import com.luminarasuite.app.core.designsystem.toneForStatus
 import com.luminarasuite.app.core.model.BotDirectiveStatus
 import com.luminarasuite.app.core.model.ReadinessCheck
+import com.luminarasuite.app.core.network.AuditRead
 import com.luminarasuite.app.core.network.InstantAuditReport
 import com.luminarasuite.app.core.network.LuminaraRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -66,6 +74,9 @@ data class AuditUiState(
     val report: InstantAuditReport? = null,
     val recheckBanner: String? = null,
     val isVerdictReported: Boolean = false,
+    val isExplaining: Boolean = false,
+    val aiRead: AuditRead? = null,
+    val savedToStudio: Boolean = false,
 )
 
 class AuditViewModel(
@@ -91,6 +102,8 @@ class AuditViewModel(
                 errorMessage = null,
                 recheckBanner = null,
                 isVerdictReported = false,
+                aiRead = null,
+                savedToStudio = false,
             )
         }
         viewModelScope.launch {
@@ -160,6 +173,30 @@ class AuditViewModel(
         }
     }
 
+    fun explainReport() {
+        val currentReport = _uiState.value.report ?: return
+        _uiState.update { it.copy(isExplaining = true, errorMessage = null) }
+        viewModelScope.launch {
+            repository.explainAudit(currentReport)
+                .onSuccess { read -> _uiState.update { it.copy(isExplaining = false, aiRead = read) } }
+                .onFailure { err ->
+                    _uiState.update { it.copy(isExplaining = false, errorMessage = err.message) }
+                }
+        }
+    }
+
+    fun sendToStudio() {
+        val currentReport = _uiState.value.report ?: return
+        viewModelScope.launch {
+            repository.addStudioSource(
+                title = "Audit: ${currentReport.domain}",
+                content = reportAsText(currentReport),
+                kind = "audit",
+            )
+            _uiState.update { it.copy(savedToStudio = true) }
+        }
+    }
+
     fun reportAuditVerdict() {
         val currentReport = _uiState.value.report ?: return
         viewModelScope.launch {
@@ -170,9 +207,36 @@ class AuditViewModel(
 
     fun prepareAnotherProbe() {
         _uiState.update {
-            it.copy(report = null, recheckBanner = null, isVerdictReported = false, errorMessage = null)
+            it.copy(
+                report = null,
+                recheckBanner = null,
+                isVerdictReported = false,
+                errorMessage = null,
+                aiRead = null,
+                savedToStudio = false,
+            )
         }
     }
+}
+
+private fun reportAsText(report: InstantAuditReport): String =
+    buildString {
+        appendLine("Luminara check of ${report.domain}")
+        appendLine(report.verdict)
+        report.evaluation.checks.forEach { appendLine("- ${it.label}: ${it.status}. ${it.detail}") }
+        appendLine("This week: ${report.oneMoveThisWeek}")
+    }
+
+private fun shareReport(
+    context: Context,
+    report: InstantAuditReport,
+) {
+    val send =
+        Intent(Intent.ACTION_SEND)
+            .setType("text/plain")
+            .putExtra(Intent.EXTRA_SUBJECT, "AI visibility check: ${report.domain}")
+            .putExtra(Intent.EXTRA_TEXT, reportAsText(report))
+    context.startActivity(Intent.createChooser(send, "Share report"))
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -192,28 +256,23 @@ fun AuditScreen(
         Modifier
             .fillMaxSize()
             .verticalScroll(scrollState)
-            .padding(horizontal = 20.dp, vertical = 12.dp),
+            .padding(horizontal = ScreenGutter, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        EyebrowKicker("Live crawl")
-        Text(text = "Instant Audit", style = LuminaraTextStyles.DisplaySerif)
+        LiveEyebrow("Instant Audit")
+        AccentHeadline(lead = "Will AI mention ", accent = "your brand", trail = "?")
         Text(
-            text = "Probe /robots.txt, /llms.txt, and /ai.txt on a live host.",
+            text = "Paste your site. Get a plain answer, the evidence behind it, and one thing to fix this week.",
             style = LuminaraTextStyles.Body,
-        )
-
-        ProbeWell(
-            beacons = beacons,
-            running = state.isLoading,
-            caption = probeCaption(state.isLoading, beacons),
         )
 
         WorkbenchCard(emphasized = true) {
             OutlinedTextField(
                 value = state.domainInput,
                 onValueChange = viewModel::updateDomainInput,
-                label = { Text("Host, such as luminarasuite.com") },
+                placeholder = { Text("yoursite.com", color = LuminaraColors.Ink3) },
                 singleLine = true,
+                shape = RoundedCornerShape(16.dp),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
                 keyboardActions = KeyboardActions(onGo = { viewModel.runAudit() }),
                 colors = FoundryFieldColors(),
@@ -222,31 +281,37 @@ fun AuditScreen(
                     .fillMaxWidth()
                     .testTag("audit_domain_input"),
             )
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                listOf("luminarasuite.com", "cloudflare.com", "developer.android.com").forEach { preset ->
-                    TextButton(
-                        onClick = { viewModel.runAudit(preset) },
-                        enabled = !state.isLoading,
-                    ) {
-                        Text(
-                            text = preset,
-                            color = LuminaraColors.Ink2,
-                            style = LuminaraTextStyles.Body.copy(fontSize = 13.sp),
-                        )
-                    }
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                listOf("luminarasuite.com", "cloudflare.com").forEach { preset ->
+                    PillChip(
+                        text = preset,
+                        selected = false,
+                        onClick = { if (!state.isLoading) viewModel.runAudit(preset) },
+                    )
                 }
             }
             FoundryButton(
-                text = if (state.isLoading) "Probing live files" else "Probe this host",
+                text = if (state.isLoading) "Reading live files" else "Run Instant Audit",
                 onClick = { viewModel.runAudit() },
                 enabled = !state.isLoading,
                 testTag = "run_audit_button",
             )
         }
 
+        if (state.isLoading || state.report != null) {
+            ProbeWell(
+                beacons = beacons,
+                running = state.isLoading,
+                caption = probeCaption(state.isLoading, beacons),
+            )
+        }
+
         state.errorMessage?.let { errorMsg ->
             WorkbenchCard(railColor = LuminaraColors.ErrorRed) {
-                EyebrowKicker("Probe error")
+                EyebrowKicker("Could not read that site")
                 Text(text = errorMsg, style = LuminaraTextStyles.Body, color = LuminaraColors.ErrorRed)
             }
         }
@@ -263,6 +328,9 @@ fun AuditScreen(
             if (report != null) {
                 AuditReportContent(
                     report = report,
+                    state = state,
+                    onExplain = viewModel::explainReport,
+                    onSendToStudio = viewModel::sendToStudio,
                     isVerdictReported = state.isVerdictReported,
                     onRecheck = viewModel::recheckCheck,
                     onReportVerdict = viewModel::reportAuditVerdict,
@@ -283,6 +351,9 @@ fun AuditScreen(
 @Composable
 private fun AuditReportContent(
     report: InstantAuditReport,
+    state: AuditUiState,
+    onExplain: () -> Unit,
+    onSendToStudio: () -> Unit,
     isVerdictReported: Boolean,
     onRecheck: (String) -> Unit,
     onReportVerdict: () -> Unit,
@@ -296,8 +367,9 @@ private fun AuditReportContent(
             checks = evaluation.checks,
             failCount = evaluation.failCount,
         )
+    val context = LocalContext.current
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        WorkbenchCard(railColor = toneColor(toneForStatus(evaluation.measurementStatus))) {
+        WorkbenchCard(emphasized = true) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -306,9 +378,27 @@ private fun AuditReportContent(
                 EyebrowKicker(report.domain)
                 MeasurementStatusBadge(evaluation.measurementStatus)
             }
-            Text(text = report.verdict, style = LuminaraTextStyles.SectionTitle, color = LuminaraColors.Ink)
+            Text(text = report.verdict, style = LuminaraTextStyles.HeadlineSerif)
             if (report.oneMoveThisWeek.isNotBlank()) {
-                Text(text = "This week: ${report.oneMoveThisWeek}", style = LuminaraTextStyles.Body)
+                EyebrowKicker("One move this week")
+                Text(
+                    text = report.oneMoveThisWeek,
+                    style = LuminaraTextStyles.Body.copy(color = LuminaraColors.GoldLight),
+                )
+            }
+            val aiRead = state.aiRead
+            if (aiRead == null) {
+                GhostPillButton(
+                    text = if (state.isExplaining) "Reading" else "Explain in plain English (1 check)",
+                    onClick = onExplain,
+                    enabled = !state.isExplaining,
+                    testTag = "audit_explain_button",
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            } else {
+                EyebrowKicker("Plain English")
+                Text(text = aiRead.verdict, style = LuminaraTextStyles.Body.copy(color = LuminaraColors.Ink))
+                Text(text = aiRead.nextAction, style = LuminaraTextStyles.Body)
             }
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -337,6 +427,22 @@ private fun AuditReportContent(
                     )
                 }
             }
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            GhostPillButton(
+                text = "Share",
+                onClick = { shareReport(context, report) },
+                modifier = Modifier.weight(1f),
+                testTag = "audit_share_button",
+            )
+            GhostPillButton(
+                text = if (state.savedToStudio) "In Studio" else "Send to Studio",
+                onClick = onSendToStudio,
+                enabled = !state.savedToStudio,
+                modifier = Modifier.weight(1f),
+                testTag = "audit_studio_button",
+            )
         }
 
         if (clear) {
@@ -420,13 +526,11 @@ private fun CheckPlate(
         }
         Text(text = check.detail, style = LuminaraTextStyles.Body)
         if (check.status == "fail") {
-            OutlinedButton(
+            GhostPillButton(
+                text = "Recheck live fix",
                 onClick = { onRecheck(check.id) },
-                shape = RoundedCornerShape(999.dp),
-                modifier = Modifier.testTag("recheck_${check.id}"),
-            ) {
-                Text("Recheck live fix")
-            }
+                testTag = "recheck_${check.id}",
+            )
         }
     }
 }
