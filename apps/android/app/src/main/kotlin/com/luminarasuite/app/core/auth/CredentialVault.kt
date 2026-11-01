@@ -4,6 +4,7 @@ import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
@@ -28,6 +29,7 @@ data class VaultSnapshot(
     val accountId: String = "",
     val byokKeys: ByokKeyBag = ByokKeyBag(),
     val reportedTurnIds: Set<String> = emptySet(),
+    val guestTrialUsed: Boolean = false,
 ) {
     val isSignedIn: Boolean
         get() = idToken.isNotBlank() && email.isNotBlank()
@@ -50,6 +52,8 @@ interface VaultStorage {
     suspend fun saveByokKeys(bag: ByokKeyBag)
 
     suspend fun reportAiTurn(turnId: String)
+
+    suspend fun markGuestTrialUsed()
 }
 
 class InMemoryVaultStorage(
@@ -95,6 +99,10 @@ class InMemoryVaultStorage(
                 reportedTurnIds = state.value.reportedTurnIds + turnId,
             )
     }
+
+    override suspend fun markGuestTrialUsed() {
+        state.value = state.value.copy(guestTrialUsed = true)
+    }
 }
 
 class KeystoreCredentialVault(
@@ -115,6 +123,7 @@ class KeystoreCredentialVault(
         private val KEY_GEMINI = stringPreferencesKey("enc_gemini_key")
         private val KEY_TAVILY = stringPreferencesKey("enc_tavily_key")
         private val KEY_REPORTED_TURNS = stringSetPreferencesKey("reported_turn_ids")
+        private val KEY_GUEST_TRIAL = booleanPreferencesKey("guest_trial_used")
     }
 
     @Volatile
@@ -135,6 +144,7 @@ class KeystoreCredentialVault(
                     tavilyKey = decrypt(prefs[KEY_TAVILY].orEmpty()),
                 ),
                 reportedTurnIds = prefs[KEY_REPORTED_TURNS].orEmpty(),
+                guestTrialUsed = prefs[KEY_GUEST_TRIAL] == true,
             ).also { cachedSnapshot = it }
         }
 
@@ -177,6 +187,13 @@ class KeystoreCredentialVault(
             val current = prefs[KEY_REPORTED_TURNS].orEmpty()
             prefs[KEY_REPORTED_TURNS] = current + turnId
         }
+    }
+
+    override suspend fun markGuestTrialUsed() {
+        context.luminaraDataStore.edit { prefs ->
+            prefs[KEY_GUEST_TRIAL] = true
+        }
+        cachedSnapshot = cachedSnapshot?.copy(guestTrialUsed = true)
     }
 
     private fun getOrCreateSecretKey(): SecretKey {

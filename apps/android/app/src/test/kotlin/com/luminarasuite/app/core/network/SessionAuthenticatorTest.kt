@@ -1,5 +1,6 @@
 package com.luminarasuite.app.core.network
 
+import com.luminarasuite.app.core.auth.FIREBASE_SDK_REFRESH
 import com.luminarasuite.app.core.auth.InMemoryVaultStorage
 import com.luminarasuite.app.core.auth.VaultSnapshot
 import kotlinx.coroutines.runBlocking
@@ -8,6 +9,7 @@ import okhttp3.Request
 import okhttp3.Response
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SessionAuthenticatorTest {
@@ -95,5 +97,40 @@ class SessionAuthenticatorTest {
                 .build()
 
         assertNull(authenticator.authenticate(null, guest))
+    }
+
+    @Test
+    fun googleRefreshUsesTheSdkAndEmailRefreshUsesHttp() {
+        var sdkCalls = 0
+        var httpCalls = 0
+        val sdkOutcome =
+            chooseSessionRefresh(
+                FIREBASE_SDK_REFRESH,
+                sdk = {
+                    sdkCalls += 1
+                    RefreshOutcome.Renewed("a", FIREBASE_SDK_REFRESH)
+                },
+                http = {
+                    httpCalls += 1
+                    RefreshOutcome.Rejected
+                },
+            )
+        assertTrue(sdkOutcome is RefreshOutcome.Renewed)
+        assertEquals(1, sdkCalls)
+        assertEquals(0, httpCalls)
+
+        chooseSessionRefresh(
+            "worker-refresh",
+            sdk = {
+                sdkCalls += 1
+                RefreshOutcome.Unavailable
+            },
+            http = {
+                httpCalls += 1
+                RefreshOutcome.Rejected
+            },
+        )
+        assertEquals(1, sdkCalls)
+        assertEquals(1, httpCalls)
     }
 }

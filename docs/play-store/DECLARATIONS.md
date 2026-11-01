@@ -37,7 +37,7 @@ App: **Luminara Suite** (`com.luminarasuite.app`) · Operator: **LUMINARA DIGITA
 | **Personal info** | Business Profile (business name, mission, audience, location) | Yes | No | Optional | App functionality (stored in the account workspace) |
 | **Messages** | Other in-app messages (Oracle prompts & queries, Studio questions) | Yes | Yes | Optional | App functionality (sent to configured AI/search providers: Groq, Tavily, Gemini, NVIDIA NIM) |
 | **App activity** | Other user-generated content (audited domains, audit history, findings, idea text, Studio notes) | Yes | Yes | Optional | App functionality (audits and findings stored locally in Room 3 and synced to Cloudflare D1 when signed in. Idea text stored in the account. Studio notes stay on the device, and sources the user selects are sent to the AI provider to answer) |
-| **Device or other IDs** | Device or other IDs | **No** | **No** | N/A | Zero third-party analytics, crash, or advertising SDKs are bundled in `apps/android`. Google sign-in uses Credential Manager and Google Play services only when the person taps it. |
+| **Device or other IDs** | Device or other IDs | **No** | **No** | N/A | Zero analytics, crash, or advertising SDKs. Firebase Auth is sign-in only (no Analytics, no Crashlytics). Google sign-in uses Credential Manager and Play services only when the person taps it. |
 | **App info and performance** | Crash logs / Diagnostics | **No** | **No** | N/A | Zero third-party crash reporting SDKs bundled in v1. |
 
 ---
@@ -51,6 +51,7 @@ Declared in `AndroidManifest.xml` or merged from libraries. Verify with `apps/an
 | `INTERNET` | App | All features. |
 | `POST_NOTIFICATIONS` | App | Weekly next-fix reminder. Off by default, asked for only when the person turns it on in Settings. It is local: the reminder reads findings already on the device and sends nothing. Not used for marketing. |
 | `ACCESS_NETWORK_STATE`, `WAKE_LOCK`, `RECEIVE_BOOT_COMPLETED`, `FOREGROUND_SERVICE` | WorkManager | Keep the weekly schedule across restarts. No foreground service is started by the app. |
+| `com.google.android.providers.gsf.permission.READ_GSERVICES` | Firebase Auth / Play services | Lets Play services read its own configuration while signing in. Not an advertising ID. |
 
 Notification copy states the top open fix. It never mentions plans, prices, or upgrades.
 

@@ -2,7 +2,6 @@ package com.luminarasuite.app.core.model
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -11,8 +10,11 @@ class HostedPlanTest {
     fun hostedPlanCopy_mapsGuestFreePaidAndCanceledWithoutACheckoutLink() {
         val guest = hostedPlanCopy(signedIn = false, quota = null)
         assertEquals("Guest", guest.title)
-        assertNull(guest.manage)
+        assertEquals("Manage plan on luminarasuite.com", guest.manage)
         assertTrue(guest.detail.contains("Free companion"))
+        assertTrue(guest.detail.contains("plain-English"))
+        assertFalse(guest.manage.orEmpty().contains("http"))
+        assertFalse(guest.manage.orEmpty().contains("/"))
 
         val free =
             hostedPlanCopy(

@@ -418,10 +418,18 @@ private fun AccountSection(
                 Text("Sign out")
             }
         } else {
+            val guestPlan = hostedPlanCopy(signedIn = false, quota = null)
             Text(
-                text = "Guest mode probes live files. ${hostedPlanCopy(signedIn = false, quota = null).detail}",
+                text = "Guest mode probes live files. ${guestPlan.detail}",
                 style = LuminaraTextStyles.Body,
             )
+            guestPlan.manage?.let { note ->
+                Text(
+                    text = note,
+                    style = LuminaraTextStyles.Body,
+                    modifier = Modifier.testTag("plan_manage_note"),
+                )
+            }
             if (BuildConfig.GOOGLE_WEB_CLIENT_ID.isNotBlank()) {
                 val context = LocalContext.current
                 FoundryButton(
