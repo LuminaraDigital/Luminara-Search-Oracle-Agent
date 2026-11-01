@@ -1,5 +1,8 @@
 package com.luminarasuite.app.core.network
 
+import com.luminarasuite.app.core.auth.FirebaseAccount
+import com.luminarasuite.app.core.auth.GuestTrial
+import com.luminarasuite.app.core.auth.PassthroughFirebaseAccount
 import com.luminarasuite.app.core.auth.VaultSnapshot
 import com.luminarasuite.app.core.auth.VaultStorage
 import com.luminarasuite.app.core.database.LuminaraDao
@@ -20,7 +23,6 @@ import com.luminarasuite.app.core.model.EvaluationEngine
 import com.luminarasuite.app.core.model.FindingPatchRequest
 import com.luminarasuite.app.core.model.FindingsBulkItem
 import com.luminarasuite.app.core.model.FindingsBulkRequest
-import com.luminarasuite.app.core.model.GoogleSignInRequest
 import com.luminarasuite.app.core.model.GroqChatRequest
 import com.luminarasuite.app.core.model.GroqMessage
 import com.luminarasuite.app.core.model.IdeaCard
@@ -171,6 +173,7 @@ class DefaultLuminaraRepository(
     private val api: LuminaraApi,
     private val dao: LuminaraDao,
     private val vault: VaultStorage,
+    private val firebase: FirebaseAccount = PassthroughFirebaseAccount,
     private val clockMs: () -> Long = { System.currentTimeMillis() },
 ) : LuminaraRepository {
     companion object {
@@ -187,8 +190,6 @@ class DefaultLuminaraRepository(
                 "TIER_UPGRADE_REQUIRED" to "This engine needs your own key. Add one in Settings.",
                 "HOSTED_CAPACITY" to "Hosted AI is busy right now. Try again in a minute.",
             )
-        private const val SIGN_IN_NOTE =
-            "Sign in for the full audit: your pages, live search, a health score, and paste-ready fixes."
         private const val MAX_SOURCE_CHARS = 2500
         private const val EARLIER_TURNS = 3
         private const val UNTRUSTED_RULE =
@@ -232,7 +233,7 @@ class DefaultLuminaraRepository(
                     onStage,
                 )
             } else {
-                CrewRun(null, SIGN_IN_NOTE)
+                CrewRun(null, GuestTrial.crewNote(vaultSnap.guestTrialUsed))
             }
             val crew = crewRun.result
             val verdict = crew?.brief?.takeaway ?: buildDeterministicVerdict(domain, evaluation)
@@ -469,7 +470,9 @@ class DefaultLuminaraRepository(
             val tavilyKey = snap.byokKeys.tavilyKey.takeIf { it.isNotBlank() }
             if (groqKey == null) {
                 if (!snap.isSignedIn) {
-                    throw IllegalStateException("Sign in to use hosted AI, or add your Groq API key in Settings.")
+                    throw IllegalStateException(
+                        GuestTrial.hostedSignInMessage(snap.guestTrialUsed, GuestTrial.SIGN_IN_FOR_HOSTED),
+                    )
                 }
                 val quota = api.getAccountBoot().quota
                 if (!hostedAllowanceOpen(quota)) {
@@ -496,7 +499,7 @@ class DefaultLuminaraRepository(
             val groqKey = snap.byokKeys.groqKey.takeIf { it.isNotBlank() }
             val tavilyKey = snap.byokKeys.tavilyKey.takeIf { it.isNotBlank() }
             check(snap.isSignedIn || groqKey != null) {
-                "Sign in to use hosted AI, or add your Groq API key in Settings."
+                GuestTrial.hostedSignInMessage(snap.guestTrialUsed, GuestTrial.SIGN_IN_FOR_HOSTED)
             }
             emit(OracleEvent.Status("Searching the live web"))
             val sources = fetchOracleEvidence(trimmed, tavilyKey, snap.isSignedIn)
@@ -525,8 +528,13 @@ class DefaultLuminaraRepository(
         safeCall {
             val snap = vault.getSnapshot()
             val groqKey = snap.byokKeys.groqKey.takeIf { it.isNotBlank() }
-            check(snap.isSignedIn || groqKey != null) {
-                "Sign in for a plain-English read, or add your Groq API key in Settings."
+            if (groqKey == null && !snap.isSignedIn) {
+                check(!snap.guestTrialUsed) { GuestTrial.SIGN_IN_AFTER_TASTE }
+                vault.markGuestTrialUsed()
+                return@safeCall AuditRead(
+                    verdict = buildDeterministicVerdict(report.domain, report.evaluation),
+                    nextAction = buildDeterministicOneMove(report.domain, report.evaluation),
+                )
             }
             val run = if (groqKey == null) api.beginAuditRun(AuditRunRequest(report.domain)) else null
             val evidence =
@@ -578,7 +586,10 @@ class DefaultLuminaraRepository(
 
     override suspend fun createIdea(request: IdeaCreateRequest): Result<IdeaCreateResponse> =
         safeCall {
-            check(vault.getSnapshot().isSignedIn) { "Sign in to build idea cards. It is free." }
+            val snap = vault.getSnapshot()
+            check(snap.isSignedIn) {
+                GuestTrial.hostedSignInMessage(snap.guestTrialUsed, "Sign in to build idea cards. It is free.")
+            }
             val key = vault.getSnapshot().byokKeys.groqKey.takeIf { it.isNotBlank() }
             val response = api.createIdea(providerKey = key, body = request)
             refreshQuotaQuietly()
@@ -627,7 +638,7 @@ class DefaultLuminaraRepository(
         val snap = vault.getSnapshot()
         val groqKey = snap.byokKeys.groqKey.takeIf { it.isNotBlank() }
         check(snap.isSignedIn || groqKey != null) {
-            "Sign in to use hosted AI, or add your Groq API key in Settings."
+            GuestTrial.hostedSignInMessage(snap.guestTrialUsed, GuestTrial.SIGN_IN_FOR_HOSTED)
         }
         val sources = studioSourcesFlow.first().filter { it.selected }
         check(sources.isNotEmpty()) { "Add or select a source first." }
@@ -824,11 +835,12 @@ class DefaultLuminaraRepository(
             if (!res.ok || res.idToken.isBlank()) {
                 throw IllegalStateException(res.error ?: "Sign-in failed. Check your credentials.")
             }
+            val adopted = firebase.adoptPassword(cleanEmail, password, res)
             vault.saveSession(
-                idToken = res.idToken,
-                refreshToken = res.refreshToken,
-                email = res.email.ifBlank { cleanEmail },
-                accountId = "fb:${res.localId}",
+                idToken = adopted.idToken,
+                refreshToken = adopted.refreshToken,
+                email = adopted.email.ifBlank { cleanEmail },
+                accountId = "fb:${adopted.localId}",
             )
             refreshQuota().getOrNull()
         }
@@ -846,18 +858,20 @@ class DefaultLuminaraRepository(
             if (!res.ok || res.idToken.isBlank()) {
                 throw IllegalStateException(res.error ?: "Account creation failed.")
             }
+            val adopted = firebase.adoptPassword(cleanEmail, password, res)
             vault.saveSession(
-                idToken = res.idToken,
-                refreshToken = res.refreshToken,
-                email = res.email.ifBlank { cleanEmail },
-                accountId = "fb:${res.localId}",
+                idToken = adopted.idToken,
+                refreshToken = adopted.refreshToken,
+                email = adopted.email.ifBlank { cleanEmail },
+                accountId = "fb:${adopted.localId}",
             )
             refreshQuota().getOrNull()
         }
 
     override suspend fun signInWithGoogle(googleIdToken: String): Result<QuotaStatus?> =
         safeCall {
-            val res = api.signInWithGoogle(GoogleSignInRequest(googleIdToken))
+            require(googleIdToken.isNotBlank()) { "Google did not return an account. Try again." }
+            val res = firebase.signInWithGoogle(googleIdToken)
             check(res.ok && res.idToken.isNotBlank()) { res.error ?: "Google sign-in failed. Try again." }
             vault.saveSession(
                 idToken = res.idToken,
@@ -883,6 +897,7 @@ class DefaultLuminaraRepository(
 
     override suspend fun signOut() {
         quotaState.value = null
+        firebase.signOut()
         vault.clearSession()
     }
 
@@ -914,6 +929,7 @@ class DefaultLuminaraRepository(
             dao.clearFindings()
             dao.clearStudioSources()
             quotaState.value = null
+            firebase.signOut()
             vault.clearSession()
         }
 

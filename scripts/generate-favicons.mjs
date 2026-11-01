@@ -1,6 +1,8 @@
 /**
  * Build production favicon/app icons from the official Luminara Suite logo.
  * Usage: node scripts/generate-favicons.mjs [source-image]
+ * Web favicons use the source argument. Android and the Play icon use
+ * apps/android/brand/luminara-atom-logo-source.png.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -181,12 +183,19 @@ const webManifest = JSON.stringify(
 fs.writeFileSync(path.join(outDir, 'site.webmanifest'), webManifest);
 fs.writeFileSync(path.join(outDir, 'manifest.json'), webManifest);
 
-// Android and Play Store share the same mark so every surface shows one logo.
+// Android launcher, splash, in-app mark, and the Play listing icon use the HD atom.
+// Web favicons stay on the source above. The 72dp keyline keeps the ring inside the mask.
+const androidMaster = path.join(root, 'apps', 'android', 'brand', 'luminara-atom-logo-source.png');
+if (!fs.existsSync(androidMaster)) {
+  console.error('Android mark not found:', androidMaster);
+  process.exit(1);
+}
+const androidBuf = fs.readFileSync(androidMaster);
 const androidRes = path.join(root, 'apps', 'android', 'app', 'src', 'main', 'res');
 const roundMask = (size) =>
   Buffer.from(`<svg width="${size}" height="${size}"><circle cx="${size / 2}" cy="${size / 2}" r="${size / 2}"/></svg>`);
 const roundMark = (size) =>
-  sharp(buf)
+  sharp(androidBuf)
     .resize(size, size, { fit: 'cover' })
     .composite([{ input: roundMask(size), blend: 'dest-in' }])
     .png()
@@ -202,11 +211,20 @@ for (const [density, scale] of [['mdpi', 1], ['hdpi', 1.5], ['xhdpi', 2], ['xxhd
     .composite([{ input: await roundMark(mark), left: inset, top: inset }])
     .webp({ quality: 92 })
     .toFile(path.join(dir, 'ic_launcher_foreground.webp'));
-  await sharp(buf).resize(legacy, legacy, { fit: 'cover' }).webp({ quality: 92 }).toFile(path.join(dir, 'ic_launcher.webp'));
+  await sharp(androidBuf)
+    .resize(legacy, legacy, { fit: 'cover' })
+    .flatten({ background: '#000000' })
+    .webp({ quality: 92 })
+    .toFile(path.join(dir, 'ic_launcher.webp'));
   await sharp(await roundMark(legacy)).webp({ quality: 92 }).toFile(path.join(dir, 'ic_launcher_round.webp'));
 }
 fs.mkdirSync(path.join(androidRes, 'drawable-nodpi'), { recursive: true });
 await sharp(await roundMark(512)).webp({ quality: 92 }).toFile(path.join(androidRes, 'drawable-nodpi', 'luminara_mark.webp'));
-await sharp(buf).resize(512, 512, { fit: 'cover' }).png().toFile(path.join(root, 'docs', 'play-store', 'assets', 'play-icon-512.png'));
+await sharp(androidBuf)
+  .resize(512, 512, { fit: 'cover' })
+  .flatten({ background: '#000000' })
+  .png()
+  .toFile(path.join(root, 'docs', 'play-store', 'assets', 'play-icon-512.png'));
 
 console.log('Wrote brand + favicon + manifest assets from', src);
+console.log('Wrote Android and Play icon from', androidMaster);

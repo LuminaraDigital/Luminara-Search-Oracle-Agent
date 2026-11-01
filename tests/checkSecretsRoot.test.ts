@@ -96,6 +96,26 @@ describe('check-secrets --all scans the working tree it is run in', () => {
     expect(res.stderr).toContain('-settings.js');
   });
 
+  it('allows the Firebase Android client key only inside google-services.json', () => {
+    const clientKey = ['AIza', 'SyPublicAndroidClientConfigKey01234'].join('');
+    const otherKey = ['gsk_', 'AndroidClientConfig12'].join('');
+    const android = makeRepo('android-client', {
+      'apps/android/app/google-services.json': `{"api_key":[{"current_key":"${clientKey}"}]}\n`,
+    });
+    const elsewhere = makeRepo('android-elsewhere', {
+      'notes.txt': `${clientKey}\n`,
+    });
+    const planted = makeRepo('android-planted', {
+      'apps/android/app/google-services.json': `{"api_key":[{"current_key":"${clientKey}"}],"note":"${otherKey}"}\n`,
+    });
+    expect(runAll(android).status, runAll(android).stderr).toBe(0);
+    expect(runAll(elsewhere).status).toBe(1);
+    expect(runAll(elsewhere).stderr).toContain('notes.txt');
+    expect(runAll(planted).status).toBe(1);
+    expect(runAll(planted).stderr).toContain('google-services.json');
+    expect(runAll(planted).stderr).toContain('Groq key');
+  });
+
   it('two trees side by side are judged separately: the leak in one does not fail the other', () => {
     const clean = makeRepo('side-clean', { 'a.txt': 'clean\n' });
     const leaky = makeRepo('side-leaky', { 'a.txt': `${KEY_SHAPED}\n` });

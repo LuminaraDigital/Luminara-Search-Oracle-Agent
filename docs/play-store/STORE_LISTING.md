@@ -64,9 +64,11 @@ Operator: Luminara Digital Pty Ltd (ABN 90 693 125 281), Melbourne, VIC, Austral
 
 | Asset | Dimensions | Format | Location |
 | :--- | :--- | :--- | :--- |
-| **App Icon** | `512 x 512 px` | 32-bit PNG | `docs/play-store/assets/play-icon-512.png` |
+| **App Icon** | `512 x 512 px` | 32-bit PNG, no alpha | `docs/play-store/assets/play-icon-512.png` |
 | **Feature Graphic** | `1024 x 500 px` | PNG | `docs/play-store/assets/feature-graphic-1024x500.png` |
 | **Phone Screenshot 1 (Instant Audit)** | `1080 x 1920 px` (9:16) | PNG | `docs/play-store/assets/screenshots/01-instant-audit.png` |
 | **Phone Screenshot 2 (Bot Governance Matrix)** | `1080 x 1920 px` (9:16) | PNG | `docs/play-store/assets/screenshots/02-bot-matrix.png` |
 | **Phone Screenshot 3 (Ask Search Oracle)** | `1080 x 1920 px` (9:16) | PNG | `docs/play-store/assets/screenshots/03-ask-oracle.png` |
 | **Phone Screenshot 4 (Operator Dashboard)** | `1080 x 1920 px` (9:16) | PNG | `docs/play-store/assets/screenshots/04-dashboard-board.png` |
+
+Upload `play-icon-512.png` in Play Console as the store listing icon. It is the same gold atom as the Android launcher, splash foreground, and in-app header. Shipping the app package does not change the Console listing.
