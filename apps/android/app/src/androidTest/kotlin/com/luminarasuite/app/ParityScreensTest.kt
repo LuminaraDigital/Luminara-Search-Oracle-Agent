@@ -1,6 +1,7 @@
 package com.luminarasuite.app
 
 import android.Manifest
+import android.app.UiAutomation
 import android.graphics.Bitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.assertTextEquals
@@ -31,6 +32,8 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
+
+private const val POST_TIMEOUT_MS = 5_000L
 
 private val failedLlms = ReadinessCheck("llms_txt", "llms.txt present", "fail", "HTTP 404.")
 
@@ -155,11 +158,18 @@ class ParityScreensTest {
     @Test
     fun reminderPostsTheTopFix() {
         val context = instrumentation.targetContext
-        instrumentation.uiAutomation.grantRuntimePermission(context.packageName, Manifest.permission.POST_NOTIFICATIONS)
+        // Compose keeps its own connection open, and a default reconnect here can hang.
+        instrumentation
+            .getUiAutomation(UiAutomation.FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES)
+            .grantRuntimePermission(context.packageName, Manifest.permission.POST_NOTIFICATIONS)
         NextFixReminder.setEnabled(context, true)
         NextFixReminder.post(context, "example.com: Add a business identity tag")
-        val active = context.getSystemService(android.app.NotificationManager::class.java).activeNotifications
-        check(active.any { it.id == NextFixReminder.NOTIFICATION_ID })
+        check(!NextFixReminder.needsPermission(context)) { "Permission grant did not apply" }
+        val notifications = context.getSystemService(android.app.NotificationManager::class.java)
+        // The system posts on its own thread, so the notification appears a moment later.
+        composeRule.waitUntil(POST_TIMEOUT_MS) {
+            notifications.activeNotifications.any { it.id == NextFixReminder.NOTIFICATION_ID }
+        }
         NextFixReminder.setEnabled(context, false)
     }
 }
