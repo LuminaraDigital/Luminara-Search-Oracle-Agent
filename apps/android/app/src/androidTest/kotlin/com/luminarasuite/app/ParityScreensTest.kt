@@ -3,6 +3,7 @@ package com.luminarasuite.app
 import android.Manifest
 import android.graphics.Bitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -51,7 +52,8 @@ private class SignedInRepository(
                     textSnippet = "Stub page",
                 ),
             )
-        val rows = List(3) { SearchRow("what is example.com", "Stub result $it", "https://other.test/$it", "x", it == 0) }
+        val rows =
+            List(3) { SearchRow("what is example.com", "Stub result $it", "https://other.test/$it", "x", it == 0) }
         val crew = CrewRules.assess("example.com", pages, rows, listOf(failedLlms))
         return Result.success(
             InstantAuditReport(
@@ -105,9 +107,9 @@ class ParityScreensTest {
         composeRule.onNodeWithTag("audit_domain_input").performTextInput("example.com")
         composeRule.onNodeWithTag("run_audit_button").performClick()
         composeRule.waitForIdle()
-        composeRule.onNodeWithText("58/100").performScrollTo()
+        composeRule.onNodeWithText("65/100").performScrollTo()
         capture("audit-scores")
-        composeRule.onNodeWithTag("audit_citation_rate").assertExistsWithText("33%")
+        composeRule.onNodeWithTag("audit_citation_rate").assertTextEquals("33%")
         composeRule.onNodeWithTag("copy_patch-schema-org").performScrollTo()
         capture("audit-fixes")
         composeRule.onNodeWithText("Stub result 2").performScrollTo()
@@ -140,8 +142,4 @@ class ParityScreensTest {
         check(active.any { it.id == NextFixReminder.NOTIFICATION_ID })
         NextFixReminder.setEnabled(context, false)
     }
-}
-
-private fun androidx.compose.ui.test.SemanticsNodeInteraction.assertExistsWithText(text: String) {
-    assert(androidx.compose.ui.test.hasText(text))
 }
