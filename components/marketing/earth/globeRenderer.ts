@@ -784,6 +784,8 @@ export function createGlobeRenderer(
     },
     setHeld(next: boolean) {
       held = next;
+      // Reduced motion has no loop, so ask for the frame that returns a chapter to its focus.
+      if (!held) invalidate();
     },
     destroy() {
       destroyed = true;

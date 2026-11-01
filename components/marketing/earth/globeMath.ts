@@ -151,6 +151,9 @@ export function storyPose(w: number, h: number, wide = w >= 1024): GlobePose {
   return { cx: w / 2, cy: h * 0.23, r: Math.min(w * 0.36, h * 0.16), sun: STORY_SUN, flare: 0, dim: 1, dots: 1 };
 }
 
+const DRAG_SLOP_PX = 8;
+const MAX_FLING_PX_S = 2400;
+
 /**
  * Longitude change that keeps the surface under a horizontal drag. Longitude lines bunch
  * up toward the pole, so the far-south hero view turns further for the same swipe.
@@ -160,14 +163,14 @@ export function dragToLon(dxCss: number, radiusCss: number, latDeg: number): num
 }
 
 /** Past the slop a touch either drags the globe or is left alone for the page. */
-export function dragIntent(dx: number, dy: number, slopPx = 8): 'wait' | 'drag' | 'none' {
-  if (Math.max(Math.abs(dx), Math.abs(dy)) < slopPx) return 'wait';
+export function dragIntent(dx: number, dy: number): 'wait' | 'drag' | 'none' {
+  if (Math.max(Math.abs(dx), Math.abs(dy)) < DRAG_SLOP_PX) return 'wait';
   return Math.abs(dx) > Math.abs(dy) ? 'drag' : 'none';
 }
 
 /** Distance a fling coasts: power3.out starts at 4x its average speed, so the release speed carries on. */
-export function flingDistance(pxPerS: number, seconds: number, maxPxPerS = 2400): number {
-  return (clamp(pxPerS, -maxPxPerS, maxPxPerS) * seconds) / 4;
+export function flingDistance(pxPerS: number, seconds: number): number {
+  return (clamp(pxPerS, -MAX_FLING_PX_S, MAX_FLING_PX_S) * seconds) / 4;
 }
 
 /**

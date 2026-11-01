@@ -10,24 +10,30 @@ import { dragIntent, flingDistance } from './globeMath';
 import type { GlobeRenderer } from './globeRenderer';
 
 const FLING_S = 1.2;
+/** Below this a fling would hold the globe still for its whole duration with nothing to show. */
+const MIN_FLING_PX = 2;
 /** A finger that rests this long before lifting has stopped, so the old speed no longer counts. */
 const REST_MS = 100;
-const NOT_DRAGGABLE = 'a,button,input,textarea,select,label,[role="button"]';
+const NOT_DRAGGABLE = 'a,button,input,textarea,select,label,[role="button"],.overflow-x-auto';
 
-export function attachGlobeDrag(surface: HTMLElement, globe: GlobeRenderer): () => void {
+export function attachGlobeDrag(
+  surface: HTMLElement,
+  globe: Pick<GlobeRenderer, 'dragBy' | 'setHeld'>,
+): () => void {
   let flingS = 0;
   const mm = gsap.matchMedia();
-  mm.add(
-    { motion: '(prefers-reduced-motion: no-preference)', reduce: '(prefers-reduced-motion: reduce)' },
-    (context) => {
-      flingS = context.conditions?.motion ? FLING_S : 0;
-    },
-  );
+  mm.add('(prefers-reduced-motion: no-preference)', () => {
+    flingS = FLING_S;
+    return () => {
+      flingS = 0;
+    };
+  });
 
   // pan-y also blocks sideways panning of a zoomed page, so hand it back while zoomed in.
   const viewport = window.visualViewport;
+  const zoomed = () => !!viewport && viewport.scale > 1.01;
   const syncTouchAction = () => {
-    surface.style.touchAction = viewport && viewport.scale > 1.01 ? '' : 'pan-y pinch-zoom';
+    surface.style.touchAction = zoomed() ? '' : 'pan-y pinch-zoom';
   };
   syncTouchAction();
   viewport?.addEventListener('resize', syncTouchAction);
@@ -48,14 +54,18 @@ export function attachGlobeDrag(surface: HTMLElement, globe: GlobeRenderer): () 
     globe.setHeld(false);
   };
 
+  const release = () => {
+    pointer = null;
+    if (dragging) globe.setHeld(false);
+    dragging = false;
+  };
+
   const onDown = (e: PointerEvent) => {
     if (e.pointerType === 'mouse') return;
     stopFling();
-    // A second finger is a pinch: let the first one go too.
-    if (!e.isPrimary || pointer !== null) {
-      release();
-      return;
-    }
+    // A second finger is a pinch, so the first lets go too. This also clears a gesture whose end never arrived.
+    release();
+    if (!e.isPrimary || zoomed()) return;
     if (e.target instanceof Element && e.target.closest(NOT_DRAGGABLE)) return;
     pointer = e.pointerId;
     startX = e.clientX;
@@ -66,16 +76,16 @@ export function attachGlobeDrag(surface: HTMLElement, globe: GlobeRenderer): () 
     if (e.pointerId !== pointer) return;
     if (!dragging) {
       const intent = dragIntent(e.clientX - startX, e.clientY - startY);
+      if (intent === 'wait') return;
       if (intent === 'none') {
         pointer = null;
-      } else if (intent === 'drag') {
-        dragging = true;
-        velocity = 0;
-        lastX = e.clientX;
-        lastT = e.timeStamp;
-        globe.setHeld(true);
+        return;
       }
-      return;
+      dragging = true;
+      velocity = 0;
+      lastX = startX;
+      lastT = e.timeStamp;
+      globe.setHeld(true);
     }
     const dt = e.timeStamp - lastT;
     if (dt > 0) velocity = velocity * 0.2 + (((e.clientX - lastX) / dt) * 1000) * 0.8;
@@ -84,16 +94,10 @@ export function attachGlobeDrag(surface: HTMLElement, globe: GlobeRenderer): () 
     lastT = e.timeStamp;
   };
 
-  function release(): void {
-    pointer = null;
-    if (dragging) globe.setHeld(false);
-    dragging = false;
-  }
-
   const onUp = (e: PointerEvent) => {
     if (e.pointerId !== pointer) return;
     const px = dragging && e.timeStamp - lastT < REST_MS ? flingDistance(velocity, flingS) : 0;
-    if (!px) {
+    if (Math.abs(px) < MIN_FLING_PX) {
       release();
       return;
     }
@@ -120,10 +124,11 @@ export function attachGlobeDrag(surface: HTMLElement, globe: GlobeRenderer): () 
     if (e.pointerId === pointer) release();
   };
 
+  // Only the start is scoped: the gesture must still end if the touched element is removed.
   surface.addEventListener('pointerdown', onDown, { passive: true });
-  surface.addEventListener('pointermove', onMove, { passive: true });
-  surface.addEventListener('pointerup', onUp, { passive: true });
-  surface.addEventListener('pointercancel', onCancel, { passive: true });
+  window.addEventListener('pointermove', onMove, { passive: true });
+  window.addEventListener('pointerup', onUp, { passive: true });
+  window.addEventListener('pointercancel', onCancel, { passive: true });
 
   return () => {
     stopFling();
@@ -132,8 +137,8 @@ export function attachGlobeDrag(surface: HTMLElement, globe: GlobeRenderer): () 
     viewport?.removeEventListener('resize', syncTouchAction);
     surface.style.touchAction = '';
     surface.removeEventListener('pointerdown', onDown);
-    surface.removeEventListener('pointermove', onMove);
-    surface.removeEventListener('pointerup', onUp);
-    surface.removeEventListener('pointercancel', onCancel);
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerup', onUp);
+    window.removeEventListener('pointercancel', onCancel);
   };
 }

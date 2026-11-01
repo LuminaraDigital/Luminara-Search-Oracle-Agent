@@ -160,7 +160,7 @@ export const SpaceStage: React.FC<SpaceStageProps> = ({ anchors, onChapterChange
     let detachDrag: (() => void) | null = null;
     const enableDrag = () => {
       // The story wrapper, which holds both the stage and the sections above it.
-      const surface = stage.parentElement?.parentElement;
+      const surface = stage.closest<HTMLElement>('[data-globe-surface]');
       if (!surface || !window.matchMedia('(any-pointer: coarse)').matches) return;
       import('./earth/globeDrag')
         .then(({ attachGlobeDrag }) => {
