@@ -62,6 +62,7 @@ describe('tool governance catalogue', () => {
       'dream_status', 'get_business_memory', 'dream_consolidate', 'review_dream_proposal',
       'list_enquiries', 'ingest_enquiry', 'propose_booking_slots', 'decide_booking_signoff',
       'get_outcomes_funnel', 'classify_cms_remediation', 'prepare_cms_mcp_call',
+      'create_dev_ticket_from_finding', 'compile_review_to_skill', 'mint_habitat_token',
     ];
     for (const name of known) {
       expect(TOOL_GOVERNANCE[name], name).toBeDefined();

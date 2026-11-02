@@ -145,6 +145,7 @@ import { dispatchQueueBatch } from './queueDispatch';
 import { MCP_OAUTH_PUBLIC_CORS, handleMcpOAuthRoute, handleOAuthDiscovery, listAgentConnections, revokeAgentConnection } from './mcpOAuth';
 import { executeOracleGatewayTask, type OracleGatewayRequest } from './oracleGateway';
 import { createMemoryFact, listMemoryFacts } from './memoryService';
+import { compileFeedbackIntoSkillRule, handleAgentHabitatRoute } from './selfDrivingHabitat';
 import { handlePrivacyRoute, purgeExpiredPrivacyDeletes } from './privacyService';
 import { isCronMapped, jobsForCron, shouldRunScheduledJob } from './scheduledJobs';
 import { ingestProductAnalytics } from './productAnalytics';
@@ -268,6 +269,55 @@ async function auditAccountLink(
     ip_address: clientIp(request),
     user_agent: request.headers.get('user-agent') || undefined,
   });
+}
+
+/**
+ * A denial with a reason becomes a review rule, scoped to the denied call. The domain in the
+ * request is only a fallback: it names the page on screen, which may be another client's.
+ * The denial has already committed, so a failure here loses the rule and never the response.
+ */
+async function compileDenialIntoRule(
+  request: Request,
+  env: Env,
+  denial: {
+    accountId: string;
+    userId: string;
+    requestId: string;
+    toolName: string;
+    projectId: string | null;
+    argsJson: string | null;
+  },
+): Promise<{ ruleText: string; factId: string } | null> {
+  const read = await readBody(request, MAX_SMALL_BODY_BYTES);
+  const body = (read.ok && read.value ? read.value : {}) as { reason?: unknown; domain?: unknown };
+  if (typeof body.reason !== 'string' || !body.reason.trim()) return null;
+
+  let domain: string | null = null;
+  if (denial.argsJson) {
+    try {
+      const args = JSON.parse(denial.argsJson) as { domain?: unknown };
+      if (typeof args.domain === 'string') domain = args.domain;
+    } catch {
+      /* malformed args only lose the domain */
+    }
+  }
+  if (!domain && !denial.projectId && typeof body.domain === 'string') domain = body.domain;
+
+  try {
+    const compiled = await compileFeedbackIntoSkillRule(env, {
+      accountId: denial.accountId,
+      userId: denial.userId,
+      domain,
+      projectId: denial.projectId,
+      reason: body.reason,
+      targetToolOrAsset: denial.toolName,
+      sourceRef: `mcp_deny:${denial.requestId}`,
+    });
+    return compiled.ok ? { ruleText: compiled.ruleText, factId: compiled.factId } : null;
+  } catch (err) {
+    console.error('[habitat] denial rule failed:', err);
+    return null;
+  }
 }
 
 async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -1873,17 +1923,57 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       if (!ok) {
         return withCors(json({ ok: false, error: 'Could not update action request', code: 'UPDATE_FAILED' }, 409));
       }
+      const compiledRule = decision === 'deny'
+        ? await compileDenialIntoRule(request, env, {
+            accountId,
+            userId: who.user.id,
+            requestId,
+            toolName: row.tool_name,
+            projectId: row.project_id,
+            argsJson: row.args_json,
+          })
+        : null;
       await recordAuditLogBestEffort(env, {
         org_id: auditOrgIdFor(accountId),
         actor_id: who.user.id,
         action: decision === 'approve' ? 'mcp_action_approve' : 'mcp_action_deny',
         target_id: requestId,
-        details: { tool_name: row.tool_name, kind: row.kind, project_id: row.project_id },
+        details: {
+          tool_name: row.tool_name,
+          kind: row.kind,
+          project_id: row.project_id,
+          ...(compiledRule ? { compiled_rule_fact_id: compiledRule.factId } : {}),
+        },
       });
-      return withCors(json({ ok: true, id: requestId, status: decision === 'approve' ? 'approved' : 'denied' }));
+      return withCors(
+        json({
+          ok: true,
+          id: requestId,
+          status: decision === 'approve' ? 'approved' : 'denied',
+          ...(compiledRule ? { compiledRule } : {}),
+        }),
+      );
     }
 
     return withCors(json({ error: 'Method not allowed' }, 405));
+  }
+
+  // Agent Habitat: rules, scoped tokens, approvals and handoff packets.
+  if (path === '/agent-habitat' || path.startsWith('/agent-habitat/')) {
+    const who = identifiedForRequest(request) ?? (await identify(request, env));
+    if (who.error || !who.user) {
+      return withCors(json({ ok: false, error: who.error || 'Unauthorized', code: 'AUTH_REQUIRED' }, 401));
+    }
+    const dual = await enforceDualRateLimit(env, {
+      action: 'agent_habitat',
+      accountId: billingId(who.user),
+      ip,
+      limitPerKey: 45,
+      windowSec: 60,
+    });
+    if (!dual.ok) return withCors(dual.response);
+    const habitatResponse = await handleAgentHabitatRoute(request, env, who.user, path);
+    return withCors(habitatResponse ?? json({ ok: false, error: 'Not found' }, 404));
   }
 
   // APS: MCP (mcpAccess on every plan, daily cap below Growth; session, lm_live_* API key, or mcp_* OAuth token)

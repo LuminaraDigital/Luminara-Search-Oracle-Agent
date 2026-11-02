@@ -6,6 +6,7 @@ import { CHECKOUT_TERM_LINE, listPriceSummary } from '../components/paywall/plan
 import { PAID_PLAN_PRICES, type PaidPlanId } from '../components/paywall/planPrices';
 import { LIVE_ANSWER_CHECKS } from '../services/marketing/engineCoverage';
 import { REAL_ESTATE_AUDIENCE } from '../services/marketing/marketingHeroCopy';
+import { PLAY_STORE_URL, TELEGRAM_BOT_URL, TELEGRAM_MINI_APP_PUBLIC_URL } from '../services/marketing/platformSurfaces';
 import { HUB_PAGES, HUB_REVIEWED } from '../services/marketing/seoHubPages';
 import { FREE_TOOLS, FREE_TOOLS_PATH } from '../services/marketing/freeTools';
 import { COMPANY_SERVICES_URL, COMPANY_SITE_URL } from '../services/legal/consumerTerms';
@@ -34,6 +35,7 @@ Allow: /ai
 Allow: /why
 Allow: /pricing
 Allow: /methodology
+Allow: /white-paper
 Allow: /sample-report
 Allow: /privacy
 Allow: /terms
@@ -61,6 +63,7 @@ Allow: /ai
 Allow: /why
 Allow: /pricing
 Allow: /methodology
+Allow: /white-paper
 Allow: /sample-report
 Allow: /privacy
 Allow: /terms
@@ -126,6 +129,7 @@ export function buildSitemapXml(origin: string = 'https://www.luminarasuite.com'
   <url><loc>${base}/why</loc></url>
   <url><loc>${base}/pricing</loc></url>
   <url><loc>${base}/methodology</loc></url>
+  <url><loc>${base}/white-paper</loc></url>
   <url><loc>${base}/sample-report</loc></url>
   <url><loc>${base}/privacy</loc></url>
   <url><loc>${base}/terms</loc></url>
@@ -176,7 +180,7 @@ function llmsPaidPlanBlock(): string {
 
 export const LLMS_TXT = `# Luminara Suite
 
-> Luminara Suite checks a website and live web search, then ranks one next fix. ${LIVE_ANSWER_CHECKS} Web app, Windows desktop, and a Telegram Mini App.
+> Luminara Suite checks a website and live web search, then ranks one next fix. ${LIVE_ANSWER_CHECKS} Web app, Android on Google Play, Windows desktop, and a Telegram Mini App.
 
 ## Methodology
 
@@ -230,19 +234,22 @@ ${llmsPaidPlanBlock()}
 
 ## Telegram Mini App
 
-- https://t.me/LuminaraSuiteBot/app
+- ${TELEGRAM_MINI_APP_PUBLIC_URL}
+- Bot: ${TELEGRAM_BOT_URL}
 
 ## Product
 
 - Home: https://www.luminarasuite.com/
 - Sample report: https://www.luminarasuite.com/sample-report
 - Methodology: https://www.luminarasuite.com/methodology
+- White paper: https://www.luminarasuite.com/white-paper
 - What is AEO: https://www.luminarasuite.com/docs/what-is-aeo.html
 - How it works: https://www.luminarasuite.com/how-it-works
 - Our AI: https://www.luminarasuite.com/ai
 - Why Luminara: https://www.luminarasuite.com/why
 - Pricing: https://www.luminarasuite.com/pricing
 - Windows desktop: https://www.luminarasuite.com/desktop
+- Android on Google Play: ${PLAY_STORE_URL}
 
 ## Comparisons and buyer's guides
 
@@ -283,6 +290,7 @@ Allow: /ai
 Allow: /why
 Allow: /pricing
 Allow: /methodology
+Allow: /white-paper
 Allow: /sample-report
 Allow: /privacy
 Allow: /terms

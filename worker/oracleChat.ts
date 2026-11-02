@@ -683,6 +683,13 @@ export async function handleOracleChatSse(
       } catch {
         /* memory RAG is best-effort */
       }
+      try {
+        const { ownerRulesPromptBlock } = await import('./scopedMemory');
+        const ownerRules = await ownerRulesPromptBlock(env, billingId(user), body.projectId ?? null);
+        if (ownerRules) systemPrompt = `${systemPrompt}\n\n${ownerRules}`;
+      } catch (err) {
+        console.error('[oracle] owner rules unavailable:', err);
+      }
       const messages = [
         { role: 'system', content: systemPrompt },
         ...historySource,

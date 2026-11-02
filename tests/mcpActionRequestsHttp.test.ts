@@ -6,6 +6,8 @@ import { describe, expect, it } from 'vitest';
 import worker from '../worker/index';
 import type { Env } from '../worker/env';
 import { createActionRequest } from '../worker/mcpGovernance';
+import { createProject } from '../worker/projectService';
+import { listActiveConstraints } from '../worker/scopedMemory';
 import { createSqliteD1 } from './helpers/sqliteD1';
 
 const botToken = '123456:MCP_ACTION_HTTP';
@@ -39,6 +41,9 @@ function mockKv(store = new Map<string, string>()) {
     delete: async (key: string) => {
       store.delete(key);
     },
+    list: async ({ prefix }: { prefix: string }) => ({
+      keys: [...store.keys()].filter((name) => name.startsWith(prefix)).map((name) => ({ name })),
+    }),
   };
 }
 
@@ -64,6 +69,148 @@ function req(path: string, init: RequestInit = {}) {
   headers.set('cf-connecting-ip', '203.0.113.50');
   return new Request(`https://luminarasuite.com${path}`, { ...init, headers });
 }
+
+describe('agent workspace through the worker', () => {
+  const owner = () => ({ 'x-telegram-init-data': signInitData(88001, 'Owner'), 'content-type': 'application/json' });
+
+  it('saves a denial reason as a rule scoped to the denied call', async () => {
+    const env = makeEnv();
+    const created = await createActionRequest(env, {
+      userId: '88001',
+      toolName: 'prepare_cms_mcp_call',
+      projectId: null,
+      args: { domain: 'www.acme.io' },
+    });
+    const res = await worker.fetch(
+      req(`/api/mcp-action-requests/${created.id}/deny`, {
+        method: 'POST',
+        headers: owner(),
+        body: JSON.stringify({ reason: 'Never touch the live homepage.' }),
+      }),
+      env,
+      ctx,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { status: string; compiledRule?: { ruleText: string } };
+    expect(body.status).toBe('denied');
+    expect(body.compiledRule?.ruleText).toContain('[Rule from prepare_cms_mcp_call]');
+    const rules = await listActiveConstraints(env, '88001', { projectId: null, domain: 'acme.io' });
+    expect(rules).toContain(body.compiledRule?.ruleText);
+    const elsewhere = await listActiveConstraints(env, '88001', { projectId: null, domain: 'beta.io' });
+    expect(elsewhere).toEqual([]);
+  });
+
+  it('scopes a denial to the denied call, not the page on screen', async () => {
+    const env = makeEnv();
+    const created = await createActionRequest(env, {
+      userId: '88001',
+      toolName: 'prepare_cms_mcp_call',
+      projectId: null,
+      args: { domain: 'client-b.io' },
+    });
+    await worker.fetch(
+      req(`/api/mcp-action-requests/${created.id}/deny`, {
+        method: 'POST',
+        headers: owner(),
+        body: JSON.stringify({ reason: 'Not on this site.', domain: 'client-a.io' }),
+      }),
+      env,
+      ctx,
+    );
+    expect(await listActiveConstraints(env, '88001', { projectId: null, domain: 'client-a.io' })).toEqual([]);
+    expect(await listActiveConstraints(env, '88001', { projectId: null, domain: 'client-b.io' })).toHaveLength(1);
+  });
+
+  it('denies with no rule when no reason is given', async () => {
+    const env = makeEnv();
+    const created = await createActionRequest(env, {
+      userId: '88001',
+      toolName: 'prepare_cms_mcp_call',
+      projectId: null,
+      args: {},
+    });
+    const res = await worker.fetch(
+      req(`/api/mcp-action-requests/${created.id}/deny`, {
+        method: 'POST',
+        headers: { 'x-telegram-init-data': signInitData(88001, 'Owner') },
+      }),
+      env,
+      ctx,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { status: string; compiledRule?: unknown };
+    expect(body.status).toBe('denied');
+    expect(body.compiledRule).toBeUndefined();
+  });
+
+  it('mints a token over HTTP that works on /mcp only inside its project', async () => {
+    const env = makeEnv();
+    const acme = await createProject(env, '88001', { domain: 'acme.io', name: 'Acme' });
+    const beta = await createProject(env, '88001', { domain: 'beta.io', name: 'Beta' });
+    if (!acme.ok || !beta.ok) throw new Error('setup');
+
+    const unsigned = await worker.fetch(req('/api/agent-habitat/tokens', { method: 'POST' }), env, ctx);
+    expect(unsigned.status).toBe(401);
+
+    const mintRes = await worker.fetch(
+      req('/api/agent-habitat/tokens', {
+        method: 'POST',
+        headers: owner(),
+        body: JSON.stringify({ domain: 'acme.io', maxRisk: 'read' }),
+      }),
+      env,
+      ctx,
+    );
+    expect(mintRes.status).toBe(201);
+    const { token } = (await mintRes.json()) as { token: string };
+
+    const mcp = async (name: string, args: Record<string, unknown>) => {
+      const res = await worker.fetch(
+        req('/api/mcp', {
+          method: 'POST',
+          headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', accept: 'application/json' },
+          body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }),
+        }),
+        env,
+        ctx,
+      );
+      expect(res.status).toBe(200);
+      return ((await res.json()) as { result: { isError?: boolean; structuredContent?: { code?: string } } }).result;
+    };
+
+    expect((await mcp('get_project_context', {})).isError).toBeFalsy();
+    expect((await mcp('get_project_context', { projectId: beta.project.id })).structuredContent?.code).toBe(
+      'HABITAT_PROJECT_SCOPE_VIOLATION',
+    );
+
+    const onAppRoute = await worker.fetch(
+      req('/api/agent-habitat/status', { headers: { authorization: `Bearer ${token}` } }),
+      env,
+      ctx,
+    );
+    expect(onAppRoute.status).toBe(401);
+
+    const statusRes = await worker.fetch(req('/api/agent-habitat/status', { headers: owner() }), env, ctx);
+    const { tokens } = (await statusRes.json()) as { tokens: Array<{ id: string }> };
+    expect(tokens).toHaveLength(1);
+    const revoked = await worker.fetch(
+      req(`/api/agent-habitat/tokens/${tokens[0].id}`, { method: 'DELETE', headers: owner() }),
+      env,
+      ctx,
+    );
+    expect(revoked.status).toBe(200);
+    const afterRevoke = await worker.fetch(
+      req('/api/mcp', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', accept: 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' }),
+      }),
+      env,
+      ctx,
+    );
+    expect(afterRevoke.status).toBe(401);
+  });
+});
 
 describe('mcp-action-requests HTTP', () => {
   it('rejects unauthenticated list', async () => {
