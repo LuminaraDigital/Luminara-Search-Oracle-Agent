@@ -138,6 +138,14 @@ type ConsentRecord = {
   redirectUri: string;
   codeChallenge: string;
   state: string;
+  decided?: ConsentDecision;
+};
+
+/** Kept so a repeat submit of the same form lands where the first one did. */
+type ConsentDecision = {
+  decision: 'allow' | 'deny';
+  redirect: string;
+  code?: string;
 };
 
 /** KV refuses a get with cacheTtl under 30 seconds, so 30 is the shortest edge cache it allows. */
@@ -296,6 +304,9 @@ function consentCsp(redirectUri: string): string {
   return `default-src 'none'; style-src 'unsafe-inline'; form-action 'self' ${callback}; frame-ancestors 'none'; base-uri 'none'`;
 }
 
+/** For pages with no form: nothing on them may submit or load anywhere. */
+const CLOSED_PAGE_CSP = "default-src 'none'; style-src 'unsafe-inline'; form-action 'none'; frame-ancestors 'none'; base-uri 'none'";
+
 function agentPage(title: string, inner: string, status: number, csp: string): Response {
   const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>${escapeHtml(title)}</title><style>body{margin:0;min-height:100dvh;display:grid;place-items:center;background:#000;color:#f4efe3;font:16px/1.55 system-ui,sans-serif;padding:16px}main{max-width:440px;border:1px solid #6b5a2e;border-radius:20px;padding:28px;background:#0d0c09}h1{font:400 28px/1.15 Georgia,serif;margin:0 0 12px}li{margin:6px 0}code{word-break:break-all}.row{display:flex;gap:12px;margin-top:20px}button,a.btn{flex:1;text-align:center;padding:12px;border-radius:12px;border:1px solid #d4af37;background:transparent;color:#f4efe3;font:inherit;cursor:pointer;text-decoration:none}button[value=allow],a.btn{background:#d4af37;color:#000}</style></head><body><main>${inner}</main></body></html>`;
   return new Response(html, {
@@ -363,6 +374,26 @@ async function connectorAuthorize(
   );
 }
 
+function expiredApproval(): Response {
+  return agentPage(
+    'Approval expired',
+    '<h1>This approval expired</h1><p>Go back to your agent and start the connection again.</p>',
+    400,
+    CLOSED_PAGE_CSP,
+  );
+}
+
+/** A double tap, a retry or an old tab. The first answer stands and never mints a second code. */
+async function repeatDecision(env: Env, decided: ConsentDecision, decision: ConsentDecision['decision']): Promise<Response> {
+  const codeLive = !decided.code || Boolean(await env.LUMINARA_KV?.get(`${CODES_KV_PREFIX}${decided.code}`));
+  if (decided.decision === decision && codeLive) return Response.redirect(decided.redirect, 303);
+  const inner =
+    decided.decision === 'allow'
+      ? '<h1>You already approved this connection</h1><p>Go back to your agent. If it did not connect, start the connection again from there. You can disconnect agents in Settings.</p>'
+      : '<h1>You cancelled this connection</h1><p>To connect, go back to your agent and start again.</p>';
+  return agentPage('Already answered', inner, 200, CLOSED_PAGE_CSP);
+}
+
 async function decideConsent(request: Request, env: Env): Promise<Response> {
   if (!env.LUMINARA_KV) return json({ error: 'server_error', error_description: 'KV unavailable' }, 503);
   if (!oauthSecretOrNull(env)) {
@@ -372,14 +403,12 @@ async function decideConsent(request: Request, env: Env): Promise<Response> {
   const consentId = String(form?.get('consent') ?? '');
   const key = `${CONSENTS_KV_PREFIX}${consentId}`;
   const raw = consentId ? await env.LUMINARA_KV.get(key) : null;
-  if (!raw) {
-    return json({ error: 'invalid_request', error_description: 'This approval expired. Start the connection again.' }, 400);
-  }
+  if (!raw) return expiredApproval();
   let record: ConsentRecord;
   try {
     record = JSON.parse(raw) as ConsentRecord;
   } catch {
-    return json({ error: 'invalid_request', error_description: 'This approval expired. Start the connection again.' }, 400);
+    return expiredApproval();
   }
 
   // identify() refuses a cross-site cookie POST, so a page elsewhere cannot press Allow.
@@ -387,29 +416,33 @@ async function decideConsent(request: Request, env: Env): Promise<Response> {
   if (who.error || who.user?.id !== record.userId) {
     return json({ error: 'access_denied', error_description: 'Sign in as the account that opened this approval.' }, 403);
   }
-  await env.LUMINARA_KV.delete(key);
+  const decision = form?.get('decision') === 'allow' ? 'allow' : 'deny';
+  if (record.decided) return repeatDecision(env, record.decided, decision);
 
   const redirect = new URL(record.redirectUri);
   if (record.state) redirect.searchParams.set('state', record.state);
-  if (form?.get('decision') !== 'allow') {
+  let code: string | undefined;
+  if (decision === 'allow') {
+    code = randomId('oc', 16);
+    const codeRecord: AuthCodeRecord = {
+      accountId: record.accountId,
+      userId: record.userId,
+      plan: record.plan,
+      redirectUri: record.redirectUri,
+      codeChallenge: record.codeChallenge,
+      scope: CONNECTOR_SCOPE,
+      createdAt: Date.now(),
+      clientId: record.clientId,
+      clientName: record.clientName,
+    };
+    await env.LUMINARA_KV.put(`${CODES_KV_PREFIX}${code}`, JSON.stringify(codeRecord), { expirationTtl: 300 });
+    redirect.searchParams.set('code', code);
+  } else {
     redirect.searchParams.set('error', 'access_denied');
-    return Response.redirect(redirect.toString(), 303);
   }
-  const code = randomId('oc', 16);
-  const codeRecord: AuthCodeRecord = {
-    accountId: record.accountId,
-    userId: record.userId,
-    plan: record.plan,
-    redirectUri: record.redirectUri,
-    codeChallenge: record.codeChallenge,
-    scope: CONNECTOR_SCOPE,
-    createdAt: Date.now(),
-    clientId: record.clientId,
-    clientName: record.clientName,
-  };
-  await env.LUMINARA_KV.put(`${CODES_KV_PREFIX}${code}`, JSON.stringify(codeRecord), { expirationTtl: 300 });
-  redirect.searchParams.set('code', code);
-  return Response.redirect(redirect.toString(), 303);
+  const decided: ConsentDecision = { decision, redirect: redirect.toString(), code };
+  await env.LUMINARA_KV.put(key, JSON.stringify({ ...record, decided }), { expirationTtl: CONSENT_TTL_SECONDS });
+  return Response.redirect(decided.redirect, 303);
 }
 
 async function authorize(request: Request, env: Env): Promise<Response> {
