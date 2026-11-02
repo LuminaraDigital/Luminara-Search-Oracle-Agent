@@ -186,7 +186,8 @@ class DefaultLuminaraRepository(
         private const val AUDIT_CAP =
             "That's your 3 free audits for today. They're saved in Memory. You'll get 3 more at midnight UTC."
         private const val ASK_CAP =
-            "You've used today's 10 questions. Your audit and fix list are still here. More questions tomorrow at midnight UTC."
+            "You've used today's 10 questions. Your audit and fix list are still here. " +
+                "More questions tomorrow at midnight UTC."
         private val CODE_COPY =
             mapOf(
                 "PAYWALL_EXCEEDED" to AUDIT_CAP,

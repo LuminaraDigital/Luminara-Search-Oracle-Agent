@@ -499,7 +499,9 @@ private fun DeveloperByokSection(
             Column(modifier = Modifier.weight(1f)) {
                 Text(text = "Developer: use my own AI key", style = LuminaraTextStyles.SectionTitle)
                 Text(
-                    text = "Off by default. Suite hosted AI answers audits and questions. A developer key pays that provider. Suite still scores the audit.",
+                    text =
+                    "Off by default. Suite hosted AI answers audits and questions. " +
+                        "A developer key pays that provider. Suite still scores the audit.",
                     style = LuminaraTextStyles.Body,
                 )
             }

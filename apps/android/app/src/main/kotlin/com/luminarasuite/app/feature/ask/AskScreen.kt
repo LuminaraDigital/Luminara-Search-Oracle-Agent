@@ -21,6 +21,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -103,7 +104,8 @@ class AskViewModel(
                             isLoading = false,
                             pendingQuestion = null,
                             errorMessage =
-                            err.message ?: "That did not go through. Sign in for hosted answers, or try again in a minute.",
+                            err.message
+                                ?: "That did not go through. Sign in for hosted answers, or try again in a minute.",
                         )
                     }
                 }.collect { event ->

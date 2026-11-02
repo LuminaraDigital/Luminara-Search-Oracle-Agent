@@ -70,7 +70,8 @@ fun auditBlockedMessage(quota: QuotaStatus?): String {
 fun askBlockedMessage(quota: QuotaStatus?): String {
     if (quota == null) return "Could not read the hosted plan. Try again in a minute."
     val cap = quota.askLimit.takeIf { it > 0 } ?: 10
-    return "You've used today's $cap questions. Your audit and fix list are still here. More questions tomorrow at midnight UTC."
+    return "You've used today's $cap questions. Your audit and fix list are still here. " +
+        "More questions tomorrow at midnight UTC."
 }
 
 fun resetPhrase(resetSec: Int): String {
@@ -89,7 +90,8 @@ fun auditUsageLine(quota: QuotaStatus?): String? {
 
 /** Question chip only when 3 or fewer remain, so the counter stays quiet until it matters. */
 fun askUsageLine(quota: QuotaStatus?): String? {
-    if (quota == null || quota.isUnlimited || quota.askLimit <= 0 || quota.askRemaining < 0) return null
+    if (quota == null || quota.isUnlimited) return null
+    if (quota.askLimit <= 0 || quota.askRemaining < 0) return null
     if (quota.askRemaining > 3) return null
     return "${quota.askRemaining} of ${quota.askLimit} questions left today. ${resetPhrase(quota.resetSec)}"
 }

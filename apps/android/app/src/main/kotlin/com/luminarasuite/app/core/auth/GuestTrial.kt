@@ -10,7 +10,8 @@ object GuestTrial {
         "Sign in to keep going. A free account includes 3 audits and 10 questions a day."
 
     const val SIGN_IN_AFTER_TASTE =
-        "That was the free read. Sign in and your audits stay with your account. Free includes 3 audits and 10 questions a day."
+        "That was the free read. Sign in and your audits stay with your account. " +
+            "Free includes 3 audits and 10 questions a day."
 
     private const val CREW_BEFORE =
         "Free check of the public files. One plain-English read is included. Sign in for the full audit."
