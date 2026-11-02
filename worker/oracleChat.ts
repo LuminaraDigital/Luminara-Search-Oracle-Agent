@@ -9,7 +9,7 @@ import { buildPaidToolRuntime, executePaidTool, PAID_TOOL_CATALOGUE, BROWSER_ACT
 import { planCapsFor } from './telegramBot';
 import { getActiveSubscription } from './quotaMiddleware';
 import { hasDataForSeoCredentials } from '../services/config/runtimeKeys';
-import { startRun, completeRun } from './runProvenance';
+import { startRun, completeRun, recordTraceSpan } from './runProvenance';
 import { loadAgentSkill } from './agentSkills';
 import {
   BYOK_PAID_CALL_COST_CENTS,
@@ -48,6 +48,9 @@ import {
 import { markProjectContextLoaded, requireProjectContextBeforePaid } from './mcpServer';
 import { getProjectContext } from './projectContextService';
 import { scheduleWaitUntil } from './welcomeEmail';
+import { ragContextForOracle } from './memoryRag';
+import { recallUnifiedContext } from './unifiedMemoryRouter';
+import { extractAndStoreChatMemory } from './memoryAutoIngest';
 import { withoutUnmeasuredClaims } from './chatHonesty';
 
 /** Runtime skill slug for hosted Oracle chat (admin-seedable via agent_skills). */
@@ -674,12 +677,8 @@ export async function handleOracleChatSse(
       let memoryFacts: string[] = [];
       let resolvedProjectId: string | null = body.projectId || null;
       let resolvedDomain: string | null = null;
-      if (env.LUMINARA_DB) {
+      if (env.DB) {
         try {
-          const [{ ragContextForOracle }, { recallUnifiedContext }] = await Promise.all([
-            import('./memoryRag'),
-            import('./unifiedMemoryRouter'),
-          ]);
           const [memory, unified] = await Promise.all([
             ragContextForOracle(env, billingId(user), message),
             recallUnifiedContext(env, {
@@ -806,10 +805,6 @@ export async function handleOracleChatSse(
 
       // Chat -> facts & bi-temporal graph pipeline (Letta/Mem0/Graphiti delta pass)
       try {
-        const [{ extractFactsFromChat }, { extractAndStoreChatMemory }] = await Promise.all([
-          import('./memoryRag'),
-          import('./memoryAutoIngest'),
-        ]);
         await Promise.all([
           extractFactsFromChat(env, user, {
             message,
