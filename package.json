@@ -112,7 +112,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^5.0.0",
-    "@vitest/coverage-v8": "^4.1.11",
+    "@vitest/coverage-v8": "^4.1.12",
     "autoprefixer": "^10.6.1",
     "electron": "^44.7.2",
     "electron-builder": "^26.15.3",
@@ -128,7 +128,7 @@
     "vite": "^6.2.0",
     "vite-plugin-top-level-await": "^1.6.0",
     "vite-plugin-wasm": "^3.6.0",
-    "vitest": "^4.1.11",
+    "vitest": "^4.1.12",
     "wrangler": "^4.151.0"
   },
   "description": "Open-source AI search visibility suite: SEO, AEO and GEO audits grounded in live search results, runs on your own Groq / NVIDIA NIM / Ollama keys. Web + Telegram Mini App + Windows desktop on Cloudflare.",
