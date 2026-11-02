@@ -89,6 +89,7 @@ class ViewModelsTest {
         runTest {
             val vault = InMemoryVaultStorage()
             vault.saveByokKeys(ByokKeyBag(groqKey = "gsk_live_test"))
+            vault.setDeveloperByok(true)
             val repo =
                 DefaultLuminaraRepository(
                     api = FakeLuminaraApi(),
