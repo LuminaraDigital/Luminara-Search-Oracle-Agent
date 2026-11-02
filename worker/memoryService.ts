@@ -3,7 +3,7 @@
  */
 import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
-import { billingId, json } from './workerUtils';
+import { billingId, json, sha256Hex } from './workerUtils';
 import { putCounterBestEffort } from './securityHardening';
 import { randomId } from '../services/projects/projectUtils';
 
@@ -12,12 +12,23 @@ const DAILY_INSERT_CAP = 100;
 export async function listMemoryFacts(env: Env, user: HostedIdentity): Promise<Response> {
   if (!env.DB) return json({ ok: false, error: 'Database unavailable' }, 503);
   const accountId = billingId(user);
-  const res = await env.DB.prepare(
-    `SELECT id, account_id, text, source, created_at FROM memory_facts
-     WHERE account_id = ? ORDER BY created_at DESC LIMIT 100`,
-  )
-    .bind(accountId)
-    .all<{ id: string; account_id: string; text: string; source: string; created_at: number }>();
+  let res: { results?: Array<{ id: string; account_id: string; text: string; source: string; created_at: number }> };
+  try {
+    res = await env.DB.prepare(
+      `SELECT id, account_id, text, source, created_at FROM memory_facts
+       WHERE account_id = ? AND (status IS NULL OR status = 'active')
+       ORDER BY created_at DESC LIMIT 100`,
+    )
+      .bind(accountId)
+      .all<{ id: string; account_id: string; text: string; source: string; created_at: number }>();
+  } catch {
+    res = await env.DB.prepare(
+      `SELECT id, account_id, text, source, created_at FROM memory_facts
+       WHERE account_id = ? ORDER BY created_at DESC LIMIT 100`,
+    )
+      .bind(accountId)
+      .all<{ id: string; account_id: string; text: string; source: string; created_at: number }>();
+  }
 
   return json({
     ok: true,
@@ -69,22 +80,44 @@ export async function createMemoryFact(
 
   const id = randomId('mem', 10);
   const createdAt = Date.now();
+  const contentSha256 = await sha256Hex(`||${text.toLowerCase().replace(/\s+/g, ' ')}`);
   const { upsertMemoryVector, appendMemoryHistory } = await import('./memoryRag');
   const vector = await upsertMemoryVector(env, accountId, id, text, { source: 'hosted' });
-  await env.DB.prepare(
-    `INSERT INTO memory_facts (id, account_id, text, source, created_at, embedding_provider, vector_id, metadata_json)
-     VALUES (?, ?, ?, 'hosted', ?, ?, ?, ?)`,
-  )
-    .bind(
-      id,
-      accountId,
-      text,
-      createdAt,
-      vector.provider === 'none' ? null : vector.provider,
-      vector.vectorId,
-      JSON.stringify({ source: 'hosted' }),
+  try {
+    await env.DB.prepare(
+      `INSERT INTO memory_facts (
+         id, account_id, kind, text, source, status, content_sha256,
+         created_at, updated_at, embedding_provider, vector_id, metadata_json
+       ) VALUES (?, ?, 'fact', ?, 'hosted', 'active', ?, ?, ?, ?, ?, ?)`,
     )
-    .run();
+      .bind(
+        id,
+        accountId,
+        text,
+        contentSha256,
+        createdAt,
+        createdAt,
+        vector.provider === 'none' ? null : vector.provider,
+        vector.vectorId,
+        JSON.stringify({ source: 'hosted' }),
+      )
+      .run();
+  } catch {
+    await env.DB.prepare(
+      `INSERT INTO memory_facts (id, account_id, text, source, created_at, embedding_provider, vector_id, metadata_json)
+       VALUES (?, ?, ?, 'hosted', ?, ?, ?, ?)`,
+    )
+      .bind(
+        id,
+        accountId,
+        text,
+        createdAt,
+        vector.provider === 'none' ? null : vector.provider,
+        vector.vectorId,
+        JSON.stringify({ source: 'hosted' }),
+      )
+      .run();
+  }
   await appendMemoryHistory(env, {
     accountId,
     memoryFactId: id,

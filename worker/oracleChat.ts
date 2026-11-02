@@ -127,7 +127,7 @@ export async function handleOracleSessionControlRoute(
   // checkpoint writes, settle, and truncate stay server-internal so a caller cannot forge tool_end/approval events.
   const allowed =
     (request.method === 'GET' && ['events', 'state', 'history', 'checkpoint'].includes(actionPath)) ||
-    (request.method === 'POST' && ['approval', 'callback', 'state/patch'].includes(actionPath));
+    (request.method === 'POST' && ['approval', 'callback', 'state/patch', 'checkpoint'].includes(actionPath));
   if (!allowed) {
     return new Response(JSON.stringify({ ok: false, error: 'Not found', code: 'NOT_FOUND' }), {
       status: 404,
@@ -248,6 +248,7 @@ export async function handleOracleChatSse(
   }
 
   let doHistory: SessionTurn[] = [];
+  let doRollingSummary = '';
   let rememberedTools: string[] = [];
   let localOffset = 1;
   let activeTurnId = 'turn_1';
@@ -260,9 +261,11 @@ export async function handleOracleChatSse(
       if (histRes.ok) {
         const histJson = (await histRes.json()) as {
           turns?: SessionTurn[];
+          rollingSummary?: string;
           rememberedTools?: string[];
         };
         doHistory = Array.isArray(histJson.turns) ? histJson.turns : [];
+        doRollingSummary = typeof histJson.rollingSummary === 'string' ? histJson.rollingSummary : '';
         rememberedTools = Array.isArray(histJson.rememberedTools)
           ? histJson.rememberedTools
           : [];
@@ -560,11 +563,25 @@ export async function handleOracleChatSse(
             modelFacingInput,
             reason: toolDecision.reason,
           });
+          const toolStartMs = Date.now();
           const toolResult = await executePaidTool(
             'research_keywords',
             executionArgs,
             rt,
           );
+          if (runHandle) {
+            await recordTraceSpan(env, {
+              runId: runHandle.runId,
+              accountId,
+              sessionId,
+              nodeName: 'execute_tool',
+              kind: 'tool',
+              modelOrTool: 'research_keywords',
+              costCents: !toolResult.isError ? (dfsCred ? BYOK_PAID_CALL_COST_CENTS : HOSTED_PAID_CALL_COST_CENTS) : 0,
+              latencyMs: Date.now() - toolStartMs,
+              status: toolResult.isError ? 'error' : 'ok',
+            });
+          }
           toolNote = `\n\n${fenceToolResult('research_keywords', toolResult.text)}`;
           if (!toolResult.isError) {
             const billedCents = dfsCred ? BYOK_PAID_CALL_COST_CENTS : HOSTED_PAID_CALL_COST_CENTS;
@@ -654,6 +671,37 @@ export async function handleOracleChatSse(
             risk_tier: 'paid_research',
           },
         ]);
+        if (sessionStub) {
+          await sessionStub
+            .fetch('https://oracle-session/checkpoint', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({
+                turnId: activeTurnId,
+                turnNumber: activeTurnNumber,
+                currentNode: 'await_approval',
+                stepIndex: 1,
+                planSteps: ['recall_memory', 'execute_tool:research_keywords', 'critic_verify'],
+                pendingToolId: toolCallId,
+                resumable: false,
+                scheduleAlarmMs: 600_000,
+                stateSnapshot: { seedPreview, reason: toolDecision.reason },
+              }),
+            })
+            .catch(() => null);
+        }
+        if (runHandle) {
+          await recordTraceSpan(env, {
+            runId: runHandle.runId,
+            accountId,
+            sessionId,
+            nodeName: 'await_approval',
+            kind: 'gate',
+            modelOrTool: 'research_keywords',
+            status: 'blocked',
+            metadata: { toolId: toolCallId, reason: toolDecision.reason },
+          });
+        }
         await write('tool', {
           tool: 'research_keywords',
           toolId: toolCallId,
@@ -674,28 +722,49 @@ export async function handleOracleChatSse(
         fallbackPrompt: bundledOraclePrompt,
       });
       let systemPrompt = withHealthClaimRule(oracleSkill?.promptBody || bundledOraclePrompt);
+      if (doRollingSummary) {
+        systemPrompt = `${systemPrompt}\n\n## Earlier Session Summary\n${doRollingSummary}`;
+      }
       let memoryFacts: string[] = [];
       let resolvedProjectId: string | null = body.projectId || null;
       let resolvedDomain: string | null = null;
       if (env.DB) {
         try {
-          const [memory, unified] = await Promise.all([
-            ragContextForOracle(env, billingId(user), message),
-            recallUnifiedContext(env, {
-              accountId: billingId(user),
-              query: message,
-              projectId: body.projectId || null,
-              topK: 5,
-            }),
-          ]);
+          const memStartMs = Date.now();
+          const unified = await recallUnifiedContext(env, {
+            accountId: billingId(user),
+            query: message,
+            projectId: body.projectId || null,
+            topK: 5,
+          });
           resolvedProjectId = unified.projectId || resolvedProjectId;
           resolvedDomain = unified.domain || null;
           if (unified.promptBlock) {
             systemPrompt = `${systemPrompt}\n\n${unified.promptBlock}`;
-            memoryFacts = Array.from(new Set([...memory.facts, ...unified.facts.map((f) => f.text)]));
-          } else if (memory.block) {
-            systemPrompt = `${systemPrompt}\n\n${memory.block}`;
-            memoryFacts = memory.facts;
+            memoryFacts = unified.facts.map((f) => f.text);
+          } else {
+            const memory = await ragContextForOracle(env, billingId(user), message);
+            if (memory.block) {
+              systemPrompt = `${systemPrompt}\n\n${memory.block}`;
+              memoryFacts = memory.facts;
+            }
+          }
+          if (runHandle) {
+            await recordTraceSpan(env, {
+              runId: runHandle.runId,
+              accountId,
+              sessionId,
+              nodeName: 'recall_memory',
+              kind: 'memory',
+              modelOrTool: 'unified_memory_router',
+              latencyMs: Date.now() - memStartMs,
+              status: 'ok',
+              metadata: {
+                factCount: unified.facts.length,
+                edgeCount: unified.activeEdges.length,
+                projectId: resolvedProjectId,
+              },
+            });
           }
         } catch {
           /* memory RAG is best-effort */
@@ -714,6 +783,7 @@ export async function handleOracleChatSse(
         return;
       }
 
+      const llmStartMs = Date.now();
       const llmRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -796,33 +866,72 @@ export async function handleOracleChatSse(
       }
 
       if (sessionStub && fullText) {
-        await sessionStub.fetch('https://oracle-session/append', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ role: 'assistant', content: fullText }),
-        });
+        await Promise.all([
+          sessionStub.fetch('https://oracle-session/append', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ role: 'assistant', content: fullText }),
+          }),
+          sessionStub
+            .fetch('https://oracle-session/checkpoint', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({
+                turnId: activeTurnId,
+                turnNumber: activeTurnNumber,
+                currentNode: 'settled',
+                stepIndex: 3,
+                pendingToolId: null,
+                resumable: false,
+                stateSnapshot: { projectId: resolvedProjectId, domain: resolvedDomain },
+              }),
+            })
+            .catch(() => null),
+        ]);
       }
 
       // Chat -> facts & bi-temporal graph pipeline (Letta/Mem0/Graphiti delta pass)
+      const verifierStartMs = Date.now();
       try {
-        await Promise.all([
-          extractFactsFromChat(env, user, {
-            message,
-            sessionId,
-            autoStore: true,
-          }),
-          extractAndStoreChatMemory(env, {
-            accountId: billingId(user),
-            projectId: resolvedProjectId,
-            domain: resolvedDomain,
-            sessionId,
-            turnId: activeTurnId,
-            userMessage: message,
-            assistantMessage: fullText,
-          }),
-        ]);
+        await extractAndStoreChatMemory(env, {
+          accountId: billingId(user),
+          projectId: resolvedProjectId,
+          domain: resolvedDomain,
+          sessionId,
+          turnId: activeTurnId,
+          userMessage: message,
+          assistantMessage: fullText,
+        });
       } catch {
         /* ignore */
+      }
+
+      if (runHandle) {
+        await Promise.all([
+          recordTraceSpan(env, {
+            runId: runHandle.runId,
+            accountId,
+            sessionId,
+            nodeName: 'llm_stream',
+            kind: 'llm',
+            modelOrTool: 'llama-3.3-70b-versatile',
+            inputTokens: Math.ceil(JSON.stringify(messages).length / 4),
+            outputTokens: Math.ceil(fullText.length / 4),
+            latencyMs: Date.now() - llmStartMs,
+            status: 'ok',
+          }),
+          recordTraceSpan(env, {
+            runId: runHandle.runId,
+            accountId,
+            sessionId,
+            nodeName: 'critic_verify',
+            kind: 'verifier',
+            modelOrTool: 'honesty_and_memory_delta',
+            latencyMs: Date.now() - verifierStartMs,
+            status: monitor.ok && validation.ok ? 'ok' : 'error',
+            metadata: { monitorOk: monitor.ok, validationOk: validation.ok, redactedSentences: honest.replaced },
+          }),
+        ]);
       }
 
       await write('done', {

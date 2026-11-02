@@ -15,9 +15,8 @@ import {
   type MemoryFactKind,
 } from './unifiedMemoryRouter';
 import {
-  buildMerkleInclusionProof,
   createMemoryVaultSnapshot,
-  verifyMerkleInclusionProof,
+  verifySnapshotLeaf,
 } from './memoryVaultService';
 
 function toTextResult(
@@ -276,39 +275,24 @@ export const AGENTIC_MEMORY_MCP_TOOLS: McpToolDef[] = [
       additionalProperties: false,
     },
     handler: async (args, ctx) => {
-      if (!ctx.env.DB) return toTextResult('Database unavailable', undefined, true);
       const snapshotId = typeof args.snapshotId === 'string' ? args.snapshotId.trim() : '';
       const leafHash = typeof args.leafHash === 'string' ? args.leafHash.trim() : '';
       if (!snapshotId || !leafHash) {
         return toTextResult('snapshotId and leafHash are required', undefined, true);
       }
-      const row = await ctx.env.DB.prepare(
-        `SELECT merkle_root, leaf_hashes_json FROM memory_vault_snapshots WHERE id = ? AND account_id = ?`,
-      )
-        .bind(snapshotId, ctx.accountId)
-        .first<{ merkle_root: string; leaf_hashes_json: string }>();
-      if (!row) return toTextResult('Snapshot not found', undefined, true);
-      let leafHashes: string[] = [];
-      try {
-        const parsed = JSON.parse(row.leaf_hashes_json || '[]');
-        if (Array.isArray(parsed)) leafHashes = parsed.map(String);
-      } catch {
-        return toTextResult('Corrupt leaf hashes in snapshot record', undefined, true);
-      }
-      const built = await buildMerkleInclusionProof(leafHashes, leafHash);
-      const verified =
-        built.found && (await verifyMerkleInclusionProof(leafHash, built.proof, row.merkle_root));
+      const check = await verifySnapshotLeaf(ctx.env, ctx.accountId, snapshotId, leafHash);
+      if (!check.ok) return toTextResult(check.error, undefined, true);
       return toTextResult(
-        verified
-          ? `Verified leaf ${leafHash.slice(0, 16)}... in Merkle root ${row.merkle_root.slice(0, 16)}... (index ${built.index})`
+        check.verified
+          ? `Verified leaf ${leafHash.slice(0, 16)}... in Merkle root ${check.merkleRoot.slice(0, 16)}... (index ${check.index})`
           : `Leaf ${leafHash} is NOT present in snapshot ${snapshotId}`,
         {
-          verified,
-          merkleRoot: row.merkle_root,
-          index: built.index,
-          proof: built.proof,
+          verified: check.verified,
+          merkleRoot: check.merkleRoot,
+          index: check.index,
+          proof: check.proof,
         },
-        !verified,
+        !check.verified,
       );
     },
   },

@@ -262,13 +262,24 @@ export async function searchMemoryVectors(
     }));
   }
 
-  // Fallback: recent D1 facts keyword overlap.
+  // Fallback: recent D1 active facts keyword overlap.
   if (!env.DB) return [];
-  const rows = await env.DB.prepare(
-    `SELECT id, text FROM memory_facts WHERE account_id = ? ORDER BY created_at DESC LIMIT 50`,
-  )
-    .bind(accountId)
-    .all<{ id: string; text: string }>();
+  let rows: { results?: Array<{ id: string; text: string }> };
+  try {
+    rows = await env.DB.prepare(
+      `SELECT id, text FROM memory_facts
+       WHERE account_id = ? AND (status IS NULL OR status = 'active') AND (expires_at IS NULL OR expires_at > ?)
+       ORDER BY created_at DESC LIMIT 50`,
+    )
+      .bind(accountId, Date.now())
+      .all<{ id: string; text: string }>();
+  } catch {
+    rows = await env.DB.prepare(
+      `SELECT id, text FROM memory_facts WHERE account_id = ? ORDER BY created_at DESC LIMIT 50`,
+    )
+      .bind(accountId)
+      .all<{ id: string; text: string }>();
+  }
   const q = query.toLowerCase();
   return (rows.results || [])
     .map((r) => {

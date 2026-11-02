@@ -89,6 +89,7 @@ export interface GraphCheckpoint {
   lastError: string | null;
   stateSnapshot: Record<string, unknown>;
   updatedAt: number;
+  timeoutAt?: number | null;
 }
 
 const MAX_STORED_TURNS = 80;
@@ -240,9 +241,17 @@ export class OracleSession {
     // Legacy & Turn History Endpoints (100% backward compatible)
     // -------------------------------------------------------------------------
     if (request.method === 'GET' && pathname.endsWith('/history')) {
+      const overflow = this.turns.length > 40 ? this.turns.slice(0, -40) : [];
+      const overflowSnippet = overflow
+        .map((t) => `[${t.role}] ${t.content.replace(/\s+/g, ' ').slice(0, 140)}`)
+        .join(' | ');
+      const effectiveSummary = [this.rollingSummary, overflowSnippet]
+        .filter(Boolean)
+        .join(' | ')
+        .slice(-MAX_ROLLING_SUMMARY_CHARS);
       return Response.json({
         turns: this.turns.slice(-40),
-        rollingSummary: this.rollingSummary,
+        rollingSummary: effectiveSummary,
         rememberedTools: this.rememberedTools,
         currentTurnNumber: this.currentTurnNumber,
         activeTurnId: this.activeTurnId,
@@ -917,6 +926,11 @@ export class OracleSession {
           { status: 413 },
         );
       }
+      const now = Date.now();
+      const alarmDelayMs =
+        typeof body.scheduleAlarmMs === 'number' && Number.isFinite(body.scheduleAlarmMs) && body.scheduleAlarmMs > 0
+          ? Math.min(body.scheduleAlarmMs, 24 * 3600 * 1000)
+          : null;
       const cp: GraphCheckpoint = {
         turnId,
         turnNumber: body.turnNumber ?? existing?.turnNumber ?? this.currentTurnNumber,
@@ -927,25 +941,18 @@ export class OracleSession {
         resumable: body.resumable !== undefined ? Boolean(body.resumable) : (existing?.resumable ?? false),
         lastError: body.lastError !== undefined ? body.lastError : (existing?.lastError ?? null),
         stateSnapshot: rawSnapshot,
-        updatedAt: Date.now(),
+        updatedAt: now,
+        timeoutAt: alarmDelayMs ? now + alarmDelayMs : (existing?.timeoutAt ?? null),
       };
 
       this.checkpoints[turnId] = cp;
       const entries = Object.entries(this.checkpoints);
       if (entries.length > MAX_CHECKPOINTS) {
-        const trimmed = entries
-          .sort((a, b) => b[1].updatedAt - a[1].updatedAt)
-          .slice(0, MAX_CHECKPOINTS);
-        this.checkpoints = Object.fromEntries(trimmed);
+        this.checkpoints = Object.fromEntries(entries.sort((a, b) => b[1].updatedAt - a[1].updatedAt).slice(0, MAX_CHECKPOINTS));
       }
 
-      if (
-        typeof body.scheduleAlarmMs === 'number' &&
-        Number.isFinite(body.scheduleAlarmMs) &&
-        body.scheduleAlarmMs > 0 &&
-        typeof this.state.storage.setAlarm === 'function'
-      ) {
-        await this.state.storage.setAlarm(Date.now() + Math.min(body.scheduleAlarmMs, 24 * 3600 * 1000));
+      if (alarmDelayMs && typeof this.state.storage.setAlarm === 'function') {
+        await this.state.storage.setAlarm(now + alarmDelayMs);
       }
 
       await this.state.storage.put('checkpoints', this.checkpoints);
@@ -961,17 +968,35 @@ export class OracleSession {
   async alarm(): Promise<void> {
     const now = Date.now();
     let changed = false;
+    let approvalsChanged = false;
+    let nextWakeAt: number | null = null;
     for (const cp of Object.values(this.checkpoints)) {
-      if (cp.currentNode === 'await_approval' && now - cp.updatedAt >= STALE_TURN_MS) {
-        cp.currentNode = 'critic_verify';
-        cp.resumable = true;
-        cp.lastError = 'Approval gate timed out; falling back to critic verification.';
-        cp.updatedAt = now;
-        changed = true;
+      if (cp.currentNode === 'await_approval') {
+        const deadline = cp.timeoutAt ?? cp.updatedAt + STALE_TURN_MS;
+        if (now >= deadline) {
+          const timedOutToolId = cp.pendingToolId;
+          cp.currentNode = 'critic_verify';
+          cp.pendingToolId = null;
+          cp.resumable = true;
+          cp.lastError = 'Approval gate timed out; falling back to critic verification.';
+          cp.updatedAt = now;
+          cp.timeoutAt = null;
+          changed = true;
+          if (timedOutToolId && this.pendingApprovals[timedOutToolId]?.status === 'pending') {
+            this.pendingApprovals[timedOutToolId].status = 'denied';
+            this.pendingApprovals[timedOutToolId].reason = 'approval_timeout';
+            this.pendingApprovals[timedOutToolId].resolvedAt = now;
+            approvalsChanged = true;
+          }
+        } else {
+          nextWakeAt = nextWakeAt === null ? deadline : Math.min(nextWakeAt, deadline);
+        }
       }
     }
-    if (changed) {
-      await this.state.storage.put('checkpoints', this.checkpoints);
+    if (changed) await this.state.storage.put('checkpoints', this.checkpoints);
+    if (approvalsChanged) await this.state.storage.put('pendingApprovals', this.pendingApprovals);
+    if (nextWakeAt !== null && typeof this.state.storage.setAlarm === 'function') {
+      await this.state.storage.setAlarm(nextWakeAt);
     }
   }
 }

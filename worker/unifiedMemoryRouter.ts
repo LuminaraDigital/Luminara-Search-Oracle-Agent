@@ -175,6 +175,16 @@ export function isQuestionLike(text: string): boolean {
   return /^(what|why|how|when|where|who|can you|could you|should we|is there|do you)\b/i.test(trimmed);
 }
 
+async function verifyOwnedProjectId(env: Env, accountId: string, raw?: string | null): Promise<string | null> {
+  const pid = raw?.trim() || null;
+  if (!pid || !env.DB) return null;
+  const owned = await env.DB.prepare(`SELECT id FROM projects WHERE id = ? AND account_id = ?`)
+    .bind(pid, accountId)
+    .first<{ id: string }>()
+    .catch(() => null);
+  return owned ? pid : null;
+}
+
 /**
  * Store or supersede a scoped fact in `memory_facts` with SHA-256 deduplication and history tracking.
  */
@@ -190,9 +200,7 @@ export async function rememberScopedFact(
   if (text.length < 3) {
     return { ok: false, error: 'Fact text must be at least 3 characters', code: 'INVALID_TEXT' };
   }
-  const kind: MemoryFactKind =
-    input.kind && VALID_FACT_KINDS.has(input.kind) ? input.kind : 'fact';
-
+  const kind: MemoryFactKind = input.kind && VALID_FACT_KINDS.has(input.kind) ? input.kind : 'fact';
   if (kind !== 'episode' && isQuestionLike(text)) {
     return {
       ok: false,
@@ -201,7 +209,7 @@ export async function rememberScopedFact(
     };
   }
 
-  const projectId = input.projectId?.trim() || null;
+  const projectId = await verifyOwnedProjectId(env, input.accountId, input.projectId);
   const domain = normalizeMemoryDomain(input.domain);
   const importance = clamp01(input.importance, 0.6);
   const confidence = clamp01(input.confidence, 0.85);
@@ -221,7 +229,7 @@ export async function rememberScopedFact(
       `SELECT id, account_id, project_id, domain, kind, text, importance, confidence, status,
               superseded_by, created_at, updated_at, expires_at
        FROM memory_facts
-       WHERE account_id = ? AND content_sha256 = ? AND status = 'active'
+       WHERE account_id = ? AND content_sha256 = ? AND (status IS NULL OR status = 'active')
        LIMIT 1`,
     )
       .bind(input.accountId, contentSha256)
@@ -230,12 +238,14 @@ export async function rememberScopedFact(
     if (existing && typeof existing.id === 'string') {
       const mergedImportance = Math.max(Number(existing.importance ?? 0.5), importance);
       const mergedConfidence = Math.max(Number(existing.confidence ?? 0.8), confidence);
+      const nextExpiresAt = expiresAt ?? (typeof existing.expires_at === 'number' && existing.expires_at > now ? existing.expires_at : null);
       await env.DB.prepare(
         `UPDATE memory_facts
-         SET importance = ?, confidence = ?, updated_at = ?, project_id = COALESCE(project_id, ?), domain = COALESCE(domain, ?)
+         SET kind = ?, importance = ?, confidence = ?, status = 'active', expires_at = ?, updated_at = ?,
+             project_id = COALESCE(project_id, ?), domain = COALESCE(domain, ?)
          WHERE id = ? AND account_id = ?`,
       )
-        .bind(mergedImportance, mergedConfidence, now, projectId, domain, existing.id, input.accountId)
+        .bind(kind, mergedImportance, mergedConfidence, nextExpiresAt, now, projectId, domain, existing.id, input.accountId)
         .run();
 
       return {
@@ -243,8 +253,16 @@ export async function rememberScopedFact(
         deduplicated: true,
         supersededFactId: null,
         fact: rowToScopedFact(
-          { ...existing, importance: mergedImportance, confidence: mergedConfidence, updated_at: now },
-          { accountId: input.accountId, projectId, domain, kind, text, now, expiresAt },
+          {
+            ...existing,
+            kind,
+            status: 'active',
+            importance: mergedImportance,
+            confidence: mergedConfidence,
+            expires_at: nextExpiresAt,
+            updated_at: now,
+          },
+          { accountId: input.accountId, projectId, domain, kind, text, now, expiresAt: nextExpiresAt },
         ),
       };
     }
@@ -262,7 +280,7 @@ export async function rememberScopedFact(
 
     if (input.supersedesFactId) {
       const oldRow = await env.DB.prepare(
-        `SELECT id FROM memory_facts WHERE id = ? AND account_id = ? AND status = 'active'`,
+        `SELECT id FROM memory_facts WHERE id = ? AND account_id = ? AND (status IS NULL OR status = 'active')`,
       )
         .bind(input.supersedesFactId, input.accountId)
         .first<{ id: string }>();
@@ -414,7 +432,7 @@ export async function upsertTemporalEdge(
     return { ok: false, error: 'subjectEntity, predicate, and objectEntity are required' };
   }
 
-  const projectId = input.projectId?.trim() || null;
+  const projectId = await verifyOwnedProjectId(env, input.accountId, input.projectId);
   const domain = normalizeMemoryDomain(input.domain);
   const confidence = clamp01(input.confidence, 0.85);
   const derivation: MemoryEdgeDerivation =
@@ -424,12 +442,13 @@ export async function upsertTemporalEdge(
     typeof input.validFrom === 'number' && Number.isFinite(input.validFrom) ? Math.floor(input.validFrom) : now;
 
   try {
-    // Find active edge with same (account_id, domain, subject_entity, predicate)
+    // Find active edge with same (account_id, project_id, domain, subject_entity, predicate)
     const active = await env.DB.prepare(
       `SELECT id, project_id, domain, subject_entity, predicate, object_entity,
               valid_from, valid_to, confidence, derivation, source_ref, superseded_by, created_at
        FROM memory_edges
        WHERE account_id = ?
+         AND COALESCE(project_id, '') = COALESCE(?, '')
          AND COALESCE(domain, '') = COALESCE(?, '')
          AND LOWER(subject_entity) = LOWER(?)
          AND predicate = ?
@@ -437,7 +456,7 @@ export async function upsertTemporalEdge(
        ORDER BY valid_from DESC
        LIMIT 1`,
     )
-      .bind(input.accountId, domain, subjectEntity, predicate)
+      .bind(input.accountId, projectId, domain, subjectEntity, predicate)
       .first<Record<string, unknown>>();
 
     if (
@@ -560,7 +579,8 @@ export async function queryTemporalTimeline(
     clauses.push('valid_to IS NULL');
   }
 
-  const limit = Math.max(1, Math.min(100, opts.limit ?? 30));
+  const rawLimit = typeof opts.limit === 'number' && Number.isFinite(opts.limit) ? Math.floor(opts.limit) : 30;
+  const limit = Math.max(1, Math.min(100, rawLimit));
   binds.push(limit);
 
   try {
@@ -641,114 +661,14 @@ export async function recallUnifiedContext(
   const topK = Math.max(1, Math.min(25, opts.topK ?? 8));
   let projectId = opts.projectId?.trim() || null;
   let domain = normalizeMemoryDomain(opts.domain);
-
-  if (env.DB && (!projectId || !domain)) {
-    try {
-      const projects = await listProjects(env, opts.accountId);
-      if (projectId && !domain) {
-        const match = projects.find((p) => p.id === projectId);
-        if (match) domain = normalizeMemoryDomain(match.domain);
-      } else if (!projectId && domain) {
-        const match = projects.find((p) => normalizeMemoryDomain(p.domain) === domain);
-        if (match) projectId = match.id;
-      } else if (!projectId && !domain && projects.length === 1) {
-        projectId = projects[0].id;
-        domain = normalizeMemoryDomain(projects[0].domain);
-      }
-    } catch {
-      /* optional project resolution */
-    }
-  }
-
-  // 1. Symbolic Project Context
-  let projectDigest: string | null = null;
-  if (env.DB && projectId) {
-    try {
-      const ctx = await getProjectContext(env, opts.accountId, projectId);
-      if (ctx) {
-        projectDigest = ctx.digestMarkdown;
-      }
-    } catch {
-      projectDigest = null;
-    }
-  }
-
-  // 2. Open Audit Findings & Active Weekly Decision for Domain
-  let openFindings: Array<{ id: string; severity: string; title: string; category: string }> = [];
-  let weeklyDecision: { headline: string; actionText: string; weekStart: string } | null = null;
-
-  if (env.DB && domain) {
-    try {
-      const findingsRes = await env.DB.prepare(
-        `SELECT id, severity, title, category
-         FROM audit_findings
-         WHERE account_id = ? AND LOWER(domain) = LOWER(?) AND status IN ('open', 'in_progress')
-         ORDER BY updated_at DESC LIMIT 5`,
-      )
-        .bind(opts.accountId, domain)
-        .all<{ id: string; severity: string; title: string; category: string }>();
-      openFindings = findingsRes.results || [];
-    } catch {
-      openFindings = [];
-    }
-
-    try {
-      const wdlRow = await env.DB.prepare(
-        `SELECT week_key, title, why_text
-         FROM weekly_decisions
-         WHERE account_id = ? AND LOWER(domain) = LOWER(?)
-         ORDER BY updated_at DESC, created_at DESC LIMIT 1`,
-      )
-        .bind(opts.accountId, domain)
-        .first<{ week_key: string; title: string; why_text: string }>();
-      if (wdlRow) {
-        weeklyDecision = {
-          weekStart: wdlRow.week_key,
-          headline: wdlRow.title,
-          actionText: wdlRow.why_text,
-        };
-      }
-    } catch {
-      weeklyDecision = null;
-    }
-  }
-
-  // 3. Luminara Dreaming Active Business Memories + Bi-Temporal Knowledge Graph Edges
-  const [businessMemories, activeEdges] = await Promise.all([
-    domain ? getActiveBusinessMemories(env, opts.accountId, domain) : Promise.resolve([]),
-    queryTemporalTimeline(env, {
-      accountId: opts.accountId,
-      projectId,
-      domain,
-      activeOnly: true,
-      limit: 12,
-    }),
-  ]);
-
-  // 4. Hybrid Scoped Facts Retrieval
   const query = (opts.query || '').trim();
   const queryTokens = query
     .toLowerCase()
     .split(/[^a-z0-9_.-]+/)
     .filter((w) => w.length >= 2);
 
-  const vectorScoreMap = new Map<string, number>();
-  if (query) {
-    try {
-      const vecHits = await searchMemoryVectors(env, opts.accountId, query, topK * 2);
-      for (const h of vecHits) {
-        const cleanId = h.id.includes(':') ? h.id.split(':').slice(1).join(':') : h.id;
-        vectorScoreMap.set(cleanId, h.score);
-      }
-    } catch {
-      /* fallback to D1 scoring */
-    }
-  }
-
-  let facts: ScopedMemoryFact[] = [];
-  let allScopedConstraintTexts: string[] = [];
-  if (env.DB) {
-    let rawFacts: Record<string, unknown>[] = [];
+  const loadRawFacts = async (): Promise<Record<string, unknown>[]> => {
+    if (!env.DB) return [];
     try {
       const rows = await env.DB.prepare(
         `SELECT id, account_id, project_id, domain, kind, text, importance, confidence,
@@ -762,7 +682,7 @@ export async function recallUnifiedContext(
       )
         .bind(opts.accountId, now)
         .all<Record<string, unknown>>();
-      rawFacts = rows.results || [];
+      return rows.results || [];
     } catch {
       try {
         const legacyRows = await env.DB.prepare(
@@ -774,11 +694,106 @@ export async function recallUnifiedContext(
         )
           .bind(opts.accountId)
           .all<Record<string, unknown>>();
-        rawFacts = legacyRows.results || [];
+        return legacyRows.results || [];
       } catch {
-        rawFacts = [];
+        return [];
       }
     }
+  };
+
+  // Run account-scoped lookups in a single parallel batch to minimize microtask latency.
+  const [projects, rawTimelineEdges, vecHits, rawFacts] = await Promise.all([
+    env.DB && (!projectId || !domain)
+      ? listProjects(env, opts.accountId).catch(() => [])
+      : Promise.resolve([]),
+    queryTemporalTimeline(env, {
+      accountId: opts.accountId,
+      projectId,
+      domain,
+      activeOnly: true,
+      limit: 24,
+    }),
+    query
+      ? searchMemoryVectors(env, opts.accountId, query, topK * 2).catch(() => [])
+      : Promise.resolve([]),
+    loadRawFacts(),
+  ]);
+
+  if (projects.length > 0 && (!projectId || !domain)) {
+    if (projectId && !domain) {
+      const match = projects.find((p) => p.id === projectId);
+      if (match) domain = normalizeMemoryDomain(match.domain);
+    } else if (!projectId && domain) {
+      const match = projects.find((p) => normalizeMemoryDomain(p.domain) === domain);
+      if (match) projectId = match.id;
+    } else if (!projectId && !domain && projects.length === 1) {
+      projectId = projects[0].id;
+      domain = normalizeMemoryDomain(projects[0].domain);
+    }
+  }
+
+  const activeEdges = rawTimelineEdges
+    .filter((e) => {
+      if (projectId && e.projectId && e.projectId !== projectId) return false;
+      if (domain && e.domain && e.domain.toLowerCase() !== domain.toLowerCase()) return false;
+      return true;
+    })
+    .slice(0, 12);
+
+  let projectDigest: string | null = null;
+  let openFindings: Array<{ id: string; severity: string; title: string; category: string }> = [];
+  let weeklyDecision: { headline: string; actionText: string; weekStart: string } | null = null;
+  let businessMemories: BusinessMemoryItem[] = [];
+
+  if (env.DB && (projectId || domain)) {
+    const [ctxRes, findingsRes, wdlRow, bmRes] = await Promise.all([
+      projectId ? getProjectContext(env, opts.accountId, projectId).catch(() => null) : Promise.resolve(null),
+      domain
+        ? env.DB.prepare(
+            `SELECT id, severity, title, category
+             FROM audit_findings
+             WHERE account_id = ? AND LOWER(domain) = LOWER(?) AND status IN ('open', 'in_progress')
+             ORDER BY updated_at DESC LIMIT 5`,
+          )
+            .bind(opts.accountId, domain)
+            .all<{ id: string; severity: string; title: string; category: string }>()
+            .then((r) => r.results || [])
+            .catch(() => [])
+        : Promise.resolve([]),
+      domain
+        ? env.DB.prepare(
+            `SELECT week_key, title, why_text
+             FROM weekly_decisions
+             WHERE account_id = ? AND LOWER(domain) = LOWER(?)
+             ORDER BY updated_at DESC, created_at DESC LIMIT 1`,
+          )
+            .bind(opts.accountId, domain)
+            .first<{ week_key: string; title: string; why_text: string }>()
+            .catch(() => null)
+        : Promise.resolve(null),
+      domain ? getActiveBusinessMemories(env, opts.accountId, domain).catch(() => []) : Promise.resolve([]),
+    ]);
+    if (ctxRes) projectDigest = ctxRes.digestMarkdown;
+    openFindings = findingsRes;
+    if (wdlRow) {
+      weeklyDecision = {
+        weekStart: wdlRow.week_key,
+        headline: wdlRow.title,
+        actionText: wdlRow.why_text,
+      };
+    }
+    businessMemories = bmRes;
+  }
+
+  const vectorScoreMap = new Map<string, number>();
+  for (const h of vecHits) {
+    const cleanId = h.id.includes(':') ? h.id.split(':').slice(1).join(':') : h.id;
+    vectorScoreMap.set(cleanId, h.score);
+  }
+
+  let facts: ScopedMemoryFact[] = [];
+  let allScopedConstraintTexts: string[] = [];
+  if (env.DB) {
 
     const inScope = rawFacts
       .map((r) => {
@@ -814,63 +829,28 @@ export async function recallUnifiedContext(
 
   const sections: string[] = [`### L0 Memory Abstract\n${l0Abstract}`];
   if (strictConstraints.length) {
-    sections.push(
-      `### Strict Negative Constraints (Never Bring Up)\n` +
-        strictConstraints.map((c) => `- [DO NOT VIOLATE] ${c}`).join('\n'),
-    );
+    sections.push(`### Strict Negative Constraints (Never Bring Up)\n${strictConstraints.map((c) => `- [DO NOT VIOLATE] ${c}`).join('\n')}`);
   }
-  if (projectDigest) {
-    sections.push(`### Project Context\n${sanitizePii(projectDigest.slice(0, 2000)).sanitized}`);
-  }
+  if (projectDigest) sections.push(`### Project Context\n${projectDigest.slice(0, 2000)}`);
   if (weeklyDecision) {
-    sections.push(
-      `### Active Weekly Decision (${weeklyDecision.weekStart})\n- Headline: ${weeklyDecision.headline}\n- Next Action: ${weeklyDecision.actionText}`,
-    );
+    sections.push(`### Active Weekly Decision (${weeklyDecision.weekStart})\n- Headline: ${weeklyDecision.headline}\n- Next Action: ${weeklyDecision.actionText}`);
   }
   if (openFindings.length) {
-    sections.push(
-      `### Open Audit Findings (${domain})\n` +
-        openFindings.map((f) => `- [${f.severity.toUpperCase()}] (${f.category}) ${f.title}`).join('\n'),
-    );
+    sections.push(`### Open Audit Findings (${domain})\n${openFindings.map((f) => `- [${f.severity.toUpperCase()}] (${f.category}) ${f.title}`).join('\n')}`);
   }
   if (businessMemories.length) {
-    sections.push(
-      `### Consolidated Business Memories (Dreaming)\n` +
-        businessMemories
-          .slice(0, 6)
-          .map((m) => `- [${m.memoryType}] ${m.title}: ${sanitizePii(m.content.slice(0, 240)).sanitized}`)
-          .join('\n'),
-    );
+    sections.push(`### Consolidated Business Memories (Dreaming)\n${businessMemories.slice(0, 6).map((m) => `- [${m.memoryType}] ${m.title}: ${m.content.slice(0, 240)}`).join('\n')}`);
   }
   if (activeEdges.length) {
-    sections.push(
-      `### Temporal Knowledge Graph (Active Entities & Relationships)\n` +
-        activeEdges
-          .map(
-            (e) =>
-              `- ${e.subjectEntity} -> ${e.predicate} -> ${sanitizePii(e.objectEntity).sanitized} (since ${new Date(e.validFrom).toISOString().slice(0, 10)}, ${e.derivation})`,
-          )
-          .join('\n'),
-    );
+    sections.push(`### Temporal Knowledge Graph (Active Entities & Relationships)\n${activeEdges.map((e) => `- ${e.subjectEntity} -> ${e.predicate} -> ${e.objectEntity} (since ${new Date(e.validFrom).toISOString().slice(0, 10)}, ${e.derivation})`).join('\n')}`);
   }
   if (facts.length) {
-    sections.push(
-      `### Scoped Memory Facts\n` +
-        facts.map((f, i) => `${i + 1}. [${f.kind}] (score ${(f.score ?? 0).toFixed(2)}) ${f.text}`).join('\n'),
-    );
+    sections.push(`### Scoped Memory Facts\n${facts.map((f, i) => `${i + 1}. [${f.kind}] (score ${(f.score ?? 0).toFixed(2)}) ${f.text}`).join('\n')}`);
   }
 
-  const hasSignal =
-    strictConstraints.length > 0 ||
-    Boolean(projectDigest) ||
-    Boolean(weeklyDecision) ||
-    openFindings.length > 0 ||
-    businessMemories.length > 0 ||
-    activeEdges.length > 0 ||
-    facts.length > 0;
-
+  const hasSignal = sections.length > 1;
   const promptBlock = hasSignal
-    ? `## Unified Agent Memory (retrieved)\n${wrapUntrustedContent('ACCOUNT_MEMORY', sections.join('\n\n'))}`
+    ? `## Unified Agent Memory (retrieved)\n${wrapUntrustedContent('ACCOUNT_MEMORY', sanitizePii(sections.join('\n\n')).sanitized)}`
     : '';
 
   return {
@@ -971,6 +951,8 @@ export async function handleUnifiedMemoryRoute(
   if (path === '/memory/unified/timeline' && request.method === 'GET') {
     const url = new URL(request.url);
     const asOfRaw = url.searchParams.get('asOf');
+    const parsedAsOf = asOfRaw != null && asOfRaw.trim() !== '' ? Number(asOfRaw) : null;
+    const parsedLimit = Number(url.searchParams.get('limit') || 30);
     const edges = await queryTemporalTimeline(env, {
       accountId,
       projectId: url.searchParams.get('projectId'),
@@ -978,8 +960,8 @@ export async function handleUnifiedMemoryRoute(
       subjectEntity: url.searchParams.get('subjectEntity'),
       predicate: url.searchParams.get('predicate'),
       activeOnly: url.searchParams.get('activeOnly') === 'true',
-      asOfTimestamp: asOfRaw ? Number(asOfRaw) : null,
-      limit: Number(url.searchParams.get('limit') || 30),
+      asOfTimestamp: parsedAsOf != null && Number.isFinite(parsedAsOf) ? parsedAsOf : null,
+      limit: Number.isFinite(parsedLimit) ? parsedLimit : 30,
     });
     return json({ ok: true, edges });
   }

@@ -23,7 +23,7 @@ import { getActiveBusinessMemories } from './dreamingService';
 import { extractTonComment, readTonInboundHistory } from './tonPayment';
 
 export interface MemoryLeafItem {
-  leafType: 'fact' | 'edge' | 'business_memory' | 'finding';
+  leafType: 'fact' | 'edge' | 'business_memory';
   id: string;
   canonicalPayload: string;
   leafHash: string;
@@ -101,13 +101,17 @@ export async function buildMerkleInclusionProof(
   leafHashes: string[],
   targetLeafHash: string,
 ): Promise<{ found: boolean; index: number; proof: MerkleProofStep[]; merkleRoot: string }> {
-  let idx = leafHashes.indexOf(targetLeafHash);
+  const targetNorm = String(targetLeafHash || '').trim().toLowerCase();
+  let idx =
+    leafHashes.length > 0 && /^[a-f0-9]{64}$/.test(targetNorm)
+      ? leafHashes.findIndex((h) => String(h || '').toLowerCase() === targetNorm)
+      : -1;
   if (idx === -1) {
     return { found: false, index: -1, proof: [], merkleRoot: await computeMerkleRoot(leafHashes) };
   }
 
   const proof: MerkleProofStep[] = [];
-  let level = [...leafHashes];
+  let level = leafHashes.map((h) => String(h || '').toLowerCase());
   const originalIndex = idx;
 
   while (level.length > 1) {
@@ -132,19 +136,25 @@ export async function verifyMerkleInclusionProof(
   proof: MerkleProofStep[],
   expectedMerkleRoot: string,
 ): Promise<boolean> {
-  if (!/^[a-f0-9]{64}$/i.test(leafHash) || !/^[a-f0-9]{64}$/i.test(expectedMerkleRoot)) {
+  const cleanLeaf = String(leafHash || '').trim().toLowerCase();
+  const cleanRoot = String(expectedMerkleRoot || '').trim().toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(cleanLeaf) || !/^[a-f0-9]{64}$/.test(cleanRoot)) {
     return false;
   }
-  let current = leafHash.toLowerCase();
+  const emptyRoot = await sha256Hex('luminara:empty_merkle_tree');
+  if (cleanLeaf === emptyRoot || cleanRoot === emptyRoot) {
+    return false;
+  }
+  let current = cleanLeaf;
   for (const step of proof) {
-    if (!/^[a-f0-9]{64}$/i.test(step.siblingHash)) return false;
+    if (!step || !/^[a-f0-9]{64}$/i.test(step.siblingHash)) return false;
     const sib = step.siblingHash.toLowerCase();
     current =
       step.position === 'left'
         ? await sha256Hex(`node:${sib}:${current}`)
         : await sha256Hex(`node:${current}:${sib}`);
   }
-  return current === expectedMerkleRoot.toLowerCase();
+  return current === cleanRoot;
 }
 
 async function deriveAesGcmKey(passphrase: string, salt: Uint8Array): Promise<CryptoKey> {
@@ -230,107 +240,124 @@ export async function assembleMemoryVaultBundle(
   env: Env,
   opts: { accountId: string; projectId?: string | null; domain?: string | null },
 ): Promise<MemoryVaultBundle> {
-  const projectId = opts.projectId?.trim() || null;
+  let projectId = opts.projectId?.trim() || null;
   const domain = normalizeMemoryDomain(opts.domain);
   const leaves: MemoryLeafItem[] = [];
 
   if (env.DB) {
-    // 1. Active non-expired memory_facts (schema-safe fallback if 0044 is unapplied)
-    let rawFactRows: Record<string, unknown>[] = [];
-    try {
-      const now = Date.now();
-      const factClauses = [
-        "account_id = ? AND (status IS NULL OR status = 'active') AND (expires_at IS NULL OR expires_at > ?)",
-      ];
-      const factBinds: unknown[] = [opts.accountId, now];
-      if (projectId) {
-        factClauses.push('project_id = ?');
-        factBinds.push(projectId);
-      }
-      if (domain) {
-        factClauses.push('LOWER(domain) = LOWER(?)');
-        factBinds.push(domain);
-      }
-      const factRows = await env.DB.prepare(
-        `SELECT id, project_id, domain, kind, text, importance, confidence, created_at
-         FROM memory_facts
-         WHERE ${factClauses.join(' AND ')}
-         ORDER BY id ASC LIMIT 250`,
-      )
-        .bind(...factBinds)
-        .all<Record<string, unknown>>();
-      rawFactRows = factRows.results || [];
-    } catch {
+    if (projectId) {
+      const owned = await env.DB.prepare(`SELECT id FROM projects WHERE id = ? AND account_id = ?`)
+        .bind(projectId, opts.accountId)
+        .first<{ id: string }>()
+        .catch(() => null);
+      if (!owned) projectId = null;
+    }
+
+    const fetchFacts = async (): Promise<Record<string, unknown>[]> => {
       try {
-        const legacyRows = await env.DB.prepare(
+        const now = Date.now();
+        const factClauses = [
+          "account_id = ? AND (status IS NULL OR status = 'active') AND (expires_at IS NULL OR expires_at > ?)",
+        ];
+        const factBinds: unknown[] = [opts.accountId, now];
+        if (projectId) {
+          factClauses.push('project_id = ?');
+          factBinds.push(projectId);
+        }
+        if (domain) {
+          factClauses.push('LOWER(domain) = LOWER(?)');
+          factBinds.push(domain);
+        }
+        const factRows = await env.DB!.prepare(
+          `SELECT id, project_id, domain, kind, text, importance, confidence, created_at
+           FROM memory_facts
+           WHERE ${factClauses.join(' AND ')}
+           ORDER BY id ASC LIMIT 250`,
+        )
+          .bind(...factBinds)
+          .all<Record<string, unknown>>();
+        return factRows.results || [];
+      } catch {
+        const legacyRows = await env.DB!.prepare(
           `SELECT id, text, created_at FROM memory_facts WHERE account_id = ? ORDER BY id ASC LIMIT 250`,
         )
           .bind(opts.accountId)
-          .all<Record<string, unknown>>();
-        rawFactRows = legacyRows.results || [];
-      } catch {
-        rawFactRows = [];
+          .all<Record<string, unknown>>()
+          .catch(() => ({ results: [] as Record<string, unknown>[] }));
+        return legacyRows.results || [];
       }
-    }
+    };
 
-    for (const r of rawFactRows) {
-      const id = String(r.id);
-      const canonicalPayload = canonicalJson({
-        leafType: 'fact',
-        id,
-        projectId: r.project_id ?? null,
-        domain: r.domain ?? null,
-        kind: r.kind ?? 'fact',
-        text: r.text,
-        importance: Number(r.importance ?? 0.5),
-        confidence: Number(r.confidence ?? 0.8),
-        createdAt: Number(r.created_at),
-      });
-      const leafHash = await sha256Hex(`leaf:${canonicalPayload}`);
-      leaves.push({ leafType: 'fact', id, canonicalPayload, leafHash });
-    }
+    const [rawFactRows, edges, bmList] = await Promise.all([
+      fetchFacts(),
+      queryTemporalTimeline(env, {
+        accountId: opts.accountId,
+        projectId,
+        domain,
+        activeOnly: true,
+        limit: 150,
+      }),
+      domain ? getActiveBusinessMemories(env, opts.accountId, domain) : Promise.resolve([]),
+    ]);
 
-    // 2. Active temporal knowledge graph edges
-    const edges = await queryTemporalTimeline(env, {
-      accountId: opts.accountId,
-      projectId,
-      domain,
-      activeOnly: true,
-      limit: 150,
-    });
-    const sortedEdges = [...edges].sort((a, b) => a.id.localeCompare(b.id));
-    for (const e of sortedEdges) {
-      const canonicalPayload = canonicalJson({
-        leafType: 'edge',
-        id: e.id,
-        subjectEntity: e.subjectEntity,
-        predicate: e.predicate,
-        objectEntity: e.objectEntity,
-        validFrom: e.validFrom,
-        derivation: e.derivation,
-      });
-      const leafHash = await sha256Hex(`leaf:${canonicalPayload}`);
-      leaves.push({ leafType: 'edge', id: e.id, canonicalPayload, leafHash });
-    }
-
-    // 3. Consolidated Dreaming Business Memories
-    if (domain) {
-      const bmList = await getActiveBusinessMemories(env, opts.accountId, domain);
-      const sortedBm = [...bmList].sort((a, b) => a.id.localeCompare(b.id));
-      for (const bm of sortedBm) {
-        const canonicalPayload = canonicalJson({
-          leafType: 'business_memory',
+    const rawLeafSpecs: Array<{ leafType: MemoryLeafItem['leafType']; id: string; canonicalPayload: string }> = [
+      ...rawFactRows.map((r) => {
+        const id = String(r.id);
+        return {
+          leafType: 'fact' as const,
+          id,
+          canonicalPayload: canonicalJson({
+            leafType: 'fact',
+            id,
+            projectId: r.project_id ?? null,
+            domain: r.domain ?? null,
+            kind: r.kind ?? 'fact',
+            text: r.text,
+            importance: Number(r.importance ?? 0.5),
+            confidence: Number(r.confidence ?? 0.8),
+            createdAt: Number(r.created_at),
+          }),
+        };
+      }),
+      ...[...edges]
+        .sort((a, b) => a.id.localeCompare(b.id))
+        .map((e) => ({
+          leafType: 'edge' as const,
+          id: e.id,
+          canonicalPayload: canonicalJson({
+            leafType: 'edge',
+            id: e.id,
+            subjectEntity: e.subjectEntity,
+            predicate: e.predicate,
+            objectEntity: e.objectEntity,
+            validFrom: e.validFrom,
+            derivation: e.derivation,
+          }),
+        })),
+      ...[...bmList]
+        .sort((a, b) => a.id.localeCompare(b.id))
+        .map((bm) => ({
+          leafType: 'business_memory' as const,
           id: bm.id,
-          domain: bm.domain,
-          memoryType: bm.memoryType,
-          title: bm.title,
-          content: bm.content,
-          confidence: bm.confidence,
-        });
-        const leafHash = await sha256Hex(`leaf:${canonicalPayload}`);
-        leaves.push({ leafType: 'business_memory', id: bm.id, canonicalPayload, leafHash });
-      }
-    }
+          canonicalPayload: canonicalJson({
+            leafType: 'business_memory',
+            id: bm.id,
+            domain: bm.domain,
+            memoryType: bm.memoryType,
+            title: bm.title,
+            content: bm.content,
+            confidence: bm.confidence,
+          }),
+        })),
+    ];
+
+    const hashedLeaves = await Promise.all(
+      rawLeafSpecs.map(async (spec) => ({
+        ...spec,
+        leafHash: await sha256Hex(`leaf:${spec.canonicalPayload}`),
+      })),
+    );
+    leaves.push(...hashedLeaves);
   }
 
   // Sort all leaves deterministically by (leafType, id) before computing the Merkle root
@@ -396,6 +423,7 @@ async function pinEncryptedEnvelopeToIpfs(
     const res = await fetcher(pinUrl, {
       method: 'POST',
       headers,
+      signal: AbortSignal.timeout(5000),
       body: JSON.stringify({
         pinataContent: envelope,
         pinataMetadata: { name: `luminara-vault-${accountId}-${envelope.cid}` },
@@ -493,6 +521,11 @@ export async function createMemoryVaultSnapshot(
 > {
   if (!env.DB) return { ok: false, error: 'Database unavailable' };
 
+  const cleanPass = opts.passphrase != null ? String(opts.passphrase).trim() : '';
+  if (cleanPass.length > 0 && cleanPass.length < 8) {
+    return { ok: false, error: 'Passphrase must be at least 8 characters' };
+  }
+
   const bundle = await assembleMemoryVaultBundle(env, {
     accountId: opts.accountId,
     projectId: opts.projectId,
@@ -506,8 +539,8 @@ export async function createMemoryVaultSnapshot(
   let cid: string;
   let storageBackend: 'd1' | 'r2' | 'ipfs' | 'client_only' = 'client_only';
 
-  if (opts.passphrase && opts.passphrase.trim().length >= 8) {
-    const enc = await encryptVaultBundle(bundleJson, opts.passphrase.trim());
+  if (cleanPass.length >= 8) {
+    const enc = await encryptVaultBundle(bundleJson, cleanPass);
     ciphertextBase64 = enc.ciphertextBase64;
     ivBase64 = enc.ivBase64;
     saltBase64 = enc.saltBase64;
@@ -537,7 +570,7 @@ export async function createMemoryVaultSnapshot(
 
   const snapshotId = `mvault_${Date.now().toString(36)}_${crypto.randomUUID().slice(0, 8)}`;
   const network = resolveChainNetwork(env) || 'testnet';
-  const anchorId = `pa_mem_${bundle.merkleRoot.slice(0, 32)}`;
+  const anchorId = `pa_mem_${snapshotId}`;
   const leafHashes = bundle.leaves.map((l) => l.leafHash);
 
   try {
@@ -701,6 +734,55 @@ export async function bindMemoryVaultTonTx(
 }
 
 /**
+ * Verifies a leaf hash against a stored `memory_vault_snapshots` row owned by `accountId`.
+ */
+export async function verifySnapshotLeaf(
+  env: Env,
+  accountId: string,
+  snapshotId: string,
+  leafHash: string,
+): Promise<
+  | {
+      ok: true;
+      verified: boolean;
+      merkleRoot: string;
+      index: number;
+      proof: MerkleProofStep[];
+    }
+  | { ok: false; status: number; error: string }
+> {
+  if (!env.DB) return { ok: false, status: 503, error: 'Database unavailable' };
+  let row: { merkle_root: string; leaf_hashes_json: string } | null = null;
+  try {
+    row = await env.DB.prepare(
+      `SELECT merkle_root, leaf_hashes_json FROM memory_vault_snapshots WHERE id = ? AND account_id = ?`,
+    )
+      .bind(snapshotId, accountId)
+      .first<{ merkle_root: string; leaf_hashes_json: string }>();
+  } catch {
+    return { ok: false, status: 404, error: 'Snapshot not found' };
+  }
+  if (!row) return { ok: false, status: 404, error: 'Snapshot not found' };
+  let leafHashes: string[] = [];
+  try {
+    const parsed = JSON.parse(row.leaf_hashes_json || '[]');
+    if (Array.isArray(parsed)) leafHashes = parsed.map(String);
+  } catch {
+    return { ok: false, status: 500, error: 'Corrupt leaf hashes in snapshot record' };
+  }
+  const built = await buildMerkleInclusionProof(leafHashes, leafHash);
+  const verified =
+    built.found && (await verifyMerkleInclusionProof(leafHash, built.proof, row.merkle_root));
+  return {
+    ok: true,
+    verified,
+    merkleRoot: row.merkle_root,
+    index: built.index,
+    proof: built.proof,
+  };
+}
+
+/**
  * HTTP route handler for `/memory/vault/*` (`snapshot`, `verify-leaf`, `decrypt`, `anchor-tx`, `list`).
  */
 export async function handleMemoryVaultRoute(
@@ -755,30 +837,10 @@ export async function handleMemoryVaultRoute(
       proof?: MerkleProofStep[];
       merkleRoot?: string;
     };
-    if (body.snapshotId && body.leafHash && env.DB) {
-      let row: { merkle_root: string; leaf_hashes_json: string } | null = null;
-      try {
-        row = await env.DB.prepare(
-          `SELECT merkle_root, leaf_hashes_json FROM memory_vault_snapshots WHERE id = ? AND account_id = ?`,
-        )
-          .bind(body.snapshotId, accountId)
-          .first<{ merkle_root: string; leaf_hashes_json: string }>();
-      } catch {
-        return json({ ok: false, error: 'Snapshot not found' }, 404);
-      }
-      if (!row) return json({ ok: false, error: 'Snapshot not found' }, 404);
-      const leafHashes = JSON.parse(row.leaf_hashes_json || '[]') as string[];
-      const built = await buildMerkleInclusionProof(leafHashes, body.leafHash);
-      const verified =
-        built.found &&
-        (await verifyMerkleInclusionProof(body.leafHash, built.proof, row.merkle_root));
-      return json({
-        ok: true,
-        verified,
-        merkleRoot: row.merkle_root,
-        index: built.index,
-        proof: built.proof,
-      });
+    if (body.snapshotId && body.leafHash) {
+      const check = await verifySnapshotLeaf(env, accountId, body.snapshotId, body.leafHash);
+      if (!check.ok) return json({ ok: false, error: check.error }, check.status);
+      return json(check);
     }
     if (body.leafHash && Array.isArray(body.proof) && body.merkleRoot) {
       const verified = await verifyMerkleInclusionProof(
