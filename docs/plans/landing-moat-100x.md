@@ -78,7 +78,7 @@ Sources: [Solaya GLB + posters](https://blog.solaya.ai/blog/how-to-export-3d-vis
 1. **Category:** Sells cost-displacement / AI adoption without rebuild, or only generic AEO SaaS? If only latter → rewrite or drop.  
 2. **APS honesty:** Sample vs Live labeled? Enums only? No bare score / citation % / fake logos / $ savings?  
 3. **Proof job:** Makes Probe → Instant Audit → (MCP/share) clearer? Decorative only → kill.  
-4. **Budget / 3D:** Would it add `three`, R3F, Framer, GSAP, or runtime GLB to marketing? → kill.  
+4. **Budget / 3D:** Would it add `three`, R3F, Framer, GSAP, or runtime GLB to marketing? → kill. (Exception: GSAP in `globeDrag.ts` only, see the 2026-11-01 decision log entry.)  
 5. **Blender path:** retired on 2026-10-16 with the constellation plates (see Decision log). Runtime still no GLB/Three on marketing.  
 6. **Entity:** Suite vs Digital still one product + one builder attribution?  
 7. **Packaging:** Free/Starter/Growth/Agency claims match APS?  
@@ -299,3 +299,9 @@ npm run build
 - A static CSS planet covers no WebGL, Save-Data, link failure and context loss.
 
 The Blender constellation plates, the bake pipeline and the archive GLB were retired with the old landing, because nothing renders them any more. They remain in git history before this PR.
+
+**2026-11-01, touch drag on the globe (owner override of the GSAP budget gate).** The owner asked for interactive 3D fixes using GSAP, so the landing globe now drags on touch screens with GSAP for the fling and `gsap.matchMedia()` for reduced motion. This overrides the "Budget / 3D" kill check for GSAP only, and only in `components/marketing/earth/globeDrag.ts`:
+
+- The chunk is about 28 KB gzip. It is not preloaded and loads only on touch devices once the globe is ready, so first paint and desktop stay unchanged.
+- Three.js, R3F, Framer and runtime GLB stay killed. No React Bits component is used, because the stage is a custom shader.
+- GSAP ships under its standard no-charge licence (gsap.com/standard-license), not MIT. Commercial SaaS use is covered. The restriction that matters is no visual no-code animation builders that compete with Webflow's, so do not build one on it, and keep its notices intact.
