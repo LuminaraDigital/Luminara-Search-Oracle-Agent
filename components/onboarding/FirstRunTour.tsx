@@ -41,25 +41,6 @@ function reducedMotion(): boolean {
   return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
-function focusable(root: HTMLElement): HTMLElement[] {
-  return [...root.querySelectorAll<HTMLElement>('button:not([disabled]), [href], input, select, textarea')]
-    .filter((el) => !el.hasAttribute('disabled'));
-}
-
-function placeCard(anchor: DOMRect, card: DOMRect): { top: number; left: number } {
-  const margin = 12;
-  const gap = 12;
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
-  let left = anchor.left;
-  if (left + card.width > vw - margin) left = vw - margin - card.width;
-  if (left < margin) left = margin;
-  let top = anchor.bottom + gap;
-  if (top + card.height > vh - margin) top = anchor.top - gap - card.height;
-  if (top < margin) top = Math.max(margin, vh - card.height - margin);
-  return { top, left };
-}
-
 export function ReplayTourButton({ onDone, goToAudit }: { onDone: () => void; goToAudit: () => void }) {
   return (
     <button
@@ -82,8 +63,6 @@ export function FirstRunTour({ signedInWeb }: { signedInWeb: boolean }) {
   const [flag, setFlag] = useState<TourFlag>(() => readTourFlag());
   const [anchors, setAnchors] = useState<TourAnchors>(EMPTY_ANCHORS);
   const [box, setBox] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
-  const [cardPos, setCardPos] = useState<{ top: number; left: number } | null>(null);
-  const dialogRef = useRef<HTMLDivElement>(null);
   const step = tourStepToShow({ signedInWeb: web, flag, anchors });
 
   const save = (next: TourFlag) => {
@@ -122,13 +101,10 @@ export function FirstRunTour({ signedInWeb }: { signedInWeb: boolean }) {
     if (step == null) return;
     const measure = () => {
       const el = document.getElementById(tourCopy(step).anchorId);
-      const card = dialogRef.current;
-      if (!el || !card) return;
+      if (!el) return;
       const rect = el.getBoundingClientRect();
       const nextBox = { top: rect.top - 6, left: rect.left - 6, width: rect.width + 12, height: rect.height + 12 };
-      const nextPos = placeCard(rect, card.getBoundingClientRect());
       setBox((prev) => (prev && prev.top === nextBox.top && prev.left === nextBox.left && prev.width === nextBox.width && prev.height === nextBox.height ? prev : nextBox));
-      setCardPos((prev) => (prev && prev.top === nextPos.top && prev.left === nextPos.left ? prev : nextPos));
     };
     measure();
     window.addEventListener('resize', measure);
@@ -156,47 +132,13 @@ export function FirstRunTour({ signedInWeb }: { signedInWeb: boolean }) {
 
   useEffect(() => {
     if (step == null) return;
-    const root = dialogRef.current;
-    if (!root) return;
-    const list = focusable(root);
-    (list[list.length - 1] ?? root).focus();
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        event.stopPropagation();
-        actions.current.onSkip();
-        return;
-      }
-      if (event.key === 'ArrowRight') {
-        event.preventDefault();
-        actions.current.onNext();
-        return;
-      }
-      if (event.key === 'ArrowLeft') {
-        event.preventDefault();
-        actions.current.onBack();
-        return;
-      }
-      if (event.key !== 'Tab') return;
-      const items = focusable(root);
-      if (items.length === 0) {
-        event.preventDefault();
-        root.focus();
-        return;
-      }
-      const first = items[0];
-      const last = items[items.length - 1];
-      const active = document.activeElement;
-      if (event.shiftKey && (active === first || !root.contains(active))) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && (active === last || !root.contains(active))) {
-        event.preventDefault();
-        first.focus();
-      }
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      actions.current.onSkip();
     };
-    document.addEventListener('keydown', onKey, true);
-    return () => document.removeEventListener('keydown', onKey, true);
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
   }, [step, flag, anchors]);
 
   const waiting = tourIsWaiting({ signedInWeb: web, flag, anchors });
@@ -230,7 +172,7 @@ export function FirstRunTour({ signedInWeb }: { signedInWeb: boolean }) {
 
   return createPortal(
     <div className={motion}>
-      <div className="fixed inset-0 z-[70]" aria-hidden="true" />
+      <div className="pointer-events-none fixed inset-0 z-[70]" aria-hidden="true" data-tour-blocks-primary="false" />
       {box && (
         <div
           aria-hidden="true"
@@ -240,20 +182,18 @@ export function FirstRunTour({ signedInWeb }: { signedInWeb: boolean }) {
             left: box.left,
             width: box.width,
             height: box.height,
-            boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.78)',
           }}
         />
       )}
       <div
-        ref={dialogRef}
         role="dialog"
-        aria-modal="true"
+        aria-modal="false"
         aria-labelledby="first-run-tour-title"
         aria-describedby="first-run-tour-body"
         tabIndex={-1}
         data-tour-step={step}
-        className="fixed z-[90] w-[min(20rem,calc(100vw-1.5rem))] rounded-2xl border border-gold/50 bg-black p-4 text-gray-100 shadow-2xl outline-none focus-visible:ring-2 focus-visible:ring-gold"
-        style={cardPos ? { top: cardPos.top, left: cardPos.left } : { top: 12, left: 12 }}
+        data-tour-blocks-primary="false"
+        className="pointer-events-auto fixed bottom-4 left-4 z-[90] w-[min(20rem,calc(100vw-1.5rem))] rounded-2xl border border-gold/50 bg-black p-4 text-gray-100 shadow-2xl outline-none focus-visible:ring-2 focus-visible:ring-gold"
       >
         <p className="text-[11px] font-semibold tracking-wide text-gold-light">{progressLabel(step)}</p>
         <h2 id="first-run-tour-title" className="mt-1 text-base font-semibold text-white">{copy.title}</h2>

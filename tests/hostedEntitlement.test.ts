@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mapHostedEntitlement, readQuotaSnapshot, type SubRow } from '../worker/quotaMiddleware';
+import { checkHostedQuota, mapHostedEntitlement, readQuotaSnapshot, type SubRow } from '../worker/quotaMiddleware';
 import { memoryDailyQuotaNamespace } from './helpers/memoryDailyQuota';
 import type { Env } from '../worker/env';
 import type { KVNamespace } from '@cloudflare/workers-types';
@@ -90,5 +90,24 @@ describe('hosted entitlement mapping', () => {
       entitlement: { tier: 'free', name: 'Free', status: 'canceled' },
     });
     expect(JSON.stringify(canceled)).not.toContain('past_due');
+  });
+
+  it('counts questions apart from audits and does not mention an API key', async () => {
+    const env = envFor({});
+    const audit = await checkHostedQuota(env, user);
+    expect(audit.remaining).toBe(2);
+    const ask = await checkHostedQuota(env, user, { bucket: 'ask' });
+    expect(ask).toMatchObject({ ok: true, limit: 10, remaining: 9, bucket: 'ask' });
+    const again = await readQuotaSnapshot(env, user);
+    expect(again).toMatchObject({ remaining: 2, askLimit: 10, askRemaining: 9 });
+    for (let i = 0; i < 9; i += 1) {
+      expect((await checkHostedQuota(env, user, { bucket: 'ask' })).ok).toBe(true);
+    }
+    const blocked = await checkHostedQuota(env, user, { bucket: 'ask' });
+    expect(blocked.ok).toBe(false);
+    expect(blocked.error?.toLowerCase()).not.toContain('api key');
+    expect(blocked.error).toMatch(/10 questions/);
+    const auditsLeft = await checkHostedQuota(env, user);
+    expect(auditsLeft.remaining).toBe(1);
   });
 });

@@ -544,6 +544,11 @@ class LuminaraRepositoryTest {
             assertTrue(unauthedResult.isFailure)
 
             repo.saveByokKeys(ByokKeyBag(groqKey = "gsk_test_key"))
+            val savedButOff = repo.askOracle("How do I fix llms.txt?")
+            assertTrue(savedButOff.isFailure)
+            assertFalse(savedButOff.exceptionOrNull()?.message.orEmpty().contains("API key"))
+
+            repo.setDeveloperByok(true)
             val groqOnlyResult = repo.askOracle("How do I fix llms.txt?")
             assertTrue(groqOnlyResult.isSuccess)
             assertEquals("not_measured", groqOnlyResult.getOrThrow().measurementStatus)
@@ -553,7 +558,7 @@ class LuminaraRepositoryTest {
             assertTrue(byokResult.isSuccess)
             val turn = byokResult.getOrThrow()
             assertFalse(turn.verdict.contains("\u2014"))
-            assertEquals("Groq LPU (BYOK)", turn.modelLabel)
+            assertEquals("Using your own key", turn.modelLabel)
             assertEquals("measured", turn.measurementStatus)
         }
 
@@ -567,18 +572,27 @@ class LuminaraRepositoryTest {
             repo.signIn("operator@luminarasuite.com", "password123")
             val hosted = repo.askOracle("How do I fix llms.txt?")
             assertTrue(hosted.isSuccess)
-            assertEquals("Groq LPU (Hosted)", hosted.getOrThrow().modelLabel)
+            assertEquals("Suite hosted", hosted.getOrThrow().modelLabel)
             assertEquals(1, api.groqCalls)
 
             api.bootQuota =
                 api.bootQuota.copy(
                     remaining = 0,
                     used = 3,
+                    askLimit = 10,
+                    askRemaining = 4,
                     entitlement = HostedEntitlement(tier = "free", name = "Free", status = "none"),
                 )
+            val auditsSpent = repo.askOracle("How do I fix llms.txt?")
+            assertTrue(auditsSpent.isSuccess)
+            assertEquals(2, api.groqCalls)
+
+            api.bootQuota = api.bootQuota.copy(askRemaining = 0, askUsed = 10)
             val blocked = repo.askOracle("How do I fix llms.txt?")
             assertTrue(blocked.isFailure)
-            assertEquals(1, api.groqCalls)
+            assertTrue(blocked.exceptionOrNull()?.message.orEmpty().contains("questions"))
+            assertFalse(blocked.exceptionOrNull()?.message.orEmpty().contains("API key"))
+            assertEquals(2, api.groqCalls)
 
             api.bootQuota =
                 QuotaStatus(
@@ -592,14 +606,25 @@ class LuminaraRepositoryTest {
                 )
             val paid = repo.askOracle("How do I fix llms.txt?")
             assertTrue(paid.isSuccess)
-            assertEquals(2, api.groqCalls)
+            assertEquals(3, api.groqCalls)
 
-            api.bootQuota = api.bootQuota.copy(remaining = 0, isUnlimited = false, limit = 3, plan = "free")
+            api.bootQuota =
+                api.bootQuota.copy(
+                    remaining = 0,
+                    askLimit = 10,
+                    askRemaining = 0,
+                    isUnlimited = false,
+                    limit = 3,
+                    plan = "free",
+                )
             repo.saveByokKeys(ByokKeyBag(groqKey = "gsk_test_key"))
+            val ignoredKey = repo.askOracle("How do I fix llms.txt?")
+            assertTrue(ignoredKey.isFailure)
+            repo.setDeveloperByok(true)
             val byok = repo.askOracle("How do I fix llms.txt?")
             assertTrue(byok.isSuccess)
-            assertEquals("Groq LPU (BYOK)", byok.getOrThrow().modelLabel)
-            assertEquals(3, api.groqCalls)
+            assertEquals("Using your own key", byok.getOrThrow().modelLabel)
+            assertEquals(4, api.groqCalls)
         }
 
     @Test
@@ -752,18 +777,22 @@ class LuminaraRepositoryTest {
             val again = repo.explainAudit(report)
             assertTrue(again.isFailure)
             val message = again.exceptionOrNull()?.message.orEmpty()
-            assertTrue(message.contains("luminarasuite.com"))
+            assertTrue(message.contains("Sign in"))
+            assertFalse(message.contains("API key"))
             assertFalse(message.contains("Stripe"))
             assertFalse(message.contains("checkout"))
             assertEquals(0, api.groqCalls)
 
             val blockedAsk = repo.askOracle("How do I fix llms.txt?")
-            assertTrue(blockedAsk.exceptionOrNull()?.message.orEmpty().contains("luminarasuite.com"))
+            assertTrue(blockedAsk.exceptionOrNull()?.message.orEmpty().contains("Sign in"))
+            assertFalse(blockedAsk.exceptionOrNull()?.message.orEmpty().contains("API key"))
 
             repo.signOut()
             assertTrue(vault.getSnapshot().guestTrialUsed)
 
             repo.saveByokKeys(ByokKeyBag(groqKey = "gsk_test_key"))
+            assertTrue(repo.explainAudit(report).isFailure)
+            repo.setDeveloperByok(true)
             assertTrue(repo.explainAudit(report).isSuccess)
             assertEquals(1, api.groqCalls)
         }
@@ -859,8 +888,10 @@ class LuminaraRepositoryTest {
             assertTrue(repo.studioSourcesFlow.first().isNotEmpty())
 
             repo.saveByokKeys(ByokKeyBag(groqKey = "gsk_account_a"))
+            repo.setDeveloperByok(true)
             repo.signIn("a@luminarasuite.com", "password123").getOrThrow()
             assertEquals("gsk_account_a", vault.getSnapshot().byokKeys.groqKey)
+            assertTrue(vault.getSnapshot().developerByok)
             assertTrue(repo.auditHistoryFlow.first().isEmpty())
             assertTrue(repo.studioSourcesFlow.first().isEmpty())
 
@@ -868,11 +899,13 @@ class LuminaraRepositoryTest {
             repo.signInWithGoogle("google-token").getOrThrow()
             assertEquals("fb:other", vault.getSnapshot().accountId)
             assertEquals("", vault.getSnapshot().byokKeys.groqKey)
+            assertFalse(vault.getSnapshot().developerByok)
             assertTrue(repo.studioSourcesFlow.first().isEmpty())
 
             vault.markGuestTrialUsed()
             repo.signOut()
             assertEquals("", vault.getSnapshot().byokKeys.groqKey)
+            assertFalse(vault.getSnapshot().developerByok)
             assertTrue(vault.getSnapshot().guestTrialUsed)
             assertTrue(repo.auditHistoryFlow.first().isEmpty())
             assertTrue(repo.studioSourcesFlow.first().isEmpty())

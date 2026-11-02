@@ -38,8 +38,8 @@ import com.luminarasuite.app.core.model.StudioSource
 import com.luminarasuite.app.core.model.TavilyResult
 import com.luminarasuite.app.core.model.TavilySearchRequest
 import com.luminarasuite.app.core.model.WorkerErrorPayload
-import com.luminarasuite.app.core.model.hostedAllowanceOpen
-import com.luminarasuite.app.core.model.hostedBlockedMessage
+import com.luminarasuite.app.core.model.askAllowanceOpen
+import com.luminarasuite.app.core.model.askBlockedMessage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -162,6 +162,8 @@ interface LuminaraRepository {
 
     suspend fun saveByokKeys(bag: ByokKeyBag)
 
+    suspend fun setDeveloperByok(enabled: Boolean)
+
     suspend fun signOut()
 
     suspend fun exportAccountData(): Result<String>
@@ -181,15 +183,19 @@ class DefaultLuminaraRepository(
         private val CRAWLER_CHECK_IDS =
             setOf("llms_txt", "llms_structure", "ai_bot_directives", "cite_paths", "ai_txt")
         private val ERROR_JSON = Json { ignoreUnknownKeys = true }
-        private const val QUOTA_COPY =
-            "You have used today's hosted checks. They reset at 00:00 UTC, or add your own key in Settings."
+        private const val AUDIT_CAP =
+            "That's your 3 free audits for today. They're saved in Memory. You'll get 3 more at midnight UTC."
+        private const val ASK_CAP =
+            "You've used today's 10 questions. Your audit and fix list are still here. " +
+                "More questions tomorrow at midnight UTC."
         private val CODE_COPY =
             mapOf(
-                "PAYWALL_EXCEEDED" to QUOTA_COPY,
-                "HOSTED_QUOTA" to QUOTA_COPY,
-                "IDEA_DAILY_CAP" to "You have built today's 2 idea cards. They reset at 00:00 UTC.",
-                "TIER_UPGRADE_REQUIRED" to "This engine needs your own key. Add one in Settings.",
-                "HOSTED_CAPACITY" to "Hosted AI is busy right now. Try again in a minute.",
+                "PAYWALL_EXCEEDED" to AUDIT_CAP,
+                "HOSTED_QUOTA" to AUDIT_CAP,
+                "ASK_DAILY_CAP" to ASK_CAP,
+                "IDEA_DAILY_CAP" to "You have built today's 2 idea cards. They reset at midnight UTC.",
+                "TIER_UPGRADE_REQUIRED" to "This engine is on a paid plan. Free accounts use Suite hosted AI.",
+                "HOSTED_CAPACITY" to "Our AI is busy right now. Try again in a minute.",
             )
         private const val MAX_SOURCE_CHARS = 2500
         private const val EARLIER_TURNS = 3
@@ -467,18 +473,15 @@ class DefaultLuminaraRepository(
             require(trimmed.isNotEmpty()) { "Enter a question or domain for the Oracle." }
 
             val snap = vault.getSnapshot()
-            val groqKey = snap.byokKeys.groqKey.takeIf { it.isNotBlank() }
-            val tavilyKey = snap.byokKeys.tavilyKey.takeIf { it.isNotBlank() }
+            val groqKey = snap.ownGroqKey()
+            val tavilyKey = snap.ownTavilyKey()
             if (groqKey == null) {
                 if (!snap.isSignedIn) {
                     throw IllegalStateException(
                         GuestTrial.hostedSignInMessage(snap.guestTrialUsed, GuestTrial.SIGN_IN_FOR_HOSTED),
                     )
                 }
-                val quota = api.getAccountBoot().quota
-                if (!hostedAllowanceOpen(quota)) {
-                    throw IllegalStateException(hostedBlockedMessage(quota))
-                }
+                ensureAskOpen()
             }
 
             val searchResults = fetchOracleEvidence(trimmed, tavilyKey, snap.isSignedIn)
@@ -497,11 +500,12 @@ class DefaultLuminaraRepository(
         flow {
             val trimmed = question.trim()
             val snap = vault.getSnapshot()
-            val groqKey = snap.byokKeys.groqKey.takeIf { it.isNotBlank() }
-            val tavilyKey = snap.byokKeys.tavilyKey.takeIf { it.isNotBlank() }
+            val groqKey = snap.ownGroqKey()
+            val tavilyKey = snap.ownTavilyKey()
             check(snap.isSignedIn || groqKey != null) {
                 GuestTrial.hostedSignInMessage(snap.guestTrialUsed, GuestTrial.SIGN_IN_FOR_HOSTED)
             }
+            if (groqKey == null) ensureAskOpen()
             emit(OracleEvent.Status("Searching the live web"))
             val sources = fetchOracleEvidence(trimmed, tavilyKey, snap.isSignedIn)
             emit(
@@ -528,7 +532,7 @@ class DefaultLuminaraRepository(
     override suspend fun explainAudit(report: InstantAuditReport): Result<AuditRead> =
         safeCall {
             val snap = vault.getSnapshot()
-            val groqKey = snap.byokKeys.groqKey.takeIf { it.isNotBlank() }
+            val groqKey = snap.ownGroqKey()
             if (groqKey == null && !snap.isSignedIn) {
                 check(!snap.guestTrialUsed) { GuestTrial.SIGN_IN_AFTER_TASTE }
                 vault.markGuestTrialUsed()
@@ -537,7 +541,7 @@ class DefaultLuminaraRepository(
                     nextAction = buildDeterministicOneMove(report.domain, report.evaluation),
                 )
             }
-            val run = if (groqKey == null) api.beginAuditRun(AuditRunRequest(report.domain)) else null
+            if (groqKey == null) ensureAskOpen()
             val evidence =
                 report.evaluation.checks.joinToString("\n") { "- ${it.label}: ${it.status}. ${it.detail}" }
             val system =
@@ -547,27 +551,17 @@ class DefaultLuminaraRepository(
                     "Reply with two lines:\nVERDICT: <one or two sentences>\n" +
                     "NEXT_ACTION: <the single most useful fix this week>"
             val response =
-                try {
-                    api.chatGroq(
-                        providerKey = groqKey,
-                        auditRun = run?.token,
-                        auditDomain = run?.domain,
-                        body =
-                        GroqChatRequest(
-                            messages =
-                            listOf(
-                                GroqMessage(role = "system", content = system),
-                                GroqMessage(role = "user", content = "Site: ${report.domain}\nChecks:\n$evidence"),
-                            ),
+                api.chatGroq(
+                    providerKey = groqKey,
+                    body =
+                    GroqChatRequest(
+                        messages =
+                        listOf(
+                            GroqMessage(role = "system", content = system),
+                            GroqMessage(role = "user", content = "Site: ${report.domain}\nChecks:\n$evidence"),
                         ),
-                    )
-                } catch (err: HttpException) {
-                    if (run != null) {
-                        runCatching { api.refundAuditRun(auditRefundBody(run.token, run.domain)) }
-                            .rethrowCancellation()
-                    }
-                    throw err
-                }
+                    ),
+                )
             val turn =
                 parseOracleTurn(
                     report.domain,
@@ -591,7 +585,7 @@ class DefaultLuminaraRepository(
             check(snap.isSignedIn) {
                 GuestTrial.hostedSignInMessage(snap.guestTrialUsed, "Sign in to build idea cards. It is free.")
             }
-            val key = vault.getSnapshot().byokKeys.groqKey.takeIf { it.isNotBlank() }
+            val key = vault.getSnapshot().ownGroqKey()
             val response = api.createIdea(providerKey = key, body = request)
             refreshQuotaQuietly()
             response
@@ -637,10 +631,11 @@ class DefaultLuminaraRepository(
         maxTokens: Int,
     ): String {
         val snap = vault.getSnapshot()
-        val groqKey = snap.byokKeys.groqKey.takeIf { it.isNotBlank() }
+        val groqKey = snap.ownGroqKey()
         check(snap.isSignedIn || groqKey != null) {
             GuestTrial.hostedSignInMessage(snap.guestTrialUsed, GuestTrial.SIGN_IN_FOR_HOSTED)
         }
+        if (groqKey == null) ensureAskOpen()
         val sources = studioSourcesFlow.first().filter { it.selected }
         check(sources.isNotEmpty()) { "Add or select a source first." }
         val corpus =
@@ -775,7 +770,7 @@ class DefaultLuminaraRepository(
             verdict = verdictLine,
             nextAction = actionLine,
             sources = sources,
-            modelLabel = if (groqKey != null) "Groq LPU (BYOK)" else "Groq LPU (Hosted)",
+            modelLabel = if (groqKey != null) "Using your own key" else "Suite hosted",
             measurementStatus = if (sources.isNotEmpty()) "measured" else "not_measured",
             timestampMs = now,
         )
@@ -896,6 +891,18 @@ class DefaultLuminaraRepository(
         vault.saveByokKeys(bag)
     }
 
+    override suspend fun setDeveloperByok(enabled: Boolean) {
+        vault.setDeveloperByok(enabled)
+    }
+
+    private suspend fun ensureAskOpen() {
+        val quota = api.getAccountBoot().quota
+        quotaState.value = quota
+        if (!askAllowanceOpen(quota)) {
+            throw IllegalStateException(askBlockedMessage(quota))
+        }
+    }
+
     override suspend fun signOut() {
         quotaState.value = null
         dao.wipeLocalWorkspace()
@@ -959,13 +966,19 @@ class DefaultLuminaraRepository(
             val rawBody = runCatching { err.response()?.errorBody()?.string() }.getOrNull().orEmpty()
             if (rawBody.isNotBlank()) {
                 val parsed = runCatching { ERROR_JSON.decodeFromString<WorkerErrorPayload>(rawBody) }.getOrNull()
-                val message = CODE_COPY[parsed?.code] ?: parsed?.error?.takeIf { it.isNotBlank() }
+                val server = parsed?.error?.takeIf { it.isNotBlank() && !it.asksForProviderKey() }
+                val message = server ?: parsed?.code?.let { CODE_COPY[it] } ?: parsed?.error?.takeIf { it.isNotBlank() }
                 if (message != null) {
                     return IllegalStateException(message)
                 }
             }
         }
         return err
+    }
+
+    private fun String.asksForProviderKey(): Boolean {
+        val lower = lowercase()
+        return "api key" in lower || "own key" in lower || "your groq" in lower
     }
 
     private fun fixCount(count: Int): String = if (count == 1) "1 fix" else "$count fixes"
@@ -983,6 +996,12 @@ class DefaultLuminaraRepository(
             "$domain passed ${eval.passCount} of ${eval.checks.size} checks. ${fixCount(eval.failCount)} to make."
         }
     }
+
+    private fun VaultSnapshot.ownGroqKey(): String? =
+        if (developerByok) byokKeys.groqKey.takeIf { it.isNotBlank() } else null
+
+    private fun VaultSnapshot.ownTavilyKey(): String? =
+        if (developerByok) byokKeys.tavilyKey.takeIf { it.isNotBlank() } else null
 
     private fun buildDeterministicOneMove(
         domain: String,

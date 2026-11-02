@@ -28,6 +28,7 @@ data class VaultSnapshot(
     val email: String = "",
     val accountId: String = "",
     val byokKeys: ByokKeyBag = ByokKeyBag(),
+    val developerByok: Boolean = false,
     val reportedTurnIds: Set<String> = emptySet(),
     val guestTrialUsed: Boolean = false,
 ) {
@@ -51,6 +52,8 @@ interface VaultStorage {
 
     suspend fun saveByokKeys(bag: ByokKeyBag)
 
+    suspend fun setDeveloperByok(enabled: Boolean)
+
     suspend fun reportAiTurn(turnId: String)
 
     suspend fun markGuestTrialUsed()
@@ -73,14 +76,15 @@ class InMemoryVaultStorage(
         val nextAccount = accountId.trim()
         val previous = state.value.accountId
         // A different signed-in account must not spend the keys still on this phone.
-        val byokKeys = if (previous.isNotBlank() && previous != nextAccount) ByokKeyBag() else state.value.byokKeys
+        val switched = previous.isNotBlank() && previous != nextAccount
         state.value =
             state.value.copy(
                 idToken = idToken,
                 refreshToken = refreshToken,
                 email = email,
                 accountId = nextAccount,
-                byokKeys = byokKeys,
+                byokKeys = if (switched) ByokKeyBag() else state.value.byokKeys,
+                developerByok = if (switched) false else state.value.developerByok,
             )
     }
 
@@ -92,12 +96,17 @@ class InMemoryVaultStorage(
                 email = "",
                 accountId = "",
                 byokKeys = ByokKeyBag(),
+                developerByok = false,
                 reportedTurnIds = emptySet(),
             )
     }
 
     override suspend fun saveByokKeys(bag: ByokKeyBag) {
         state.value = state.value.copy(byokKeys = bag)
+    }
+
+    override suspend fun setDeveloperByok(enabled: Boolean) {
+        state.value = state.value.copy(developerByok = enabled)
     }
 
     override suspend fun reportAiTurn(turnId: String) {
@@ -131,6 +140,7 @@ class KeystoreCredentialVault(
         private val KEY_TAVILY = stringPreferencesKey("enc_tavily_key")
         private val KEY_REPORTED_TURNS = stringSetPreferencesKey("reported_turn_ids")
         private val KEY_GUEST_TRIAL = booleanPreferencesKey("guest_trial_used")
+        private val KEY_DEVELOPER_BYOK = booleanPreferencesKey("developer_byok")
     }
 
     @Volatile
@@ -150,6 +160,7 @@ class KeystoreCredentialVault(
                     geminiKey = decrypt(prefs[KEY_GEMINI].orEmpty()),
                     tavilyKey = decrypt(prefs[KEY_TAVILY].orEmpty()),
                 ),
+                developerByok = prefs[KEY_DEVELOPER_BYOK] == true,
                 reportedTurnIds = prefs[KEY_REPORTED_TURNS].orEmpty(),
                 guestTrialUsed = prefs[KEY_GUEST_TRIAL] == true,
             ).also { cachedSnapshot = it }
@@ -171,6 +182,7 @@ class KeystoreCredentialVault(
                 prefs.remove(KEY_NIM)
                 prefs.remove(KEY_GEMINI)
                 prefs.remove(KEY_TAVILY)
+                prefs.remove(KEY_DEVELOPER_BYOK)
             }
             prefs[KEY_ID_TOKEN] = encrypt(idToken)
             prefs[KEY_REFRESH_TOKEN] = encrypt(refreshToken)
@@ -189,6 +201,7 @@ class KeystoreCredentialVault(
             prefs.remove(KEY_NIM)
             prefs.remove(KEY_GEMINI)
             prefs.remove(KEY_TAVILY)
+            prefs.remove(KEY_DEVELOPER_BYOK)
             prefs.remove(KEY_REPORTED_TURNS)
         }
     }
@@ -200,6 +213,13 @@ class KeystoreCredentialVault(
             prefs[KEY_GEMINI] = encrypt(bag.geminiKey.trim())
             prefs[KEY_TAVILY] = encrypt(bag.tavilyKey.trim())
         }
+    }
+
+    override suspend fun setDeveloperByok(enabled: Boolean) {
+        context.luminaraDataStore.edit { prefs ->
+            prefs[KEY_DEVELOPER_BYOK] = enabled
+        }
+        cachedSnapshot = cachedSnapshot?.copy(developerByok = enabled)
     }
 
     override suspend fun reportAiTurn(turnId: String) {

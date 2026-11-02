@@ -50,6 +50,8 @@ private enum class MemoryTab(
 @Composable
 fun MemoryScreen(
     viewModel: DashboardViewModel,
+    signedIn: Boolean = false,
+    onSignIn: () -> Unit = {},
     onRunAudit: () -> Unit,
     onAskAbout: (String) -> Unit,
 ) {
@@ -78,7 +80,7 @@ fun MemoryScreen(
         }
         when (tab) {
             MemoryTab.CHANGED -> ChangedTab(auditChanges(state.history), state.history, onRunAudit)
-            MemoryTab.REPORTS -> ReportsTab(state.history, onRunAudit, onAskAbout)
+            MemoryTab.REPORTS -> ReportsTab(state.history, signedIn, onSignIn, onRunAudit, onAskAbout)
             MemoryTab.TIMELINE -> TimelineTab(state.history, onRunAudit)
         }
         Spacer(modifier = Modifier.height(8.dp))
@@ -124,6 +126,8 @@ private fun ChangedTab(
 @Composable
 private fun ReportsTab(
     history: List<AuditHistoryEntry>,
+    signedIn: Boolean,
+    onSignIn: () -> Unit,
     onRunAudit: () -> Unit,
     onAskAbout: (String) -> Unit,
 ) {
@@ -142,9 +146,13 @@ private fun ReportsTab(
             Text(text = item.title, style = LuminaraTextStyles.SectionTitle)
             Text(text = item.reportExcerpt, style = LuminaraTextStyles.Body.copy(fontSize = 13.sp))
             GhostPillButton(
-                text = "Ask about this report",
+                text = if (signedIn) "Ask about this report" else "Sign in",
                 onClick = {
-                    onAskAbout("Based on this audit of ${item.domain}, what should I do first? ${item.summary}")
+                    if (signedIn) {
+                        onAskAbout("Based on this audit of ${item.domain}, what should I do first? ${item.summary}")
+                    } else {
+                        onSignIn()
+                    }
                 },
             )
         }

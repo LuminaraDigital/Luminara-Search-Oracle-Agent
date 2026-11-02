@@ -59,6 +59,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewModelScope
+import com.luminarasuite.app.core.auth.GuestTrial
 import com.luminarasuite.app.core.designsystem.AccentHeadline
 import com.luminarasuite.app.core.designsystem.AiEvidenceDisclosureBar
 import com.luminarasuite.app.core.designsystem.EmptyStateCard
@@ -167,7 +168,10 @@ class StudioViewModel(
 }
 
 @Composable
-fun StudioScreen(viewModel: StudioViewModel) {
+fun StudioScreen(
+    viewModel: StudioViewModel,
+    onSignIn: () -> Unit = {},
+) {
     val state by viewModel.uiState.collectAsState()
     val sources by viewModel.sources.collectAsState()
     val active = sources.count { it.selected }
@@ -205,9 +209,17 @@ fun StudioScreen(viewModel: StudioViewModel) {
             }
             AddNoteCard(onAdd = viewModel::addNote)
 
-            state.errorMessage?.let {
+            state.errorMessage?.let { errorMsg ->
                 WorkbenchCard(railColor = LuminaraColors.ErrorRed) {
-                    Text(text = it, style = LuminaraTextStyles.Body, color = LuminaraColors.ErrorRed)
+                    Text(text = errorMsg, style = LuminaraTextStyles.Body, color = LuminaraColors.ErrorRed)
+                    if (GuestTrial.isHostedSignInGate(errorMsg)) {
+                        GhostPillButton(
+                            text = "Sign in",
+                            onClick = onSignIn,
+                            modifier = Modifier.fillMaxWidth(),
+                            testTag = "studio_sign_in_button",
+                        )
+                    }
                 }
             }
             AudioCard(
