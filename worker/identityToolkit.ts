@@ -1,6 +1,6 @@
 /**
  * Headers for Identity Toolkit REST calls that use the public web API key.
- * Sign-up, sign-in, password reset, and account delete must send the same set.
+ * Sign-up, sign-in, token refresh, password reset, and account delete must send the same set.
  * A key restricted by HTTP referrer rejects any call that omits Referer.
  */
 import type { Env } from './env';

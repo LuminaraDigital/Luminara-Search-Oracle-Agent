@@ -24,7 +24,26 @@ describe('handleTokenRefresh', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ ok: true, idToken: 'new-id', refreshToken: 'new-refresh' });
     const init = fetchImpl.mock.calls[0]?.[1 as never] as unknown as RequestInit;
-    expect((init.headers as Record<string, string>).Referer).toBe('https://luminarasuite.com/');
+    const headers = init.headers as Record<string, string>;
+    expect(headers.Referer).toBe('https://luminarasuite.com/');
+    expect(headers['X-Firebase-AppCheck']).toBeUndefined();
+  });
+
+  it('forwards X-Firebase-AppCheck to the secure token endpoint', async () => {
+    const fetchImpl = vi.fn(async () =>
+      new Response(JSON.stringify({ id_token: 'new-id', refresh_token: 'new-refresh', expires_in: '3600' })),
+    );
+    const req = new Request('https://luminarasuite.com/api/auth/refresh', {
+      method: 'POST',
+      headers: { 'X-Firebase-AppCheck': 'check-token' },
+      body: JSON.stringify({ refreshToken: 'old' }),
+    });
+
+    const res = await handleTokenRefresh(req, env, { fetchImpl: fetchImpl as unknown as typeof fetch });
+
+    expect(res.status).toBe(200);
+    const init = fetchImpl.mock.calls[0]?.[1 as never] as unknown as RequestInit;
+    expect((init.headers as Record<string, string>)['X-Firebase-AppCheck']).toBe('check-token');
   });
 
   it('returns 401 when Firebase refuses the refresh token', async () => {
