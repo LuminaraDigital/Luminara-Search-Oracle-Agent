@@ -154,6 +154,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
   };
 
   const handleStarsCheckout = async (planId: string) => {
+    productTelemetry.track('checkout_started', { planId, method: 'stars', status: 'initiated' });
     if (!inTg) {
       window.open(TELEGRAM_MINI_APP_URL, '_blank', 'noopener,noreferrer');
       setStatusMessage('Opening Luminara in Telegram. Finish your Stars checkout in the Mini App.');
@@ -200,6 +201,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
   };
 
   const handleTonCheckout = async (planId: string) => {
+    productTelemetry.track('checkout_started', { planId, method: 'ton', status: 'initiated' });
     setBusyPlan(planId);
     setStatusMessage(null);
     try {
@@ -251,6 +253,7 @@ export const PaywallModal: React.FC<Props> = ({ isOpen: controlledOpen, onClose,
   };
 
   const handleJettonCheckout = async (planId: string, asset: 'USDT' | 'LORA') => {
+    productTelemetry.track('checkout_started', { planId, method: asset.toLowerCase(), status: 'initiated' });
     setBusyPlan(planId);
     setStatusMessage(null);
     try {

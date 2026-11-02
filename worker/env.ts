@@ -303,6 +303,9 @@ export interface Env extends DataPlaneEnv {
   /** Google Vertex Vector Search REST endpoint + bearer token. */
   GCP_VERTEX_VECTOR_ENDPOINT?: string;
   GCP_VERTEX_ACCESS_TOKEN?: string;
+  /** Optional IPFS HTTP/Pinata pinning endpoint and JWT for encrypted Memory Vault snapshots. */
+  IPFS_PINNING_URL?: string;
+  IPFS_PINNING_JWT?: string;
 }
 
 /** Minimal Vectorize binding shape (Cloudflare runtime). */

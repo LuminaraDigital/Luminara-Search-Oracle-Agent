@@ -47,7 +47,12 @@ import {
 } from './dreamingService';
 import { getPendingDreamEvents } from './dreamingQueue';
 import { evaluateWakeGate } from './dreamingWakeGate';
+import {
+  normalizeMemoryDomain,
+} from './unifiedMemoryRouter';
 import { CONVERSION_SPINE_MCP_TOOLS } from './mcpConversionTools';
+import { AGENTIC_MEMORY_MCP_TOOLS } from './mcpAgenticMemoryTools';
+import { SELF_DRIVING_MCP_TOOLS } from './selfDrivingHabitat';
 
 export type McpToolDef = {
   name: string;
@@ -222,7 +227,14 @@ const TOOLS: McpToolDef[] = [
     creditClass: 'free',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     handler: async (_args, ctx) => {
-      const projects = await listProjects(ctx.env, ctx.accountId);
+      const allProjects = await listProjects(ctx.env, ctx.accountId);
+      const boundProjectId = ctx.credential.projectId ?? null;
+      const boundDomain = ctx.credential.domain ?? null;
+      const projects = allProjects.filter((p) => {
+        if (boundProjectId && p.id !== boundProjectId) return false;
+        if (boundDomain && normalizeMemoryDomain(p.domain) !== boundDomain) return false;
+        return true;
+      });
       const lines = projects.length
         ? projects.map((p) => `- ${p.id}: ${p.domain} (${p.name})`).join('\n')
         : 'No projects yet. Use create_project.';
@@ -348,6 +360,17 @@ const TOOLS: McpToolDef[] = [
       const includeHtml = Boolean(args.includeHtml);
       const report = await getAgentReport(ctx.env, ctx.accountId, reportId, includeHtml);
       if (!report) return textResult('Report not found', undefined, true);
+      if (ctx.credential.projectId && report.projectId !== ctx.credential.projectId) {
+        return textResult(
+          `Tool blocked by Agent Habitat scope: token is bound to project "${ctx.credential.projectId}".`,
+          {
+            code: 'HABITAT_PROJECT_SCOPE_VIOLATION',
+            boundProjectId: ctx.credential.projectId,
+            requestedProjectId: report.projectId,
+          },
+          true,
+        );
+      }
       return textResult(report.summary, { report });
     },
   },
@@ -537,6 +560,8 @@ const TOOLS: McpToolDef[] = [
     },
   },
   ...CONVERSION_SPINE_MCP_TOOLS,
+  ...AGENTIC_MEMORY_MCP_TOOLS,
+  ...SELF_DRIVING_MCP_TOOLS,
   ...PAID_TOOL_CATALOGUE.map((meta) => ({
     name: meta.name,
     description: meta.description,
@@ -568,6 +593,7 @@ function toolsListPayload() {
       inputSchema: t.inputSchema,
       annotations: {
         readOnlyHint:
+          governanceFor(t.name).risk === 'read' ||
           t.name.startsWith('get_') ||
           t.name.startsWith('list_') ||
           t.name === 'whoami' ||
@@ -590,7 +616,62 @@ async function callTool(
   const subscriptionActive = !!sub;
   const tool = TOOLS.find((t) => t.name === name);
   const creditClass = tool?.creditClass ?? 'free';
-  const projectId = typeof args.projectId === 'string' ? args.projectId : null;
+  const requestedProjectId = typeof args.projectId === 'string' && args.projectId.trim() ? args.projectId.trim() : null;
+  const boundProjectId = ctx.credential.projectId ?? null;
+
+  if (boundProjectId && requestedProjectId && requestedProjectId !== boundProjectId) {
+    return textResult(
+      `Tool blocked by Agent Habitat scope: token is bound to project "${boundProjectId}".`,
+      {
+        code: 'HABITAT_PROJECT_SCOPE_VIOLATION',
+        boundProjectId,
+        requestedProjectId,
+      },
+      true,
+    );
+  }
+  const schemaProps = (tool?.inputSchema?.properties ?? {}) as Record<string, unknown>;
+  const projectId = requestedProjectId ?? boundProjectId;
+  if (boundProjectId && !requestedProjectId && 'projectId' in schemaProps) {
+    args = { ...args, projectId: boundProjectId };
+  }
+
+  const boundDomain = ctx.credential.domain ?? null;
+  const requestedDomain =
+    typeof args.domain === 'string' && args.domain.trim()
+      ? normalizeMemoryDomain(args.domain)
+      : null;
+  if (boundDomain && requestedDomain && requestedDomain !== boundDomain) {
+    return textResult(
+      `Tool blocked by Agent Habitat scope: token is bound to domain "${boundDomain}".`,
+      {
+        code: 'HABITAT_PROJECT_SCOPE_VIOLATION',
+        boundDomain,
+        requestedDomain,
+      },
+      true,
+    );
+  }
+  if (boundDomain && !requestedDomain && 'domain' in schemaProps) {
+    args = { ...args, domain: boundDomain };
+  }
+
+  const toolRisk = governanceFor(name).risk;
+  const maxRisk = ctx.credential.maxRisk ?? null;
+  if (
+    (maxRisk === 'read' && toolRisk !== 'read') ||
+    (maxRisk === 'write' && toolRisk === 'destructive')
+  ) {
+    return textResult(
+      `Tool blocked by Agent Habitat risk ceiling: credential permits "${maxRisk}" tools (requested "${name}" has risk "${toolRisk}").`,
+      {
+        code: 'HABITAT_RISK_CEILING_EXCEEDED',
+        maxRisk,
+        toolRisk,
+      },
+      true,
+    );
+  }
 
   // Budget gate runs BEFORE the governance decideToolCall; when the account is
   // budget-halted the budget block wins over every governance outcome.

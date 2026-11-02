@@ -11,6 +11,7 @@ import { identify, json } from './workerUtils';
 import { identifyApiKey } from './apiKeyService';
 import { bearerFromAuthorization } from './firebaseAuth';
 import { identifyMcpOAuthToken } from './mcpOAuth';
+import { identifyHabitatToken } from './selfDrivingHabitat';
 
 /** Paths that require an Agency (apiAccess) plan in addition to authentication. */
 export const API_ACCESS_PATH_PATTERNS: RegExp[] = [
@@ -104,6 +105,13 @@ export async function resolveMcpUser(
   env: Env,
 ): Promise<{ user: HostedIdentity; credential: McpCredential } | { response: Response }> {
   const bearer = bearerFromAuthorization(request.headers.get('authorization'));
+  const habitat = await identifyHabitatToken(env, bearer);
+  if (habitat) {
+    const denied = await requireMcpAccess(env, habitat.user);
+    if (denied) return { response: denied };
+    return { user: habitat.user, credential: habitat.credential };
+  }
+
   const apiUser = await identifyApiKey(env, bearer);
   if (apiUser) {
     const denied = await requireMcpAccess(env, apiUser);

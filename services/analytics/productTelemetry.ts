@@ -5,35 +5,43 @@
  * Zero external ad tracking or PII leakage.
  */
 
-export type TelemetryEventType =
-  | 'session_started'
-  | 'page_view'
-  | 'onboarding_started'
-  | 'onboarding_step_completed'
-  | 'onboarding_completed'
-  | 'time_to_first_value'
-  | 'core_action_completed'
-  | 'error_encountered'
-  | 'funnel_abandoned'
-  | 'draft_restored'
-  | 'probe_completed'
-  | 'signup_completed'
-  | 'instant_audit_completed'
-  | 'paywall_viewed'
-  | 'checkout_started'
-  | 'payment_completed'
-  | 'strategy_saved'
-  | 'share_cta_clicked'
-  | 'share_link_created'
-  | 'share_link_opened'
-  | 'mcp_key_created'
-  | 'mcp_snippet_copied'
-  | 'mcp_first_used'
-  | 'upgrade_prompt_shown'
-  | 'upgrade_prompt_clicked'
-  | 'upgrade_prompt_dismissed'
-  | 'share_clicked'
-  | 'share_page_view';
+export const ALL_TELEMETRY_EVENT_TYPES = [
+  'session_started',
+  'page_view',
+  'onboarding_started',
+  'onboarding_step_completed',
+  'onboarding_completed',
+  'time_to_first_value',
+  'core_action_completed',
+  'error_encountered',
+  'funnel_abandoned',
+  'draft_restored',
+  'probe_completed',
+  'signup_completed',
+  'instant_audit_completed',
+  'paywall_viewed',
+  'checkout_started',
+  'payment_completed',
+  'strategy_saved',
+  'share_cta_clicked',
+  'share_link_created',
+  'share_link_opened',
+  'mcp_key_created',
+  'mcp_snippet_copied',
+  'mcp_first_used',
+  'upgrade_prompt_shown',
+  'upgrade_prompt_clicked',
+  'upgrade_prompt_dismissed',
+  'share_clicked',
+  'share_page_view',
+  'fix_shipped',
+  'mission_completed',
+  'plan_expiring',
+  'plan_expired',
+  'survey_answered',
+] as const;
+
+export type TelemetryEventType = (typeof ALL_TELEMETRY_EVENT_TYPES)[number];
 
 export interface TelemetryEvent {
   id: string;
@@ -57,19 +65,61 @@ export interface TelemetryMetricsSummary {
 
 const STORAGE_KEY_EVENTS = 'luminara_telemetry_events';
 const STORAGE_KEY_SUMMARY = 'luminara_telemetry_summary';
+const STORAGE_KEY_GUEST_ID = 'luminara_guest_id';
+const STORAGE_KEY_PLAN_STATE = 'luminara_telemetry_plan_state';
 const SESSION_START_KEY = 'luminara_session_start_time';
 const MAX_STORED_EVENTS = 100;
+const SEVEN_DAYS_MS = 7 * 86_400_000;
+
+interface StoredPlanLifecycleState {
+  plan?: string;
+  expiresAt?: number;
+  warnedExpiringFor?: number;
+  warnedExpiredFor?: number;
+}
 
 class ProductTelemetryEngine {
   private summary: TelemetryMetricsSummary;
   private sessionStartTime: number;
+  private clientId: string;
   private currentView: string = '';
   private viewStartTime: number = Date.now();
+  private planLifecycleState: StoredPlanLifecycleState = {};
 
   constructor() {
     this.summary = this.loadSummary();
     this.sessionStartTime = this.resolveSessionStart();
+    this.clientId = this.resolveClientId();
     this.initSession();
+  }
+
+  private resolveClientId(): string {
+    const fallbackId = `anon_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const stored = window.localStorage.getItem(STORAGE_KEY_GUEST_ID);
+        if (stored && stored.trim().length >= 8) return stored.trim();
+        const nextId =
+          typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+            ? `anon_${crypto.randomUUID()}`
+            : fallbackId;
+        window.localStorage.setItem(STORAGE_KEY_GUEST_ID, nextId);
+        return nextId;
+      }
+      if (typeof window !== 'undefined' && window.sessionStorage) {
+        const stored = window.sessionStorage.getItem(STORAGE_KEY_GUEST_ID);
+        if (stored && stored.trim().length >= 8) return stored.trim();
+        window.sessionStorage.setItem(STORAGE_KEY_GUEST_ID, fallbackId);
+        return fallbackId;
+      }
+    } catch {
+      // Fallback to in-memory ID
+    }
+    return fallbackId;
+  }
+
+  public getSessionId(): string {
+    return this.clientId;
   }
 
   private resolveSessionStart(): number {
@@ -194,7 +244,7 @@ class ProductTelemetryEngine {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          sessionId: String(this.sessionStartTime),
+          sessionId: this.clientId,
           events: batch.map((e) => ({
             type: e.type,
             path: typeof e.data?.view === 'string' ? e.data.view : undefined,
@@ -293,6 +343,103 @@ class ProductTelemetryEngine {
     this.track('draft_restored', { field });
   }
 
+  /**
+   * Checks paid subscription lifecycle transitions and emits deduplicated
+   * `plan_expiring` (<= 7 days left) or `plan_expired` events.
+   */
+  public checkPlanLifecycle(
+    plan?: string,
+    expiresAt?: number,
+    now: number = Date.now(),
+  ): 'expiring' | 'expired' | null {
+    const planNorm = String(plan || 'free').trim().toLowerCase();
+    const isPaid = Boolean(planNorm && planNorm !== 'free');
+    let prev: StoredPlanLifecycleState = { ...this.planLifecycleState };
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const raw = window.localStorage.getItem(STORAGE_KEY_PLAN_STATE);
+        if (raw) prev = { ...prev, ...(JSON.parse(raw) as StoredPlanLifecycleState) };
+      }
+    } catch {
+      // Keep in-memory state
+    }
+
+    const saveState = (next: StoredPlanLifecycleState) => {
+      this.planLifecycleState = { ...next };
+      try {
+        if (typeof window !== 'undefined' && window.localStorage) {
+          window.localStorage.setItem(STORAGE_KEY_PLAN_STATE, JSON.stringify(next));
+        }
+      } catch {
+        // Ignore storage errors
+      }
+    };
+
+    if (typeof expiresAt === 'number' && Number.isFinite(expiresAt) && expiresAt > 0) {
+      if (expiresAt <= now) {
+        if (prev.warnedExpiredFor !== expiresAt) {
+          saveState({
+            ...prev,
+            plan: isPaid ? planNorm : prev.plan || planNorm,
+            expiresAt,
+            warnedExpiredFor: expiresAt,
+          });
+          this.track('plan_expired', { plan: isPaid ? planNorm : prev.plan || planNorm, expiresAt });
+          return 'expired';
+        }
+        return null;
+      }
+      if (isPaid && expiresAt - now <= SEVEN_DAYS_MS) {
+        if (prev.warnedExpiringFor !== expiresAt) {
+          saveState({
+            ...prev,
+            plan: planNorm,
+            expiresAt,
+            warnedExpiringFor: expiresAt,
+          });
+          const daysLeft = Math.max(1, Math.ceil((expiresAt - now) / 86_400_000));
+          this.track('plan_expiring', { plan: planNorm, expiresAt, daysLeft });
+          return 'expiring';
+        }
+        return null;
+      }
+    }
+
+    if (!isPaid && prev.plan && prev.plan !== 'free') {
+      const marker = prev.expiresAt || -1;
+      if (prev.warnedExpiredFor !== marker) {
+        saveState({
+          ...prev,
+          plan: 'free',
+          warnedExpiredFor: marker,
+        });
+        this.track('plan_expired', { plan: prev.plan, expiresAt: prev.expiresAt ?? null });
+        return 'expired';
+      }
+      return null;
+    }
+
+    if (isPaid) {
+      saveState({
+        ...prev,
+        plan: planNorm,
+        expiresAt: typeof expiresAt === 'number' ? expiresAt : prev.expiresAt,
+      });
+    }
+    return null;
+  }
+
+  /** Record Sean Ellis PMF / user disappointment survey response */
+  public recordSurveyAnswer(
+    disappointment: 'very_disappointed' | 'somewhat_disappointed' | 'not_disappointed',
+    feedback?: string,
+  ): void {
+    this.track('survey_answered', {
+      disappointment,
+      feedback: feedback ? feedback.slice(0, 500) : undefined,
+    });
+  }
+
   public getSummary(): TelemetryMetricsSummary {
     return { ...this.summary };
   }
@@ -312,10 +459,12 @@ class ProductTelemetryEngine {
       lastActiveTime: Date.now(),
     };
     this.sessionStartTime = Date.now();
+    this.planLifecycleState = {};
     try {
       if (typeof window !== 'undefined' && window.localStorage) {
         window.localStorage.removeItem(STORAGE_KEY_EVENTS);
         window.localStorage.removeItem(STORAGE_KEY_SUMMARY);
+        window.localStorage.removeItem(STORAGE_KEY_PLAN_STATE);
       }
     } catch {
       // Ignore

@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { completeWeeklyMission } from '../../services/referrals/referralClient';
+import { productTelemetry } from '../../services/analytics/productTelemetry';
+import { notifyAuditActivity } from '../../services/audit/auditActivity';
 import { brandNameFor } from '../../services/audit/brandName';
 import { plainCustomerReport } from '../../services/audit/reportColumnGate';
 import { comparisonOutlineDraft, llmsTxtDraft, organizationJsonLd } from '../../services/audit/fixPackCopy';
@@ -146,21 +148,26 @@ Sitemap: https://${cleanDomain}/sitemap.xml
   };
 
   const toggleComplete = (id: string) => {
-    setCompletedFixes((prev) => {
-      const next = { ...prev, [id]: !prev[id] };
-      try {
-        localStorage.setItem(`luminara_fixes_${cleanDomain}`, JSON.stringify(next));
-      } catch {
-        // ignore
+    const isMarkingDone = !completedFixes[id];
+    const next = { ...completedFixes, [id]: isMarkingDone };
+    setCompletedFixes(next);
+    try {
+      localStorage.setItem(`luminara_fixes_${cleanDomain}`, JSON.stringify(next));
+    } catch {
+      // ignore
+    }
+    if (isMarkingDone) {
+      productTelemetry.track('fix_shipped', {
+        domain: cleanDomain,
+        fixId: id,
+        source: isAuditDerived ? 'audit_finding' : 'starter_checklist',
+      });
+      completeWeeklyMission('checklist_fix').catch(() => {});
+      notifyAuditActivity();
+      if (onFixCompleted) {
+        onFixCompleted(id);
       }
-      if (next[id]) {
-        completeWeeklyMission('checklist_fix').catch(() => {});
-        if (onFixCompleted) {
-          onFixCompleted(id);
-        }
-      }
-      return next;
-    });
+    }
   };
 
   const completedCount = Object.values(completedFixes).filter(Boolean).length;

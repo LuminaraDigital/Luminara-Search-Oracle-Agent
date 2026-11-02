@@ -53,6 +53,17 @@ export const TOOL_GOVERNANCE: Record<string, ToolGovernanceEntry> = {
   get_outcomes_funnel: { risk: 'read', status: 'active' },
   classify_cms_remediation: { risk: 'read', status: 'active' },
   prepare_cms_mcp_call: { risk: 'destructive', status: 'active' },
+  // Unified Agentic Memory, Temporal Graph, and Anamnesis Vault catalogue (0044)
+  memory_remember: { risk: 'write', status: 'active' },
+  memory_recall: { risk: 'read', status: 'active' },
+  memory_forget: { risk: 'write', status: 'active' },
+  memory_timeline: { risk: 'read', status: 'active' },
+  memory_vault_snapshot: { risk: 'write', status: 'active' },
+  memory_vault_verify_leaf: { risk: 'read', status: 'active' },
+  // Replit Self-Driving Company Agentic Loop catalogue (Phase 7)
+  create_dev_ticket_from_finding: { risk: 'write', status: 'active' },
+  compile_review_to_skill: { risk: 'write', status: 'active' },
+  mint_habitat_token: { risk: 'write', status: 'active' },
 };
 
 /** Unknown tools default to write/active and are still logged. */

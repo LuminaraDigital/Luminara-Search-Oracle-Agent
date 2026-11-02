@@ -19,7 +19,7 @@
     "deploy": "npm run build && wrangler deploy --env production",
     "deploy:staging": "npm run build -- --mode staging && wrangler deploy --env staging",
     "deploy:prod": "npm run deploy",
-    "db:migrate": "wrangler d1 migrations apply luminara-users --remote",
+    "db:migrate": "wrangler d1 migrations apply luminara-users --remote --env production",
     "db:migrate:staging": "wrangler d1 migrations apply luminara-users-staging --remote --env staging",
     "db:migrate:local": "wrangler d1 migrations apply luminara-users --local",
     "db:backfill:firestore": "node --experimental-strip-types --import ./scripts/register-worker-ts.mjs scripts/backfill-d1-to-firestore.ts",

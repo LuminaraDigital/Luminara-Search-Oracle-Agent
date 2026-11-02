@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { accountCallsAllowed, accountKnownSignedIn, fetchQuotaStatus } from '../../services/apiClient';
+import { productTelemetry } from '../../services/analytics/productTelemetry';
 import {
   paymentReturnMessage,
   paymentCredit,
@@ -45,6 +46,7 @@ export function PaymentReturnNotice() {
   const statusRef = useRef<HTMLDivElement>(null);
   const openedDashboard = useRef(false);
   const focused = useRef(false);
+  const trackedRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!payment || payment.kind !== 'success' || !authReady || !signedIn || openedDashboard.current) return;
@@ -60,6 +62,10 @@ export function PaymentReturnNotice() {
     let timer = 0;
 
     if (payment.kind === 'cancelled' || !signedIn) {
+      if (payment.kind === 'cancelled' && trackedRef.current !== 'cancelled') {
+        trackedRef.current = 'cancelled';
+        productTelemetry.track('funnel_abandoned', { step: 'stripe_checkout', method: 'stripe' });
+      }
       setMessage(paymentReturnMessage({ payment, quota: null, now: Date.now(), signedIn }));
       replacePaymentUrl();
       return;
@@ -73,7 +79,22 @@ export function PaymentReturnNotice() {
       if (cancelled) return;
       const now = Date.now();
       setMessage(paymentReturnMessage({ payment, quota, now, signedIn: true }));
-      if (paymentCredit(payment, quota, now) != null || attempts >= POLL_ATTEMPTS) {
+      const credited = paymentCredit(payment, quota, now);
+      if (credited != null) {
+        const confirmKey = `confirmed:${payment.planId}`;
+        if (trackedRef.current !== confirmKey) {
+          trackedRef.current = confirmKey;
+          productTelemetry.track('payment_completed', {
+            planId: payment.planId,
+            method: 'stripe',
+            status: 'confirmed',
+          });
+          void productTelemetry.flushToServer();
+        }
+        replacePaymentUrl();
+        return;
+      }
+      if (attempts >= POLL_ATTEMPTS) {
         replacePaymentUrl();
         return;
       }

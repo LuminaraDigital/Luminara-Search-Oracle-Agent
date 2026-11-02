@@ -289,12 +289,8 @@ export async function patchFindingStatus(
   findingId: string,
   status: FindingWorkStatus,
 ): Promise<BoardFinding | null> {
-  const local = readLocal(domain);
+  const local = setFindingStatusLocal(domain, listLocalFindings(domain), findingId, status);
   const idx = local.findIndex((f) => f.id === findingId || f.stableKey === findingId);
-  if (idx >= 0) {
-    local[idx] = { ...local[idx], status };
-    writeLocal(domain, local);
-  }
   try {
     const res = await workerFetchWithAuthRetry(
       `${apiBase()}/api/findings/${encodeURIComponent(findingId)}`,
@@ -307,6 +303,7 @@ export async function patchFindingStatus(
     if (res.ok) {
       const data = (await res.json()) as { finding?: any };
       if (data.finding) {
+        const today = formatAuDay(new Date());
         const updated: BoardFinding = {
           id: data.finding.id,
           domain: data.finding.domain || normalizeDomain(domain),
@@ -316,15 +313,17 @@ export async function patchFindingStatus(
           title: data.finding.title,
           description: data.finding.description,
           status: data.finding.status,
+          ...(data.finding.status === 'done' ? { doneOn: local[idx]?.doneOn || today } : {}),
           evidence: data.finding.evidence,
           auditRunId: data.finding.auditRunId,
           synced: true,
         };
-        const next = readLocal(domain);
+        const next = listLocalFindings(domain);
         const i = next.findIndex((f) => f.stableKey === updated.stableKey || f.id === updated.id);
         if (i >= 0) next[i] = updated;
         else next.unshift(updated);
         writeLocal(domain, next);
+        writeBag(domain, next);
         return updated;
       }
     }

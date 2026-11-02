@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { productTelemetry } from '../services/analytics/productTelemetry';
+import { ALL_TELEMETRY_EVENT_TYPES, productTelemetry } from '../services/analytics/productTelemetry';
+import { ALLOWED_TYPES } from '../worker/productAnalytics';
 
 describe('productTelemetry', () => {
   beforeEach(() => {
@@ -57,6 +58,16 @@ describe('productTelemetry', () => {
       productTelemetry.track('checkout_started', { planId: 'growth', method: 'stripe' });
       productTelemetry.track('payment_completed', { planId: 'growth', method: 'stripe', status: 'confirmed' });
     }).not.toThrow();
+  });
+
+  it('keeps every client TelemetryEventType allow-listed in worker/productAnalytics.ts and maintains a durable sessionId', () => {
+    for (const evType of ALL_TELEMETRY_EVENT_TYPES) {
+      expect(ALLOWED_TYPES.has(evType), `missing worker allow-list entry for ${evType}`).toBe(true);
+    }
+    const sid1 = productTelemetry.getSessionId();
+    expect(typeof sid1).toBe('string');
+    expect(sid1.startsWith('anon_')).toBe(true);
+    expect(productTelemetry.getSessionId()).toBe(sid1);
   });
 });
 

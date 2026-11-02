@@ -2,6 +2,9 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { ICONS } from '../../constants';
 import type { BoardFinding } from '../../services/audit/findingBoardService';
 import { patchFindingStatus } from '../../services/audit/findingBoardService';
+import { completeWeeklyMission } from '../../services/referrals/referralClient';
+import { productTelemetry } from '../../services/analytics/productTelemetry';
+import { notifyAuditActivity } from '../../services/audit/auditActivity';
 import { sampleAiSaidFixtures } from '../../services/audit/sampleAiSaidFixtures';
 import type { ShipCommitment } from '../../services/audit/shipCommitmentService';
 import { upsertWeeklyDecision } from '../../services/privacy/privacyClient';
@@ -25,6 +28,7 @@ import { MindshareRadarCard } from '../visibility/MindshareRadarCard';
 import { formatAuDate } from '../../utils/formatAuDate';
 import { PerceptionMatrix } from '../visibility/PerceptionMatrix';
 import { classifyRemediationTier } from '../../services/deployment/remediationTierRouter';
+import { SelfDrivingHabitatBar } from './SelfDrivingHabitatBar';
 
 interface WeeklyDecisionCardProps {
   domain: string;
@@ -201,6 +205,13 @@ export const WeeklyDecisionCard: React.FC<WeeklyDecisionCardProps> = ({
         if (primary) {
           const updated = await patchFindingStatus(domain, primary.id, 'done');
           if (updated) onFindingUpdated?.(updated);
+          productTelemetry.track('fix_shipped', {
+            domain: cleanDomain,
+            fixId: primary.id,
+            source: 'weekly_decision_verified',
+          });
+          completeWeeklyMission('checklist_fix').catch(() => {});
+          notifyAuditActivity();
         }
       } else {
         setVerificationStatus('unverified');
@@ -220,6 +231,24 @@ export const WeeklyDecisionCard: React.FC<WeeklyDecisionCardProps> = ({
     try {
       const updated = await patchFindingStatus(domain, primary.id, 'in_progress');
       if (updated) onFindingUpdated?.(updated);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const markDone = async () => {
+    if (!primary || busy) return;
+    setBusy(true);
+    try {
+      const updated = await patchFindingStatus(domain, primary.id, 'done');
+      if (updated) onFindingUpdated?.(updated);
+      productTelemetry.track('fix_shipped', {
+        domain: cleanDomain,
+        fixId: primary.id,
+        source: 'weekly_decision',
+      });
+      completeWeeklyMission('checklist_fix').catch(() => {});
+      notifyAuditActivity();
     } finally {
       setBusy(false);
     }
@@ -277,6 +306,14 @@ export const WeeklyDecisionCard: React.FC<WeeklyDecisionCardProps> = ({
               className="px-3 py-1.5 rounded-lg border border-gold/40 text-[11px] font-bold uppercase tracking-wider text-gold-light disabled:opacity-40"
             >
               Mark in progress
+            </button>
+            <button
+              type="button"
+              disabled={busy || primary.status === 'done'}
+              onClick={markDone}
+              className="px-3 py-1.5 rounded-lg border border-white/20 text-[11px] font-bold uppercase tracking-wider text-white hover:border-gold/40 disabled:opacity-40"
+            >
+              Mark done
             </button>
             {llmsPreview.includes('<Your agency name>') && (
               <div className="w-full basis-full">
@@ -363,6 +400,14 @@ export const WeeklyDecisionCard: React.FC<WeeklyDecisionCardProps> = ({
           })()}
         </div>
       )}
+
+      <SelfDrivingHabitatBar
+        domain={cleanDomain}
+        brandName={rememberedBrand || cleanDomain}
+        primary={primary}
+        reportMarkdown={reportMarkdown}
+        verifyBy={verifyBy}
+      />
 
       <MindshareRadarCard
         domain={domain}

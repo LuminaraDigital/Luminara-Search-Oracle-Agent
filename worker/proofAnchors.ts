@@ -6,7 +6,7 @@ import type { ChainNetwork } from './chainNetwork';
 
 export type ProofAnchorInput = {
   id?: string;
-  kind: 'ton_payment' | 'audit_citation' | 'xdc_recheck';
+  kind: 'ton_payment' | 'audit_citation' | 'xdc_recheck' | 'memory_snapshot';
   auditRunId?: string | null;
   orderId?: string | null;
   domain?: string | null;
@@ -65,6 +65,7 @@ export async function recordProofAnchorBestEffort(env: Pick<Env, 'DB'>, input: P
            status, error, created_at, anchored_at
          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
+           tx_hash = COALESCE(excluded.tx_hash, proof_anchors.tx_hash),
            seqno = COALESCE(excluded.seqno, proof_anchors.seqno),
            explorer_url = COALESCE(excluded.explorer_url, proof_anchors.explorer_url),
            network = excluded.network,

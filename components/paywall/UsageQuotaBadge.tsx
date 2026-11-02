@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { subscribeQuota, fetchQuotaStatus, openPaywallModal, type QuotaInfo } from '../../services/apiClient';
+import { productTelemetry } from '../../services/analytics/productTelemetry';
 import { dailyCapPaywallLine } from './planCopy';
 import { useAppAuth } from '../../services/auth/useAppAuth';
 import { labsToggleVisible } from '../../services/ui/labsAccess';
@@ -15,7 +16,10 @@ export const UsageQuotaBadge: React.FC<Props> = ({ className = '', showIcon = tr
 
   useEffect(() => {
     if (!auth.loading && auth.authenticated) void fetchQuotaStatus();
-    return subscribeQuota(q => setQuota(q));
+    return subscribeQuota(q => {
+      setQuota(q);
+      if (q) productTelemetry.checkPlanLifecycle(q.plan, q.expiresAt);
+    });
   }, [auth.loading, auth.authenticated]);
 
   // Dev build only, so a header check can show the free-quota badge without a Firebase session.

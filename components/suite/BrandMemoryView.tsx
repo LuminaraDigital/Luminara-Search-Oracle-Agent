@@ -22,6 +22,7 @@ import { mem0MemoryEngine } from '../../services/agentCore/mem0MemoryEngine';
 import { MemoryFact } from '../../services/agentCore/types';
 import { useAsyncLock } from '../../hooks/useAsyncLock';
 import { DreamingMemoryHub } from './DreamingMemoryHub';
+import { UnifiedAgentMemoryPanel } from './UnifiedAgentMemoryPanel';
 
 interface Props {
   dna: BusinessDNA | null;
@@ -194,7 +195,7 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
         <div>
           <span className="text-[10px] font-black uppercase tracking-[0.3em] text-gold">Brand Memory Vault</span>
           <h2 className="text-2xl md:text-3xl font-bold text-white mt-1">What this workspace remembers</h2>
-          <p className="text-sm text-gray-400 mt-2 max-w-2xl">
+          <p className="text-sm text-gray-400 mt-2 max-w-2xl tabular-nums">
             Audits, chat notes, and competitor mentions stay in this workspace.
             Plan: <span className="text-gold-light font-semibold">{entitlements.title}</span>
             {' · '}
@@ -266,10 +267,10 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
               <div key={a.id} className="p-4 rounded-2xl border border-white/10 bg-white/[0.02]">
                 <div className="flex justify-between gap-3 text-xs">
                   <span className="text-gold-light font-bold">{a.title}</span>
-                  <span className="text-gray-400 font-mono">{formatAuDate(a.measuredAt)}</span>
+                  <span className="text-gray-400 font-mono tabular-nums">{formatAuDate(a.measuredAt)}</span>
                 </div>
                 <p className="text-[11px] text-gray-400 mt-2 line-clamp-2">{a.summary}</p>
-                <div className="mt-2 flex flex-wrap gap-2 text-[10px] text-gray-400">
+                <div className="mt-2 flex flex-wrap gap-2 text-[10px] text-gray-400 tabular-nums">
                   <span>Score {a.healthScore ?? 'n/a'}</span>
                   <span>Citation {a.citationRatePercent ?? 'n/a'}%</span>
                   {a.competitorsMentioned.slice(0, 4).map((c) => (
@@ -282,6 +283,9 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
             ))
           )}
           <h3 className="text-sm font-bold text-white pt-4">Vault events</h3>
+          {events.length === 0 && (
+            <p className="text-[11px] text-gray-400">No vault events recorded yet.</p>
+          )}
           {events.map((ev) => (
             <div key={ev.id} className="p-3 rounded-xl border border-white/5 bg-black/30 text-[11px] text-gray-400">
               <span className="text-gold uppercase tracking-wider text-[9px] font-black mr-2">{ev.type}</span>
@@ -309,7 +313,7 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
               <button
                 type="button"
                 onClick={() => onNavigate(AppView.INSTANT_AUDIT)}
-                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-gold to-gold-dark text-black text-xs font-black uppercase tracking-wider hover:opacity-90 active:scale-95 transition-all shadow-md shadow-gold/20"
+                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-gold to-gold-dark text-black text-xs font-black uppercase tracking-wider hover:opacity-90 active:scale-95 transition-all shadow-md shadow-gold/20 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
               >
                 Run Instant Audit →
               </button>
@@ -321,7 +325,7 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
                 {diff.metrics.map((m) => (
                   <div key={m.key} className="p-4 rounded-2xl border border-white/10 bg-white/[0.02]">
                     <div className="text-[10px] uppercase tracking-wider text-gray-400">{m.label}</div>
-                    <div className="text-lg font-bold text-white mt-1">
+                    <div className="text-lg font-bold text-white mt-1 tabular-nums">
                       {m.after ?? 'n/a'}
                       {m.delta != null && (
                         <span className={`ml-2 text-xs ${m.delta >= 0 ? 'text-success-400' : 'text-danger-400'}`}>
@@ -330,7 +334,7 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
                         </span>
                       )}
                     </div>
-                    <div className="text-[10px] text-gray-400 mt-1">Was {m.before ?? 'n/a'}</div>
+                    <div className="text-[10px] text-gray-400 mt-1 tabular-nums">Was {m.before ?? 'n/a'}</div>
                   </div>
                 ))}
               </div>
@@ -375,9 +379,9 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
             </button>
           </div>
           {queryError && <p className="text-xs text-danger-400">{queryError}</p>}
-          <p className="text-[10px] text-gray-400">{queryHits.length} match(es)</p>
+          <p className="text-[10px] text-gray-400 tabular-nums">{queryHits.length} match(es)</p>
           {queryHits.map((a) => (
-            <div key={a.id} className="p-3 rounded-xl border border-white/10 text-xs text-gray-300">
+            <div key={a.id} className="p-3 rounded-xl border border-white/10 text-xs text-gray-300 tabular-nums">
               {a.domain} · {a.focus} · score {a.healthScore ?? 'n/a'} · {formatAuDate(a.measuredAt)}
             </div>
           ))}
@@ -399,6 +403,9 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
               Add
             </button>
           </div>
+          {watch.length === 0 && (
+            <p className="text-[11px] text-gray-400">No competitors in watchlist yet.</p>
+          )}
           {watch.map((w) => (
             <div key={w.id} className="flex justify-between items-center p-3 rounded-xl border border-white/10 text-xs">
               <span className="text-white">[[{w.name}]] <span className="text-gray-400">for {w.brandDomain}</span></span>
@@ -507,10 +514,10 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                <span>🧠</span> Autonomous 4-Tier Knowledge Graph
+                <span>🧠</span> Autonomous 4-Tier Knowledge Graph &amp; Verifiable Vault
               </h3>
               <p className="text-xs text-gray-400">
-                Mem0-inspired multi-tier memory. Learns silently from audits and chats, extracting facts and auto-resolving conflicts.
+                Mem0 + Letta + Graphiti + OriginTrail DKG + Anamnesis memory layer. Syncs scoped facts, bi-temporal entity edges, and AES-256-GCM Merkle snapshots anchored on TON.
               </p>
             </div>
             {mem0Facts.length > 0 && (
@@ -522,10 +529,15 @@ export const BrandMemoryView: React.FC<Props> = ({ dna, onNavigate, onOpenPaywal
                 }}
                 className="px-3 py-1 bg-danger-500/20 hover:bg-danger-500/30 text-danger-300 border border-danger-500/30 rounded-lg text-xs font-medium transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
               >
-                Clear All Facts
+                Clear Local Cache
               </button>
             )}
           </div>
+
+          <UnifiedAgentMemoryPanel
+            domain={primaryDomain || dna?.name?.toLowerCase().replace(/\s+/g, '') || 'account'}
+            onRefreshParent={refresh}
+          />
 
           {mem0Facts.length === 0 ? (
             <div className="p-8 text-center border border-white/10 rounded-2xl bg-white/[0.02]">

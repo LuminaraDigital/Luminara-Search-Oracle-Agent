@@ -163,7 +163,7 @@
     "REQUEST_SIGNING_REQUIRED": "false",
     "AUDIT_QUEUE_ENABLED": "true",
     // Budget hard stops: off | soft | hard. Production defaults to hard; staging stays soft for dogfood.
-    // Card checkout stays closed until test keys are set and this is flipped to "true".
+    // Top-level vars keep card checkout closed ("false") for unscoped local commands; env.staging and env.production set "true".
     "STRIPE_CHECKOUT_LIVE": "false",
     "BUDGET_ENFORCEMENT": "hard"
     // Optional secrets (wrangler secret put): SENTRY_DSN, AZURE_AI_SEARCH_KEY, GCP_VERTEX_ACCESS_TOKEN
@@ -304,7 +304,7 @@
         "OTP_SMS_ENABLED": "false",
         "REQUEST_SIGNING_REQUIRED": "false",
         "AUDIT_QUEUE_ENABLED": "true",
-        // Test keys and the staging webhook are set. Production stays "false".
+        // Staging card checkout (test keys + staging webhook secret); env.production sets "true" with live keys.
         "STRIPE_CHECKOUT_LIVE": "true",
         "BUDGET_ENFORCEMENT": "soft"
       }

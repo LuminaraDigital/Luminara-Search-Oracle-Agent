@@ -68,7 +68,32 @@ export interface ObservableStateBucket {
   doc: JsonValue;
 }
 
+export type GraphNodeName =
+  | 'intake'
+  | 'recall_memory'
+  | 'plan_steps'
+  | 'execute_tool'
+  | 'await_approval'
+  | 'critic_verify'
+  | 'consolidate_memory'
+  | 'settled';
+
+export interface GraphCheckpoint {
+  turnId: string;
+  turnNumber: number;
+  currentNode: GraphNodeName;
+  stepIndex: number;
+  planSteps: string[];
+  pendingToolId: string | null;
+  resumable: boolean;
+  lastError: string | null;
+  stateSnapshot: Record<string, unknown>;
+  updatedAt: number;
+}
+
 const MAX_STORED_TURNS = 80;
+const MAX_ROLLING_SUMMARY_CHARS = 2400;
+const MAX_CHECKPOINTS = 20;
 const MAX_STORED_EVENTS = 500;
 const MAX_QUEUED_TURNS = 25;
 const MAX_GATES = 50;
@@ -80,6 +105,16 @@ const MAX_STATE_DOC_CHARS = 64 * 1024;
 const MAX_EVENT_TEXT_CHARS = 2048;
 const STALE_TURN_MS = 10 * 60 * 1000;
 const FORBIDDEN_RECORD_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+const VALID_GRAPH_NODES = new Set<GraphNodeName>([
+  'intake',
+  'recall_memory',
+  'plan_steps',
+  'execute_tool',
+  'await_approval',
+  'critic_verify',
+  'consolidate_memory',
+  'settled',
+]);
 
 function isSafeRecordKey(key: string): boolean {
   return Boolean(key) && !FORBIDDEN_RECORD_KEYS.has(key);
@@ -103,6 +138,8 @@ export class OracleSession {
   private pendingApprovals: Record<string, PendingToolGate> = {};
   private pendingCallbacks: Record<string, PendingCallbackGate> = {};
   private stateBuckets: Record<string, ObservableStateBucket> = {};
+  private rollingSummary = '';
+  private checkpoints: Record<string, GraphCheckpoint> = {};
 
   constructor(state: DurableObjectState) {
     this.state = state;
@@ -118,6 +155,8 @@ export class OracleSession {
         storedApprovals,
         storedCallbacks,
         storedBuckets,
+        storedSummary,
+        storedCheckpoints,
       ] = await Promise.all([
         this.state.storage.get<typeof this.turns>('turns'),
         this.state.storage.get<AgentEventEnvelope[]>('events'),
@@ -129,6 +168,8 @@ export class OracleSession {
         this.state.storage.get<Record<string, PendingToolGate>>('pendingApprovals'),
         this.state.storage.get<Record<string, PendingCallbackGate>>('pendingCallbacks'),
         this.state.storage.get<Record<string, ObservableStateBucket>>('stateBuckets'),
+        this.state.storage.get<string>('rollingSummary'),
+        this.state.storage.get<Record<string, GraphCheckpoint>>('checkpoints'),
       ]);
 
       if (storedTurns) this.turns = storedTurns;
@@ -141,6 +182,8 @@ export class OracleSession {
       if (storedApprovals) this.pendingApprovals = storedApprovals;
       if (storedCallbacks) this.pendingCallbacks = storedCallbacks;
       if (storedBuckets) this.stateBuckets = storedBuckets;
+      if (typeof storedSummary === 'string') this.rollingSummary = storedSummary;
+      if (storedCheckpoints) this.checkpoints = storedCheckpoints;
     });
   }
 
@@ -199,6 +242,7 @@ export class OracleSession {
     if (request.method === 'GET' && pathname.endsWith('/history')) {
       return Response.json({
         turns: this.turns.slice(-40),
+        rollingSummary: this.rollingSummary,
         rememberedTools: this.rememberedTools,
         currentTurnNumber: this.currentTurnNumber,
         activeTurnId: this.activeTurnId,
@@ -214,11 +258,23 @@ export class OracleSession {
       if (body.role && body.content) {
         this.turns.push({ role: body.role, content: body.content, at: Date.now() });
         if (this.turns.length > MAX_STORED_TURNS) {
+          const evictedCount = this.turns.length - MAX_STORED_TURNS;
+          const evicted = this.turns.slice(0, evictedCount);
+          const snippet = evicted
+            .map((t) => `[${t.role}] ${t.content.replace(/\s+/g, ' ').slice(0, 140)}`)
+            .join(' | ');
+          const combined = this.rollingSummary ? `${this.rollingSummary} | ${snippet}` : snippet;
+          this.rollingSummary = combined.slice(-MAX_ROLLING_SUMMARY_CHARS);
           this.turns = this.turns.slice(-MAX_STORED_TURNS);
+          await this.state.storage.put('rollingSummary', this.rollingSummary);
         }
         await this.state.storage.put('turns', this.turns);
       }
-      return Response.json({ ok: true, count: this.turns.length });
+      return Response.json({
+        ok: true,
+        count: this.turns.length,
+        rollingSummaryLength: this.rollingSummary.length,
+      });
     }
 
     if (request.method === 'DELETE' && (pathname === '/' || pathname === '')) {
@@ -232,6 +288,8 @@ export class OracleSession {
       this.pendingApprovals = {};
       this.pendingCallbacks = {};
       this.stateBuckets = {};
+      this.rollingSummary = '';
+      this.checkpoints = {};
       await this.state.storage.deleteAll();
       return Response.json({ ok: true });
     }
@@ -605,10 +663,28 @@ export class OracleSession {
         }
       }
 
+      // Advance any paused graph checkpoint awaiting this tool gate (LangGraph / Temporal pattern)
+      const resumedCheckpoints: string[] = [];
+      for (const cp of Object.values(this.checkpoints)) {
+        if (
+          cp.pendingToolId === gate.toolId ||
+          (cp.pendingToolId && cascadedToolIds.includes(cp.pendingToolId))
+        ) {
+          cp.currentNode = approved ? 'execute_tool' : 'critic_verify';
+          cp.resumable = true;
+          cp.pendingToolId = null;
+          cp.updatedAt = now;
+          resumedCheckpoints.push(cp.turnId);
+        }
+      }
+
       await Promise.all([
         this.persistEvents(),
         this.state.storage.put('pendingApprovals', this.pendingApprovals),
         this.state.storage.put('rememberedTools', this.rememberedTools),
+        resumedCheckpoints.length > 0
+          ? this.state.storage.put('checkpoints', this.checkpoints)
+          : Promise.resolve(),
       ]);
 
       return Response.json({
@@ -618,6 +694,7 @@ export class OracleSession {
         remember,
         rememberedTools: this.rememberedTools,
         cascadedToolIds,
+        resumedCheckpoints,
         events: resolvedEnvelopes,
       });
     }
@@ -801,6 +878,100 @@ export class OracleSession {
       });
     }
 
+    // -------------------------------------------------------------------------
+    // Plane 4: Durable Graph Checkpointer (LangGraph + Temporal Resumption)
+    // -------------------------------------------------------------------------
+    if (request.method === 'GET' && pathname.endsWith('/checkpoint')) {
+      const turnId = url.searchParams.get('turnId') || this.activeTurnId;
+      if (turnId && isSafeRecordKey(turnId)) {
+        const cp = ownRecordGet(this.checkpoints, turnId) ?? null;
+        return Response.json({ ok: true, checkpoint: cp });
+      }
+      return Response.json({
+        ok: true,
+        checkpoints: Object.values(this.checkpoints).sort((a, b) => b.updatedAt - a.updatedAt),
+        rollingSummary: this.rollingSummary,
+      });
+    }
+
+    if (request.method === 'POST' && pathname.endsWith('/checkpoint')) {
+      const body = (await request.json().catch(() => ({}))) as Partial<GraphCheckpoint> & {
+        scheduleAlarmMs?: number;
+      };
+      const turnId = String(body.turnId || this.activeTurnId || `turn_${this.currentTurnNumber}`).slice(0, 64);
+      if (!isSafeRecordKey(turnId)) {
+        return Response.json({ ok: false, error: 'invalid turnId', code: 'BAD_REQUEST' }, { status: 400 });
+      }
+      const existing = ownRecordGet(this.checkpoints, turnId);
+      const nextNode =
+        typeof body.currentNode === 'string' && VALID_GRAPH_NODES.has(body.currentNode as GraphNodeName)
+          ? (body.currentNode as GraphNodeName)
+          : (existing?.currentNode ?? 'intake');
+      const rawSnapshot =
+        body.stateSnapshot && typeof body.stateSnapshot === 'object'
+          ? body.stateSnapshot
+          : (existing?.stateSnapshot ?? {});
+      if (JSON.stringify(rawSnapshot).length > MAX_STATE_DOC_CHARS) {
+        return Response.json(
+          { ok: false, error: 'stateSnapshot exceeds maximum size', code: 'PAYLOAD_TOO_LARGE' },
+          { status: 413 },
+        );
+      }
+      const cp: GraphCheckpoint = {
+        turnId,
+        turnNumber: body.turnNumber ?? existing?.turnNumber ?? this.currentTurnNumber,
+        currentNode: nextNode,
+        stepIndex: typeof body.stepIndex === 'number' ? body.stepIndex : (existing?.stepIndex ?? 0),
+        planSteps: Array.isArray(body.planSteps) ? body.planSteps.slice(0, 20) : (existing?.planSteps ?? []),
+        pendingToolId: body.pendingToolId !== undefined ? body.pendingToolId : (existing?.pendingToolId ?? null),
+        resumable: body.resumable !== undefined ? Boolean(body.resumable) : (existing?.resumable ?? false),
+        lastError: body.lastError !== undefined ? body.lastError : (existing?.lastError ?? null),
+        stateSnapshot: rawSnapshot,
+        updatedAt: Date.now(),
+      };
+
+      this.checkpoints[turnId] = cp;
+      const entries = Object.entries(this.checkpoints);
+      if (entries.length > MAX_CHECKPOINTS) {
+        const trimmed = entries
+          .sort((a, b) => b[1].updatedAt - a[1].updatedAt)
+          .slice(0, MAX_CHECKPOINTS);
+        this.checkpoints = Object.fromEntries(trimmed);
+      }
+
+      if (
+        typeof body.scheduleAlarmMs === 'number' &&
+        Number.isFinite(body.scheduleAlarmMs) &&
+        body.scheduleAlarmMs > 0 &&
+        typeof this.state.storage.setAlarm === 'function'
+      ) {
+        await this.state.storage.setAlarm(Date.now() + Math.min(body.scheduleAlarmMs, 24 * 3600 * 1000));
+      }
+
+      await this.state.storage.put('checkpoints', this.checkpoints);
+      return Response.json({ ok: true, checkpoint: cp });
+    }
+
     return new Response('Not found', { status: 404 });
+  }
+
+  /**
+   * Durable Object alarm handler (Temporal-style timer wake and stale gate recovery).
+   */
+  async alarm(): Promise<void> {
+    const now = Date.now();
+    let changed = false;
+    for (const cp of Object.values(this.checkpoints)) {
+      if (cp.currentNode === 'await_approval' && now - cp.updatedAt >= STALE_TURN_MS) {
+        cp.currentNode = 'critic_verify';
+        cp.resumable = true;
+        cp.lastError = 'Approval gate timed out; falling back to critic verification.';
+        cp.updatedAt = now;
+        changed = true;
+      }
+    }
+    if (changed) {
+      await this.state.storage.put('checkpoints', this.checkpoints);
+    }
   }
 }

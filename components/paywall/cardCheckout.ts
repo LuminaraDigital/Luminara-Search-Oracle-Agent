@@ -8,6 +8,7 @@ export async function redirectToCardCheckout(planId: string): Promise<{ ok: true
     const res = await createStripeCheckout({ planId });
     if (res.ok && res.checkoutUrl) {
       productTelemetry.track('checkout_started', { planId, method: 'stripe', status: 'initiated' });
+      void productTelemetry.flushToServer();
       window.location.assign(res.checkoutUrl);
       return { ok: true };
     }

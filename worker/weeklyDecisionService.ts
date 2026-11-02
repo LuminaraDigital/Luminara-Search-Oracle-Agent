@@ -73,6 +73,8 @@ export async function handleWeeklyDecisionsRoute(
       .bind(accountId, domain, week)
       .first<{ id: string; version: number }>();
 
+    const decisionId = existing ? existing.id : crypto.randomUUID();
+    const statusLabel = existing ? 'updated' : 'created';
     if (existing) {
       await env.DB.prepare(
         `UPDATE weekly_decisions SET
@@ -92,62 +94,60 @@ export async function handleWeeklyDecisionsRoute(
           body.verifyBy || now + 14 * 86400000,
           now,
           body.projectId || null,
-          existing.id,
+          decisionId,
         )
         .run();
-      const row = await env.DB.prepare(`SELECT * FROM weekly_decisions WHERE id = ?`).bind(existing.id).first();
-      try {
-        await enqueueDreamEvent(env, {
+    } else {
+      await env.DB.prepare(
+        `INSERT INTO weekly_decisions
+          (id, account_id, project_id, domain, week_key, title, why_text, evidence_json,
+           prepare_status, verify_by, finding_id, commitment_json, confidence, data_freshness,
+           status, version, created_by, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'none', ?, ?, ?, ?, ?, 'open', 1, ?, ?, ?)`,
+      )
+        .bind(
+          decisionId,
+          accountId,
+          body.projectId || null,
+          domain,
+          week,
+          title.slice(0, 300),
+          (body.whyText || '').slice(0, 4000),
+          JSON.stringify(body.evidence ?? []),
+          body.verifyBy || now + 14 * 86400000,
+          body.findingId || null,
+          body.commitment ? JSON.stringify(body.commitment) : null,
+          body.confidence || 'medium',
+          freshness,
+          user.id,
+          now,
+          now,
+        )
+        .run();
+    }
+    const row = await env.DB.prepare(`SELECT * FROM weekly_decisions WHERE id = ?`).bind(decisionId).first();
+    try {
+      const { ingestWeeklyDecisionToGraph } = await import('./memoryAutoIngest');
+      await Promise.all([
+        enqueueDreamEvent(env, {
           accountId,
           domain,
           eventType: 'recommendation_updated',
-          sourceId: existing.id,
-          payload: { title, whyText: body.whyText, status: 'updated', confidence: body.confidence },
-        });
-      } catch {
-        /* ignore dreaming queue failure */
-      }
-      return json({ ok: true, decision: row });
-    }
-
-    const id = crypto.randomUUID();
-    await env.DB.prepare(
-      `INSERT INTO weekly_decisions
-        (id, account_id, project_id, domain, week_key, title, why_text, evidence_json,
-         prepare_status, verify_by, finding_id, commitment_json, confidence, data_freshness,
-         status, version, created_by, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'none', ?, ?, ?, ?, ?, 'open', 1, ?, ?, ?)`,
-    )
-      .bind(
-        id,
-        accountId,
-        body.projectId || null,
-        domain,
-        week,
-        title.slice(0, 300),
-        (body.whyText || '').slice(0, 4000),
-        JSON.stringify(body.evidence ?? []),
-        body.verifyBy || now + 14 * 86400000,
-        body.findingId || null,
-        body.commitment ? JSON.stringify(body.commitment) : null,
-        body.confidence || 'medium',
-        freshness,
-        user.id,
-        now,
-        now,
-      )
-      .run();
-    const row = await env.DB.prepare(`SELECT * FROM weekly_decisions WHERE id = ?`).bind(id).first();
-    try {
-      await enqueueDreamEvent(env, {
-        accountId,
-        domain,
-        eventType: 'recommendation_updated',
-        sourceId: id,
-        payload: { title, whyText: body.whyText, status: 'created', confidence: body.confidence },
-      });
+          sourceId: decisionId,
+          payload: { title, whyText: body.whyText, status: statusLabel, confidence: body.confidence },
+        }),
+        ingestWeeklyDecisionToGraph(env, {
+          accountId,
+          projectId: body.projectId || null,
+          domain,
+          weekStart: week,
+          headline: title,
+          actionText: body.whyText || title,
+          decisionId,
+        }),
+      ]);
     } catch {
-      /* ignore dreaming queue failure */
+      /* ignore dreaming/graph failure */
     }
     return json({ ok: true, decision: row });
   }

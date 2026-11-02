@@ -423,6 +423,10 @@ async function softDeleteAccount(env: Env, accountId: string, deps?: DataPlaneDe
   await drop('crm_properties', `DELETE FROM crm_properties WHERE account_id = ?`);
   await drop('crm_contacts', `DELETE FROM crm_contacts WHERE account_id = ?`);
   await drop('external_effects', `DELETE FROM external_effects WHERE account_id = ?`);
+  await drop('memory_edges', `DELETE FROM memory_edges WHERE account_id = ?`);
+  await drop('memory_vault_snapshots', `DELETE FROM memory_vault_snapshots WHERE account_id = ?`);
+  await drop('agent_trace_spans', `DELETE FROM agent_trace_spans WHERE account_id = ?`);
+  await drop('mcp_external_servers', `DELETE FROM mcp_external_servers WHERE account_id = ?`);
   await drop('project_context_sections', `DELETE FROM project_context_sections WHERE project_id IN (SELECT id FROM projects WHERE account_id = ?)`);
   await drop('project_competitors', `DELETE FROM project_competitors WHERE project_id IN (SELECT id FROM projects WHERE account_id = ?)`);
   await drop('project_key_pages', `DELETE FROM project_key_pages WHERE project_id IN (SELECT id FROM projects WHERE account_id = ?)`);

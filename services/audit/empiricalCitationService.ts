@@ -181,7 +181,7 @@ export class EmpiricalCitationService {
       }
     });
 
-    const entityClarityScore = Math.min(100, Math.max(25, citationRatePercent + (queriesCitedCount > 0 ? 20 : 5)));
+    const entityClarityScore = queriesCitedCount > 0 ? Math.min(100, citationRatePercent + 20) : 0;
 
     return {
       targetDomain,

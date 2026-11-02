@@ -107,9 +107,17 @@ export const VisibilityRetentionCard: React.FC<VisibilityRetentionCardProps> = (
               </p>
             </>
           )}
-          {profile && !showGame && (
-            <p className="text-sm text-gray-300 max-w-xl leading-relaxed">Your AI visibility. Pick one open item below.</p>
-          )}
+          {profile && !showGame && (() => {
+            const completedMissionsCount = profile.missions.filter((m) => m.status === 'completed').length;
+            return (
+              <>
+                <p className="text-sm text-gray-300 max-w-xl leading-relaxed">Your AI visibility. Pick one open item below.</p>
+                <p className="text-xs text-gray-400 mt-1 max-w-xl leading-relaxed font-mono">
+                  Active streak: {profile.progression.streakWeeks} week{profile.progression.streakWeeks === 1 ? '' : 's'} · {completedMissionsCount} of {profile.missions.length} weekly tasks done · {profile.progression.honestScoutCount} measured run{profile.progression.honestScoutCount === 1 ? '' : 's'}
+                </p>
+              </>
+            );
+          })()}
         </div>
         {showGame && profile?.inviteUrl && (
           <button

@@ -17,7 +17,7 @@ import {
   getActionRequestById,
 } from '../worker/mcpGovernance';
 import { redactSensitive } from '../worker/logRedaction';
-import { handleMcpRequest } from '../worker/mcpServer';
+import { handleMcpRequest, listMcpToolCatalogue } from '../worker/mcpServer';
 import type { HostedIdentity } from '../worker/userTypes';
 import { createSqliteD1 } from './helpers/sqliteD1';
 
@@ -52,19 +52,11 @@ const ctxFree = { subscriptionActive: false, creditClass: 'free', identityPlan: 
 const ctxSub = { subscriptionActive: true, creditClass: 'free', identityPlan: 'growth' };
 
 describe('tool governance catalogue', () => {
-  it('covers every MCP-exposed tool name', () => {
-    const known = [
-      'whoami', 'list_projects', 'create_project', 'get_project_context',
-      'update_project_context', 'list_reports', 'get_report', 'save_report',
-      'research_keywords', 'get_domain_overview', 'get_serp_results',
-      'get_backlinks_overview', 'get_visibility_snapshot', 'get_pagespeed_summary',
-      'browse_observe', 'browse_act', 'browse_goal', 'browse_close',
-      'dream_status', 'get_business_memory', 'dream_consolidate', 'review_dream_proposal',
-      'list_enquiries', 'ingest_enquiry', 'propose_booking_slots', 'decide_booking_signoff',
-      'get_outcomes_funnel', 'classify_cms_remediation', 'prepare_cms_mcp_call',
-    ];
-    for (const name of known) {
-      expect(TOOL_GOVERNANCE[name], name).toBeDefined();
+  it('covers every MCP-exposed tool name dynamically and statically', () => {
+    const catalogue = listMcpToolCatalogue();
+    expect(catalogue.length).toBeGreaterThanOrEqual(30);
+    for (const tool of catalogue) {
+      expect(TOOL_GOVERNANCE[tool.name], `Missing governance for ${tool.name}`).toBeDefined();
     }
   });
 

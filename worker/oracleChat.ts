@@ -120,10 +120,10 @@ export async function handleOracleSessionControlRoute(
     );
   }
 
-  // Clients may only read the log/state and resolve gates. Event publishing, turn admission,
-  // settle, and truncate stay server-internal so a caller cannot forge tool_end/approval events.
+  // Clients may only read the log/state/checkpoint and resolve gates. Event publishing, turn admission,
+  // checkpoint writes, settle, and truncate stay server-internal so a caller cannot forge tool_end/approval events.
   const allowed =
-    (request.method === 'GET' && ['events', 'state', 'history'].includes(actionPath)) ||
+    (request.method === 'GET' && ['events', 'state', 'history', 'checkpoint'].includes(actionPath)) ||
     (request.method === 'POST' && ['approval', 'callback', 'state/patch'].includes(actionPath));
   if (!allowed) {
     return new Response(JSON.stringify({ ok: false, error: 'Not found', code: 'NOT_FOUND' }), {
@@ -672,15 +672,35 @@ export async function handleOracleChatSse(
       });
       let systemPrompt = withHealthClaimRule(oracleSkill?.promptBody || bundledOraclePrompt);
       let memoryFacts: string[] = [];
-      try {
-        const { ragContextForOracle } = await import('./memoryRag');
-        const memory = await ragContextForOracle(env, billingId(user), message);
-        if (memory.block) {
-          systemPrompt = `${systemPrompt}\n\n${memory.block}`;
-          memoryFacts = memory.facts;
+      let resolvedProjectId: string | null = body.projectId || null;
+      let resolvedDomain: string | null = null;
+      if (env.LUMINARA_DB) {
+        try {
+          const [{ ragContextForOracle }, { recallUnifiedContext }] = await Promise.all([
+            import('./memoryRag'),
+            import('./unifiedMemoryRouter'),
+          ]);
+          const [memory, unified] = await Promise.all([
+            ragContextForOracle(env, billingId(user), message),
+            recallUnifiedContext(env, {
+              accountId: billingId(user),
+              query: message,
+              projectId: body.projectId || null,
+              topK: 5,
+            }),
+          ]);
+          resolvedProjectId = unified.projectId || resolvedProjectId;
+          resolvedDomain = unified.domain || null;
+          if (unified.promptBlock) {
+            systemPrompt = `${systemPrompt}\n\n${unified.promptBlock}`;
+            memoryFacts = Array.from(new Set([...memory.facts, ...unified.facts.map((f) => f.text)]));
+          } else if (memory.block) {
+            systemPrompt = `${systemPrompt}\n\n${memory.block}`;
+            memoryFacts = memory.facts;
+          }
+        } catch {
+          /* memory RAG is best-effort */
         }
-      } catch {
-        /* memory RAG is best-effort */
       }
       const messages = [
         { role: 'system', content: systemPrompt },
@@ -784,14 +804,28 @@ export async function handleOracleChatSse(
         });
       }
 
-      // Chat -> facts pipeline (best-effort; high-confidence lines auto-store)
+      // Chat -> facts & bi-temporal graph pipeline (Letta/Mem0/Graphiti delta pass)
       try {
-        const { extractFactsFromChat } = await import('./memoryRag');
-        await extractFactsFromChat(env, user, {
-          message,
-          sessionId,
-          autoStore: true,
-        });
+        const [{ extractFactsFromChat }, { extractAndStoreChatMemory }] = await Promise.all([
+          import('./memoryRag'),
+          import('./memoryAutoIngest'),
+        ]);
+        await Promise.all([
+          extractFactsFromChat(env, user, {
+            message,
+            sessionId,
+            autoStore: true,
+          }),
+          extractAndStoreChatMemory(env, {
+            accountId: billingId(user),
+            projectId: resolvedProjectId,
+            domain: resolvedDomain,
+            sessionId,
+            turnId: activeTurnId,
+            userMessage: message,
+            assistantMessage: fullText,
+          }),
+        ]);
       } catch {
         /* ignore */
       }

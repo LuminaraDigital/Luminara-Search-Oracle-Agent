@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { parseJsonc } from '../scripts/lib/jsonc.mjs';
 
 describe('Staging Environment & Branch Safety Controls', () => {
   const root = resolve(__dirname, '..');
@@ -55,5 +57,78 @@ describe('Staging Environment & Branch Safety Controls', () => {
     expect(deployContent).toContain('deploy_production');
     expect(deployContent).toContain('deploy --env staging');
     expect(deployContent).toContain('deploy --env production');
+  });
+
+  it('package.json deploy and remote D1 migration scripts always pass explicit --env flags', () => {
+    const pkg = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')) as {
+      scripts?: Record<string, string>;
+    };
+    const scripts = pkg.scripts || {};
+    expect(scripts.deploy).toContain('wrangler deploy --env production');
+    expect(scripts['deploy:staging']).toContain('wrangler deploy --env staging');
+    expect(scripts['db:migrate']).toContain('wrangler d1 migrations apply luminara-users --remote --env production');
+    expect(scripts['db:migrate:staging']).toContain(
+      'wrangler d1 migrations apply luminara-users-staging --remote --env staging',
+    );
+  });
+
+  it('wrangler.jsonc keeps top-level bindings in parity with env.production and isolated from env.staging', () => {
+    const config = parseJsonc(readFileSync(resolve(root, 'wrangler.jsonc'), 'utf8')) as {
+      d1_databases?: Array<{ database_id?: string; database_name?: string }>;
+      kv_namespaces?: Array<{ id?: string }>;
+      r2_buckets?: Array<{ bucket_name?: string }>;
+      queues?: unknown;
+      routes?: unknown;
+      vars?: Record<string, string>;
+      env?: {
+        staging?: {
+          d1_databases?: Array<{ database_id?: string; database_name?: string }>;
+          kv_namespaces?: Array<{ id?: string }>;
+          r2_buckets?: Array<{ bucket_name?: string }>;
+          vars?: Record<string, string>;
+        };
+        production?: {
+          d1_databases?: Array<{ database_id?: string; database_name?: string }>;
+          kv_namespaces?: Array<{ id?: string }>;
+          r2_buckets?: Array<{ bucket_name?: string }>;
+          queues?: unknown;
+          routes?: unknown;
+          vars?: Record<string, string>;
+        };
+      };
+    };
+
+    const prod = config.env?.production;
+    const staging = config.env?.staging;
+    expect(prod).toBeDefined();
+    expect(staging).toBeDefined();
+
+    expect(config.d1_databases).toEqual(prod?.d1_databases);
+    expect(config.kv_namespaces).toEqual(prod?.kv_namespaces);
+    expect(config.r2_buckets).toEqual(prod?.r2_buckets);
+    expect(config.queues).toEqual(prod?.queues);
+    expect(config.routes).toEqual(prod?.routes);
+
+    expect(staging?.d1_databases?.[0]?.database_id).not.toBe(prod?.d1_databases?.[0]?.database_id);
+    expect(staging?.kv_namespaces?.[0]?.id).not.toBe(prod?.kv_namespaces?.[0]?.id);
+    expect(staging?.r2_buckets?.[0]?.bucket_name).not.toBe(prod?.r2_buckets?.[0]?.bucket_name);
+
+    expect(config.vars?.STRIPE_CHECKOUT_LIVE).toBe('false');
+    expect(staging?.vars?.STRIPE_CHECKOUT_LIVE).toBe('true');
+    expect(prod?.vars?.STRIPE_CHECKOUT_LIVE).toBe('true');
+  });
+
+  it('scripts/validate-env.mjs passes for both production and staging modes', () => {
+    const prodRes = spawnSync(process.execPath, [resolve(root, 'scripts/validate-env.mjs'), '--prod'], {
+      cwd: root,
+      encoding: 'utf8',
+    });
+    expect(prodRes.status).toBe(0);
+
+    const stagingRes = spawnSync(process.execPath, [resolve(root, 'scripts/validate-env.mjs'), '--staging'], {
+      cwd: root,
+      encoding: 'utf8',
+    });
+    expect(stagingRes.status).toBe(0);
   });
 });

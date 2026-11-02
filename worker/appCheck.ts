@@ -70,6 +70,26 @@ export function resolveFirebaseProjectNumber(env: Env): string | null {
   return null;
 }
 
+export type AppCheckReadiness = {
+  mode: AppCheckMode;
+  requireAppCheck: boolean;
+  projectNumberConfigured: boolean;
+  ready: boolean;
+};
+
+/** Operator diagnostic snapshot of App Check configuration and enforcement mode. */
+export function describeAppCheckReadiness(env: Env): AppCheckReadiness {
+  const mode = resolveAppCheckMode(env);
+  const requireAppCheck = isAppCheckRequired(env);
+  const projectNumberConfigured = Boolean(resolveFirebaseProjectNumber(env));
+  return {
+    mode,
+    requireAppCheck,
+    projectNumberConfigured,
+    ready: projectNumberConfigured,
+  };
+}
+
 export function resetAppCheckJwksCache(): void {
   jwksCache = null;
   jwksPending = null;

@@ -22,6 +22,12 @@ export type McpCredential = {
   /** api_keys.id for api_key; null otherwise. Never a secret. */
   id: string | null;
   scopes: string[] | null;
+  /** Optional Agent Habitat project scope lock (lm_hab_* tokens). */
+  projectId?: string | null;
+  /** Optional Agent Habitat domain scope lock (lm_hab_* tokens). */
+  domain?: string | null;
+  /** Optional Agent Habitat risk ceiling ('read' | 'write'; destructive is never granted). */
+  maxRisk?: 'read' | 'write' | null;
 };
 
 /** Default credential for callers that predate credential plumbing (tests, cookie sessions). */

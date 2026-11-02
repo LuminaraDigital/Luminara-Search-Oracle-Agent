@@ -237,6 +237,78 @@ function checkSecretPlaceholders(config) {
   return { ok: true };
 }
 
+function checkEnvironmentBindingParity(config) {
+  const prod = config?.env?.production;
+  const staging = config?.env?.staging;
+  if (!prod || !staging) {
+    return { ok: false, message: 'wrangler.jsonc must define both env.staging and env.production blocks.' };
+  }
+  const parityBlocks = ['d1_databases', 'kv_namespaces', 'r2_buckets', 'queues', 'routes'];
+  for (const key of parityBlocks) {
+    if (JSON.stringify(config?.[key]) !== JSON.stringify(prod?.[key])) {
+      return {
+        ok: false,
+        message: `top-level ${key} drifted from env.production.${key}. Keep top-level production defaults identical to env.production.`,
+      };
+    }
+  }
+  if (staging?.d1_databases?.[0]?.database_id === prod?.d1_databases?.[0]?.database_id) {
+    return { ok: false, message: 'staging and production D1 database_id must be isolated.' };
+  }
+  if (staging?.kv_namespaces?.[0]?.id === prod?.kv_namespaces?.[0]?.id) {
+    return { ok: false, message: 'staging and production KV namespace id must be isolated.' };
+  }
+  if (staging?.r2_buckets?.[0]?.bucket_name === prod?.r2_buckets?.[0]?.bucket_name) {
+    return { ok: false, message: 'staging and production R2 bucket_name must be isolated.' };
+  }
+  if (config?.vars?.STRIPE_CHECKOUT_LIVE !== 'false') {
+    return { ok: false, message: 'top-level vars.STRIPE_CHECKOUT_LIVE must remain "false" for unscoped local commands.' };
+  }
+  if (staging?.vars?.STRIPE_CHECKOUT_LIVE !== 'true' || prod?.vars?.STRIPE_CHECKOUT_LIVE !== 'true') {
+    return { ok: false, message: 'env.staging.vars.STRIPE_CHECKOUT_LIVE and env.production.vars.STRIPE_CHECKOUT_LIVE must be "true".' };
+  }
+  const topVars = config?.vars || {};
+  const prodVars = prod?.vars || {};
+  for (const [k, v] of Object.entries(topVars)) {
+    if (k === 'STRIPE_CHECKOUT_LIVE') continue;
+    if (prodVars[k] !== v) {
+      return {
+        ok: false,
+        message: `top-level vars.${k} (${JSON.stringify(v)}) drifted from env.production.vars.${k} (${JSON.stringify(prodVars[k])}).`,
+      };
+    }
+  }
+  return { ok: true };
+}
+
+function checkPackageDeployScripts() {
+  const pkgPath = resolve(root, 'package.json');
+  if (!existsSync(pkgPath)) {
+    return { ok: false, message: 'package.json not found.' };
+  }
+  const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
+  const scripts = pkg?.scripts || {};
+  if (!String(scripts.deploy || '').includes('wrangler deploy --env production')) {
+    return { ok: false, message: 'package.json scripts.deploy must include "wrangler deploy --env production".' };
+  }
+  if (!String(scripts['deploy:staging'] || '').includes('wrangler deploy --env staging')) {
+    return { ok: false, message: 'package.json scripts["deploy:staging"] must include "wrangler deploy --env staging".' };
+  }
+  if (!String(scripts['db:migrate'] || '').includes('wrangler d1 migrations apply luminara-users --remote --env production')) {
+    return {
+      ok: false,
+      message: 'package.json scripts["db:migrate"] must include "wrangler d1 migrations apply luminara-users --remote --env production".',
+    };
+  }
+  if (!String(scripts['db:migrate:staging'] || '').includes('wrangler d1 migrations apply luminara-users-staging --remote --env staging')) {
+    return {
+      ok: false,
+      message: 'package.json scripts["db:migrate:staging"] must include "wrangler d1 migrations apply luminara-users-staging --remote --env staging".',
+    };
+  }
+  return { ok: true };
+}
+
 let wranglerConfig;
 try {
   wranglerConfig = parseJsonc(wranglerContent);
@@ -248,6 +320,18 @@ const secretPlaceholders = checkSecretPlaceholders(wranglerConfig);
 if (!secretPlaceholders.ok) {
   console.error(`[EnvValidation] ${secretPlaceholders.message}`);
   process.exit(1);
+}
+if (!wranglerArg) {
+  const parity = checkEnvironmentBindingParity(wranglerConfig);
+  if (!parity.ok) {
+    console.error(`[EnvValidation] ${parity.message}`);
+    process.exit(1);
+  }
+  const pkgScripts = checkPackageDeployScripts();
+  if (!pkgScripts.ok) {
+    console.error(`[EnvValidation] ${pkgScripts.message}`);
+    process.exit(1);
+  }
 }
 
 console.log(`[EnvValidation] Environment checks passed for ${targetMode}. Staging-production isolation verified.`);

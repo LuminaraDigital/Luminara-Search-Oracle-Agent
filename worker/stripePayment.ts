@@ -17,6 +17,7 @@ import {
 import { planRank } from './planRank';
 import { resolveAccountId, writeSubscriptionRecord } from './userStore';
 import { normalizePlanId } from '../services/plans/planEntitlements';
+import { recordServerAnalyticsEvent } from './productAnalytics';
 
 /**
  * Card checkout opens only when env.STRIPE_CHECKOUT_LIVE === 'true'.
@@ -562,6 +563,23 @@ async function creditCheckoutSession(env: Env, session: any, deps: StripeDeps): 
   } catch (err) {
     await releaseStripeSession(env, sessionId);
     throw err;
+  }
+
+  if (!alreadyApplied) {
+    await recordServerAnalyticsEvent(env, {
+      accountId,
+      sessionId,
+      type: 'payment_completed',
+      path: '/api/stripe/webhook',
+      data: {
+        planId,
+        method: 'stripe',
+        sessionId,
+        amountCents: plan.amountCents,
+        currency,
+      },
+      timestamp: now,
+    });
   }
 
   console.log(`[Stripe Webhook] Successfully credited plan ${planId} to user ${userId} (session ${sessionId})`);

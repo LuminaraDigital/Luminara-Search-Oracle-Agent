@@ -106,7 +106,7 @@ To capitalize on this, you should ship two moves immediately:
           sourceId: 'src-3',
           sourceTitle: '[Sample Reference] How an answer engine picks a source',
           citationNumber: 3,
-          quote: 'Queries triggering AI Overviews synthesize answers from an average of 3.4 distinct sources.',
+          quote: 'An answer can draw on more than one page. A claim that other trusted pages contradict is easier to leave out.',
         },
       ],
     },

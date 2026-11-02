@@ -58,7 +58,7 @@ import { activateLicenseKey, generateLicenseKeys, importLicenseKeys } from './li
 import { TERMS_HTML, buildTermsHtml } from './termsPolicy';
 import { DELETE_ACCOUNT_HTML, maybeServeAndroidLegalHtml } from './androidLegalHtml';
 import { isAndroidPlayClientSearch } from '../services/legal/playClient';
-import { AI_TXT, LLMS_TXT, SITEMAP_XML, applyHostRobots, buildSitemapXml, robotsTxtForHost } from './crawlDocuments';
+import { AI_TXT, LLMS_TXT, SITEMAP_XML, applyHostRobots, robotsTxtForHost } from './crawlDocuments';
 import { maybeServeMarketingHtml, maybeServeReceiptHtml, maybeServeShareHtml, withSkippedBootSplash } from './marketingShell';
 import { desktopLatestJson, desktopWindowsDownload } from './desktopDownloads';
 import { resolveAppView } from '../utils/marketingRoutes';
@@ -79,13 +79,12 @@ import {
   putWorkspace,
   listAllUsers,
   withAccountId,
-  upsertAppUser,
 } from './userStore';
 import { getOrCreateUserOrg, hasPermission } from './enterpriseStore';
 import { auditOrgIdFor, recordAuditLog, getAuditLogs, recordAuditLogBestEffort, getAuditChainEntries, verifyAuditChain } from './auditLog';
 import { isAdminAuthorized } from './adminAuth';
 
-import { applyCorsHeaders, corsHeaders, getSessionCookieToken, identify, json, secretEquals, billingId, sha256Hex } from './workerUtils';
+import { applyCorsHeaders, corsHeaders, getSessionCookieToken, identify, json, secretEquals, billingId } from './workerUtils';
 import { getActiveSubscription, readQuotaSnapshot } from './quotaMiddleware';
 import { handleReferralRoute } from './referrals';
 import { handleIdeaScoutRoute } from './ideaScout';
@@ -143,9 +142,12 @@ import { dispatchQueueBatch } from './queueDispatch';
 import { handleMcpOAuthRoute } from './mcpOAuth';
 import { executeOracleGatewayTask, type OracleGatewayRequest } from './oracleGateway';
 import { createMemoryFact, listMemoryFacts } from './memoryService';
+import { handleUnifiedMemoryRoute } from './unifiedMemoryRouter';
+import { handleMemoryVaultRoute } from './memoryVaultService';
+import { compileFeedbackIntoSkillRule, handleAgentHabitatRoute } from './selfDrivingHabitat';
 import { handlePrivacyRoute, purgeExpiredPrivacyDeletes } from './privacyService';
 import { isCronMapped, jobsForCron, shouldRunScheduledJob } from './scheduledJobs';
-import { ingestProductAnalytics } from './productAnalytics';
+import { getProductFunnelSummary, ingestProductAnalytics } from './productAnalytics';
 import { handleWeeklyDecisionsRoute, sendWeeklyDecisionDigest } from './weeklyDecisionService';
 import { handleDreamingRoute } from './dreamingService';
 import { handleRsiRoute } from './rsiRoutes';
@@ -164,8 +166,8 @@ import { handleDomainVerificationRoute, isDomainVerifyEnabled, recheckVerifiedDo
 import { isReceiptSigningConfigured } from './receiptSigning';
 import { handleMemoryRagRoute } from './memoryRag';
 import { handleBudgetReconcileRoute } from './invoiceReconcile';
-import { handleCreateStripeCheckoutSession, handleStripeWebhook, isStripeCheckoutLive } from './stripePayment';
-import { enforceAppCheckRequest } from './appCheck';
+import { diagnoseStripeConfig, handleCreateStripeCheckoutSession, handleStripeWebhook, isStripeCheckoutLive } from './stripePayment';
+import { enforceAppCheckRequest, resolveAppCheckMode, resolveFirebaseProjectNumber } from './appCheck';
 import { bindWorkerSentry, reportWorkerException } from './sentry';
 import {
   enforceDualRateLimit,
@@ -387,6 +389,9 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       telegram: Boolean(env.BOT_TOKEN),
       firebase: Boolean(env.FIREBASE_PROJECT_ID),
       appCheckRequired: String(env.REQUIRE_APP_CHECK || '').toLowerCase() === 'true',
+      appCheckMode: resolveAppCheckMode(env),
+      appCheckProjectNumberConfigured: Boolean(resolveFirebaseProjectNumber(env)),
+      stripeConfigured: diagnoseStripeConfig(env).ok,
       mcpOAuthConfigured: Boolean(String(env.MCP_OAUTH_SECRET || '').trim()),
       pagespeedHosted: Boolean(String(env.PAGESPEED_API_KEY || '').trim()),
       // Same meaning as the public field: TON checkout is open. tonConfigured says only that the
@@ -1554,11 +1559,25 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     if (oauthRes) return withCors(oauthRes);
   }
 
-  // Hosted memory facts (W8 incremental) + RAG / chat→facts
-  if (path === '/memory/facts' || path === '/memory/search' || path === '/memory/extract') {
+  // Hosted memory facts (W8 incremental) + RAG / chat->facts + Unified Agentic Memory + Anamnesis Vault
+  if (
+    path === '/memory/facts' ||
+    path === '/memory/search' ||
+    path === '/memory/extract' ||
+    path.startsWith('/memory/unified/') ||
+    path.startsWith('/memory/vault/')
+  ) {
     const who = await identify(request, env);
     if (who.error || !who.user) {
       return withCors(json({ ok: false, error: who.error || 'Unauthorized', code: 'AUTH_REQUIRED' }, 401));
+    }
+    if (path.startsWith('/memory/unified/')) {
+      const unifiedRes = await handleUnifiedMemoryRoute(request, env, who.user, path);
+      if (unifiedRes) return withCors(unifiedRes);
+    }
+    if (path.startsWith('/memory/vault/')) {
+      const vaultRes = await handleMemoryVaultRoute(request, env, who.user, path);
+      if (vaultRes) return withCors(vaultRes);
     }
     const rag = await handleMemoryRagRoute(request, env, who.user, path);
     if (rag) return withCors(rag);
@@ -1601,6 +1620,25 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
   if (path === '/analytics/events') {
     const who = await identify(request, env);
     return withCors(await ingestProductAnalytics(request, env, who.user));
+  }
+
+  // Operator-only CC5 anonymous-to-paid funnel and payer cohort summary
+  if (path === '/admin/analytics/funnel') {
+    if (request.method !== 'GET') return withCors(json({ error: 'Method not allowed' }, 405));
+    const hit = limited('auth', RATE_AUTH_PER_MIN);
+    if (hit) return hit;
+    const admin = isAdminAuthorized(env, request);
+    if (!admin.ok) return withCors(admin.response);
+    const days = Number(url.searchParams.get('days') || 30);
+    await recordAuditLogBestEffort(env, {
+      org_id: ADMIN_SYSTEM_ORG,
+      actor_id: 'admin',
+      action: 'admin.analytics.funnel',
+      details: { days: Number.isFinite(days) ? days : 30 },
+      ip_address: ip,
+      user_agent: request.headers.get('user-agent') || undefined,
+    });
+    return withCors(await getProductFunnelSummary(env, { days }));
   }
 
   // Durable Weekly Decision Loop (0014) + WDL5-8 surfaces
@@ -1789,7 +1827,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
           details: { amount_cents: policy.amount_cents, currency: policy.currency },
         });
         return withCors(json({ ok: true, policy }));
-      } catch (err) {
+      } catch {
         return withCors(json({ ok: false, error: 'Budget store unavailable', code: 'BUDGET_UNAVAILABLE' }, 503));
       }
     }
@@ -1815,7 +1853,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
 
   // MCP action-request approve/deny (suite-10x M3 / P5). Account owner only.
   if (path === '/mcp-action-requests' || path.startsWith('/mcp-action-requests/')) {
-    const who = await identify(request, env);
+    const who = identifiedForRequest(request) ?? (await identify(request, env));
     if (who.error || !who.user) {
       return withCors(json({ ok: false, error: who.error || 'Unauthorized', code: 'AUTH_REQUIRED' }, 401));
     }
@@ -1851,17 +1889,80 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       if (!ok) {
         return withCors(json({ ok: false, error: 'Could not update action request', code: 'UPDATE_FAILED' }, 409));
       }
+      let compiledRule: { ruleText: string; factId: string | null } | null = null;
+      if (decision === 'deny') {
+        const denyBody = await readBody(request, MAX_SMALL_BODY_BYTES).catch(() => ({ ok: false as const, value: null }));
+        const raw = (denyBody.ok && denyBody.value ? denyBody.value : {}) as {
+          reason?: string;
+          domain?: string;
+          projectId?: string;
+          compileRule?: boolean;
+        };
+        if (typeof raw.reason === 'string' && raw.reason.trim().length >= 4 && raw.compileRule !== false) {
+          let fallbackDomain: string | null = null;
+          if (!raw.domain && row.args_json) {
+            try {
+              const parsedArgs = JSON.parse(row.args_json) as { domain?: unknown };
+              if (typeof parsedArgs.domain === 'string') fallbackDomain = parsedArgs.domain;
+            } catch {
+              /* ignore malformed args_json */
+            }
+          }
+          const compiled = await compileFeedbackIntoSkillRule(env, {
+            accountId,
+            userId: who.user.id,
+            domain: raw.domain || fallbackDomain || null,
+            projectId: raw.projectId || row.project_id || null,
+            reason: raw.reason,
+            targetToolOrAsset: row.tool_name,
+            sourceRef: `mcp_deny:${requestId}`,
+          });
+          if (compiled.ok) {
+            compiledRule = { ruleText: compiled.ruleText, factId: compiled.factId };
+          }
+        }
+      }
       await recordAuditLogBestEffort(env, {
         org_id: auditOrgIdFor(accountId),
         actor_id: who.user.id,
         action: decision === 'approve' ? 'mcp_action_approve' : 'mcp_action_deny',
         target_id: requestId,
-        details: { tool_name: row.tool_name, kind: row.kind, project_id: row.project_id },
+        details: {
+          tool_name: row.tool_name,
+          kind: row.kind,
+          project_id: row.project_id,
+          ...(compiledRule ? { compiled_rule: compiledRule.ruleText } : {}),
+        },
       });
-      return withCors(json({ ok: true, id: requestId, status: decision === 'approve' ? 'approved' : 'denied' }));
+      return withCors(
+        json({
+          ok: true,
+          id: requestId,
+          status: decision === 'approve' ? 'approved' : 'denied',
+          ...(compiledRule ? { compiledRule } : {}),
+        }),
+      );
     }
 
     return withCors(json({ error: 'Method not allowed' }, 405));
+  }
+
+  // Replit Self-Driving Company Agent Habitat control plane & Coasean handoff packet (Phase 7)
+  if (path.startsWith('/agent-habitat/')) {
+    const who = identifiedForRequest(request) ?? (await identify(request, env));
+    if (who.error || !who.user) {
+      return withCors(json({ ok: false, error: who.error || 'Unauthorized', code: 'AUTH_REQUIRED' }, 401));
+    }
+    const dual = await enforceDualRateLimit(env, {
+      action: 'agent_habitat',
+      accountId: billingId(who.user),
+      ip,
+      limitPerKey: 45,
+      windowSec: 60,
+    });
+    if (!dual.ok) return withCors(dual.response);
+    const habRes = await handleAgentHabitatRoute(request, env, who.user, path);
+    if (habRes) return withCors(habRes);
   }
 
   // APS: MCP (Growth+ mcpAccess; session, lm_live_* API key, or mcp_* OAuth token)

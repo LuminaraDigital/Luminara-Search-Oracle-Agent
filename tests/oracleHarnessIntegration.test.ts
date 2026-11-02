@@ -296,6 +296,10 @@ describe('Wave 3: Oracle SSE & 3-Plane Harness Integration', () => {
       ORACLE_SESSION: doNs,
     } as unknown as Env;
 
+    let markFirstLlmEntered!: () => void;
+    const firstLlmEntered = new Promise<void>((resolve) => {
+      markFirstLlmEntered = resolve;
+    });
     let releaseFirstLlm!: () => void;
     const firstLlmGate = new Promise<void>((resolve) => {
       releaseFirstLlm = resolve;
@@ -305,6 +309,7 @@ describe('Wave 3: Oracle SSE & 3-Plane Harness Integration', () => {
     globalThis.fetch = vi.fn(async () => {
       llmCallCount += 1;
       if (llmCallCount === 1) {
+        markFirstLlmEntered();
         await firstLlmGate;
         throw new Error('Simulated Groq upstream failure');
       }
@@ -326,6 +331,7 @@ describe('Wave 3: Oracle SSE & 3-Plane Harness Integration', () => {
     );
     const res1 = await res1Promise;
     expect(res1.status).toBe(200);
+    await firstLlmEntered;
 
     // Concurrent Turn 2 while Turn 1 is still active -> rejected with 409 TURN_ACTIVE without calling LLM
     const res2 = await handleOracleChatSse(
@@ -345,7 +351,7 @@ describe('Wave 3: Oracle SSE & 3-Plane Harness Integration', () => {
     expect(err2.ok).toBe(false);
     expect(err2.code).toBe('TURN_ACTIVE');
     expect(err2.activeTurnId).toBe('turn_1');
-    expect(llmCallCount).toBe(1);
+    await vi.waitFor(() => expect(llmCallCount).toBe(1));
 
     // Release Turn 1 so the provider throws; finally block must still settle turn_1
     releaseFirstLlm();

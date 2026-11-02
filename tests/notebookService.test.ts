@@ -106,9 +106,9 @@ describe('NotebookService', () => {
         id: 's1',
         title: 'Luminara Guidelines',
         type: 'text',
-        content: 'Direct answers under H2 headers win 73% more citations.',
+        content: 'Direct answers under H2 headers are easier for answer engines to extract.',
         summary: 'Direct answers guidance',
-        wordCount: 10,
+        wordCount: 12,
         addedAt: Date.now(),
         selected: true,
       },
@@ -127,7 +127,7 @@ describe('NotebookService', () => {
     const rawModelOutput = `You should optimize your headers [1] and take advantage of ApexRank's weak citation rate [2].
 
 <!-- CITATIONS -->
-[1]: "Direct answers under H2 headers win 73% more citations."
+[1]: "Direct answers under H2 headers are easier for answer engines to extract."
 [2]: "ApexRank has a 28% citation rate due to missing sameAs links."
 <!-- END_CITATIONS -->`;
 
@@ -138,7 +138,7 @@ describe('NotebookService', () => {
     expect(citations.length).toBe(2);
     expect(citations[0].citationNumber).toBe(1);
     expect(citations[0].sourceId).toBe('s1');
-    expect(citations[0].quote).toBe('Direct answers under H2 headers win 73% more citations.');
+    expect(citations[0].quote).toBe('Direct answers under H2 headers are easier for answer engines to extract.');
     expect(citations[1].citationNumber).toBe(2);
     expect(citations[1].sourceId).toBe('s2');
   });

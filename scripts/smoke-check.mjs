@@ -32,11 +32,14 @@ const REQUIRED_D1_MIGRATIONS = [
   'migrations/0015_privacy_observability_memory.sql',
   'migrations/0016_memory_history.sql',
   'migrations/0017_proof_ledger.sql',
+  'migrations/0021_stripe_payments.sql',
   'migrations/0023_stars_charges.sql',
+  'migrations/0024_stripe_payment_intent.sql',
   'migrations/0025_ton_pending_orders.sql',
   'migrations/0026_payment_support.sql',
   'migrations/0033_community_feed.sql',
   'migrations/0043_conversion_enquiry_spine.sql',
+  'migrations/0044_agentic_memory_and_vault.sql',
 ];
 
 const REQUIRED_D1_TABLES = [
@@ -61,6 +64,7 @@ const REQUIRED_D1_TABLES = [
   'idea_scouts',
   'idea_scout_daily',
   'niche_pulse_subs',
+  'stripe_credited_sessions',
   'stars_charges',
   'ton_pending_orders',
   'payment_support_requests',
@@ -74,6 +78,10 @@ const REQUIRED_D1_TABLES = [
   'appraisal_appointments',
   'recovery_runs',
   'outcome_stage_events',
+  'memory_edges',
+  'memory_vault_snapshots',
+  'agent_trace_spans',
+  'mcp_external_servers',
 ];
 
 // 1. Verify build bundle integrity
@@ -124,7 +132,7 @@ for (const rel of REQUIRED_D1_MIGRATIONS) {
     process.exit(1);
   }
 }
-console.log('[SmokeCheck] [PASS] D1 migration files present (0011-0017).');
+console.log('[SmokeCheck] [PASS] D1 migration files present (0011-0044).');
 
 function probeRemoteD1Tables() {
   if (process.env.SMOKE_D1_PREFLIGHT === '0') {
@@ -133,7 +141,7 @@ function probeRemoteD1Tables() {
   }
   const dbName = isStaging ? 'luminara-users-staging' : 'luminara-users';
   const sql = `SELECT name FROM sqlite_master WHERE type='table' AND name IN (${REQUIRED_D1_TABLES.map((t) => `'${t}'`).join(',')})`;
-  const envPart = isStaging ? '--env staging' : '';
+  const envPart = isStaging ? '--env staging' : isProd ? '--env production' : '';
   // Single shell string so Windows keeps --command SQL intact (JSON.stringify quotes it).
   const cmdline = `npx wrangler d1 execute ${dbName} --remote ${envPart} --command ${JSON.stringify(sql)} --json`;
   console.log(`[SmokeCheck] Probing remote D1 tables on ${dbName}...`);
@@ -206,30 +214,33 @@ if (targetUrl && !isDryRun) {
   }
   console.log('[SmokeCheck] [PASS] Remote health check returned:', JSON.stringify(data));
 
-  // Findings board must be mounted and auth-gated (unsigned GET → 401).
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
-    const findingsRes = await fetch(
-      `${targetUrl}/api/findings?domain=smoke.example.com`,
-      {
+  // Findings board, Wave 0044 unified memory timeline, and Phase 7 Agent Habitat must be mounted and auth-gated (unsigned GET -> 401).
+  for (const probePath of [
+    '/api/findings?domain=smoke.example.com',
+    '/api/memory/unified/timeline?domain=smoke.example.com',
+    '/api/agent-habitat/status?domain=smoke.example.com',
+  ]) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+      const probeRes = await fetch(`${targetUrl}${probePath}`, {
         headers: { 'User-Agent': 'Luminara-Smoke-Check/1.0' },
         signal: controller.signal,
-      },
-    );
-    clearTimeout(timeout);
-    if (findingsRes.status !== 401) {
+      });
+      clearTimeout(timeout);
+      if (probeRes.status !== 401) {
+        console.error(
+          `[SmokeCheck] FAILED: GET ${probePath} expected 401 when unsigned, got HTTP ${probeRes.status}`,
+        );
+        process.exit(1);
+      }
+      console.log(`[SmokeCheck] [PASS] GET ${probePath} returns 401 when unsigned.`);
+    } catch (err) {
       console.error(
-        `[SmokeCheck] FAILED: GET /api/findings expected 401 when unsigned, got HTTP ${findingsRes.status}`,
+        `[SmokeCheck] FAILED: ${probePath} probe unreachable: ${err instanceof Error ? err.message : err}`,
       );
       process.exit(1);
     }
-    console.log('[SmokeCheck] [PASS] GET /api/findings returns 401 when unsigned.');
-  } catch (err) {
-    console.error(
-      `[SmokeCheck] FAILED: /api/findings probe unreachable: ${err instanceof Error ? err.message : err}`,
-    );
-    process.exit(1);
   }
 }
 

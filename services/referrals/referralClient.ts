@@ -7,6 +7,7 @@ import type { HonestMeasurementStatus, MissionKey, VisibilityLevel } from './rul
 import { clearPendingReferral, readPendingReferral } from './pendingReferral';
 import { takeScoutReceipt } from './scoutReceiptCapture';
 import { notifyAuditActivity } from '../audit/auditActivity';
+import { productTelemetry } from '../analytics/productTelemetry';
 
 export interface ReferralMission {
   key: string;
@@ -121,6 +122,7 @@ export async function completeWeeklyMission(missionKey: MissionKey): Promise<{ o
     });
     const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
     if (!res.ok || !data.ok) return { ok: false, error: data.error || `HTTP ${res.status}` };
+    productTelemetry.track('mission_completed', { mission: missionKey });
     notifyAuditActivity();
     return { ok: true };
   } catch (err: unknown) {
