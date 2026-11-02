@@ -5,14 +5,20 @@ import com.google.firebase.auth.FirebaseAuth
 import com.luminarasuite.app.core.auth.AndroidFirebaseAccount
 import com.luminarasuite.app.core.auth.KeystoreCredentialVault
 import com.luminarasuite.app.core.auth.VaultStorage
+import com.luminarasuite.app.core.auth.blockingAppCheckToken
+import com.luminarasuite.app.core.auth.installAppCheck
 import com.luminarasuite.app.core.database.LuminaraDatabase
+import com.luminarasuite.app.core.database.wipeLocalWorkspace
+import com.luminarasuite.app.core.network.AppCheckTokens
 import com.luminarasuite.app.core.network.DefaultLuminaraRepository
 import com.luminarasuite.app.core.network.DefaultWorkspaceGateway
+import com.luminarasuite.app.core.network.FIREBASE_APP_CHECK_HEADER
 import com.luminarasuite.app.core.network.LuminaraApi
 import com.luminarasuite.app.core.network.LuminaraRepository
 import com.luminarasuite.app.core.network.LuminaraWireJson
 import com.luminarasuite.app.core.network.SessionAuthenticator
 import com.luminarasuite.app.core.network.WorkspaceGateway
+import com.luminarasuite.app.core.network.appCheckHeaderValue
 import com.luminarasuite.app.core.network.chooseSessionRefresh
 import com.luminarasuite.app.core.network.refreshOverHttp
 import kotlinx.coroutines.runBlocking
@@ -32,6 +38,9 @@ class LuminaraApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // Auth enforcement rejects sign-in unless this runs before FirebaseAuth.
+        installAppCheck(this)
+        val appCheckTokens = AppCheckTokens(read = { blockingAppCheckToken() })
         val vault: VaultStorage = KeystoreCredentialVault(this)
         val firebase = AndroidFirebaseAccount(FirebaseAuth.getInstance())
         val database = LuminaraDatabase.build(this)
@@ -46,6 +55,9 @@ class LuminaraApplication : Application() {
                 if (token.isNotBlank()) {
                     reqBuilder.header("Authorization", "Bearer $token")
                 }
+                appCheckHeaderValue(appCheckTokens.current())?.let { appCheck ->
+                    reqBuilder.header(FIREBASE_APP_CHECK_HEADER, appCheck)
+                }
                 chain.proceed(reqBuilder.build())
             }
 
@@ -53,11 +65,14 @@ class LuminaraApplication : Application() {
             OkHttpClient.Builder()
                 .addInterceptor(authInterceptor)
                 .authenticator(
-                    SessionAuthenticator(vault) { refreshToken ->
+                    SessionAuthenticator(
+                        vault,
+                        onSessionCleared = { runBlocking { database.dao().wipeLocalWorkspace() } },
+                    ) { refreshToken ->
                         chooseSessionRefresh(
                             refreshToken,
                             sdk = { runBlocking { firebase.forceRefresh() } },
-                            http = refreshOverHttp(BuildConfig.API_BASE_URL, json),
+                            http = refreshOverHttp(BuildConfig.API_BASE_URL, json) { appCheckTokens.current() },
                         )
                     },
                 )

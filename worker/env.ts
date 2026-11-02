@@ -53,8 +53,10 @@ export interface Env extends DataPlaneEnv {
   REQUIRE_TG_AUTH?: string;
   /** "true": hosted provider keys additionally need an active paid plan. */
   REQUIRE_SUBSCRIPTION?: string;
-  /** Requests per user per UTC day on hosted keys without a paid plan (0 = unlimited). */
+  /** Requests per user per UTC day on hosted keys without a paid plan (0 = unlimited). Audits. */
   FREE_DAILY_LIMIT?: string;
+  /** Ask and hosted search calls per user per UTC day. Separate from FREE_DAILY_LIMIT. Default 10. 0 = unlimited. */
+  ASK_DAILY_LIMIT?: string;
   /** Firebase / GCP project id used to verify Auth ID tokens (public; not a secret). */
   FIREBASE_PROJECT_ID?: string;
   /**
@@ -71,7 +73,7 @@ export interface Env extends DataPlaneEnv {
   /**
    * API-wide App Check gate: "off" | "log" | "enforce". Unset is off.
    * log records a bad or missing token and still serves the request.
-   * enforce returns 401. Health, robots.txt, llms.txt, ai.txt, and webhook routes are exempt.
+   * enforce returns 401. Health, robots.txt, llms.txt, llm.txt, ai.txt, and webhook routes are exempt.
    * Production stays "off" until a log soak is clean.
    */
   APPCHECK_ENFORCE?: string;

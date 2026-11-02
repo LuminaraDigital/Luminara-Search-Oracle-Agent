@@ -202,10 +202,10 @@ export function plainScoutVerdict(source: string): string {
 
 function nextStepFor(rail: HostedScoutRail, evidenceEmpty: boolean): string {
   if (evidenceEmpty && rail === 'byok_or_signin') {
-    return 'Add your own AI keys in Settings, or sign in, then run the scout again. This run is not a finished audit.';
+    return 'Sign in, then run the scout again. This run is not a finished audit.';
   }
   if (evidenceEmpty && rail === 'tma_hosted') {
-    return 'Try the scout again when search and page fetch respond. You can also add your own keys in Settings. This run is not a finished audit.';
+    return 'Try the scout again when search and page fetch respond. This run is not a finished audit.';
   }
   if (evidenceEmpty) {
     return 'Please run the check again in a few minutes. This run is not a finished audit.';

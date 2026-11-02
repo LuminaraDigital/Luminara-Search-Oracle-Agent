@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.luminarasuite.app.core.auth.GuestTrial
 import com.luminarasuite.app.core.designsystem.AccentHeadline
 import com.luminarasuite.app.core.designsystem.AiEvidenceDisclosureBar
 import com.luminarasuite.app.core.designsystem.EyebrowKicker
@@ -62,7 +63,9 @@ import com.luminarasuite.app.core.designsystem.toneColor
 import com.luminarasuite.app.core.designsystem.toneForStatus
 import com.luminarasuite.app.core.model.BotDirectiveStatus
 import com.luminarasuite.app.core.model.CrewResult
+import com.luminarasuite.app.core.model.QuotaStatus
 import com.luminarasuite.app.core.model.ReadinessCheck
+import com.luminarasuite.app.core.model.auditUsageLine
 import com.luminarasuite.app.core.network.AuditRead
 import com.luminarasuite.app.core.network.InstantAuditReport
 import com.luminarasuite.app.core.network.LuminaraRepository
@@ -256,6 +259,9 @@ private fun shareReport(
 @Composable
 fun AuditScreen(
     viewModel: AuditViewModel,
+    quota: QuotaStatus? = null,
+    signedIn: Boolean = false,
+    onSignIn: () -> Unit = {},
     onAskAbout: (String) -> Unit = {},
     onShareLink: suspend (String, String?) -> Result<String> = { _, _ ->
         Result.failure(IllegalStateException("Sign in to create a link."))
@@ -291,6 +297,9 @@ fun AuditScreen(
             text = "Paste your site. Get a plain answer, the evidence behind it, and one thing to fix this week.",
             style = LuminaraTextStyles.Body,
         )
+        auditUsageLine(quota)?.let { line ->
+            Text(text = line, style = LuminaraTextStyles.Body, modifier = Modifier.testTag("audit_usage_line"))
+        }
 
         WorkbenchCard(emphasized = true) {
             OutlinedTextField(
@@ -336,9 +345,11 @@ fun AuditScreen(
         }
 
         state.errorMessage?.let { errorMsg ->
-            WorkbenchCard(railColor = LuminaraColors.ErrorRed) {
-                EyebrowKicker("That did not go through")
-                Text(text = errorMsg, style = LuminaraTextStyles.Body, color = LuminaraColors.ErrorRed)
+            if (!GuestTrial.isHostedSignInGate(errorMsg)) {
+                WorkbenchCard(railColor = LuminaraColors.ErrorRed) {
+                    EyebrowKicker("That did not go through")
+                    Text(text = errorMsg, style = LuminaraTextStyles.Body, color = LuminaraColors.ErrorRed)
+                }
             }
         }
 
@@ -356,6 +367,8 @@ fun AuditScreen(
                     report = report,
                     state = state,
                     onExplain = viewModel::explainReport,
+                    signedIn = signedIn,
+                    onSignIn = onSignIn,
                     onSendToStudio = viewModel::sendToStudio,
                     isVerdictReported = state.isVerdictReported,
                     onRecheck = viewModel::recheckCheck,
@@ -380,6 +393,8 @@ private fun AuditReportContent(
     report: InstantAuditReport,
     state: AuditUiState,
     onExplain: () -> Unit,
+    signedIn: Boolean,
+    onSignIn: () -> Unit,
     onSendToStudio: () -> Unit,
     isVerdictReported: Boolean,
     onRecheck: (String) -> Unit,
@@ -433,6 +448,15 @@ private fun AuditReportContent(
                 EyebrowKicker("Plain English")
                 Text(text = aiRead.verdict, style = LuminaraTextStyles.Body.copy(color = LuminaraColors.Ink))
                 Text(text = aiRead.nextAction, style = LuminaraTextStyles.Body)
+            }
+            state.errorMessage?.takeIf { GuestTrial.isHostedSignInGate(it) }?.let { gate ->
+                Text(text = gate, style = LuminaraTextStyles.Body)
+                GhostPillButton(
+                    text = "Sign in",
+                    onClick = onSignIn,
+                    modifier = Modifier.fillMaxWidth(),
+                    testTag = "audit_sign_in_button",
+                )
             }
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -512,11 +536,15 @@ private fun AuditReportContent(
                     style = LuminaraTextStyles.Body,
                 )
                 FoundryButton(
-                    text = "Ask what to publish next",
+                    text = if (signedIn) "Ask what to publish next" else "Sign in",
                     onClick = {
-                        onAskAbout(
-                            "What should ${report.domain} publish next in /llms.txt so AI crawlers can cite it?",
-                        )
+                        if (signedIn) {
+                            onAskAbout(
+                                "What should ${report.domain} publish next in /llms.txt so AI crawlers can cite it?",
+                            )
+                        } else {
+                            onSignIn()
+                        }
                     },
                 )
                 TextButton(onClick = onProbeAnother, modifier = Modifier.fillMaxWidth()) {

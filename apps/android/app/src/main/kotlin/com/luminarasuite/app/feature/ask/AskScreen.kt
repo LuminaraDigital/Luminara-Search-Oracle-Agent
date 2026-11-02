@@ -21,11 +21,13 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.luminarasuite.app.core.auth.GuestTrial
 import com.luminarasuite.app.core.designsystem.AccentHeadline
 import com.luminarasuite.app.core.designsystem.AiEvidenceDisclosureBar
 import com.luminarasuite.app.core.designsystem.EyebrowKicker
@@ -38,6 +40,8 @@ import com.luminarasuite.app.core.designsystem.PromptBar
 import com.luminarasuite.app.core.designsystem.ScreenGutter
 import com.luminarasuite.app.core.designsystem.WorkbenchCard
 import com.luminarasuite.app.core.model.OracleTurn
+import com.luminarasuite.app.core.model.QuotaStatus
+import com.luminarasuite.app.core.model.askUsageLine
 import com.luminarasuite.app.core.network.LuminaraRepository
 import com.luminarasuite.app.core.network.OracleEvent
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -100,7 +104,8 @@ class AskViewModel(
                             isLoading = false,
                             pendingQuestion = null,
                             errorMessage =
-                            err.message ?: "That did not go through. Sign in or add a Groq key in Settings.",
+                            err.message
+                                ?: "That did not go through. Sign in for hosted answers, or try again in a minute.",
                         )
                     }
                 }.collect { event ->
@@ -141,8 +146,10 @@ class AskViewModel(
 fun AskScreen(
     viewModel: AskViewModel,
     seedPrompt: String? = null,
+    quota: QuotaStatus? = null,
+    signedIn: Boolean = false,
     onSeedConsumed: () -> Unit = {},
-    onOpenSettings: () -> Unit = {},
+    onSignIn: () -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsState()
     val scrollState = rememberScrollState()
@@ -164,6 +171,23 @@ fun AskScreen(
                 .padding(horizontal = ScreenGutter, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            askUsageLine(quota)?.let { line ->
+                Text(text = line, style = LuminaraTextStyles.Body, modifier = Modifier.testTag("ask_usage_line"))
+            }
+            if (!signedIn) {
+                WorkbenchCard {
+                    Text(
+                        text = "Sign in for 10 questions a day. A free account uses Suite hosted AI.",
+                        style = LuminaraTextStyles.Body,
+                    )
+                    GhostPillButton(
+                        text = "Sign in",
+                        onClick = onSignIn,
+                        modifier = Modifier.fillMaxWidth(),
+                        testTag = "ask_sign_in_button",
+                    )
+                }
+            }
             if (state.turns.isEmpty() && state.pendingQuestion == null) {
                 AskIntro(enabled = !state.isLoading, onStarter = viewModel::submitQuestion)
             }
@@ -178,8 +202,13 @@ fun AskScreen(
             state.errorMessage?.let { errorMsg ->
                 WorkbenchCard(railColor = LuminaraColors.ErrorRed) {
                     Text(text = errorMsg, style = LuminaraTextStyles.Body, color = LuminaraColors.ErrorRed)
-                    if (errorMsg.contains("Settings")) {
-                        GhostPillButton(text = "Open Settings", onClick = onOpenSettings)
+                    if (GuestTrial.isHostedSignInGate(errorMsg)) {
+                        GhostPillButton(
+                            text = "Sign in",
+                            onClick = onSignIn,
+                            modifier = Modifier.fillMaxWidth(),
+                            testTag = "ask_error_sign_in_button",
+                        )
                     }
                 }
             }

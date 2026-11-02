@@ -29,9 +29,9 @@ Firebase has deprecated the classic reCAPTCHA v3 App Check provider. Both `lumin
 
 Do not create a classic reCAPTCHA v3 key for this app. Do not add `localhost` as a production domain. Use a debug token for local runs (A4).
 
-### A2. Registration is already done
+### A2. Registration is not done
 
-The Enterprise provider is registered on both web apps. If you rotate the key, register the new Enterprise site key on that same web app before you change the build variable.
+Owner check, 2026-11-02: App Check, Apps shows the production and staging web apps as **Not registered**. Do not enforce Authentication until those web apps have the reCAPTCHA Enterprise provider again. If you rotate the key, register the new Enterprise site key on that same web app before you change the build variable.
 
 ### A3. Put the site key in the client build
 
@@ -102,6 +102,24 @@ Rollout: ship the client with `VITE_FIREBASE_APPCHECK_SITE_KEY`, watch staging l
 - [ ] Local works with registered debug token
 - [ ] A raw curl to Identity Toolkit without App Check fails (after A6)
 - [ ] Worker `/api/auth/sign-in` without token returns 401 when `REQUIRE_APP_CHECK=true`
+
+### A9. Android Play Integrity (not registered yet)
+
+Owner check, 2026-11-02: Firebase Console, App Check, Apps shows `com.luminarasuite.app` on production and staging, and the web apps, as **Not registered**. No Play Integrity provider is registered. Authentication App Check is **Unenforced** on both projects so Play build 1.0.4 can sign in. Firestore App Check stays **Enforced**. The Android app has no Firestore client. Product data stays on the Worker and D1.
+
+Play build 1.0.4 depends on `firebase-auth` only. It cannot mint an App Check token. Re-enforcing Authentication before a Play build that includes `firebase-appcheck-playintegrity` will reject Google and email sign-in from 1.0.4.
+
+`google-services.json` already wires package `com.luminarasuite.app` to project `luminara-suite`. Do not commit a replacement. The SHA-256 Play App Signing fingerprint is entered in Console only. Do not copy it into git.
+
+After version 1.0.5 (versionCode 10005) is on Play:
+
+1. Firebase Console, Security, App Check, Apps. Register `com.luminarasuite.app` with the Play Integrity provider. Use the SHA-256 of the Play App Signing certificate (Play Console, App integrity). Register staging the same way if that Android app should sign in there.
+2. Leave Authentication **Unenforced**. Sign in with email and with Google on the new build. Confirm Authentication metrics show **Verified** requests.
+3. Enforce Authentication only after Verified traffic from 1.0.5 has replaced the 1.0.4 clients you still need, and the web apps are registered too. Enforcement can take 15 minutes. 1.0.4 cannot survive that click. An unregistered web app cannot survive it either.
+4. Leave replay protection Unenforced. The app sends standard App Check tokens, not limited-use tokens.
+5. Debug builds use the debug provider, not Play Integrity. Logcat prints a debug token. Register that token on the Android app before a debug build can sign in under enforcement. Release builds do not include the debug provider.
+
+`APPCHECK_ENFORCE` is unchanged: production `off`, staging `log`.
 
 ---
 

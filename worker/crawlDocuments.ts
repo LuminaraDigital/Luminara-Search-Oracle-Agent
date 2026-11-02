@@ -6,17 +6,19 @@ import { CHECKOUT_TERM_LINE, listPriceSummary } from '../components/paywall/plan
 import { PAID_PLAN_PRICES, type PaidPlanId } from '../components/paywall/planPrices';
 import { LIVE_ANSWER_CHECKS } from '../services/marketing/engineCoverage';
 import { REAL_ESTATE_AUDIENCE } from '../services/marketing/marketingHeroCopy';
+import { PLAY_STORE_URL, TELEGRAM_BOT_URL, TELEGRAM_MINI_APP_PUBLIC_URL } from '../services/marketing/platformSurfaces';
 import { HUB_PAGES, HUB_REVIEWED } from '../services/marketing/seoHubPages';
 import { FREE_TOOLS, FREE_TOOLS_PATH } from '../services/marketing/freeTools';
 import { COMPANY_SERVICES_URL, COMPANY_SITE_URL } from '../services/legal/consumerTerms';
 import { PLAN_ENTITLEMENTS } from '../services/plans/planEntitlements';
 
 export const ROBOTS_TXT = `# Luminara Suite crawl policy
-# Public marketing pages, /llms.txt, /ai.txt, and redacted /share/teaser/ cards are meant to be cited.
+# Public marketing pages, /llms.txt, /llm.txt, /ai.txt, and redacted /share/teaser/ cards are meant to be cited.
 # Share URLs under /share/ are unlisted (not in the sitemap) and served noindex. They are
 # allowed here only so link unfurls can fetch the preview HTML.
 # Attestation verify, API, and OAuth stay disallowed.
-# Named AI crawlers repeat the same rules as User-agent: * so the allow is explicit.
+# Named AI crawlers repeat the same Allow and Disallow rules as User-agent: * so the allow is explicit.
+# Content-Signal on User-agent: * prefers search and reference use, and asks not to train. Named AI crawlers stay allowed.
 # User-triggered fetchers may ignore robots.txt. This file does not grant access to /api/ or account data.
 
 User-agent: GPTBot
@@ -34,6 +36,7 @@ Allow: /ai
 Allow: /why
 Allow: /pricing
 Allow: /methodology
+Allow: /white-paper
 Allow: /sample-report
 Allow: /privacy
 Allow: /terms
@@ -45,6 +48,7 @@ Allow: /best/
 Allow: /docs/
 Allow: /docs/what-is-aeo.html
 Allow: /llms.txt
+Allow: /llm.txt
 Allow: /ai.txt
 Allow: /sitemap.xml
 Allow: /share/
@@ -55,12 +59,14 @@ Disallow: /reports/
 Disallow: /oauth/
 
 User-agent: *
+Content-Signal: search=yes,ai-train=no,use=reference
 Allow: /
 Allow: /how-it-works
 Allow: /ai
 Allow: /why
 Allow: /pricing
 Allow: /methodology
+Allow: /white-paper
 Allow: /sample-report
 Allow: /privacy
 Allow: /terms
@@ -72,6 +78,7 @@ Allow: /best/
 Allow: /docs/
 Allow: /docs/what-is-aeo.html
 Allow: /llms.txt
+Allow: /llm.txt
 Allow: /ai.txt
 Allow: /sitemap.xml
 Allow: /share/
@@ -126,6 +133,7 @@ export function buildSitemapXml(origin: string = 'https://www.luminarasuite.com'
   <url><loc>${base}/why</loc></url>
   <url><loc>${base}/pricing</loc></url>
   <url><loc>${base}/methodology</loc></url>
+  <url><loc>${base}/white-paper</loc></url>
   <url><loc>${base}/sample-report</loc></url>
   <url><loc>${base}/privacy</loc></url>
   <url><loc>${base}/terms</loc></url>
@@ -176,7 +184,7 @@ function llmsPaidPlanBlock(): string {
 
 export const LLMS_TXT = `# Luminara Suite
 
-> Luminara Suite checks a website and live web search, then ranks one next fix. ${LIVE_ANSWER_CHECKS} Web app, Windows desktop, and a Telegram Mini App.
+> Luminara Suite checks a website and live web search, then ranks one next fix. ${LIVE_ANSWER_CHECKS} Web app, Android on Google Play, Windows desktop, and a Telegram Mini App.
 
 ## Methodology
 
@@ -230,19 +238,22 @@ ${llmsPaidPlanBlock()}
 
 ## Telegram Mini App
 
-- https://t.me/LuminaraSuiteBot/app
+- ${TELEGRAM_MINI_APP_PUBLIC_URL}
+- Bot: ${TELEGRAM_BOT_URL}
 
 ## Product
 
 - Home: https://www.luminarasuite.com/
 - Sample report: https://www.luminarasuite.com/sample-report
 - Methodology: https://www.luminarasuite.com/methodology
+- White paper: https://www.luminarasuite.com/white-paper
 - What is AEO: https://www.luminarasuite.com/docs/what-is-aeo.html
 - How it works: https://www.luminarasuite.com/how-it-works
 - Our AI: https://www.luminarasuite.com/ai
 - Why Luminara: https://www.luminarasuite.com/why
 - Pricing: https://www.luminarasuite.com/pricing
 - Windows desktop: https://www.luminarasuite.com/desktop
+- Android on Google Play: ${PLAY_STORE_URL}
 
 ## Comparisons and buyer's guides
 
@@ -270,7 +281,7 @@ ${FREE_TOOLS.map((tool) => `- ${tool.label}: https://www.luminarasuite.com${tool
 `;
 
 export const AI_TXT = `# Luminara Suite AI policy (ai.txt)
-# Public marketing pages, /llms.txt, /ai.txt, and redacted /share/teaser/ cards may be crawled and cited with attribution.
+# Public marketing pages, /llms.txt, /llm.txt, /ai.txt, and redacted /share/teaser/ cards may be crawled and cited with attribution.
 # Unlisted full reports under /share/ are served noindex and are not for training or citation.
 # API, verification, report storage, and OAuth routes are disallowed.
 # Structured product context for answer engines lives at https://www.luminarasuite.com/llms.txt
@@ -283,6 +294,7 @@ Allow: /ai
 Allow: /why
 Allow: /pricing
 Allow: /methodology
+Allow: /white-paper
 Allow: /sample-report
 Allow: /privacy
 Allow: /terms
@@ -294,6 +306,7 @@ Allow: /best/
 Allow: /docs/
 Allow: /docs/what-is-aeo.html
 Allow: /llms.txt
+Allow: /llm.txt
 Allow: /ai.txt
 Allow: /sitemap.xml
 Allow: /share/teaser/
@@ -329,7 +342,7 @@ export function readServedCrawlFile(serveHost: string, fileUrl: string): { statu
   const target = parsed.hostname.toLowerCase();
   if (!servesOwnHost(serveHost, target)) return null;
   if (parsed.pathname === '/robots.txt') return { status: 200, body: robotsTxtForHost(target, undefined) };
-  if (parsed.pathname === '/llms.txt') return { status: 200, body: LLMS_TXT };
+  if (parsed.pathname === '/llms.txt' || parsed.pathname === '/llm.txt') return { status: 200, body: LLMS_TXT };
   if (parsed.pathname === '/ai.txt') return { status: 200, body: AI_TXT };
   return null;
 }

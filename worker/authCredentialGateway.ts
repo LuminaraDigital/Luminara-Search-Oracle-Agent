@@ -302,7 +302,9 @@ export async function handleSignUp(
 /**
  * POST /api/auth/refresh
  * Renews a Firebase ID token for native clients, which cannot send the referrer a restricted
- * web API key requires. A refused refresh token returns 401 so the client signs in again.
+ * web API key requires. Forwards X-Firebase-AppCheck when the client sent one, so Authentication
+ * enforcement can accept the securetoken exchange. A refused refresh token returns 401 so the
+ * client signs in again.
  */
 export async function handleTokenRefresh(
   request: Request,
@@ -325,11 +327,12 @@ export async function handleTokenRefresh(
   }
 
   const fetchImpl = opts?.fetchImpl || fetch;
+  const appCheckToken = extractAppCheckToken(request);
   let res: Response;
   try {
     res = await fetchImpl(`${SECURE_TOKEN_URL}?key=${encodeURIComponent(apiKey)}`, {
       method: 'POST',
-      headers: identityToolkitHeaders(env),
+      headers: identityToolkitHeaders(env, appCheckToken),
       body: JSON.stringify({ grant_type: 'refresh_token', refresh_token: refreshToken }),
     });
   } catch {
