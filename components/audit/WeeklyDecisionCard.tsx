@@ -25,6 +25,7 @@ import { MindshareRadarCard } from '../visibility/MindshareRadarCard';
 import { formatAuDate } from '../../utils/formatAuDate';
 import { PerceptionMatrix } from '../visibility/PerceptionMatrix';
 import { classifyRemediationTier } from '../../services/deployment/remediationTierRouter';
+import { SelfDrivingHabitatBar } from './SelfDrivingHabitatBar';
 
 interface WeeklyDecisionCardProps {
   domain: string;
@@ -364,6 +365,14 @@ export const WeeklyDecisionCard: React.FC<WeeklyDecisionCardProps> = ({
           })()}
         </div>
       )}
+
+      <SelfDrivingHabitatBar
+        domain={cleanDomain}
+        brandName={rememberedBrand || cleanDomain}
+        primary={primary}
+        reportMarkdown={reportMarkdown}
+        verifyBy={verifyBy}
+      />
 
       <MindshareRadarCard
         domain={domain}

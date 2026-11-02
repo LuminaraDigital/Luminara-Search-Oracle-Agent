@@ -236,6 +236,13 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
     if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
     return [] as Record<string, unknown>[];
   });
+  const memoryEdges = await q<Record<string, unknown>>(
+    `SELECT id, project_id, domain, subject_entity, predicate, object_entity, valid_from, valid_to, created_at FROM memory_edges WHERE account_id = ?`,
+    accountId,
+  ).catch((err) => {
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+    return [] as Record<string, unknown>[];
+  });
   const externalEffects = await q<Record<string, unknown>>(
     `SELECT effect_key, project_id, target_system, action_kind, payload_hash, status, result_json, created_at, updated_at FROM external_effects WHERE account_id = ?`,
     accountId,
@@ -252,6 +259,7 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
       'projects',
       'agent_reports',
       'memory_facts',
+      'memory_edges',
       'weekly_decisions',
       'audit_runs',
       'share_teasers',
@@ -296,6 +304,7 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
     projects,
     agentReports: reports,
     memoryFacts: facts,
+    memoryEdges,
     weeklyDecisions: decisions,
     auditRuns: audits,
     auditHistory,
@@ -341,6 +350,10 @@ async function softDeleteAccount(env: Env, accountId: string, deps?: DataPlaneDe
   // Fan-out: wipe remote vectors before dropping D1 fact rows (pattern brief invariant).
   const { deleteAccountMemoryVectors } = await import('./memoryRag');
   counts.memory_vectors = await deleteAccountMemoryVectors(env, accountId);
+  if (typeof env.LUMINARA_KV?.list === 'function') {
+    const { revokeAllHabitatTokens } = await import('./habitatTokenStore');
+    counts.habitat_tokens = await revokeAllHabitatTokens(env, accountId);
+  }
   await run('memory_facts', `DELETE FROM memory_facts WHERE account_id = ?`, accountId);
   await run('memory_chat_extractions', `DELETE FROM memory_chat_extractions WHERE account_id = ?`, accountId);
   await run('memory_history', `DELETE FROM memory_history WHERE account_id = ?`, accountId);
@@ -423,6 +436,7 @@ async function softDeleteAccount(env: Env, accountId: string, deps?: DataPlaneDe
   await drop('crm_properties', `DELETE FROM crm_properties WHERE account_id = ?`);
   await drop('crm_contacts', `DELETE FROM crm_contacts WHERE account_id = ?`);
   await drop('external_effects', `DELETE FROM external_effects WHERE account_id = ?`);
+  await drop('memory_edges', `DELETE FROM memory_edges WHERE account_id = ?`);
   await drop('project_context_sections', `DELETE FROM project_context_sections WHERE project_id IN (SELECT id FROM projects WHERE account_id = ?)`);
   await drop('project_competitors', `DELETE FROM project_competitors WHERE project_id IN (SELECT id FROM projects WHERE account_id = ?)`);
   await drop('project_key_pages', `DELETE FROM project_key_pages WHERE project_id IN (SELECT id FROM projects WHERE account_id = ?)`);

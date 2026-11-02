@@ -1,5 +1,6 @@
 package com.luminarasuite.app.core.network
 
+import com.luminarasuite.app.core.auth.FIREBASE_SDK_REFRESH
 import com.luminarasuite.app.core.auth.VaultStorage
 import com.luminarasuite.app.core.model.AuthRefreshRequest
 import com.luminarasuite.app.core.model.AuthRefreshResponse
@@ -121,3 +122,10 @@ fun refreshOverHttp(
         }
     }
 }
+
+/** Email sessions renew through the Worker. Google sessions renew inside Firebase Auth. */
+fun chooseSessionRefresh(
+    refreshToken: String,
+    sdk: () -> RefreshOutcome,
+    http: (String) -> RefreshOutcome,
+): RefreshOutcome = if (refreshToken == FIREBASE_SDK_REFRESH) sdk() else http(refreshToken)

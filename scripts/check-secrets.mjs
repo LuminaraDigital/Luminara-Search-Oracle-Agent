@@ -89,6 +89,14 @@ const ALLOWED_FINDINGS = [
     reason:
       'Firebase web apiKey is public by design and intentionally ships in wrangler.jsonc and dist.',
   },
+  {
+    label: 'Firebase Android client apiKey (google-services.json)',
+    // Same public client key shape. Only this path: a copy in any other file still fails.
+    shape: /^AIza[0-9A-Za-z_-]{35}$/,
+    path: /^apps\/android\/app\/google-services\.json$/,
+    reason:
+      'Firebase Android google-services.json apiKey is public client config, restricted by package name and certificate.',
+  },
 ];
 
 function toPosix(p) {

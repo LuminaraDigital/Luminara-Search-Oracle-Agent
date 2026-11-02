@@ -49,6 +49,7 @@ import {
 import { getPendingDreamEvents } from './dreamingQueue';
 import { evaluateWakeGate } from './dreamingWakeGate';
 import { CONVERSION_SPINE_MCP_TOOLS } from './mcpConversionTools';
+import { enforceHabitatScope, SELF_DRIVING_MCP_TOOLS } from './selfDrivingHabitat';
 
 export type McpToolDef = {
   name: string;
@@ -223,7 +224,9 @@ const TOOLS: McpToolDef[] = [
     creditClass: 'free',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     handler: async (_args, ctx) => {
-      const projects = await listProjects(ctx.env, ctx.accountId);
+      const allProjects = await listProjects(ctx.env, ctx.accountId);
+      const boundProjectId = ctx.credential.projectId;
+      const projects = boundProjectId ? allProjects.filter((p) => p.id === boundProjectId) : allProjects;
       const lines = projects.length
         ? projects.map((p) => `- ${p.id}: ${p.domain} (${p.name})`).join('\n')
         : 'No projects yet. Use create_project.';
@@ -349,6 +352,13 @@ const TOOLS: McpToolDef[] = [
       const includeHtml = Boolean(args.includeHtml);
       const report = await getAgentReport(ctx.env, ctx.accountId, reportId, includeHtml);
       if (!report) return textResult('Report not found', undefined, true);
+      if (ctx.credential.projectId && report.projectId !== ctx.credential.projectId) {
+        return textResult(
+          `Tool blocked by Agent Habitat scope: token is bound to project "${ctx.credential.projectId}".`,
+          { code: 'HABITAT_PROJECT_SCOPE_VIOLATION', boundProjectId: ctx.credential.projectId },
+          true,
+        );
+      }
       return textResult(report.summary, { report });
     },
   },
@@ -538,6 +548,7 @@ const TOOLS: McpToolDef[] = [
     },
   },
   ...CONVERSION_SPINE_MCP_TOOLS,
+  ...SELF_DRIVING_MCP_TOOLS,
   ...PAID_TOOL_CATALOGUE.map((meta) => ({
     name: meta.name,
     description: meta.description,
@@ -591,6 +602,25 @@ async function callTool(
   const subscriptionActive = !!sub;
   const tool = TOOLS.find((t) => t.name === name);
   const creditClass = tool?.creditClass ?? 'free';
+
+  const habitat = enforceHabitatScope(tool, name, args, ctx.credential);
+  if ('blocked' in habitat) {
+    await recordAuditLogBestEffort(ctx.env, {
+      org_id: auditOrgIdFor(ctx.accountId),
+      actor_id: ctx.user.id,
+      action: 'mcp_tool_block',
+      target_id: name,
+      details: redactSensitive({
+        tool: name,
+        decision: 'block',
+        reason: habitat.blocked.structuredContent?.code,
+        args,
+      }) as Record<string, unknown>,
+    });
+    return habitat.blocked;
+  }
+  args = habitat.args;
+
   const projectId = typeof args.projectId === 'string' ? args.projectId : null;
 
   // Budget gate runs BEFORE the governance decideToolCall; when the account is

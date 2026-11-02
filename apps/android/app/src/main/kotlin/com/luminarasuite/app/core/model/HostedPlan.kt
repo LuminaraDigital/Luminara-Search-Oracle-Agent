@@ -16,8 +16,8 @@ fun hostedPlanCopy(
     if (!signedIn) {
         return HostedPlanCopy(
             title = "Guest",
-            detail = "Free companion. Bring your own API keys. Sign in for cloud history sync.",
-            manage = null,
+            detail = "Free companion. One plain-English audit read, then sign in. Bring your own API keys.",
+            manage = "Manage plan on luminarasuite.com",
         )
     }
     if (quota == null) {

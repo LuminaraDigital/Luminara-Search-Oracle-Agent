@@ -34,8 +34,7 @@ describe('Android Play billing lock', () => {
     const hits: string[] = [];
     for (const path of filesUnder(ROOT)) {
       const text = readFileSync(path, 'utf8');
-      const posixPath = path.replaceAll('\\', '/');
-      const inMain = !posixPath.includes('/src/test/') && !posixPath.includes('/src/androidTest/');
+      const inMain = !/[\\/]src[\\/](test|androidTest)[\\/]/.test(path);
       for (const pattern of FORBIDDEN) {
         // Tests name /pricing only to prove share links reject it. Main source still cannot.
         if (pattern.source.includes('pricing') && !inMain) continue;
