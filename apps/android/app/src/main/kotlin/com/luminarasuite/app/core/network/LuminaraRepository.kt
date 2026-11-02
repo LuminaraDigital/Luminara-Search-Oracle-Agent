@@ -30,6 +30,7 @@ import com.luminarasuite.app.core.model.IdeaCreateRequest
 import com.luminarasuite.app.core.model.IdeaCreateResponse
 import com.luminarasuite.app.core.model.IdeaSummary
 import com.luminarasuite.app.core.model.OracleTurn
+import com.luminarasuite.app.core.model.PasswordResetRequest
 import com.luminarasuite.app.core.model.QuotaStatus
 import com.luminarasuite.app.core.model.ScoutRecheckRequest
 import com.luminarasuite.app.core.model.ScoutRecheckResponse
@@ -159,6 +160,9 @@ interface LuminaraRepository {
 
     suspend fun signInWithGoogle(googleIdToken: String): Result<QuotaStatus?>
 
+    /** Sends a reset link. The reply is the same whether or not the address has an account. */
+    suspend fun requestPasswordReset(email: String): Result<String>
+
     suspend fun refreshQuota(): Result<QuotaStatus?>
 
     suspend fun saveByokKeys(bag: ByokKeyBag)
@@ -196,6 +200,8 @@ class DefaultLuminaraRepository(
             )
         private const val MAX_SOURCE_CHARS = 2500
         private const val EARLIER_TURNS = 3
+        private const val RESET_SENT_COPY =
+            "If an account uses that email, a reset link is on its way. Check your inbox and spam."
         private const val NO_ANSWER_COPY = "The AI did not answer. Try again."
         private const val BAD_REPLY_COPY = "Luminara sent a reply this app could not read. Try again."
         private const val FAILED_COPY = "That did not go through. Try again in a minute."
@@ -847,6 +853,13 @@ class DefaultLuminaraRepository(
                 accountId = "fb:${adopted.localId}",
             )
             refreshQuota().getOrNull()
+        }
+
+    override suspend fun requestPasswordReset(email: String): Result<String> =
+        safeCall {
+            val clean = email.trim()
+            require(clean.contains('@') && clean.contains('.')) { "Enter the email address you signed up with." }
+            api.requestPasswordReset(PasswordResetRequest(clean)).message.ifBlank { RESET_SENT_COPY }
         }
 
     override suspend fun signInWithGoogle(googleIdToken: String): Result<QuotaStatus?> =
