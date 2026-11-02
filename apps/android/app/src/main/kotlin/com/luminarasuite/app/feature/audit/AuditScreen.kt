@@ -1,5 +1,11 @@
 package com.luminarasuite.app.feature.audit
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -12,30 +18,50 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.luminarasuite.app.core.designsystem.AccentHeadline
 import com.luminarasuite.app.core.designsystem.AiEvidenceDisclosureBar
 import com.luminarasuite.app.core.designsystem.EyebrowKicker
+import com.luminarasuite.app.core.designsystem.FoundryButton
+import com.luminarasuite.app.core.designsystem.FoundryFieldColors
+import com.luminarasuite.app.core.designsystem.GhostPillButton
+import com.luminarasuite.app.core.designsystem.LiveEyebrow
 import com.luminarasuite.app.core.designsystem.LuminaraColors
 import com.luminarasuite.app.core.designsystem.LuminaraTextStyles
 import com.luminarasuite.app.core.designsystem.MeasurementStatusBadge
+import com.luminarasuite.app.core.designsystem.PillChip
+import com.luminarasuite.app.core.designsystem.ProbeTone
+import com.luminarasuite.app.core.designsystem.ProbeWell
+import com.luminarasuite.app.core.designsystem.ScreenGutter
 import com.luminarasuite.app.core.designsystem.WorkbenchCard
+import com.luminarasuite.app.core.designsystem.auditIsClear
+import com.luminarasuite.app.core.designsystem.botAllowanceLabel
+import com.luminarasuite.app.core.designsystem.probeBeacons
+import com.luminarasuite.app.core.designsystem.probeCaption
+import com.luminarasuite.app.core.designsystem.toneColor
+import com.luminarasuite.app.core.designsystem.toneForStatus
+import com.luminarasuite.app.core.model.BotDirectiveStatus
+import com.luminarasuite.app.core.model.CrewResult
+import com.luminarasuite.app.core.model.ReadinessCheck
+import com.luminarasuite.app.core.network.AuditRead
 import com.luminarasuite.app.core.network.InstantAuditReport
 import com.luminarasuite.app.core.network.LuminaraRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -47,10 +73,14 @@ import kotlinx.coroutines.launch
 data class AuditUiState(
     val domainInput: String = "",
     val isLoading: Boolean = false,
+    val stage: String? = null,
     val errorMessage: String? = null,
     val report: InstantAuditReport? = null,
     val recheckBanner: String? = null,
     val isVerdictReported: Boolean = false,
+    val isExplaining: Boolean = false,
+    val aiRead: AuditRead? = null,
+    val savedToStudio: Boolean = false,
 )
 
 class AuditViewModel(
@@ -76,17 +106,20 @@ class AuditViewModel(
                 errorMessage = null,
                 recheckBanner = null,
                 isVerdictReported = false,
+                aiRead = null,
+                savedToStudio = false,
             )
         }
         viewModelScope.launch {
-            repository.runInstantAudit(target)
+            repository.runInstantAudit(target) { stage -> _uiState.update { it.copy(stage = stage) } }
                 .onSuccess { report ->
-                    _uiState.update { it.copy(isLoading = false, report = report, errorMessage = null) }
+                    _uiState.update { it.copy(isLoading = false, stage = null, report = report, errorMessage = null) }
                 }
                 .onFailure { err ->
                     _uiState.update {
                         it.copy(
                             isLoading = false,
+                            stage = null,
                             errorMessage = err.message ?: "Live crawl check failed. Check your connection.",
                         )
                     }
@@ -105,30 +138,7 @@ class AuditViewModel(
                             false -> "STILL FAILING"
                             null -> "NOT MEASURED"
                         }
-                    val updatedReport =
-                        if (res.passed != null) {
-                            val newStatus = if (res.passed) "pass" else "fail"
-                            val updatedChecks =
-                                currentReport.evaluation.checks.map { check ->
-                                    if (check.id == checkId) {
-                                        check.copy(
-                                            status = newStatus,
-                                            detail = res.detail.ifBlank { check.detail },
-                                        )
-                                    } else {
-                                        check
-                                    }
-                                }
-                            val updatedEval =
-                                currentReport.evaluation.copy(
-                                    checks = updatedChecks,
-                                    passCount = updatedChecks.count { it.status == "pass" },
-                                    failCount = updatedChecks.count { it.status == "fail" },
-                                )
-                            currentReport.copy(evaluation = updatedEval)
-                        } else {
-                            currentReport
-                        }
+                    val updatedReport = currentReport.applyRecheck(checkId, res.passed, res.detail)
                     val label = res.label.ifBlank { checkId }
                     _uiState.update {
                         it.copy(
@@ -145,6 +155,30 @@ class AuditViewModel(
         }
     }
 
+    fun explainReport() {
+        val currentReport = _uiState.value.report ?: return
+        _uiState.update { it.copy(isExplaining = true, errorMessage = null) }
+        viewModelScope.launch {
+            repository.explainAudit(currentReport)
+                .onSuccess { read -> _uiState.update { it.copy(isExplaining = false, aiRead = read) } }
+                .onFailure { err ->
+                    _uiState.update { it.copy(isExplaining = false, errorMessage = err.message) }
+                }
+        }
+    }
+
+    fun sendToStudio() {
+        val currentReport = _uiState.value.report ?: return
+        viewModelScope.launch {
+            repository.addStudioSource(
+                title = "Audit: ${currentReport.domain}",
+                content = reportAsText(currentReport),
+                kind = "audit",
+            )
+            _uiState.update { it.copy(savedToStudio = true) }
+        }
+    }
+
     fun reportAuditVerdict() {
         val currentReport = _uiState.value.report ?: return
         viewModelScope.launch {
@@ -152,29 +186,74 @@ class AuditViewModel(
             _uiState.update { it.copy(isVerdictReported = true) }
         }
     }
+
+    fun prepareAnotherProbe() {
+        _uiState.update {
+            it.copy(
+                report = null,
+                recheckBanner = null,
+                isVerdictReported = false,
+                errorMessage = null,
+                aiRead = null,
+                savedToStudio = false,
+            )
+        }
+    }
+}
+
+private fun reportAsText(report: InstantAuditReport): String =
+    buildString {
+        appendLine("Luminara check of ${report.domain}")
+        report.crew?.let { crew ->
+            appendLine(crew.brief.asText())
+            appendLine("Health score: ${crew.healthScore?.let { "$it/100" } ?: "not_measured"}")
+            appendLine("Citation rate: ${crew.citationRatePercent?.let { "$it%" } ?: "not_measured"}")
+        } ?: appendLine(report.verdict)
+        report.evaluation.checks.forEach { appendLine("- ${it.label}: ${it.status}. ${it.detail}") }
+        appendLine("This week: ${report.oneMoveThisWeek}")
+    }
+
+private fun shareReport(
+    context: Context,
+    domain: String,
+    text: String,
+) {
+    val send =
+        Intent(Intent.ACTION_SEND)
+            .setType("text/plain")
+            .putExtra(Intent.EXTRA_SUBJECT, "AI visibility check: $domain")
+            .putExtra(Intent.EXTRA_TEXT, text)
+    context.startActivity(Intent.createChooser(send, "Share report"))
 }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun AuditScreen(viewModel: AuditViewModel) {
+fun AuditScreen(
+    viewModel: AuditViewModel,
+    onAskAbout: (String) -> Unit = {},
+    onOpenSettings: () -> Unit = {},
+    onShareLink: suspend (String, String?) -> Result<String> = { _, _ ->
+        Result.failure(IllegalStateException("Sign in to create a link."))
+    },
+) {
     val state by viewModel.uiState.collectAsState()
     val scrollState = rememberScrollState()
+    val scope = rememberCoroutineScope()
+    val beacons = probeBeacons(state.isLoading, state.report?.evaluation?.checks)
+    val showReport = state.report != null && !state.isLoading
 
     Column(
         modifier =
         Modifier
             .fillMaxSize()
             .verticalScroll(scrollState)
-            .padding(16.dp),
+            .padding(horizontal = ScreenGutter, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        EyebrowKicker("NIGHT FOUNDRY · LIVE CRAWL PROBE")
+        LiveEyebrow("Instant Audit")
+        AccentHeadline(lead = "Will AI mention ", accent = "your brand", trail = "?")
         Text(
-            text = "Verify how AI search engines crawl your domain.",
-            style = LuminaraTextStyles.DisplaySerif,
-        )
-        Text(
-            text = "Inspects /robots.txt, /llms.txt, and /ai.txt in real time with zero fabricated scores.",
+            text = "Paste your site. Get a plain answer, the evidence behind it, and one thing to fix this week.",
             style = LuminaraTextStyles.Body,
         )
 
@@ -182,179 +261,407 @@ fun AuditScreen(viewModel: AuditViewModel) {
             OutlinedTextField(
                 value = state.domainInput,
                 onValueChange = viewModel::updateDomainInput,
-                label = { Text("Target domain (e.g. luminarasuite.com)") },
+                placeholder = { Text("yoursite.com", color = LuminaraColors.Ink3) },
                 singleLine = true,
-                modifier = Modifier.fillMaxWidth().testTag("audit_domain_input"),
+                shape = RoundedCornerShape(16.dp),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
+                keyboardActions = KeyboardActions(onGo = { viewModel.runAudit() }),
+                colors = FoundryFieldColors(),
+                modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .testTag("audit_domain_input"),
             )
-
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                listOf("luminarasuite.com", "cloudflare.com", "developer.android.com").forEach { preset ->
-                    AssistChip(
-                        onClick = { viewModel.runAudit(preset) },
-                        label = { Text(preset) },
+                listOf("luminarasuite.com", "cloudflare.com").forEach { preset ->
+                    PillChip(
+                        text = preset,
+                        selected = false,
+                        onClick = { if (!state.isLoading) viewModel.runAudit(preset) },
                     )
                 }
             }
-
-            Button(
+            FoundryButton(
+                text = if (state.isLoading) state.stage ?: "Reading live files" else "Run Instant Audit",
                 onClick = { viewModel.runAudit() },
                 enabled = !state.isLoading,
-                shape = RoundedCornerShape(999.dp),
-                colors =
-                ButtonDefaults.buttonColors(
-                    containerColor = LuminaraColors.GoldAccent,
-                    contentColor = LuminaraColors.AccentInk,
-                ),
-                modifier = Modifier.fillMaxWidth().height(50.dp).testTag("run_audit_button"),
-            ) {
-                Text(if (state.isLoading) "Running Live Crawl..." else "Run Instant Audit")
-            }
+                testTag = "run_audit_button",
+            )
         }
 
-        if (state.isLoading) {
-            WorkbenchCard {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    CircularProgressIndicator(color = LuminaraColors.GoldAccent)
-                    Text(
-                        text = "Inspecting live /robots.txt, /llms.txt, and /ai.txt...",
-                        style = LuminaraTextStyles.Body,
-                    )
-                }
-            }
+        if (state.isLoading || state.report != null) {
+            ProbeWell(
+                beacons = beacons,
+                running = state.isLoading,
+                caption = probeCaption(state.isLoading, beacons),
+            )
         }
 
         state.errorMessage?.let { errorMsg ->
-            WorkbenchCard {
-                EyebrowKicker("AUDIT ERROR")
+            WorkbenchCard(railColor = LuminaraColors.ErrorRed) {
+                EyebrowKicker("Could not read that site")
                 Text(text = errorMsg, style = LuminaraTextStyles.Body, color = LuminaraColors.ErrorRed)
+                if (errorMsg.contains("Settings") || errorMsg.contains("Sign in")) {
+                    GhostPillButton(text = "Open Settings", onClick = onOpenSettings)
+                }
             }
         }
 
         state.recheckBanner?.let { banner ->
             WorkbenchCard {
-                EyebrowKicker("LIVE FIX RECHECK")
+                EyebrowKicker("Live recheck")
                 Text(text = banner, style = LuminaraTextStyles.Body)
             }
         }
 
-        val report = state.report
-        if (report == null && !state.isLoading && state.errorMessage == null) {
-            WorkbenchCard {
-                EyebrowKicker("READY TO AUDIT")
-                Text(
-                    text = "Select a preset domain above or enter any hostname to inspect its live AI crawler posture.",
-                    style = LuminaraTextStyles.Body,
+        AnimatedVisibility(visible = showReport, modifier = Modifier.fillMaxWidth()) {
+            val report = state.report
+            if (report != null) {
+                AuditReportContent(
+                    report = report,
+                    state = state,
+                    onExplain = viewModel::explainReport,
+                    onSendToStudio = viewModel::sendToStudio,
+                    isVerdictReported = state.isVerdictReported,
+                    onRecheck = viewModel::recheckCheck,
+                    onReportVerdict = viewModel::reportAuditVerdict,
+                    onAskAbout = onAskAbout,
+                    onShareLink = onShareLink,
+                    onProbeAnother = {
+                        viewModel.prepareAnotherProbe()
+                        scope.launch { scrollState.animateScrollTo(0) }
+                    },
                 )
             }
         }
 
-        if (report != null) {
-            AuditReportContent(
-                report = report,
-                isVerdictReported = state.isVerdictReported,
-                onRecheck = viewModel::recheckCheck,
-                onReportVerdict = viewModel::reportAuditVerdict,
-            )
-        }
-
         AiEvidenceDisclosureBar()
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(8.dp))
     }
 }
 
 @Composable
 private fun AuditReportContent(
     report: InstantAuditReport,
+    state: AuditUiState,
+    onExplain: () -> Unit,
+    onSendToStudio: () -> Unit,
     isVerdictReported: Boolean,
     onRecheck: (String) -> Unit,
     onReportVerdict: () -> Unit,
+    onAskAbout: (String) -> Unit,
+    onShareLink: suspend (String, String?) -> Result<String>,
+    onProbeAnother: () -> Unit,
 ) {
-    WorkbenchCard(emphasized = true) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            EyebrowKicker("VERDICT · ${report.domain}")
-            MeasurementStatusBadge(report.evaluation.measurementStatus)
-        }
-        Text(text = report.verdict, style = LuminaraTextStyles.SectionTitle)
-        Text(text = "One move this week: ${report.oneMoveThisWeek}", style = LuminaraTextStyles.Body)
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(text = "Health Score:", style = LuminaraTextStyles.Body)
-            if (report.healthScore != null) {
-                Text(text = "${report.healthScore}/100", style = LuminaraTextStyles.MetricTabular)
+    val evaluation = report.evaluation
+    val clear =
+        auditIsClear(
+            measurementStatus = evaluation.measurementStatus,
+            checks = evaluation.checks,
+            failCount = evaluation.failCount,
+        )
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        WorkbenchCard(emphasized = true) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                EyebrowKicker(report.domain)
+                MeasurementStatusBadge(evaluation.measurementStatus)
+            }
+            Text(text = report.verdict, style = LuminaraTextStyles.HeadlineSerif)
+            if (report.oneMoveThisWeek.isNotBlank()) {
+                EyebrowKicker("One move this week")
+                Text(
+                    text = report.oneMoveThisWeek,
+                    style = LuminaraTextStyles.Body.copy(color = LuminaraColors.GoldLight),
+                )
+            }
+            report.crewNote?.let { Text(text = it, style = LuminaraTextStyles.Body) }
+            val aiRead = state.aiRead
+            if (report.crew != null) {
+                report.crew.brief.steps.forEachIndexed { index, step ->
+                    Text(text = "${index + 1}. $step", style = LuminaraTextStyles.Body)
+                }
+            } else if (aiRead == null) {
+                GhostPillButton(
+                    text = if (state.isExplaining) "Reading" else "Explain in plain English (1 check)",
+                    onClick = onExplain,
+                    enabled = !state.isExplaining,
+                    testTag = "audit_explain_button",
+                    modifier = Modifier.fillMaxWidth(),
+                )
             } else {
-                MeasurementStatusBadge("not_measured")
+                EyebrowKicker("Plain English")
+                Text(text = aiRead.verdict, style = LuminaraTextStyles.Body.copy(color = LuminaraColors.Ink))
+                Text(text = aiRead.nextAction, style = LuminaraTextStyles.Body)
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(text = "Health score", style = LuminaraTextStyles.Body)
+                if (report.healthScore != null) {
+                    Text(text = "${report.healthScore}/100", style = LuminaraTextStyles.MetricTabular)
+                } else {
+                    MeasurementStatusBadge("not_measured")
+                }
+            }
+            report.crew?.checklist?.let { Text(text = it.line, style = LuminaraTextStyles.Body) }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(text = "Citation rate", style = LuminaraTextStyles.Body)
+                val citation = report.crew?.citationRatePercent
+                if (citation != null) {
+                    Text(
+                        text = "$citation%",
+                        style = LuminaraTextStyles.MetricTabular,
+                        modifier = Modifier.testTag("audit_citation_rate"),
+                    )
+                } else {
+                    MeasurementStatusBadge("not_measured")
+                }
+            }
+            if (report.receiptNote.isNotBlank()) {
+                Text(text = report.receiptNote, style = LuminaraTextStyles.Body)
+            }
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(
+                    onClick = onReportVerdict,
+                    enabled = !isVerdictReported,
+                    modifier = Modifier.testTag("report_audit_button"),
+                ) {
+                    Text(
+                        text = if (isVerdictReported) "Reported, flagged for review" else "Report AI output",
+                        color = if (isVerdictReported) LuminaraColors.GoldLight else LuminaraColors.Ink2,
+                    )
+                }
             }
         }
-        Text(text = report.receiptNote, style = LuminaraTextStyles.Body)
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End,
-        ) {
-            TextButton(
-                onClick = onReportVerdict,
-                enabled = !isVerdictReported,
-                modifier = Modifier.testTag("report_audit_button"),
-            ) {
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            GhostPillButton(
+                text = "Share",
+                onClick = {
+                    // A guest has no account to hold a link, so the report goes out as text.
+                    val text = reportAsText(report)
+                    scope.launch {
+                        val link = onShareLink(text, report.domain).getOrNull()
+                        shareReport(context, report.domain, link ?: text)
+                    }
+                },
+                modifier = Modifier.weight(1f),
+                testTag = "audit_share_button",
+            )
+            GhostPillButton(
+                text = if (state.savedToStudio) "In Studio" else "Send to Studio",
+                onClick = onSendToStudio,
+                enabled = !state.savedToStudio,
+                modifier = Modifier.weight(1f),
+                testTag = "audit_studio_button",
+            )
+        }
+
+        if (clear) {
+            WorkbenchCard(emphasized = true, railColor = LuminaraColors.PassGreen) {
+                EyebrowKicker("Clear on measured files")
                 Text(
-                    text = if (isVerdictReported) "Reported · Flagged for Review" else "Report AI Output",
-                    color = if (isVerdictReported) LuminaraColors.GoldLight else LuminaraColors.Ink2,
+                    text = "Ask what to publish next, or probe another host.",
+                    style = LuminaraTextStyles.Body,
+                )
+                FoundryButton(
+                    text = "Ask what to publish next",
+                    onClick = {
+                        onAskAbout(
+                            "What should ${report.domain} publish next in /llms.txt so AI crawlers can cite it?",
+                        )
+                    },
+                )
+                TextButton(onClick = onProbeAnother, modifier = Modifier.fillMaxWidth()) {
+                    Text(text = "Probe another host", color = LuminaraColors.Ink2)
+                }
+            }
+        }
+
+        report.crew?.let { CrewEvidence(crew = it) }
+
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                EyebrowKicker("Crawler files")
+                if (evaluation.measurementStatus == "measured") {
+                    val countColor =
+                        if (evaluation.failCount > 0) LuminaraColors.WarnAmber else LuminaraColors.PassGreen
+                    Text(
+                        text = "${evaluation.passCount}/${evaluation.checks.size} pass",
+                        style = LuminaraTextStyles.MetricTabular.copy(color = countColor),
+                    )
+                } else {
+                    MeasurementStatusBadge("not_measured")
+                }
+            }
+            evaluation.checks.forEach { check ->
+                CheckPlate(check = check, onRecheck = onRecheck)
+            }
+        }
+
+        WorkbenchCard {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                EyebrowKicker("Robots.txt directives")
+                Text(
+                    text = botAllowanceLabel(evaluation.botMatrix),
+                    style = LuminaraTextStyles.MetricTabular.copy(fontSize = 12.sp),
+                )
+            }
+            BotField(bots = evaluation.botMatrix)
+        }
+    }
+}
+
+@Composable
+private fun CrewEvidence(crew: CrewResult) {
+    val context = LocalContext.current
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        crew.findings.forEach { finding ->
+            WorkbenchCard(railColor = severityColor(finding.severity)) {
+                EyebrowKicker(finding.severity)
+                Text(text = finding.title, style = LuminaraTextStyles.SectionTitle)
+                Text(text = finding.description, style = LuminaraTextStyles.Body)
+            }
+        }
+        crew.fixes.forEach { fix ->
+            WorkbenchCard {
+                EyebrowKicker(fix.filename)
+                Text(text = fix.explanation, style = LuminaraTextStyles.Body)
+                Text(text = fix.snippet, style = LuminaraTextStyles.EyebrowMono.copy(letterSpacing = 0.sp))
+                GhostPillButton(
+                    text = "Copy fix",
+                    onClick = { copyFix(context, fix.filename, fix.snippet) },
+                    testTag = "copy_${fix.id}",
+                )
+            }
+        }
+        WorkbenchCard {
+            EyebrowKicker("Pages read")
+            if (crew.pages.isEmpty()) MeasurementStatusBadge("not_measured")
+            crew.pages.forEach { page ->
+                Text(text = page.title, style = LuminaraTextStyles.SectionTitle.copy(fontSize = 13.sp))
+                Text(
+                    text = "${page.url} · ${page.wordCount} words · ${page.schemas.size} tags",
+                    style = LuminaraTextStyles.Body,
+                )
+            }
+        }
+        WorkbenchCard {
+            EyebrowKicker("Search evidence")
+            if (crew.searchRows.isEmpty()) MeasurementStatusBadge("not_measured")
+            crew.searchRows.forEach { row ->
+                Text(text = row.title, style = LuminaraTextStyles.SectionTitle.copy(fontSize = 13.sp))
+                Text(
+                    text = "${if (row.brandMentioned) "Names you" else "Does not name you"} · ${row.url}",
+                    style = LuminaraTextStyles.Body,
                 )
             }
         }
     }
+}
 
-    WorkbenchCard {
-        EyebrowKicker("LLM CRAWLER READINESS (${report.evaluation.passCount}/${report.evaluation.checks.size} PASS)")
-        report.evaluation.checks.forEach { check ->
-            Column(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
+private fun severityColor(severity: String) =
+    when (severity) {
+        "critical" -> LuminaraColors.ErrorRed
+        "high", "medium" -> LuminaraColors.WarnAmber
+        else -> LuminaraColors.GoldAccent
+    }
+
+private fun copyFix(
+    context: Context,
+    label: String,
+    text: String,
+) {
+    context.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText(label, text))
+}
+
+@Composable
+private fun CheckPlate(
+    check: ReadinessCheck,
+    onRecheck: (String) -> Unit,
+) {
+    WorkbenchCard(railColor = toneColor(toneForStatus(check.status))) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = check.label,
+                style = LuminaraTextStyles.SectionTitle,
+                modifier = Modifier.weight(1f),
+            )
+            MeasurementStatusBadge(check.status)
+        }
+        Text(text = check.detail, style = LuminaraTextStyles.Body)
+        if (check.status == "fail") {
+            GhostPillButton(
+                text = "Recheck live fix",
+                onClick = { onRecheck(check.id) },
+                testTag = "recheck_${check.id}",
+            )
+        }
+    }
+}
+
+@Composable
+private fun BotField(bots: List<BotDirectiveStatus>) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        bots.chunked(2).forEach { row ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(text = check.label, style = LuminaraTextStyles.SectionTitle)
-                    MeasurementStatusBadge(check.status)
+                row.forEach { bot ->
+                    BotCell(bot = bot, modifier = Modifier.weight(1f))
                 }
-                Text(text = check.detail, style = LuminaraTextStyles.Body)
-                if (check.status == "fail") {
-                    OutlinedButton(
-                        onClick = { onRecheck(check.id) },
-                        shape = RoundedCornerShape(999.dp),
-                        modifier = Modifier.testTag("recheck_${check.id}"),
-                    ) {
-                        Text("Recheck Live Fix")
-                    }
+                if (row.size == 1) {
+                    Spacer(modifier = Modifier.weight(1f))
                 }
             }
         }
     }
+}
 
-    WorkbenchCard {
-        EyebrowKicker("AI BOT GOVERNANCE MATRIX (ROBOTS.TXT)")
-        report.evaluation.botMatrix.forEach { botRow ->
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(text = botRow.bot, style = LuminaraTextStyles.Body)
-                MeasurementStatusBadge(botRow.status)
-            }
-        }
+@Composable
+private fun BotCell(
+    bot: BotDirectiveStatus,
+    modifier: Modifier,
+) {
+    val tone = toneForStatus(bot.status)
+    val washAlpha = if (tone == ProbeTone.Unknown || tone == ProbeTone.Idle) 0.05f else 0.16f
+    val wash = toneColor(tone).copy(alpha = washAlpha)
+    Column(
+        modifier =
+        modifier
+            .background(wash, RoundedCornerShape(12.dp))
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(text = bot.bot, style = LuminaraTextStyles.SectionTitle.copy(fontSize = 13.sp))
+        MeasurementStatusBadge(bot.status)
     }
 }

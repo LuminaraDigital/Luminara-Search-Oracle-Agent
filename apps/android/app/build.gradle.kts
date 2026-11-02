@@ -23,6 +23,11 @@ val versionNameOverride: String? =
     ?.trim()
     ?.takeIf { it.isNotEmpty() }
 
+val googleWebClientId: String =
+  (providers.gradleProperty("luminara.googleWebClientId").orNull ?: System.getenv("LUMINARA_GOOGLE_WEB_CLIENT_ID"))
+    ?.trim()
+    .orEmpty()
+
 val keystorePropsFile =
   rootProject.file("keystore.properties").takeIf { it.exists() }
     ?: file("keystore.properties").takeIf { it.exists() }
@@ -54,6 +59,9 @@ android {
 
     versionCode = versionCodeOverride ?: defaultVersionCode
     versionName = versionNameOverride ?: defaultVersionName
+
+    // The web client ID from Firebase. With none set the Google button stays hidden.
+    buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$googleWebClientId\"")
   }
 
   signingConfigs {
@@ -179,6 +187,10 @@ dependencies {
 
   implementation(libs.androidx.datastore.preferences)
   implementation(libs.androidx.browser)
+  implementation(libs.androidx.credentials)
+  implementation(libs.androidx.credentials.play.services)
+  implementation(libs.google.identity.id)
+  implementation(libs.androidx.work.runtime)
 
   testImplementation(libs.junit)
   testImplementation(libs.kotlinx.coroutines.test)

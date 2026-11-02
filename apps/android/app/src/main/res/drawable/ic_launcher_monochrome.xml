@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+  android:width="108dp"
+  android:height="108dp"
+  android:viewportWidth="108"
+  android:viewportHeight="108">
+  <!-- Single-colour orbit mark for themed launcher icons. -->
+  <path
+    android:fillColor="#00000000"
+    android:pathData="M54,21A33,33 0,1 1,54 87A33,33 0,1 1,54 21Z"
+    android:strokeColor="#FFFFFF"
+    android:strokeWidth="2.5" />
+  <group android:pivotX="54" android:pivotY="54">
+    <path android:fillColor="#00000000" android:strokeColor="#FFFFFF" android:strokeWidth="2.2"
+      android:pathData="M28,54A26,10 0,1 1,80 54A26,10 0,1 1,28 54Z" />
+  </group>
+  <group android:pivotX="54" android:pivotY="54" android:rotation="60">
+    <path android:fillColor="#00000000" android:strokeColor="#FFFFFF" android:strokeWidth="2.2"
+      android:pathData="M28,54A26,10 0,1 1,80 54A26,10 0,1 1,28 54Z" />
+  </group>
+  <group android:pivotX="54" android:pivotY="54" android:rotation="120">
+    <path android:fillColor="#00000000" android:strokeColor="#FFFFFF" android:strokeWidth="2.2"
+      android:pathData="M28,54A26,10 0,1 1,80 54A26,10 0,1 1,28 54Z" />
+  </group>
+  <path android:fillColor="#FFFFFF" android:pathData="M54,47A7,7 0,1 1,54 61A7,7 0,1 1,54 47Z" />
+</vector>

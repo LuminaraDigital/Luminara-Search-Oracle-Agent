@@ -1,6 +1,7 @@
 package com.luminarasuite.app.core.database
 
 import android.content.Context
+import androidx.room3.AutoMigration
 import androidx.room3.Dao
 import androidx.room3.Database
 import androidx.room3.Entity
@@ -13,6 +14,7 @@ import androidx.room3.RoomDatabase
 import androidx.sqlite.driver.AndroidSQLiteDriver
 import com.luminarasuite.app.core.model.AuditFinding
 import com.luminarasuite.app.core.model.AuditHistoryEntry
+import com.luminarasuite.app.core.model.StudioSource
 import kotlinx.coroutines.flow.Flow
 
 @Entity(tableName = "audit_history")
@@ -107,6 +109,37 @@ fun AuditFinding.toEntity(): FindingEntity =
         updatedAt = updatedAt,
     )
 
+@Entity(tableName = "studio_sources")
+data class StudioSourceEntity(
+    @PrimaryKey
+    val id: String,
+    val title: String,
+    val content: String,
+    val kind: String,
+    val selected: Boolean,
+    val addedAt: Long,
+) {
+    fun toDomain(): StudioSource =
+        StudioSource(
+            id = id,
+            title = title,
+            content = content,
+            kind = kind,
+            selected = selected,
+            addedAt = addedAt,
+        )
+}
+
+fun StudioSource.toEntity(): StudioSourceEntity =
+    StudioSourceEntity(
+        id = id,
+        title = title,
+        content = content,
+        kind = kind,
+        selected = selected,
+        addedAt = addedAt,
+    )
+
 @Dao
 interface LuminaraDao {
     @Query("SELECT * FROM audit_history ORDER BY measuredAt DESC LIMIT 50")
@@ -136,12 +169,31 @@ interface LuminaraDao {
 
     @Query("DELETE FROM audit_findings")
     suspend fun clearFindings()
+
+    @Query("SELECT * FROM studio_sources ORDER BY addedAt DESC LIMIT 50")
+    fun observeStudioSources(): Flow<List<StudioSourceEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertStudioSource(source: StudioSourceEntity)
+
+    @Query("UPDATE studio_sources SET selected = :selected WHERE id = :id")
+    suspend fun setStudioSourceSelected(
+        id: String,
+        selected: Boolean,
+    )
+
+    @Query("DELETE FROM studio_sources WHERE id = :id")
+    suspend fun deleteStudioSource(id: String)
+
+    @Query("DELETE FROM studio_sources")
+    suspend fun clearStudioSources()
 }
 
 @Database(
-    entities = [AuditHistoryEntity::class, FindingEntity::class],
-    version = 1,
+    entities = [AuditHistoryEntity::class, FindingEntity::class, StudioSourceEntity::class],
+    version = 2,
     exportSchema = true,
+    autoMigrations = [AutoMigration(from = 1, to = 2)],
 )
 abstract class LuminaraDatabase : RoomDatabase() {
     abstract fun dao(): LuminaraDao

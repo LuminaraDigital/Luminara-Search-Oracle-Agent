@@ -2,6 +2,8 @@ package com.luminarasuite.app.core.model
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 
 @Serializable
 data class ProbeCrawlResponse(
@@ -247,6 +249,13 @@ data class HostedIdentity(
 )
 
 @Serializable
+data class HostedEntitlement(
+    val tier: String = "free",
+    val name: String = "Free",
+    val status: String = "none",
+)
+
+@Serializable
 data class QuotaStatus(
     val ok: Boolean = false,
     val authenticated: Boolean = false,
@@ -258,6 +267,7 @@ data class QuotaStatus(
     val bonusRemaining: Int = 0,
     val resetSec: Int = 0,
     val isUnlimited: Boolean = false,
+    val entitlement: HostedEntitlement? = null,
 )
 
 @Serializable
@@ -301,11 +311,12 @@ data class GroqMessage(
 
 @Serializable
 data class GroqChatRequest(
-    val model: String = "llama-3.3-70b-versatile",
+    val model: String = "openai/gpt-oss-120b",
     val messages: List<GroqMessage>,
     val temperature: Double = 0.2,
     @SerialName("max_tokens")
     val maxTokens: Int = 1024,
+    val stream: Boolean = false,
 )
 
 @Serializable
@@ -316,6 +327,33 @@ data class GroqChatResponse(
 @Serializable
 data class GroqChoice(
     val message: GroqMessage = GroqMessage(role = "assistant", content = ""),
+)
+
+@Serializable
+data class GeminiPart(
+    val text: String = "",
+)
+
+@Serializable
+data class GeminiContent(
+    val role: String = "user",
+    val parts: List<GeminiPart> = emptyList(),
+)
+
+@Serializable
+data class GeminiGenerateRequest(
+    val contents: List<GeminiContent>,
+    val systemInstruction: GeminiContent? = null,
+)
+
+@Serializable
+data class GeminiCandidate(
+    val content: GeminiContent? = null,
+)
+
+@Serializable
+data class GeminiGenerateResponse(
+    val candidates: List<GeminiCandidate> = emptyList(),
 )
 
 @Serializable
@@ -362,4 +400,177 @@ data class OracleTurn(
     val measurementStatus: String,
     val timestampMs: Long,
     val isReported: Boolean = false,
+)
+
+@Serializable
+data class GroqStreamChunk(
+    val choices: List<GroqStreamChoice> = emptyList(),
+)
+
+@Serializable
+data class GroqStreamChoice(
+    val delta: GroqStreamDelta = GroqStreamDelta(),
+)
+
+@Serializable
+data class GroqStreamDelta(
+    val content: String? = null,
+)
+
+@Serializable
+data class AuthRefreshRequest(
+    val refreshToken: String,
+)
+
+@Serializable
+data class AuthRefreshResponse(
+    val ok: Boolean = false,
+    val idToken: String = "",
+    val refreshToken: String = "",
+    val error: String? = null,
+)
+
+@Serializable
+data class FirecrawlMapRequest(
+    val url: String,
+    val limit: Int,
+    val includeSubdomains: Boolean = false,
+    val ignoreSitemap: Boolean = false,
+)
+
+@Serializable
+data class FirecrawlMapResponse(
+    val links: List<JsonElement> = emptyList(),
+)
+
+@Serializable
+data class FirecrawlScrapeRequest(
+    val url: String,
+    val formats: List<String> = listOf("markdown", "rawHtml"),
+    val onlyMainContent: Boolean = true,
+    val waitFor: Int = 1000,
+)
+
+@Serializable
+data class FirecrawlScrapeResponse(
+    val data: FirecrawlPage? = null,
+)
+
+@Serializable
+data class FirecrawlPage(
+    val markdown: String = "",
+    val rawHtml: String = "",
+    val metadata: JsonObject = JsonObject(emptyMap()),
+)
+
+@Serializable
+data class AuditRunRequest(
+    val domain: String,
+)
+
+@Serializable
+data class AuditRunResponse(
+    val token: String = "",
+    val domain: String = "",
+)
+
+@Serializable
+data class IdeaCreateRequest(
+    val idea: String,
+    val niche: String? = null,
+    val competitorUrls: List<String> = emptyList(),
+    val pulseOptIn: Boolean = false,
+)
+
+@Serializable
+data class IdeaCreateResponse(
+    val ok: Boolean = false,
+    val id: String = "",
+    val card: IdeaCard? = null,
+    val ideaCardsRemaining: Int? = null,
+)
+
+@Serializable
+data class IdeaDetailResponse(
+    val ok: Boolean = false,
+    val card: IdeaCard? = null,
+    val niche: String? = null,
+)
+
+@Serializable
+data class IdeaListResponse(
+    val ok: Boolean = false,
+    val ideas: List<IdeaSummary> = emptyList(),
+)
+
+@Serializable
+data class IdeaSummary(
+    val id: String = "",
+    val ideaText: String = "",
+    val niche: String? = null,
+    val status: String = "",
+    val createdAt: Long = 0L,
+    val linkedDomain: String? = null,
+)
+
+@Serializable
+data class IdeaCard(
+    val problem: String = "",
+    val whoAsksAi: IdeaWhoAsks = IdeaWhoAsks(),
+    val competitorCitation: IdeaCitation = IdeaCitation(),
+    val contentBets: List<IdeaBet> = emptyList(),
+    val siteChecklist: List<IdeaChecklistRow> = emptyList(),
+)
+
+@Serializable
+data class IdeaWhoAsks(
+    val persona: String = "",
+    val promptPatterns: List<String> = emptyList(),
+)
+
+@Serializable
+data class IdeaCitation(
+    val status: String = "not_measured",
+    val snapshots: List<IdeaSnapshot> = emptyList(),
+)
+
+@Serializable
+data class IdeaSnapshot(
+    val hostname: String = "",
+    val title: String? = null,
+    val fetchStatus: String = "not_measured",
+)
+
+@Serializable
+data class IdeaBet(
+    val hypothesis: String = "",
+)
+
+@Serializable
+data class IdeaChecklistRow(
+    val id: String = "",
+    val label: String = "",
+    val status: String = "not_measured",
+)
+
+data class StudioSource(
+    val id: String,
+    val title: String,
+    val content: String,
+    val kind: String,
+    val selected: Boolean,
+    val addedAt: Long,
+)
+
+@Serializable
+data class AudioOverviewTurn(
+    val speaker: String = "Alex",
+    val text: String = "",
+)
+
+@Serializable
+data class AudioOverview(
+    val title: String = "",
+    val summary: String = "",
+    val script: List<AudioOverviewTurn> = emptyList(),
 )

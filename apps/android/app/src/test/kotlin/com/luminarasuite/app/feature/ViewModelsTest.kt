@@ -12,6 +12,7 @@ import com.luminarasuite.app.feature.dashboard.DashboardViewModel
 import com.luminarasuite.app.feature.settings.SettingsViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -32,6 +33,14 @@ class ViewModelsTest {
     @Before
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
+    }
+
+    /** streamOracle runs on Dispatchers.IO, so the test waits on real time, not the scheduler. */
+    private fun waitForTurns(vm: AskViewModel) {
+        repeat(200) {
+            if (vm.uiState.value.turns.isNotEmpty()) return
+            Thread.sleep(10)
+        }
     }
 
     @After
@@ -71,6 +80,8 @@ class ViewModelsTest {
                 )
             vm.recheckCheck("llms_txt")
             assertEquals("pass", vm.uiState.value.report?.evaluation?.checks?.first { it.id == "llms_txt" }?.status)
+            assertTrue(vm.uiState.value.report?.verdict?.contains("3 fixes to make") == true)
+            assertEquals("done", repo.findingsFlow.first().first { it.stableKey == "crawler::llms_txt" }.status)
 
             vm.reportAuditVerdict()
             assertTrue(vm.uiState.value.isVerdictReported)
@@ -90,6 +101,7 @@ class ViewModelsTest {
             val vm = AskViewModel(repo)
 
             vm.submitQuestion("Check AEO citations")
+            waitForTurns(vm)
             assertEquals(1, vm.uiState.value.turns.size)
             val turnId = vm.uiState.value.turns.first().id
 
@@ -153,8 +165,13 @@ class ViewModelsTest {
             vm.exportData()
             assertEquals("Export ready.", vm.uiState.value.statusBanner)
 
+            assertEquals("free", vm.uiState.value.quota?.plan)
+            assertEquals("free", vm.uiState.value.quota?.entitlement?.tier)
+            assertEquals(2, vm.uiState.value.quota?.remaining)
+
             vm.signOut()
             assertFalse(vm.uiState.value.vault.isSignedIn)
+            assertNull(vm.uiState.value.quota)
 
             vm.updateEmail("user@luminarasuite.com")
             vm.updatePassword("password123")
