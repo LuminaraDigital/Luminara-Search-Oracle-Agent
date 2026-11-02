@@ -7,6 +7,7 @@ import com.luminarasuite.app.core.auth.VaultSnapshot
 import com.luminarasuite.app.core.auth.VaultStorage
 import com.luminarasuite.app.core.database.LuminaraDao
 import com.luminarasuite.app.core.database.toEntity
+import com.luminarasuite.app.core.database.wipeLocalWorkspace
 import com.luminarasuite.app.core.model.AccountDeleteRequest
 import com.luminarasuite.app.core.model.AudioOverview
 import com.luminarasuite.app.core.model.AuditFinding
@@ -836,7 +837,7 @@ class DefaultLuminaraRepository(
                 throw IllegalStateException(res.error ?: "Sign-in failed. Check your credentials.")
             }
             val adopted = firebase.adoptPassword(cleanEmail, password, res)
-            vault.saveSession(
+            openSession(
                 idToken = adopted.idToken,
                 refreshToken = adopted.refreshToken,
                 email = adopted.email.ifBlank { cleanEmail },
@@ -859,7 +860,7 @@ class DefaultLuminaraRepository(
                 throw IllegalStateException(res.error ?: "Account creation failed.")
             }
             val adopted = firebase.adoptPassword(cleanEmail, password, res)
-            vault.saveSession(
+            openSession(
                 idToken = adopted.idToken,
                 refreshToken = adopted.refreshToken,
                 email = adopted.email.ifBlank { cleanEmail },
@@ -873,7 +874,7 @@ class DefaultLuminaraRepository(
             require(googleIdToken.isNotBlank()) { "Google did not return an account. Try again." }
             val res = firebase.signInWithGoogle(googleIdToken)
             check(res.ok && res.idToken.isNotBlank()) { res.error ?: "Google sign-in failed. Try again." }
-            vault.saveSession(
+            openSession(
                 idToken = res.idToken,
                 refreshToken = res.refreshToken,
                 email = res.email,
@@ -897,8 +898,19 @@ class DefaultLuminaraRepository(
 
     override suspend fun signOut() {
         quotaState.value = null
+        dao.wipeLocalWorkspace()
         firebase.signOut()
         vault.clearSession()
+    }
+
+    private suspend fun openSession(
+        idToken: String,
+        refreshToken: String,
+        email: String,
+        accountId: String,
+    ) {
+        dao.wipeLocalWorkspace()
+        vault.saveSession(idToken, refreshToken, email, accountId)
     }
 
     override suspend fun exportAccountData(): Result<String> =
@@ -925,9 +937,7 @@ class DefaultLuminaraRepository(
             if (!res.ok) {
                 throw IllegalStateException(res.error ?: "Account deletion failed. Sign in again and retry.")
             }
-            dao.clearAuditHistory()
-            dao.clearFindings()
-            dao.clearStudioSources()
+            dao.wipeLocalWorkspace()
             quotaState.value = null
             firebase.signOut()
             vault.clearSession()

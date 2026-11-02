@@ -249,17 +249,25 @@ export async function searchMemoryVectors(
         authorization: `Bearer ${env.GCP_VERTEX_ACCESS_TOKEN}`,
       },
       body: JSON.stringify({
-        query: { datapoint: { featureVector: values } },
+        query: {
+          datapoint: {
+            featureVector: values,
+            restricts: [{ namespace: 'account', allowList: [accountId] }],
+          },
+        },
         neighborCount: topK,
       }),
     });
     if (!res.ok) return [];
     const data = (await res.json()) as { nearestNeighbors?: Array<{ datapoint?: { datapointId?: string }; distance?: number }> };
-    return (data.nearestNeighbors || []).map((n) => ({
-      id: n.datapoint?.datapointId || '',
-      score: 1 - (n.distance || 0),
-      text: '',
-    }));
+    const prefix = `${accountId}:`;
+    return (data.nearestNeighbors || [])
+      .map((n) => ({
+        id: n.datapoint?.datapointId || '',
+        score: 1 - (n.distance || 0),
+        text: '',
+      }))
+      .filter((hit) => hit.id.startsWith(prefix));
   }
 
   // Fallback: recent D1 facts keyword overlap.
