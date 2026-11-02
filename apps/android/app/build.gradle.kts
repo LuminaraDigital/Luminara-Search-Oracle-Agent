@@ -11,8 +11,9 @@ plugins {
   alias(libs.plugins.google.services)
 }
 
-val defaultVersionCode = 1
-val defaultVersionName = "1.0.2"
+// Play formula: major * 10000 + minor * 100 + patch. 1.0.5 is 10005, the follow-on after live 1.0.4 / 10004.
+val defaultVersionCode = 10005
+val defaultVersionName = "1.0.5"
 
 val versionCodeOverride: Int? =
   (providers.gradleProperty("luminara.versionCode").orNull ?: System.getenv("LUMINARA_VERSION_CODE"))
@@ -129,6 +130,13 @@ android {
       excludes += "/META-INF/{AL2.0,LGPL2.1}"
     }
   }
+
+  // src/release is gitignored by the repo-wide `release/` rule (Electron output).
+  sourceSets {
+    getByName("release") {
+      kotlin.directories.add("src/play/kotlin")
+    }
+  }
 }
 
 kotlin {
@@ -138,7 +146,15 @@ kotlin {
 detekt {
   buildUponDefaultConfig = true
   config.setFrom(rootProject.file("config/detekt/detekt.yml"))
-  source.setFrom(files("src/main/kotlin", "src/test/kotlin", "src/androidTest/kotlin"))
+  source.setFrom(
+    files(
+      "src/main/kotlin",
+      "src/debug/kotlin",
+      "src/play/kotlin",
+      "src/test/kotlin",
+      "src/androidTest/kotlin",
+    ),
+  )
 }
 
 tasks.withType<dev.detekt.gradle.Detekt>().configureEach {
@@ -206,6 +222,8 @@ dependencies {
   implementation(libs.androidx.work.runtime)
   implementation(platform(libs.firebase.bom))
   implementation(libs.firebase.auth)
+  releaseImplementation(libs.firebase.appcheck.playintegrity)
+  debugImplementation(libs.firebase.appcheck.debug)
 
   testImplementation(libs.junit)
   testImplementation(libs.kotlinx.coroutines.test)

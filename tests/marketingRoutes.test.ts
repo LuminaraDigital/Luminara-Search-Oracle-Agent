@@ -15,7 +15,7 @@ import { resolveCanonicalHref, resolveDocumentTitle, resolveRobotsDirective } fr
 import { injectMarketingMeta } from '../worker/marketingShell';
 import { CHECKOUT_TERM_LINE, listPriceSummary } from '../components/paywall/planCopy';
 import { PAID_PLAN_PRICES } from '../components/paywall/planPrices';
-import { AI_TXT, LLMS_TXT, ROBOTS_TXT, SITEMAP_XML } from '../worker/crawlDocuments';
+import { AI_TXT, LLMS_TXT, ROBOTS_TXT, SITEMAP_XML, readServedCrawlFile } from '../worker/crawlDocuments';
 
 describe('marketingRoutes', () => {
   it('maps canonical paths to views', () => {
@@ -193,6 +193,14 @@ describe('marketing crawl documents', () => {
     expect(ROBOTS_TXT).toContain('User-agent: PerplexityBot');
     expect(ROBOTS_TXT).toContain('User-agent: Google-Extended');
     expect(ROBOTS_TXT).toContain('Allow: /docs/what-is-aeo.html');
+    expect(ROBOTS_TXT).toContain('Allow: /llms.txt');
+    expect(ROBOTS_TXT).toContain('Allow: /llm.txt');
+    expect(ROBOTS_TXT).toContain('Allow: /ai.txt');
+    expect(ROBOTS_TXT).toContain('Content-Signal: search=yes,ai-train=no,use=reference');
+    expect(ROBOTS_TXT.match(/Content-Signal:/g)).toEqual(['Content-Signal:']);
+    expect(ROBOTS_TXT).not.toMatch(/^Disallow: \/$/m);
+    expect(AI_TXT).toContain('Allow: /llm.txt');
+    expect(AI_TXT).toContain('https://www.luminarasuite.com/llms.txt');
     expect(ROBOTS_TXT).toContain('Allow: /share/teaser/');
     // Share pages are unlisted and served noindex (worker/marketingShell.ts); robots must not block unfurlers.
     expect(ROBOTS_TXT).not.toContain('Disallow: /share/');
@@ -202,7 +210,16 @@ describe('marketing crawl documents', () => {
   it('public crawl files match the Worker constants', () => {
     expect(readFileSync('public/robots.txt', 'utf8')).toBe(ROBOTS_TXT);
     expect(readFileSync('public/llms.txt', 'utf8')).toBe(LLMS_TXT);
+    expect(readFileSync('public/llm.txt', 'utf8')).toBe(LLMS_TXT);
     expect(readFileSync('public/ai.txt', 'utf8')).toBe(AI_TXT);
+    expect(readServedCrawlFile('www.luminarasuite.com', 'https://www.luminarasuite.com/llm.txt')).toEqual({
+      status: 200,
+      body: LLMS_TXT,
+    });
+    expect(readServedCrawlFile('luminarasuite.com', 'https://luminarasuite.com/llm.txt')).toEqual({
+      status: 200,
+      body: LLMS_TXT,
+    });
     expect(readFileSync('public/sitemap.xml', 'utf8')).toBe(SITEMAP_XML);
   });
 });

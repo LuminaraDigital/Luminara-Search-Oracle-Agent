@@ -148,17 +148,19 @@ fun DashboardScreen(
             )
             FixQueue(
                 findings = state.findings.filter { it.domain == latest.domain && it.status != "done" }.take(3),
+                signedIn = isSignedIn,
                 onAdvance = viewModel::cycleFindingStatus,
                 onAsk = { finding ->
                     onAskAbout("How do I fix this on ${finding.domain}: ${finding.title}? ${finding.description}")
                 },
+                onSignIn = onOpenSettings,
             )
         }
 
         if (!isSignedIn) {
             DoorRow(
                 title = "Keep this across devices",
-                subtitle = "Sign in for 3 hosted AI checks a day and synced history.",
+                subtitle = "Sign in for 3 audits and 10 questions a day. Your plan syncs with this account.",
                 icon = Icons.Outlined.PersonAdd,
                 onClick = onOpenSettings,
             )
@@ -266,8 +268,10 @@ private fun VisibilityHero(
 @Composable
 private fun FixQueue(
     findings: List<AuditFinding>,
+    signedIn: Boolean,
     onAdvance: (AuditFinding) -> Unit,
     onAsk: (AuditFinding) -> Unit,
+    onSignIn: () -> Unit,
 ) {
     SectionHeader(
         title = "Next fix",
@@ -305,9 +309,10 @@ private fun FixQueue(
                     modifier = Modifier.weight(1f),
                 )
                 GhostPillButton(
-                    text = "How to fix",
-                    onClick = { onAsk(finding) },
+                    text = if (signedIn) "How to fix" else "Sign in",
+                    onClick = { if (signedIn) onAsk(finding) else onSignIn() },
                     modifier = Modifier.weight(1f),
+                    testTag = "home_how_to_fix",
                 )
             }
         }

@@ -24,6 +24,7 @@ const VIEW_TO_SHELL: Partial<Record<AppView, string>> = {
   [AppView.WHY_US]: '/why',
   [AppView.PRICING]: '/pricing',
   [AppView.METHODOLOGY]: '/methodology',
+  [AppView.WHITE_PAPER]: '/white-paper',
   [AppView.SAMPLE_REPORT]: '/sample-report',
 };
 

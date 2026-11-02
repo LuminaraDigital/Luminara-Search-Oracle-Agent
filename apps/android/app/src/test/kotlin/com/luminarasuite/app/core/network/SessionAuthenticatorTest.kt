@@ -3,6 +3,7 @@ package com.luminarasuite.app.core.network
 import com.luminarasuite.app.core.auth.FIREBASE_SDK_REFRESH
 import com.luminarasuite.app.core.auth.InMemoryVaultStorage
 import com.luminarasuite.app.core.auth.VaultSnapshot
+import com.luminarasuite.app.core.model.ByokKeyBag
 import kotlinx.coroutines.runBlocking
 import okhttp3.Protocol
 import okhttp3.Request
@@ -63,6 +64,20 @@ class SessionAuthenticatorTest {
 
         assertNull(authenticator.authenticate(null, unauthorized("old")))
         assertEquals("", runBlocking { vault.getSnapshot() }.idToken)
+    }
+
+    @Test
+    fun rejectedRefreshDropsByokAndNotifiesTheLocalWipe() {
+        val vault = InMemoryVaultStorage(signedIn.copy(byokKeys = ByokKeyBag(groqKey = "gsk_a")))
+        var wiped = false
+        val authenticator =
+            SessionAuthenticator(vault, onSessionCleared = { wiped = true }) { RefreshOutcome.Rejected }
+
+        assertNull(authenticator.authenticate(null, unauthorized("old")))
+        val snap = runBlocking { vault.getSnapshot() }
+        assertEquals("", snap.idToken)
+        assertEquals("", snap.byokKeys.groqKey)
+        assertTrue(wiped)
     }
 
     @Test

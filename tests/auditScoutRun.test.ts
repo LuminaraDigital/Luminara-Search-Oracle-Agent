@@ -248,8 +248,8 @@ describe('one Instant Audit run', () => {
     expect(await quotaUsed(env)).toBe(1);
   });
 
-  it('still meters a hosted call that is not part of a run', async () => {
-    const { env, kv } = envFor();
+  it('meters a hosted chat that is not part of a run on the ask meter', async () => {
+    const { env } = envFor();
     globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({
       choices: [{ message: { content: 'chat' }, finish_reason: 'stop' }],
     }), { status: 200, headers: { 'content-type': 'application/json' } }));
@@ -260,7 +260,8 @@ describe('one Instant Audit run', () => {
     });
     expect((await proxyProvider(chat(), env, 'groq', '/chat/completions')).status).toBe(200);
     expect((await proxyProvider(chat(), env, 'groq', '/chat/completions')).status).toBe(200);
-    expect(await quotaUsed(env)).toBe(2);
+    expect(await quotaUsed(env)).toBe(0);
+    expect(await readFreeUsed(env, '11:ask', 10)).toBe(2);
   });
 
   it('covers later calls without rewriting the run', async () => {
