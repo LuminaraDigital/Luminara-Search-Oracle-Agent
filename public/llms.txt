@@ -64,6 +64,7 @@ Each paid plan lasts 30 days and starts as soon as payment is confirmed. It does
 - Home: https://www.luminarasuite.com/
 - Sample report: https://www.luminarasuite.com/sample-report
 - Methodology: https://www.luminarasuite.com/methodology
+- White paper: https://www.luminarasuite.com/white-paper
 - What is AEO: https://www.luminarasuite.com/docs/what-is-aeo.html
 - How it works: https://www.luminarasuite.com/how-it-works
 - Our AI: https://www.luminarasuite.com/ai
