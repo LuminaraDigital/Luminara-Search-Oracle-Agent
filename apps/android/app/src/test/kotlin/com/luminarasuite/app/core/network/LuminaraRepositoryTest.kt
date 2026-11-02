@@ -888,8 +888,10 @@ class LuminaraRepositoryTest {
             assertTrue(repo.studioSourcesFlow.first().isNotEmpty())
 
             repo.saveByokKeys(ByokKeyBag(groqKey = "gsk_account_a"))
+            repo.setDeveloperByok(true)
             repo.signIn("a@luminarasuite.com", "password123").getOrThrow()
             assertEquals("gsk_account_a", vault.getSnapshot().byokKeys.groqKey)
+            assertTrue(vault.getSnapshot().developerByok)
             assertTrue(repo.auditHistoryFlow.first().isEmpty())
             assertTrue(repo.studioSourcesFlow.first().isEmpty())
 
@@ -897,11 +899,13 @@ class LuminaraRepositoryTest {
             repo.signInWithGoogle("google-token").getOrThrow()
             assertEquals("fb:other", vault.getSnapshot().accountId)
             assertEquals("", vault.getSnapshot().byokKeys.groqKey)
+            assertFalse(vault.getSnapshot().developerByok)
             assertTrue(repo.studioSourcesFlow.first().isEmpty())
 
             vault.markGuestTrialUsed()
             repo.signOut()
             assertEquals("", vault.getSnapshot().byokKeys.groqKey)
+            assertFalse(vault.getSnapshot().developerByok)
             assertTrue(vault.getSnapshot().guestTrialUsed)
             assertTrue(repo.auditHistoryFlow.first().isEmpty())
             assertTrue(repo.studioSourcesFlow.first().isEmpty())

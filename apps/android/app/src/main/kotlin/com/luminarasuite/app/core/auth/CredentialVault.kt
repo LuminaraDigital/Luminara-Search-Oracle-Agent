@@ -76,14 +76,15 @@ class InMemoryVaultStorage(
         val nextAccount = accountId.trim()
         val previous = state.value.accountId
         // A different signed-in account must not spend the keys still on this phone.
-        val byokKeys = if (previous.isNotBlank() && previous != nextAccount) ByokKeyBag() else state.value.byokKeys
+        val switched = previous.isNotBlank() && previous != nextAccount
         state.value =
             state.value.copy(
                 idToken = idToken,
                 refreshToken = refreshToken,
                 email = email,
                 accountId = nextAccount,
-                byokKeys = byokKeys,
+                byokKeys = if (switched) ByokKeyBag() else state.value.byokKeys,
+                developerByok = if (switched) false else state.value.developerByok,
             )
     }
 
@@ -95,6 +96,7 @@ class InMemoryVaultStorage(
                 email = "",
                 accountId = "",
                 byokKeys = ByokKeyBag(),
+                developerByok = false,
                 reportedTurnIds = emptySet(),
             )
     }
@@ -180,6 +182,7 @@ class KeystoreCredentialVault(
                 prefs.remove(KEY_NIM)
                 prefs.remove(KEY_GEMINI)
                 prefs.remove(KEY_TAVILY)
+                prefs.remove(KEY_DEVELOPER_BYOK)
             }
             prefs[KEY_ID_TOKEN] = encrypt(idToken)
             prefs[KEY_REFRESH_TOKEN] = encrypt(refreshToken)
@@ -198,6 +201,7 @@ class KeystoreCredentialVault(
             prefs.remove(KEY_NIM)
             prefs.remove(KEY_GEMINI)
             prefs.remove(KEY_TAVILY)
+            prefs.remove(KEY_DEVELOPER_BYOK)
             prefs.remove(KEY_REPORTED_TURNS)
         }
     }
