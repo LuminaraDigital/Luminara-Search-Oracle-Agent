@@ -89,15 +89,17 @@ class SessionAuthenticator(
 fun refreshOverHttp(
     apiBaseUrl: String,
     json: Json,
+    appCheckToken: () -> String? = { null },
 ): (String) -> RefreshOutcome {
     val client = OkHttpClient.Builder().callTimeout(15, TimeUnit.SECONDS).build()
     val jsonType = "application/json".toMediaType()
     return { refreshToken ->
-        val request =
+        val requestBuilder =
             Request.Builder()
                 .url("${apiBaseUrl}api/auth/refresh")
                 .post(json.encodeToString(AuthRefreshRequest(refreshToken)).toRequestBody(jsonType))
-                .build()
+        appCheckHeaderValue(appCheckToken())?.let { requestBuilder.header(FIREBASE_APP_CHECK_HEADER, it) }
+        val request = requestBuilder.build()
         try {
             client.newCall(request).execute().use { res ->
                 val body = res.body.string()
