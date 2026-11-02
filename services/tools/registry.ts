@@ -91,7 +91,7 @@ export function buildPaidToolRuntime(opts: {
     getCompetitors: async (projectId) => {
       const ctx = await getProjectContext(env, accountId, projectId);
       if (!ctx) return [];
-      return ctx.competitors.map((c) => (c.domain || c.name || '').trim()).filter(Boolean);
+      return ctx.competitors.map((c) => (c.name || c.domain || '').trim()).filter(Boolean);
     },
     getResearchLog: async (projectId) => {
       const ctx = await getProjectContext(env, accountId, projectId);

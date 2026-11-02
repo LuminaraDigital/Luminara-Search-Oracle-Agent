@@ -46,11 +46,23 @@ export interface MissingMentionSource {
   actionRecommendation: string;
 }
 
+export function stripUrlTrailingPunctuation(rawUrl: string): string {
+  return rawUrl.trim().replace(/[.;:!?]+$/, '');
+}
+
 export function extractSourceHost(rawUrl: string): string {
+  const cleaned = stripUrlTrailingPunctuation(rawUrl);
   try {
-    return new URL(rawUrl).hostname.replace(/^www\./i, '').toLowerCase();
+    return new URL(cleaned).hostname.replace(/^www\./i, '').replace(/\.+$/, '').toLowerCase();
   } catch {
-    return rawUrl.replace(/^https?:\/\//i, '').replace(/^www\./i, '').split('/')[0].toLowerCase();
+    return cleaned
+      .replace(/^https?:\/\//i, '')
+      .replace(/^www\./i, '')
+      .split('/')[0]
+      .split('?')[0]
+      .split('#')[0]
+      .replace(/\.+$/, '')
+      .toLowerCase();
   }
 }
 
@@ -61,9 +73,36 @@ export function classifyBrandMentionStatus(cited: boolean, text: string): BrandM
     : 'mentioned';
 }
 
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 export function findMentionedCompetitors(text: string, competitors: string[]): string[] {
   const lower = text.toLowerCase();
-  return competitors.filter((comp) => lower.includes(comp.toLowerCase().replace(/^www\./i, '')));
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of competitors) {
+    const comp = raw.trim();
+    if (!comp) continue;
+    const host = extractSourceHost(comp);
+    const clean = comp
+      .toLowerCase()
+      .replace(/^https?:\/\//i, '')
+      .replace(/^www\./i, '')
+      .replace(/\/.*$/, '')
+      .replace(/[.;:!?]+$/, '');
+    const stem = (host.split('.')[0] || '').replace(/-/g, ' ').trim();
+    const matched =
+      (clean.length >= 2 && lower.includes(clean)) ||
+      (host.length >= 3 && lower.includes(host)) ||
+      (stem.length >= 3 && new RegExp(`(?:^|\\W)${escapeRegex(stem)}(?:$|\\W)`, 'i').test(text));
+    const canonicalKey = (stem || host || clean).replace(/[\s-]+/g, '').toLowerCase();
+    if (matched && !seen.has(canonicalKey)) {
+      seen.add(canonicalKey);
+      out.push(comp);
+    }
+  }
+  return out;
 }
 
 export function classifyOffSiteChannel(domain: string, urlOrSnippet = ''): OffSiteMentionChannel {
