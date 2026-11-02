@@ -72,3 +72,13 @@ Operator: Luminara Digital Pty Ltd (ABN 90 693 125 281), Melbourne, VIC, Austral
 | **Phone Screenshot 4 (Operator Dashboard)** | `1080 x 1920 px` (9:16) | PNG | `docs/play-store/assets/screenshots/04-dashboard-board.png` |
 
 Upload `play-icon-512.png` in Play Console as the store listing icon. It is the same gold atom as the Android launcher, splash foreground, and in-app header. Shipping the app package does not change the Console listing.
+
+---
+
+## Release notes (en-AU)
+
+Paste this into the Play Console release notes for 1.0.5 (versionCode 10005):
+
+```text
+App Check Play Integrity for enterprise Auth.
+```
