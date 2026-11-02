@@ -52,6 +52,8 @@ import com.luminarasuite.app.core.model.IdeaCreateRequest
 import com.luminarasuite.app.core.model.IdeaCreateResponse
 import com.luminarasuite.app.core.model.IdeaDetailResponse
 import com.luminarasuite.app.core.model.IdeaListResponse
+import com.luminarasuite.app.core.model.PasswordResetRequest
+import com.luminarasuite.app.core.model.PasswordResetResponse
 import com.luminarasuite.app.core.model.PrivacyExportResponse
 import com.luminarasuite.app.core.model.ProbeCrawlData
 import com.luminarasuite.app.core.model.ProbeCrawlResponse
@@ -156,6 +158,8 @@ class FakeLuminaraDao : LuminaraDao {
 }
 
 class FakeLuminaraApi : LuminaraApi {
+    val resetEmails = mutableListOf<String>()
+    var resetFailure: Exception? = null
     val queriedFindingDomains = mutableListOf<String?>()
     var chatReply: String? = null
     var chatFailure: Exception? = null
@@ -269,6 +273,12 @@ class FakeLuminaraApi : LuminaraApi {
     var conflictsLeft = 0
     var lastWorkspacePut: WorkspacePutRequest? = null
     var enquiryTurns = mutableListOf<Pair<String, EnquiryTurnRequest>>()
+
+    override suspend fun requestPasswordReset(body: PasswordResetRequest): PasswordResetResponse {
+        resetFailure?.let { throw it }
+        resetEmails += body.email
+        return PasswordResetResponse(success = true, message = "If an account exists, a link was sent.")
+    }
 
     override suspend fun signInWithGoogle(body: GoogleSignInRequest): AuthTokenResponse =
         AuthTokenResponse(ok = true, idToken = "id", refreshToken = "r", localId = "g1", email = "g@example.com")
@@ -475,6 +485,41 @@ class FakeLuminaraApi : LuminaraApi {
 }
 
 class LuminaraRepositoryTest {
+    @Test
+    fun requestPasswordReset_trimsTheEmailAndPassesTheServerMessageThrough() =
+        runTest {
+            val api = FakeLuminaraApi()
+            val repo = DefaultLuminaraRepository(api = api, dao = FakeLuminaraDao(), vault = InMemoryVaultStorage())
+
+            val message = repo.requestPasswordReset("  owner@example.com ").getOrThrow()
+
+            assertEquals(listOf("owner@example.com"), api.resetEmails)
+            assertEquals("If an account exists, a link was sent.", message)
+        }
+
+    @Test
+    fun requestPasswordReset_rejectsAnEmailThatCannotBeRightWithoutCallingTheServer() =
+        runTest {
+            val api = FakeLuminaraApi()
+            val repo = DefaultLuminaraRepository(api = api, dao = FakeLuminaraDao(), vault = InMemoryVaultStorage())
+
+            val result = repo.requestPasswordReset("not an email")
+
+            assertEquals("Enter the email address you signed up with.", result.exceptionOrNull()?.message)
+            assertTrue(api.resetEmails.isEmpty())
+        }
+
+    @Test
+    fun requestPasswordReset_offlineUsesFriendlyCopy() =
+        runTest {
+            val api = FakeLuminaraApi().apply { resetFailure = IOException("Unable to resolve host") }
+            val repo = DefaultLuminaraRepository(api = api, dao = FakeLuminaraDao(), vault = InMemoryVaultStorage())
+
+            val message = repo.requestPasswordReset("owner@example.com").exceptionOrNull()?.message
+
+            assertEquals("Could not reach Luminara. Check your connection and try again.", message)
+        }
+
     private suspend fun byokRepo(api: FakeLuminaraApi): DefaultLuminaraRepository {
         val vault = InMemoryVaultStorage()
         vault.saveByokKeys(ByokKeyBag(groqKey = "gsk_test"))

@@ -9,6 +9,17 @@ data class GoogleSignInRequest(
     val googleIdToken: String,
 )
 
+@Serializable
+data class PasswordResetRequest(
+    val email: String,
+)
+
+@Serializable
+data class PasswordResetResponse(
+    val success: Boolean = false,
+    val message: String = "",
+)
+
 /** A public link this app can open: /share/<token> or /share/teaser/<token>. */
 data class ShareLink(
     val token: String,
