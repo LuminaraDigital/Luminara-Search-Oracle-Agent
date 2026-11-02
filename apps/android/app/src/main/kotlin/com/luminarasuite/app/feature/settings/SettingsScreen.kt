@@ -121,6 +121,10 @@ class SettingsViewModel(
 
     fun updateDeleteConfirm(value: String) = _uiState.update { it.copy(deleteConfirmInput = value) }
 
+    fun setDeveloperByok(enabled: Boolean) {
+        viewModelScope.launch { repository.setDeveloperByok(enabled) }
+    }
+
     fun signIn() {
         val email = _uiState.value.emailInput
         val pass = _uiState.value.passwordInput
@@ -218,7 +222,7 @@ class SettingsViewModel(
                 ),
             )
             _uiState.update {
-                it.copy(statusBanner = "BYOK keys encrypted and saved to Android Keystore.", errorBanner = null)
+                it.copy(statusBanner = "Developer key saved on this device.", errorBanner = null)
             }
         }
     }
@@ -301,8 +305,8 @@ fun SettingsScreen(
             BusinessSection(onOpenProfile = onOpenProfile, onOpenEnquiries = onOpenEnquiries)
         }
         ReminderSection()
-        ByokVaultSection(state = state, viewModel = viewModel)
         PrivacyAndLegalSection(state = state, viewModel = viewModel, context = context)
+        DeveloperByokSection(state = state, viewModel = viewModel)
 
         Spacer(modifier = Modifier.height(16.dp))
     }
@@ -479,45 +483,68 @@ private fun AccountSection(
 }
 
 @Composable
-private fun ByokVaultSection(
+private fun DeveloperByokSection(
     state: SettingsUiState,
     viewModel: SettingsViewModel,
 ) {
+    val enabled = state.vault.developerByok
+    val usingOwnKey = enabled && (state.vault.byokKeys.hasAnyLlmKey || state.vault.byokKeys.tavilyKey.isNotBlank())
     WorkbenchCard {
-        EyebrowKicker("Your keys")
-        Text(
-            text =
-            "Groq, Tavily, Gemini, or NVIDIA NIM. " +
-                "Encrypted on this device with the Android Keystore.",
-            style = LuminaraTextStyles.Body,
-        )
-        SecretField(
-            value = state.groqKeyInput,
-            onValueChange = viewModel::updateGroqKey,
-            label = "Groq API key (gsk_...)",
-            testTag = "byok_groq_input",
-        )
-        SecretField(
-            value = state.tavilyKeyInput,
-            onValueChange = viewModel::updateTavilyKey,
-            label = "Tavily search key (tvly-...)",
-            testTag = "byok_tavily_input",
-        )
-        SecretField(
-            value = state.geminiKeyInput,
-            onValueChange = viewModel::updateGeminiKey,
-            label = "Google Gemini API key",
-        )
-        SecretField(
-            value = state.nimKeyInput,
-            onValueChange = viewModel::updateNimKey,
-            label = "NVIDIA NIM API key (nvapi-...)",
-        )
-        FoundryButton(
-            text = "Save encrypted keys",
-            onClick = viewModel::saveByokKeys,
-            testTag = "save_byok_button",
-        )
+        EyebrowKicker("Advanced")
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text = "Developer: use my own AI key", style = LuminaraTextStyles.SectionTitle)
+                Text(
+                    text = "Off by default. Suite hosted AI answers audits and questions. A developer key pays that provider. Suite still scores the audit.",
+                    style = LuminaraTextStyles.Body,
+                )
+            }
+            Switch(
+                checked = enabled,
+                onCheckedChange = viewModel::setDeveloperByok,
+                modifier = Modifier.testTag("developer_byok_switch"),
+            )
+        }
+        if (usingOwnKey) {
+            Text(text = "Using your own key.", style = LuminaraTextStyles.Body)
+        }
+        if (enabled) {
+            Text(
+                text = "Stored on this device with the Android Keystore. Leave this off to keep using Suite hosted AI.",
+                style = LuminaraTextStyles.Body,
+            )
+            SecretField(
+                value = state.groqKeyInput,
+                onValueChange = viewModel::updateGroqKey,
+                label = "Groq API key (gsk_...)",
+                testTag = "byok_groq_input",
+            )
+            SecretField(
+                value = state.tavilyKeyInput,
+                onValueChange = viewModel::updateTavilyKey,
+                label = "Tavily search key (tvly-...)",
+                testTag = "byok_tavily_input",
+            )
+            SecretField(
+                value = state.geminiKeyInput,
+                onValueChange = viewModel::updateGeminiKey,
+                label = "Google Gemini API key",
+            )
+            SecretField(
+                value = state.nimKeyInput,
+                onValueChange = viewModel::updateNimKey,
+                label = "NVIDIA NIM API key (nvapi-...)",
+            )
+            FoundryButton(
+                text = "Save encrypted keys",
+                onClick = viewModel::saveByokKeys,
+                testTag = "save_byok_button",
+            )
+        }
     }
 }
 

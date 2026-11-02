@@ -434,7 +434,7 @@ export async function proxyProvider(
     if (!who.user && env.REQUIRE_TG_AUTH === 'true') {
       return json(
         {
-          error: 'Sign in to use hosted AI, or add your own API key in Settings.',
+          error: 'Sign in to use hosted AI.',
           code: 'AUTH_REQUIRED',
         },
         401,
@@ -451,7 +451,7 @@ export async function proxyProvider(
     if (!isPaidSubscriber && PAID_TIER_PROVIDERS.has(providerId)) {
       return json(
         {
-          error: `The ${providerId.toUpperCase()} engine is a premium feature reserved for active subscribers. Upgrade your plan to use premium hosted AI engines, or bring your own API key in Settings.`,
+          error: `The ${providerId.toUpperCase()} engine is on a paid plan. Free accounts use Suite hosted AI.`,
           code: 'TIER_UPGRADE_REQUIRED',
           requiredTier: 'paid',
           provider: providerId,
@@ -474,7 +474,7 @@ export async function proxyProvider(
     if (firecrawlCrawl && !isPaidSubscriber) {
       return json(
         {
-          error: 'Hosted Firecrawl /crawl requires an active plan. Use /scrape, subscribe, or bring your own Firecrawl key.',
+          error: 'Hosted Firecrawl /crawl needs a paid plan. Use /scrape, or try again when the plan is active.',
           code: 'TIER_UPGRADE_REQUIRED',
           requiredTier: 'paid',
           provider: providerId,
@@ -497,14 +497,20 @@ export async function proxyProvider(
       }
     }
     if (!auditCoveredToken && !jevCall) {
-      quotaGate = await checkHostedQuota(env, who.user, { clientIp: clientIp(request) });
+      const bucket = isChatCompletionsPath(providerId, subPath)
+        ? 'ask'
+        : providerId === 'tavily' && subPath === '/search'
+          ? 'ask-search'
+          : 'audit';
+      quotaGate = await checkHostedQuota(env, who.user, { clientIp: clientIp(request), bucket });
     }
     if (quotaGate && !quotaGate.ok) {
       const capacity = quotaGate.error === QUOTA_CAPACITY_ERROR;
+      const askCap = quotaGate.bucket === 'ask' || quotaGate.bucket === 'ask-search';
       return json(
         {
           error: quotaGate.error,
-          code: capacity ? 'HOSTED_CAPACITY' : 'PAYWALL_EXCEEDED',
+          code: capacity ? 'HOSTED_CAPACITY' : askCap ? 'ASK_DAILY_CAP' : 'PAYWALL_EXCEEDED',
           limit: quotaGate.limit,
           used: quotaGate.used,
           remaining: quotaGate.remaining,
@@ -584,7 +590,7 @@ export async function proxyProvider(
         );
         if (fallback) return fallback.ok ? deliver(fallback) : releaseUnmeasured(fallback);
       }
-      return releaseUnmeasured(json({ error: `${providerId} is not configured on the server. Add your own key in Settings.` }, 503));
+      return releaseUnmeasured(json({ error: `${providerId} is not configured on the server. Try again in a minute.` }, 503));
     }
     if (auth.body !== undefined) body = auth.body;
 
@@ -745,7 +751,7 @@ export async function proxyProvider(
   if (!userKey && res.status === 402) {
     return releaseUnmeasured(json({
       ok: false,
-      error: `The hosted ${providerId} service is temporarily unavailable due to upstream provider credit limits. Please add your own ${providerId.toUpperCase()} key in Settings or try again shortly.`,
+      error: `The hosted ${providerId} service is temporarily unavailable. This is not a problem with your sign-in. Try again in a minute.`,
       code: 'HOSTED_PROVIDER_DEPLETED',
       provider: providerId,
     }, 503, Object.fromEntries(out.entries())));
@@ -793,8 +799,8 @@ export async function proxyProvider(
     return releaseUnmeasured(json({
       ok: false,
       error: keyRefused
-        ? `The hosted ${providerId} service is temporarily unavailable: the provider refused the hosted key. This is not a problem with your sign-in. Please add your own ${providerId.toUpperCase()} key in Settings or try again shortly.`
-        : `The hosted ${providerId} service refused this request. This is not a problem with your sign-in. You can add your own ${providerId.toUpperCase()} key in Settings.`,
+        ? `The hosted ${providerId} service is temporarily unavailable: the provider refused the hosted key. This is not a problem with your sign-in. Try again in a minute.`
+        : `The hosted ${providerId} service refused this request. This is not a problem with your sign-in. Try again in a minute.`,
       code: keyRefused ? 'HOSTED_PROVIDER_KEY_REFUSED' : 'HOSTED_PROVIDER_REQUEST_REFUSED',
       provider: providerId,
       upstreamStatus: res.status,

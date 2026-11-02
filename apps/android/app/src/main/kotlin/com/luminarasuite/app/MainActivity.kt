@@ -258,6 +258,8 @@ fun LuminaraWorkbenchApp(
                         Overlay.MEMORY.name ->
                             MemoryScreen(
                                 viewModel = dashboardViewModel,
+                                signedIn = vault.isSignedIn,
+                                onSignIn = { overlay = Overlay.SETTINGS },
                                 onRunAudit = { auditHost(null) },
                                 onAskAbout = ::askAbout,
                             )
@@ -274,8 +276,10 @@ fun LuminaraWorkbenchApp(
                             AskScreen(
                                 viewModel = askViewModel,
                                 seedPrompt = askSeed,
+                                quota = quota,
+                                signedIn = vault.isSignedIn,
                                 onSeedConsumed = { askSeed = null },
-                                onOpenSettings = { overlay = Overlay.SETTINGS },
+                                onSignIn = { overlay = Overlay.SETTINGS },
                             )
                         LuminaraTab.SCOUT.name ->
                             ScoutScreen(
@@ -288,10 +292,17 @@ fun LuminaraWorkbenchApp(
                         LuminaraTab.AUDIT.name ->
                             AuditScreen(
                                 viewModel = auditViewModel,
+                                quota = quota,
+                                signedIn = vault.isSignedIn,
+                                onSignIn = { overlay = Overlay.SETTINGS },
                                 onAskAbout = ::askAbout,
                                 onShareLink = workspace::createShareLink,
                             )
-                        LuminaraTab.STUDIO.name -> StudioScreen(viewModel = studioViewModel)
+                        LuminaraTab.STUDIO.name ->
+                            StudioScreen(
+                                viewModel = studioViewModel,
+                                onSignIn = { overlay = Overlay.SETTINGS },
+                            )
                         else ->
                             DashboardScreen(
                                 viewModel = dashboardViewModel,
@@ -394,7 +405,7 @@ private fun TopBar(
 private fun quotaLabel(quota: QuotaStatus?): String? =
     when {
         quota == null || quota.isUnlimited -> null
-        else -> "${quota.remaining} of ${quota.limit} left"
+        else -> "${quota.remaining.coerceAtLeast(0)} of ${quota.limit} audits"
     }
 
 @Composable

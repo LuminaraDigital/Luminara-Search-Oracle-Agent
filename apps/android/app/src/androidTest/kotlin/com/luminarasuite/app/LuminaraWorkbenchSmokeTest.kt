@@ -190,6 +190,10 @@ class StubInstrumentationRepository : LuminaraRepository {
 
     override suspend fun saveByokKeys(bag: ByokKeyBag) = Unit
 
+    override suspend fun setDeveloperByok(enabled: Boolean) {
+        vault.setDeveloperByok(enabled)
+    }
+
     override suspend fun signOut() = Unit
 
     override suspend fun exportAccountData(): Result<String> = Result.success("Exported")
@@ -236,6 +240,7 @@ class LuminaraWorkbenchSmokeTest {
         composeRule.onNodeWithTag("dashboard_sync_button").assertExists().performClick()
 
         composeRule.onNodeWithTag("nav_tab_settings").performClick()
+        composeRule.onNodeWithTag("developer_byok_switch").assertExists().performClick()
         composeRule.onNodeWithTag("save_byok_button").assertExists().performClick()
     }
 

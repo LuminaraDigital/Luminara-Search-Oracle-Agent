@@ -92,7 +92,8 @@ describe('store copy', () => {
   it('does not call a paid plan unlimited', () => {
     expect(dailyCapPaywallLine()).toBe('Daily limit reached. A paid plan lifts the free daily cap.');
     expect(dailyCapPaywallLine(3)).not.toMatch(/unlimited/i);
-    expect(dailyCapStudioNote(3)).toContain('own API key');
+    expect(dailyCapStudioNote(3)).toContain('midnight UTC');
+    expect(dailyCapStudioNote(3).toLowerCase()).not.toContain('api key');
   });
 
   it('marks a cut memory line instead of ending mid-word', () => {

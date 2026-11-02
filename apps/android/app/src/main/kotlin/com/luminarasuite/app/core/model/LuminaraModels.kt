@@ -267,6 +267,10 @@ data class QuotaStatus(
     val bonusRemaining: Int = 0,
     val resetSec: Int = 0,
     val isUnlimited: Boolean = false,
+    /** Questions left today. -1 means the server did not send a counter, or the plan has no cap. */
+    val askLimit: Int = -1,
+    val askUsed: Int = 0,
+    val askRemaining: Int = -1,
     val entitlement: HostedEntitlement? = null,
 )
 
