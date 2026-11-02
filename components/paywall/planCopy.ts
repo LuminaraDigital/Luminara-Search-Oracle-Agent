@@ -135,5 +135,5 @@ export function dailyCapPaywallLine(limit?: number): string {
 }
 
 export function dailyCapStudioNote(limit: number): string {
-  return `Daily limit reached (${limit}/${limit} used today). A paid plan lifts the free daily cap, or add your own API key in Settings.`;
+  return `Daily limit reached (${limit}/${limit} used today). Your saved work stays here. A paid plan lifts the free daily cap, and the allowance resets at midnight UTC.`;
 }

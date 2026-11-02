@@ -430,7 +430,7 @@ describe('a Dreaming run on a free plan', () => {
     expect(res?.status).toBe(429);
     expect(await res?.json()).toEqual({
       ok: false,
-      error: 'This feature needs an active plan. Add your own API key in Settings, activate a license key, or subscribe in the Telegram app.',
+      error: 'This feature needs an active plan. Your plan syncs when you sign in.',
       code: 'QUOTA_EXHAUSTED',
     });
     expect(modelCalls).toBe(0);

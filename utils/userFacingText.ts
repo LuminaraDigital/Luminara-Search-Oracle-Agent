@@ -12,20 +12,20 @@ function sanitizeErrorMessage(msg: string, fallback: string): string {
   if (!msg) return fallback;
   // The upstream refused the server's hosted key (the relay's code for a hosted upstream 401).
   if (msg.includes('HOSTED_PROVIDER_KEY_REFUSED')) {
-    return 'The hosted AI provider is temporarily unavailable. This is not a problem with your sign-in. Add your own API key in Settings to continue, or try again shortly.';
+    return 'The hosted AI provider is temporarily unavailable. This is not a problem with your sign-in. Try again in a minute.';
   }
   // The upstream refused the request itself (the relay's code for a hosted upstream 403).
   if (msg.includes('HOSTED_PROVIDER_REQUEST_REFUSED')) {
-    return 'The hosted AI provider refused this request. This is not a problem with your sign-in. You can add your own API key in Settings.';
+    return 'The hosted AI provider refused this request. This is not a problem with your sign-in. Try again in a minute.';
   }
   if (msg.includes('402') || msg.includes('HOSTED_PROVIDER_DEPLETED') || /payment required/i.test(msg)) {
-    return 'The AI provider is temporarily unavailable due to upstream credit limits. Add your own API key in Settings to continue.';
+    return 'The AI provider is temporarily unavailable. Try again in a minute.';
   }
   if (msg.includes('FreeLLMAPI') || (msg.includes('native inference providers') && msg.includes('failed'))) {
-    return 'AI services are currently busy or unavailable. Please try again shortly or configure an API key in Settings.';
+    return 'AI services are currently busy. Try again in a minute.';
   }
   if (/Groq inference error/i.test(msg)) {
-    return 'The hosted model service is temporarily unavailable. Please try again in a moment or add your own key in Settings.';
+    return 'The hosted model service is temporarily unavailable. Try again in a minute.';
   }
   return msg;
 }

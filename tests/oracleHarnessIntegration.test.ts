@@ -145,6 +145,41 @@ describe('Wave 3: Oracle SSE & 3-Plane Harness Integration', () => {
     expect((await call('POST', 'state/patch', 'x'.repeat(70 * 1024))).status).toBe(413);
   });
 
+  it('stores oracle session state under the caller account, not a shared session id', async () => {
+    const env = {
+      ORACLE_SERVER_ENABLED: 'true',
+      ORACLE_SESSION: createOracleSessionNamespace(),
+    } as unknown as Env;
+    const userA = { id: 'fb:a', accountId: 'acct_a', source: 'firebase' } as HostedIdentity;
+    const userB = { id: 'fb:b', accountId: 'acct_b', source: 'firebase' } as HostedIdentity;
+    const patch = (user: HostedIdentity, secret: string) =>
+      handleOracleSessionControlRoute(
+        new Request('https://luminarasuite.com/api/oracle/session/shared/state/patch', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ key: 'brand', snapshot: { secret } }),
+        }),
+        env,
+        user,
+        'shared',
+        'state/patch',
+      );
+    const read = (user: HostedIdentity) =>
+      handleOracleSessionControlRoute(
+        new Request('https://luminarasuite.com/api/oracle/session/shared/state?key=brand'),
+        env,
+        user,
+        'shared',
+        'state',
+      );
+
+    expect((await patch(userA, 'only-a')).status).toBe(200);
+    const own = (await (await read(userA)).json()) as { doc?: { secret?: string } };
+    const other = (await (await read(userB)).json()) as { doc?: { secret?: string } | null };
+    expect(own.doc?.secret).toBe('only-a');
+    expect(other.doc).toBeNull();
+  });
+
   it('emits tool_approval_requested when invokeTool lacks confirmation, then unlocks via control-plane approval with remember: true', async () => {
     const db = createSqliteD1();
     const doNs = createOracleSessionNamespace();

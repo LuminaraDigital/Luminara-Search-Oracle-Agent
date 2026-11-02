@@ -7,6 +7,8 @@ import { entitlementsFor, normalizePlanId, type PlanId } from '../services/plans
 
 export { QUOTA_CAPACITY_ERROR };
 
+export type QuotaBucket = 'audit' | 'ask' | 'ask-search';
+
 export interface QuotaStatus {
   ok: boolean;
   error?: string;
@@ -15,6 +17,8 @@ export interface QuotaStatus {
   remaining: number;
   resetSec: number;
   isUnlimited: boolean;
+  /** Which daily meter this check used. Audit stays the free hosted-check meter. */
+  bucket?: QuotaBucket;
   /** Unused referral hosted-scout credits after this check. Omitted when the ledger was not read. */
   bonusRemaining?: number;
   /** True when this request was allowed by a referral credit after the daily cap. */
@@ -23,8 +27,26 @@ export interface QuotaStatus {
   meterKey?: string;
 }
 
-const dailyLimitError = (limit: number) =>
-  `Daily free limit of ${limit} requests reached. A paid plan lifts that daily cap, or add your own API key in Settings.`;
+const AUDIT_CAP_COPY = (limit: number) =>
+  `Daily free limit reached: that's your ${limit} free audits for today. They're saved. You'll get ${limit} more at midnight UTC.`;
+
+const ASK_CAP_COPY = (limit: number) =>
+  `You've used today's ${limit} questions. Your audit and fix list are still here. More questions at midnight UTC.`;
+
+function deniedCopy(bucket: QuotaBucket, limit: number): string {
+  return bucket === 'audit' ? AUDIT_CAP_COPY(limit) : ASK_CAP_COPY(limit);
+}
+
+function bucketLimit(env: Env, bucket: QuotaBucket): number {
+  if (bucket === 'audit') return Number(env.FREE_DAILY_LIMIT || 3);
+  const parsed = Number(env.ASK_DAILY_LIMIT ?? 10);
+  return Number.isFinite(parsed) ? parsed : 10;
+}
+
+/** Ask meters are separate Durable Object names so a question does not spend an audit. */
+function bucketMeterId(id: string, bucket: QuotaBucket): string {
+  return bucket === 'audit' ? id : `${id}:${bucket}`;
+}
 
 function isSpendBody(v: unknown): v is { ok: boolean; used: number } {
   return !!v && typeof v === 'object' && 'ok' in v && typeof v.ok === 'boolean' && 'used' in v && typeof v.used === 'number';
@@ -49,7 +71,7 @@ export async function spendDailyQuota(env: Env, quotaKeyId: string, limit: numbe
   const name = meterName(quotaKeyId);
   const body = await invokeDailyQuota(env, name, 'spend', limit);
   if (!isSpendBody(body)) return { ok: false, code: 'HOSTED_CAPACITY', error: QUOTA_CAPACITY_ERROR, used: 0 };
-  if (!body.ok) return { ok: false, code: 'PAYWALL_EXCEEDED', error: dailyLimitError(limit), used: body.used };
+  if (!body.ok) return { ok: false, code: 'PAYWALL_EXCEEDED', error: AUDIT_CAP_COPY(limit), used: body.used };
   return { ok: true, used: body.used, meterKey: name };
 }
 
@@ -218,22 +240,28 @@ export async function refundMeteredQuota(
 export async function checkHostedQuota(
   env: Env,
   user: HostedIdentity | null,
-  opts?: { clientIp?: string | null },
+  opts?: { clientIp?: string | null; bucket?: QuotaBucket },
 ): Promise<QuotaStatus> {
   const now = new Date();
   const midnightUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
   const resetSec = Math.max(0, Math.floor((midnightUtc.getTime() - now.getTime()) / 1000));
-  const limit = Number(env.FREE_DAILY_LIMIT || 3);
+  const bucket = opts?.bucket ?? 'audit';
+  const limit = bucketLimit(env, bucket);
+  const meterOf = (id: string) => bucketMeterId(id, bucket);
+  const voiced = (status: QuotaStatus): QuotaStatus => {
+    if (status.ok || status.error === QUOTA_CAPACITY_ERROR) return { ...status, bucket };
+    return { ...status, error: deniedCopy(bucket, limit), bucket };
+  };
 
   if (!user) {
     if (env.REQUIRE_TG_AUTH === 'true') {
-      return { ok: false, error: 'Sign in or add your own API key in Settings.', limit, used: 0, remaining: 0, resetSec, isUnlimited: false };
+      return { ok: false, error: 'Sign in to use hosted AI.', limit, used: 0, remaining: 0, resetSec, isUnlimited: false, bucket };
     }
     if (!env.LUMINARA_KV) {
-      return { ok: true, limit, used: 0, remaining: limit > 0 ? limit : -1, resetSec, isUnlimited: limit <= 0 };
+      return { ok: true, limit, used: 0, remaining: limit > 0 ? limit : -1, resetSec, isUnlimited: limit <= 0, bucket };
     }
     const ip = (opts?.clientIp || '').trim() || 'unknown';
-    return meterDailyQuota(env, `anon:${ip}`, limit, resetSec);
+    return voiced(await meterDailyQuota(env, meterOf(`anon:${ip}`), limit, resetSec));
   }
 
   if (!env.LUMINARA_KV) {
@@ -241,43 +269,46 @@ export async function checkHostedQuota(
     if (env.REQUIRE_TG_AUTH === 'true' && limit > 0) {
       return {
         ok: false,
-        error: 'Quota store unavailable. Try again later or add your own API key in Settings.',
+        error: 'Quota store unavailable. Try again in a minute.',
         limit,
         used: 0,
         remaining: 0,
         resetSec,
         isUnlimited: false,
+        bucket,
       };
     }
-    return { ok: true, limit, used: 0, remaining: limit > 0 ? limit : -1, resetSec, isUnlimited: limit <= 0 };
+    return { ok: true, limit, used: 0, remaining: limit > 0 ? limit : -1, resetSec, isUnlimited: limit <= 0, bucket };
   }
 
   const accountId = user.accountId || (await resolveAccountId(env, user.id));
   if (await isUserSubscribed(env, { ...user, accountId })) {
     // Active plans are unlimited. Leave referral credits on the ledger for after the plan ends.
-    return { ok: true, limit: -1, used: 0, remaining: -1, resetSec, isUnlimited: true };
+    return { ok: true, limit: -1, used: 0, remaining: -1, resetSec, isUnlimited: true, bucket };
   }
 
   if (env.REQUIRE_SUBSCRIPTION === 'true') {
     return {
       ok: false,
       error: user.source === 'telegram'
-        ? 'This feature needs an active plan. Subscribe with Telegram Stars or a license key, or add your own API key in Settings.'
-        : 'This feature needs an active plan. Add your own API key in Settings, activate a license key, or subscribe in the Telegram app.',
+        ? 'This feature needs an active plan. Subscribe with Telegram Stars or a license key.'
+        : 'This feature needs an active plan. Your plan syncs when you sign in.',
       limit,
       used: 0,
       remaining: 0,
       resetSec,
       isUnlimited: false,
+      bucket,
     };
   }
 
-  // Entitlement: FREE_DAILY_LIMIT per UTC day, then unused referral credits (FIFO, one per request).
+  // Entitlement: one UTC-day meter, then unused referral credits on the audit meter only.
   // Anonymous callers never reach this branch. Bonus spend requires this Telegram or Firebase identity.
-  const daily = await meterDailyQuota(env, accountId, limit, resetSec);
-  if (daily.error === QUOTA_CAPACITY_ERROR) return daily;
+  const daily = await meterDailyQuota(env, meterOf(accountId), limit, resetSec);
+  if (daily.error === QUOTA_CAPACITY_ERROR) return { ...daily, bucket };
+  if (bucket !== 'audit') return voiced(daily);
   const bonusRemaining = await referralBonusRemaining(env, accountId);
-  if (daily.ok) return { ...daily, bonusRemaining };
+  if (daily.ok) return { ...daily, bonusRemaining, bucket };
   if (user.source === 'telegram' || user.source === 'firebase') {
     const spent = await tryConsumeReferralCredit(env, accountId);
     if (spent.ok) {
@@ -290,10 +321,11 @@ export async function checkHostedQuota(
         isUnlimited: false,
         bonusConsumed: true,
         bonusRemaining: spent.remaining,
+        bucket,
       };
     }
   }
-  return { ...daily, bonusRemaining: 0 };
+  return voiced({ ...daily, bonusRemaining: 0 });
 }
 
 export type QuotaView =
@@ -309,6 +341,9 @@ export type QuotaView =
       resetSec: number;
       isUnlimited: boolean;
       bonusRemaining?: number;
+      askLimit: number;
+      askUsed: number;
+      askRemaining: number;
       entitlement: HostedEntitlement;
     }
   | { ok: false; error: string; code: 'HOSTED_CAPACITY' };
@@ -316,6 +351,7 @@ export type QuotaView =
 /** The signed-in body of GET /auth/quota, shared with the boot snapshot. */
 export async function readQuotaSnapshot(env: Env, user: HostedIdentity): Promise<QuotaView> {
   const limit = Number(env.FREE_DAILY_LIMIT || 3);
+  const askLimit = bucketLimit(env, 'ask');
   const now = new Date();
   const midnightUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
   const resetSec = Math.max(0, Math.floor((midnightUtc.getTime() - now.getTime()) / 1000));
@@ -336,11 +372,16 @@ export async function readQuotaSnapshot(env: Env, user: HostedIdentity): Promise
       remaining: -1,
       resetSec,
       isUnlimited: true,
+      askLimit: -1,
+      askUsed: 0,
+      askRemaining: -1,
       entitlement,
     };
   }
   const used = await readFreeUsed(env, accountId, limit);
   if (used === null) return { ok: false, error: QUOTA_CAPACITY_ERROR, code: 'HOSTED_CAPACITY' };
+  const askUsed = askLimit > 0 ? await readFreeUsed(env, bucketMeterId(accountId, 'ask'), askLimit) : 0;
+  if (askUsed === null) return { ok: false, error: QUOTA_CAPACITY_ERROR, code: 'HOSTED_CAPACITY' };
   const bonusRemaining = await referralBonusRemaining(env, accountId);
   return {
     ok: true,
@@ -353,6 +394,9 @@ export async function readQuotaSnapshot(env: Env, user: HostedIdentity): Promise
     bonusRemaining,
     resetSec,
     isUnlimited: limit <= 0,
+    askLimit: askLimit > 0 ? askLimit : -1,
+    askUsed,
+    askRemaining: askLimit > 0 ? Math.max(0, askLimit - askUsed) : -1,
     entitlement,
   };
 }

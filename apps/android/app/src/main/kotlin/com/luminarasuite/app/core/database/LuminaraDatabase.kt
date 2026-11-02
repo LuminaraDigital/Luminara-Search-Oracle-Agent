@@ -208,3 +208,10 @@ abstract class LuminaraDatabase : RoomDatabase() {
                 .build()
     }
 }
+
+/** Audits, findings, and studio notes are not keyed by account. Drop them when the person changes. */
+suspend fun LuminaraDao.wipeLocalWorkspace() {
+    clearAuditHistory()
+    clearFindings()
+    clearStudioSources()
+}
