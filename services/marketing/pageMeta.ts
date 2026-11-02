@@ -13,6 +13,7 @@ import { parseUrlSwapRoute } from '../../utils/urlSwapRouting';
 import { HONEST_VISIBILITY_PROMISE, LIVE_ANSWER_CHECKS } from './engineCoverage';
 import { buildFaqPageJsonLd } from './marketingFaqContent';
 import { REAL_ESTATE_AUDIENCE } from './marketingHeroCopy';
+import { PLAY_STORE_URL, TELEGRAM_BOT_URL, TELEGRAM_MINI_APP_PUBLIC_URL } from './platformSurfaces';
 import { HUB_FAQ_HEADING, HUB_PAGES, HUB_REVIEWED, type HubPage } from './seoHubPages';
 import { FREE_TOOLS, FREE_TOOLS_CLOSING, FREE_TOOLS_HUB, FREE_TOOLS_PATH, type FreeTool } from './freeTools';
 import { checkHostFromPath, checkPathForHost } from './homepageSnippet';
@@ -58,7 +59,8 @@ const ORG_NODE = {
   },
   sameAs: [
     'https://github.com/LuminaraDigital/Luminara-Search-Oracle-Agent',
-    'https://t.me/LuminaraSuiteBot',
+    TELEGRAM_BOT_URL,
+    PLAY_STORE_URL,
     'https://www.linkedin.com/company/luminara-digital',
   ],
 };
@@ -68,7 +70,7 @@ const SOFTWARE_NODE = {
   '@id': `${MARKETING_ORIGIN}/#software`,
   name: 'Luminara Suite',
   applicationCategory: 'BusinessApplication',
-  operatingSystem: 'Web, Windows',
+  operatingSystem: 'Web, Android, Windows',
   url: MARKETING_ORIGIN,
   description: HOME_META,
   publisher: { '@id': `${MARKETING_ORIGIN}/#organization` },
@@ -247,6 +249,7 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
   <p>${REAL_ESTATE_AUDIENCE} ${HONEST_VISIBILITY_PROMISE}</p>
   <p>Illustrative example, not a real agency and not a measurement: an independent agency, checked for a suburb question.</p>
   <p>Free check of your homepage title and description, robots.txt and llms.txt. No card. A full audit needs sign-in or your own keys. Every result is labeled Measured, Estimated or Not measured. No blended AI visibility score.</p>
+  <p>Luminara Suite is on the web, in the Telegram Mini App, and on Android from Google Play. Card upgrades stay on the website. Stars checkout is in Telegram. The Play app is a free companion and does not take card checkout.</p>
   <ul>
     <li><a href="/sample-report">Sample report</a></li>
     <li><a href="/methodology">Methodology</a></li>
@@ -256,6 +259,10 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
     <li><a href="/why">Why Luminara</a></li>
     <li><a href="/pricing">Pricing</a></li>
     <li><a href="/docs/mcp.html">MCP for agents</a></li>
+    <li><a href="${TELEGRAM_MINI_APP_PUBLIC_URL}">Telegram Mini App</a></li>
+    <li><a href="${TELEGRAM_BOT_URL}">Telegram bot</a></li>
+    <li><a href="${PLAY_STORE_URL}">Google Play</a></li>
+    <li><a href="/desktop">Windows app</a></li>
     <li><a href="/privacy">Privacy</a></li>
     <li><a href="/terms">Terms</a></li>
   </ul>

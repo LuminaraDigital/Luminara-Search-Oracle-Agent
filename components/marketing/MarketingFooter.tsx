@@ -1,6 +1,7 @@
 import React from 'react';
 import { ICONS } from '../../constants';
 import { COMPANY_SERVICES_URL, OPERATOR_LINE } from '../../services/legal/consumerTerms';
+import { PLAY_STORE_URL, TELEGRAM_MINI_APP_PUBLIC_URL } from '../../services/marketing/platformSurfaces';
 
 interface MarketingFooterProps {
   statement?: string;
@@ -17,6 +18,8 @@ const LINKS = [
   { label: 'What is AEO', href: '/docs/what-is-aeo.html' },
   { label: 'MCP', href: '/docs/mcp.html' },
   { label: 'Windows app', href: '/desktop' },
+  { label: 'Telegram', href: TELEGRAM_MINI_APP_PUBLIC_URL, external: true },
+  { label: 'Google Play', href: PLAY_STORE_URL, external: true },
   { label: 'Support', href: '/contact' },
   { label: 'Privacy', href: '/privacy' },
   { label: 'Terms', href: '/terms' },
@@ -46,9 +49,11 @@ export const MarketingFooter: React.FC<MarketingFooterProps> = ({
           <a
             key={link.label}
             href={link.href}
+            {...('external' in link ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
             className="inline-flex items-center text-sm text-[var(--color-ink-2)] hover:text-[var(--gold-light)] transition-colors focus-visible:ring-2 focus-visible:ring-[var(--color-focus)] focus-visible:outline-none rounded min-h-6 min-w-6 px-0.5 py-1"
           >
             {link.label}
+            {'external' in link ? <span className="sr-only"> (opens in a new tab)</span> : null}
           </a>
         ))}
       </nav>

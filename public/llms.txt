@@ -1,6 +1,6 @@
 # Luminara Suite
 
-> Luminara Suite checks a website and live web search, then ranks one next fix. Live answers from specific AI products stay Not measured unless you are on Agency or you connect your own search login. Web app, Windows desktop, and a Telegram Mini App.
+> Luminara Suite checks a website and live web search, then ranks one next fix. Live answers from specific AI products stay Not measured unless you are on Agency or you connect your own search login. Web app, Android on Google Play, Windows desktop, and a Telegram Mini App.
 
 ## Methodology
 
@@ -57,6 +57,7 @@ Each paid plan lasts 30 days and starts as soon as payment is confirmed. It does
 ## Telegram Mini App
 
 - https://t.me/LuminaraSuiteBot/app
+- Bot: https://t.me/LuminaraSuiteBot
 
 ## Product
 
@@ -69,6 +70,7 @@ Each paid plan lasts 30 days and starts as soon as payment is confirmed. It does
 - Why Luminara: https://www.luminarasuite.com/why
 - Pricing: https://www.luminarasuite.com/pricing
 - Windows desktop: https://www.luminarasuite.com/desktop
+- Android on Google Play: https://play.google.com/store/apps/details?id=com.luminarasuite.app
 
 ## Comparisons and buyer's guides
 

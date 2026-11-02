@@ -3,15 +3,17 @@
  * 2. Statement: AI gives one answer (the globe pulls back to the full planet)
  * 3. How it works: four chapters beside the globe (crawl, engines, evidence, fix)
  * 4. What you get: an illustrative report
- * 5. Why Luminara: three value props and the MCP line for developers
- * 6. FAQ (1:1 with FAQPage JSON-LD)
- * 7. Closing call to action over a second horizon, then the footer
+ * 5. Where to use it: web, Telegram Mini App, Google Play
+ * 6. Why Luminara: three value props and the MCP line for developers
+ * 7. FAQ (1:1 with FAQPage JSON-LD)
+ * 8. Closing call to action over a second horizon, then the footer
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import './marketing/space.css';
 import { MarketingNav } from './MarketingNav';
 import { MarketingFooter } from './marketing/MarketingFooter';
 import { MarketingFaq } from './marketing/MarketingFaq';
+import { PlatformHeroLinks, PlatformSurfaces } from './marketing/PlatformSurfaces';
 import { SpaceStage } from './marketing/SpaceStage';
 import { DomainCheck } from './marketing/DomainCheck';
 import { EvidenceGlyph } from './marketing/EvidenceGlyph';
@@ -214,6 +216,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
               See a sample report
             </button>
           </p>
+          <PlatformHeroLinks className="lx-enter-rise lx-d6 mt-5" />
 
           <a
             href="#how-it-works"
@@ -382,6 +385,8 @@ const LandingPage: React.FC<LandingPageProps> = ({
           </figure>
         </div>
       </section>
+
+      <PlatformSurfaces onCheckSite={focusHeroInput} />
 
       <section
         id="why"

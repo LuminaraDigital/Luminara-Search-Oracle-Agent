@@ -1,5 +1,7 @@
 /** Single source for landing / methodology FAQ UI and FAQPage JSON-LD. Honest only. */
 
+import { PLATFORM_FAQ_ANSWER } from './platformSurfaces';
+
 export interface MarketingFaqItem {
   question: string;
   answer: string;
@@ -40,6 +42,10 @@ export const MARKETING_FAQ: MarketingFaqItem[] = [
     question: 'Does Luminara change my website?',
     answer:
       'Only if you ask it to. By default it reads your public pages and hands you copy and schema to paste. If you connect WordPress or Webflow it can send the schema for you, or it can open a GitHub pull request. A WordPress change counts as done only when the schema is found on the live page. Webflow and GitHub results tell you what is left to publish or merge.',
+  },
+  {
+    question: 'Where can I use Luminara Suite?',
+    answer: PLATFORM_FAQ_ANSWER,
   },
   {
     question: 'Can agencies share reports and connect Cursor?',
