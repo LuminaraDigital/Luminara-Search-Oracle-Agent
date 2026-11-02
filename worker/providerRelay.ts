@@ -497,11 +497,16 @@ export async function proxyProvider(
       }
     }
     if (!auditCoveredToken && !jevCall) {
-      const bucket = isChatCompletionsPath(providerId, subPath)
-        ? 'ask'
-        : providerId === 'tavily' && subPath === '/search'
-          ? 'ask-search'
-          : 'audit';
+      // A run token that is over its call cap still belongs to the audit meter.
+      // A chat with no run is an Ask. Hosted search for that question is too.
+      const onAuditRun = Boolean(request.headers.get('x-audit-run')?.trim());
+      const bucket = onAuditRun
+        ? 'audit'
+        : isChatCompletionsPath(providerId, subPath)
+          ? 'ask'
+          : providerId === 'tavily' && subPath === '/search'
+            ? 'ask-search'
+            : 'audit';
       quotaGate = await checkHostedQuota(env, who.user, { clientIp: clientIp(request), bucket });
     }
     if (quotaGate && !quotaGate.ok) {
