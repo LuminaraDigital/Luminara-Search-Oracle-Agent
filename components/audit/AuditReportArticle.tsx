@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import type { BoardFinding } from '../../services/audit/findingBoardService';
-import { pickPrimaryFinding, setFindingStatusLocal } from '../../services/audit/findingBoardService';
+import { patchFindingStatus, pickPrimaryFinding, setFindingStatusLocal } from '../../services/audit/findingBoardService';
 import { AUDIT_ACTIVITY_EVENT } from '../../services/audit/auditActivity';
 import { diffSince } from '../../services/audit/auditDiffService';
 import { workspaceHistoryReady } from '../../services/sync/workspaceSyncService';
@@ -286,6 +286,8 @@ export function AuditReportArticle({
   const mark = (finding: BoardFinding, done: boolean) => {
     const nextFindings = setFindingStatusLocal(domain || finding.domain, findings, finding.id, done ? 'done' : 'open');
     onFindings?.(nextFindings);
+    // An unsynced finding reaches the server with this status on its next bulk save.
+    if (finding.synced) void patchFindingStatus(domain || finding.domain, finding.id, done ? 'done' : 'open');
   };
 
   return (

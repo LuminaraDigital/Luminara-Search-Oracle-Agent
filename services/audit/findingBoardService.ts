@@ -323,7 +323,7 @@ export async function patchFindingStatus(
         };
         const next = readLocal(domain);
         const i = next.findIndex((f) => f.stableKey === updated.stableKey || f.id === updated.id);
-        if (i >= 0) next[i] = updated;
+        if (i >= 0) next[i] = { ...next[i], ...updated };
         else next.unshift(updated);
         writeLocal(domain, next);
         return updated;
