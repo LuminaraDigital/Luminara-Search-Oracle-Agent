@@ -55,6 +55,7 @@ import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
@@ -342,6 +343,11 @@ fun PromptBar(
     sendTag: String? = null,
 ) {
     val canSend = value.isNotBlank() && !busy
+    val keyboard = LocalSoftwareKeyboardController.current
+    val send = {
+        keyboard?.hide()
+        onSend()
+    }
     Row(
         modifier =
         modifier
@@ -372,7 +378,7 @@ fun PromptBar(
                 cursorBrush = SolidColor(LuminaraColors.GoldAccent),
                 maxLines = 4,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                keyboardActions = KeyboardActions(onSend = { if (canSend) onSend() }),
+                keyboardActions = KeyboardActions(onSend = { if (canSend) send() }),
                 modifier =
                 Modifier
                     .fillMaxWidth()
@@ -386,7 +392,7 @@ fun PromptBar(
                 .size(44.dp)
                 .clip(CircleShape)
                 .background(if (canSend) LuminaraColors.GoldAccent else LuminaraColors.Paper3)
-                .clickable(enabled = canSend, role = Role.Button, onClick = onSend)
+                .clickable(enabled = canSend, role = Role.Button, onClick = send)
                 .then(if (sendTag != null) Modifier.testTag(sendTag) else Modifier),
             contentAlignment = Alignment.Center,
         ) {
