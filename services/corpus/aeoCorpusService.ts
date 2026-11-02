@@ -1,6 +1,7 @@
 /**
  * Luminara Compounding AEO Corpus & OracleMind Training Dataset Service
- * Turns every audit into training fuel for private, on-device AEO Small Language Models.
+ * Rows built from an audit are template patterns, not model decisions, so they never reach an export.
+ * Only rows with provenance 'real' train. Nothing writes those yet: see docs/plans/outcome-dataset-capture.md.
  */
 
 export interface AeoPatternRecord {
@@ -20,8 +21,8 @@ export interface AeoPatternRecord {
   integrityScore?: number;
   schemaSafety?: number;
   citeWorthiness?: number;
-  /** Default true; false when security measurement was CORS-limited only. */
-  trainEligible?: boolean;
+  /** Absent on rows saved before provenance existed, which never train. */
+  provenance?: 'real' | 'synthetic_template';
 }
 
 export interface AeoCorpusTrustInput {
@@ -30,7 +31,6 @@ export interface AeoCorpusTrustInput {
   integrityScore?: number;
   schemaSafety?: number;
   citeWorthiness?: number;
-  measurementConfidence?: 'full' | 'cors_limited' | 'failed';
 }
 
 export interface AlpacaTrainingSample {
@@ -110,7 +110,7 @@ export class AeoCorpusService {
   public ingestAudit(
     domain: string,
     reportText: string,
-    citationRate: number = 75,
+    citationRate: number,
     schemaJson?: string,
     trust?: AeoCorpusTrustInput
   ): AeoPatternRecord[] {
@@ -137,8 +137,6 @@ export class AeoCorpusService {
     // Extract entity keywords
     const entityNodes = [cleanDomain.split('.')[0], vertical.split(' ')[0], schemaType];
 
-    const trainEligible = trust?.measurementConfidence === 'cors_limited' ? false : true;
-
     // Seed 3 standard intent patterns for this vertical
     const intents: Array<{ intent: 'informational' | 'commercial' | 'comparative'; query: string }> = [
       { intent: 'informational', query: `how does ${cleanDomain} compare in ${vertical}` },
@@ -156,10 +154,10 @@ export class AeoCorpusService {
         intent: item.intent,
         winningSchemaType: schemaType,
         entityNodes,
-        citationRate: Math.max(30, citationRate - idx * 10),
+        citationRate,
         schemaSnippet: resolvedSchema.slice(0, 800),
         plainEnglishBrief: `Optimized Schema.org @graph for ${cleanDomain} targeting ${vertical} search consensus.`,
-        trainEligible,
+        provenance: 'synthetic_template',
       };
 
       if (trust?.ymylTier !== undefined) record.ymylTier = trust.ymylTier;
@@ -186,7 +184,7 @@ export class AeoCorpusService {
   }
 
   private trainRecords(): AeoPatternRecord[] {
-    return this.getCorpusRecords().filter((r) => r.trainEligible !== false);
+    return this.getCorpusRecords().filter((r) => r.provenance === 'real');
   }
 
   /**
@@ -269,7 +267,7 @@ export class AeoCorpusService {
         citation_rate: r.citationRate,
         schema_snippet: r.schemaSnippet,
         trust: trust || null,
-        status: 'measured',
+        status: 'estimated',
       };
       const finalContent = [
         `Verdict: Prefer ${r.winningSchemaType} schema for "${r.query}" on ${r.domain}.`,
@@ -323,7 +321,7 @@ export class AeoCorpusService {
             content: JSON.stringify({
               domain: r.domain,
               vertical: r.vertical,
-              research_log_within_30_days: false,
+              research_log_within_30_days: 'unknown',
             }),
           },
           {

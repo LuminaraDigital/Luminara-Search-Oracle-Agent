@@ -1098,7 +1098,6 @@ Strict Formatting Guidelines:
               integrityScore: trustPack.citationIntegrity,
               schemaSafety: trustPack.schemaSafety,
               citeWorthiness: trustPack.citeWorthiness,
-              measurementConfidence: enrichedEntity?.security.measurementConfidence,
             }
           );
         }
