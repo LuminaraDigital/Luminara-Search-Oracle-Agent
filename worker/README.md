@@ -10,7 +10,7 @@ leaked internals). A `URIError` (a malformed %-escape in the path reaching
 `decodeURIComponent`) is 400 `BAD_ENCODING` instead. A JSON `null` body reads as
 `{}`: handlers use `readBody`'s parsed `value`, never `JSON.parse(text)` again.
 
-`APPCHECK_ENFORCE` (`off`, `log`, or `enforce`, unset means `off`) runs on `/api/*` before the route. `log` records a bad or missing `X-Firebase-AppCheck` token and still serves the request. `enforce` returns 401 `APP_CHECK_REQUIRED` or `APP_CHECK_INVALID`. `/api/health`, `/robots.txt`, `/llms.txt`, `/ai.txt`, and any path containing `/webhook` are exempt. Staging config is `log`. Production config stays `off`. The browser initializes App Check with reCAPTCHA Enterprise when `VITE_FIREBASE_APPCHECK_SITE_KEY` is set. The Worker still verifies the same App Check JWTs. An empty site key leaves client init as a no-op.
+`APPCHECK_ENFORCE` (`off`, `log`, or `enforce`, unset means `off`) runs on `/api/*` before the route. `log` records a bad or missing `X-Firebase-AppCheck` token and still serves the request. `enforce` returns 401 `APP_CHECK_REQUIRED` or `APP_CHECK_INVALID`. `/api/health`, `/robots.txt`, `/llms.txt`, `/llm.txt`, `/ai.txt`, and any path containing `/webhook` are exempt. Staging config is `log`. Production config stays `off`. The browser initializes App Check with reCAPTCHA Enterprise when `VITE_FIREBASE_APPCHECK_SITE_KEY` is set. The Worker still verifies the same App Check JWTs. An empty site key leaves client init as a no-op.
 
 Sentry (`@sentry/cloudflare` on the Worker, `@sentry/browser` in the client) stays disabled when `SENTRY_DSN` or `VITE_SENTRY_DSN` is unset. Set the DSN with `wrangler secret put` and the client build env. Do not commit a DSN.
 

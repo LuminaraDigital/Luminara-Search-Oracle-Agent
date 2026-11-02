@@ -1,9 +1,10 @@
 # Luminara Suite crawl policy
-# Public marketing pages, /llms.txt, /ai.txt, and redacted /share/teaser/ cards are meant to be cited.
+# Public marketing pages, /llms.txt, /llm.txt, /ai.txt, and redacted /share/teaser/ cards are meant to be cited.
 # Share URLs under /share/ are unlisted (not in the sitemap) and served noindex. They are
 # allowed here only so link unfurls can fetch the preview HTML.
 # Attestation verify, API, and OAuth stay disallowed.
-# Named AI crawlers repeat the same rules as User-agent: * so the allow is explicit.
+# Named AI crawlers repeat the same Allow and Disallow rules as User-agent: * so the allow is explicit.
+# Content-Signal on User-agent: * prefers search and reference use, and asks not to train. Named AI crawlers stay allowed.
 # User-triggered fetchers may ignore robots.txt. This file does not grant access to /api/ or account data.
 
 User-agent: GPTBot
@@ -33,6 +34,7 @@ Allow: /best/
 Allow: /docs/
 Allow: /docs/what-is-aeo.html
 Allow: /llms.txt
+Allow: /llm.txt
 Allow: /ai.txt
 Allow: /sitemap.xml
 Allow: /share/
@@ -43,6 +45,7 @@ Disallow: /reports/
 Disallow: /oauth/
 
 User-agent: *
+Content-Signal: search=yes,ai-train=no,use=reference
 Allow: /
 Allow: /how-it-works
 Allow: /ai
@@ -61,6 +64,7 @@ Allow: /best/
 Allow: /docs/
 Allow: /docs/what-is-aeo.html
 Allow: /llms.txt
+Allow: /llm.txt
 Allow: /ai.txt
 Allow: /sitemap.xml
 Allow: /share/
