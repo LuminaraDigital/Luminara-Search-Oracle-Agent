@@ -36,6 +36,7 @@ sealed interface RefreshOutcome {
  */
 class SessionAuthenticator(
     private val vault: VaultStorage,
+    private val onSessionCleared: () -> Unit = {},
     private val refresh: (String) -> RefreshOutcome,
 ) : Authenticator {
     private val lock = Any()
@@ -78,6 +79,7 @@ class SessionAuthenticator(
             }
             outcome is RefreshOutcome.Rejected -> {
                 runBlocking { vault.clearSession() }
+                onSessionCleared()
                 null
             }
             else -> null

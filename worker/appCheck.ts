@@ -7,7 +7,7 @@
  *
  * APPCHECK_ENFORCE: off (default) | log | enforce.
  * off skips verification. log records a bad or missing token and still serves
- * the request. enforce returns 401. Health, robots.txt, llms.txt, and webhook
+ * the request. enforce returns 401. Health, robots.txt, llms.txt, llm.txt, and webhook
  * routes are exempt. REQUIRE_APP_CHECK still gates Worker-mediated sign-in.
  */
 import { createLocalJWKSet, errors, jwtVerify, type JSONWebKeySet, type JWTPayload } from 'jose';
@@ -207,10 +207,10 @@ function appCheckResponse(status: number, code: string, error: string): Response
   });
 }
 
-/** Health, robots.txt, llms.txt, ai.txt, and any path containing /webhook. */
+/** Health, robots.txt, llms.txt, llm.txt, ai.txt, and any path containing /webhook. */
 export function isAppCheckExempt(url: URL): boolean {
   const path = url.pathname.replace(/\/+$/, '') || '/';
-  if (path === '/robots.txt' || path === '/llms.txt' || path === '/ai.txt' || path === '/api/health' || path === '/health') return true;
+  if (path === '/robots.txt' || path === '/llms.txt' || path === '/llm.txt' || path === '/ai.txt' || path === '/api/health' || path === '/health') return true;
   return path.includes('/webhook');
 }
 

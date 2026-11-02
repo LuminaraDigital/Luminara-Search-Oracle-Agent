@@ -8,6 +8,7 @@ import com.luminarasuite.app.core.auth.VaultStorage
 import com.luminarasuite.app.core.auth.blockingAppCheckToken
 import com.luminarasuite.app.core.auth.installAppCheck
 import com.luminarasuite.app.core.database.LuminaraDatabase
+import com.luminarasuite.app.core.database.wipeLocalWorkspace
 import com.luminarasuite.app.core.network.AppCheckTokens
 import com.luminarasuite.app.core.network.DefaultLuminaraRepository
 import com.luminarasuite.app.core.network.DefaultWorkspaceGateway
@@ -64,7 +65,10 @@ class LuminaraApplication : Application() {
             OkHttpClient.Builder()
                 .addInterceptor(authInterceptor)
                 .authenticator(
-                    SessionAuthenticator(vault) { refreshToken ->
+                    SessionAuthenticator(
+                        vault,
+                        onSessionCleared = { runBlocking { database.dao().wipeLocalWorkspace() } },
+                    ) { refreshToken ->
                         chooseSessionRefresh(
                             refreshToken,
                             sdk = { runBlocking { firebase.forceRefresh() } },
