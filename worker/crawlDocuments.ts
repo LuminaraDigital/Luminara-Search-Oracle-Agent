@@ -35,6 +35,7 @@ Allow: /ai
 Allow: /why
 Allow: /pricing
 Allow: /methodology
+Allow: /white-paper
 Allow: /sample-report
 Allow: /privacy
 Allow: /terms
@@ -62,6 +63,7 @@ Allow: /ai
 Allow: /why
 Allow: /pricing
 Allow: /methodology
+Allow: /white-paper
 Allow: /sample-report
 Allow: /privacy
 Allow: /terms
@@ -127,6 +129,7 @@ export function buildSitemapXml(origin: string = 'https://www.luminarasuite.com'
   <url><loc>${base}/why</loc></url>
   <url><loc>${base}/pricing</loc></url>
   <url><loc>${base}/methodology</loc></url>
+  <url><loc>${base}/white-paper</loc></url>
   <url><loc>${base}/sample-report</loc></url>
   <url><loc>${base}/privacy</loc></url>
   <url><loc>${base}/terms</loc></url>
@@ -239,6 +242,7 @@ ${llmsPaidPlanBlock()}
 - Home: https://www.luminarasuite.com/
 - Sample report: https://www.luminarasuite.com/sample-report
 - Methodology: https://www.luminarasuite.com/methodology
+- White paper: https://www.luminarasuite.com/white-paper
 - What is AEO: https://www.luminarasuite.com/docs/what-is-aeo.html
 - How it works: https://www.luminarasuite.com/how-it-works
 - Our AI: https://www.luminarasuite.com/ai
@@ -286,6 +290,7 @@ Allow: /ai
 Allow: /why
 Allow: /pricing
 Allow: /methodology
+Allow: /white-paper
 Allow: /sample-report
 Allow: /privacy
 Allow: /terms

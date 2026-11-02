@@ -12,6 +12,7 @@ interface MarketingFooterProps {
 const LINKS = [
   { label: 'Pricing', href: '/pricing' },
   { label: 'Methodology', href: '/methodology' },
+  { label: 'White paper', href: '/white-paper' },
   { label: 'Sample report', href: '/sample-report' },
   { label: 'Best tools for real estate', href: '/best/ai-visibility-tools-for-real-estate-agencies' },
   { label: 'Free tools', href: '/free-tools' },

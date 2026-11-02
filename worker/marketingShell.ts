@@ -5,6 +5,8 @@ import {
   marketingPageForPath,
   type MarketingShellMeta,
 } from '../services/marketing/pageMeta';
+import { WHITE_PAPER_PATH } from '../services/marketing/whitePaper';
+import { whitePaperCrawlerHtml } from '../services/marketing/whitePaperPublish';
 import { sha256Hex } from './workerUtils';
 import { maybeServeWinHtml } from './winShare';
 
@@ -194,12 +196,20 @@ export function injectMarketingMeta(html: string, page: MarketingShellMeta): str
   return out;
 }
 
+/** Full white paper HTML stays off the client shell. The Worker noscript body uses it. */
+export function marketingDocumentForPath(pathname: string): MarketingShellMeta | null {
+  const page = marketingPageForPath(pathname);
+  if (!page) return null;
+  if (page.path !== WHITE_PAPER_PATH) return page;
+  return { ...page, crawlerBody: whitePaperCrawlerHtml() };
+}
+
 export async function maybeServeMarketingHtml(
   request: Request,
   assets: Fetcher,
 ): Promise<Response | null> {
   const url = new URL(request.url);
-  const page = marketingPageForPath(url.pathname);
+  const page = marketingDocumentForPath(url.pathname);
   if (!page) return null;
   // Only rewrite document navigations; leave asset requests alone.
   const accept = request.headers.get('accept') || '';

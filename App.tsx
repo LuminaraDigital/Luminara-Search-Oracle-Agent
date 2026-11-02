@@ -71,6 +71,7 @@ const SeoHubPage = lazyWithReload(() => import('./components/marketing/SeoHubPag
 const FreeToolPage = lazyWithReload(() => import('./components/marketing/freeTools/FreeToolPage'));
 const PricingPage = lazyWithReload(() => import('./components/PricingPage'));
 const MethodologyPage = lazyWithReload(() => import('./components/MethodologyPage'));
+const WhitePaperPage = lazyWithReload(() => import('./components/marketing/WhitePaperPage'));
 const SampleReportPage = lazyWithReload(() => import('./components/SampleReportPage'));
 const InstantAuditView = lazyWithReload(() => import('./components/audit/InstantAuditView').then(m => ({ default: m.InstantAuditView })));
 const BusinessDNAView = lazyWithReload(() => import('./components/suite/BusinessDNAView').then(m => ({ default: m.BusinessDNAView })));
@@ -113,6 +114,7 @@ const MARKETING_VIEWS = new Set<AppView>([
   AppView.FREE_TOOLS,
   AppView.PRICING,
   AppView.METHODOLOGY,
+  AppView.WHITE_PAPER,
   AppView.SAMPLE_REPORT,
 ]);
 /** Views whose page comes from the pathname: /compare/*, /best/*, /free-tools/*. */
@@ -1200,6 +1202,18 @@ const App: React.FC = () => {
           onSignUp={() => openLoginWall('signup')}
           isAuthenticated={appAuth.authenticated}
         />
+        {marketingOverlays}
+      </Suspense>
+      </MarketingChromeContext.Provider>
+    );
+  }
+
+  if (view === AppView.WHITE_PAPER) {
+    return (
+      <MarketingChromeContext.Provider value={marketingChrome}>
+      <Suspense fallback={<ViewLoader label="Loading white paper" />}>
+        {introOverlay}
+        <WhitePaperPage isAuthenticated={appAuth.authenticated} onFullAudit={marketingFullAudit} />
         {marketingOverlays}
       </Suspense>
       </MarketingChromeContext.Provider>

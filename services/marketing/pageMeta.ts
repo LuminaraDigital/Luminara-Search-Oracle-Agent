@@ -253,6 +253,7 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
   <ul>
     <li><a href="/sample-report">Sample report</a></li>
     <li><a href="/methodology">Methodology</a></li>
+    <li><a href="/white-paper">White paper</a></li>
     <li><a href="/docs/what-is-aeo.html">What is AEO</a></li>
     <li><a href="/how-it-works">How it works</a></li>
     <li><a href="/ai">Our AI</a></li>
@@ -267,6 +268,24 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
     <li><a href="/terms">Terms</a></li>
   </ul>
   <p>Produced by <a href="${COMPANY_SERVICES_URL}">Luminara Digital</a>.</p>
+</section>`,
+  },
+  '/white-paper': {
+    path: '/white-paper',
+    title: 'White paper | Luminara Suite',
+    description:
+      'Product and methodology white paper for independent real estate agencies in Australia, Oceania and South-East Asia. Traction and market size: Unknown. No token offer.',
+    jsonLd: graph(
+      '/white-paper',
+      'White paper',
+      'Product and methodology white paper. Traction and market size: Unknown. No token offer.',
+    ),
+    crawlerBody: `
+<section>
+  <h1>White paper</h1>
+  <p>Product and methodology paper for independent real estate agencies in Australia, Oceania and South-East Asia. Traction and market size: Unknown. This paper does not recommend issuing a token.</p>
+  <p>Every number on the page is tagged Fact, Estimate, or Speculation and links to a source checked on 2 November 2026.</p>
+  <p><a href="/">Check a domain</a> · <a href="${TELEGRAM_MINI_APP_PUBLIC_URL}">Telegram Mini App</a> · <a href="${PLAY_STORE_URL}">Google Play</a> · <a href="/desktop">Windows</a></p>
 </section>`,
   },
   '/methodology': {
@@ -444,6 +463,7 @@ export function marketingShellKey(pathname: string): string | null {
   if (clean === '/upgrade') return '/pricing';
   if (clean === '/intelligence') return '/ai';
   if (clean === '/why-us') return '/why';
+  if (clean === '/whitepaper') return '/white-paper';
   if (clean === '/lab') return '/labs';
   if (clean === '/privacy.html' || clean === '/privacy-policy') return '/privacy';
   if (clean === '/faq.html') return '/faq';

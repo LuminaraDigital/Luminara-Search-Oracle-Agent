@@ -12,6 +12,7 @@ Allow: /ai
 Allow: /why
 Allow: /pricing
 Allow: /methodology
+Allow: /white-paper
 Allow: /sample-report
 Allow: /privacy
 Allow: /terms
