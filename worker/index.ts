@@ -2417,7 +2417,7 @@ const handler = {
         }),
       );
     }
-    if (url.pathname === '/llms.txt') {
+    if (url.pathname === '/llms.txt' || url.pathname === '/llm.txt') {
       return guard(
         new Response(LLMS_TXT, {
           status: 200,

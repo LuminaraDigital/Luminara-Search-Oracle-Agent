@@ -13,11 +13,12 @@ import { COMPANY_SERVICES_URL, COMPANY_SITE_URL } from '../services/legal/consum
 import { PLAN_ENTITLEMENTS } from '../services/plans/planEntitlements';
 
 export const ROBOTS_TXT = `# Luminara Suite crawl policy
-# Public marketing pages, /llms.txt, /ai.txt, and redacted /share/teaser/ cards are meant to be cited.
+# Public marketing pages, /llms.txt, /llm.txt, /ai.txt, and redacted /share/teaser/ cards are meant to be cited.
 # Share URLs under /share/ are unlisted (not in the sitemap) and served noindex. They are
 # allowed here only so link unfurls can fetch the preview HTML.
 # Attestation verify, API, and OAuth stay disallowed.
-# Named AI crawlers repeat the same rules as User-agent: * so the allow is explicit.
+# Named AI crawlers repeat the same Allow and Disallow rules as User-agent: * so the allow is explicit.
+# Content-Signal on User-agent: * prefers search and reference use, and asks not to train. Named AI crawlers stay allowed.
 # User-triggered fetchers may ignore robots.txt. This file does not grant access to /api/ or account data.
 
 User-agent: GPTBot
@@ -47,6 +48,7 @@ Allow: /best/
 Allow: /docs/
 Allow: /docs/what-is-aeo.html
 Allow: /llms.txt
+Allow: /llm.txt
 Allow: /ai.txt
 Allow: /sitemap.xml
 Allow: /share/
@@ -57,6 +59,7 @@ Disallow: /reports/
 Disallow: /oauth/
 
 User-agent: *
+Content-Signal: search=yes,ai-train=no,use=reference
 Allow: /
 Allow: /how-it-works
 Allow: /ai
@@ -75,6 +78,7 @@ Allow: /best/
 Allow: /docs/
 Allow: /docs/what-is-aeo.html
 Allow: /llms.txt
+Allow: /llm.txt
 Allow: /ai.txt
 Allow: /sitemap.xml
 Allow: /share/
@@ -277,7 +281,7 @@ ${FREE_TOOLS.map((tool) => `- ${tool.label}: https://www.luminarasuite.com${tool
 `;
 
 export const AI_TXT = `# Luminara Suite AI policy (ai.txt)
-# Public marketing pages, /llms.txt, /ai.txt, and redacted /share/teaser/ cards may be crawled and cited with attribution.
+# Public marketing pages, /llms.txt, /llm.txt, /ai.txt, and redacted /share/teaser/ cards may be crawled and cited with attribution.
 # Unlisted full reports under /share/ are served noindex and are not for training or citation.
 # API, verification, report storage, and OAuth routes are disallowed.
 # Structured product context for answer engines lives at https://www.luminarasuite.com/llms.txt
@@ -302,6 +306,7 @@ Allow: /best/
 Allow: /docs/
 Allow: /docs/what-is-aeo.html
 Allow: /llms.txt
+Allow: /llm.txt
 Allow: /ai.txt
 Allow: /sitemap.xml
 Allow: /share/teaser/
@@ -337,7 +342,7 @@ export function readServedCrawlFile(serveHost: string, fileUrl: string): { statu
   const target = parsed.hostname.toLowerCase();
   if (!servesOwnHost(serveHost, target)) return null;
   if (parsed.pathname === '/robots.txt') return { status: 200, body: robotsTxtForHost(target, undefined) };
-  if (parsed.pathname === '/llms.txt') return { status: 200, body: LLMS_TXT };
+  if (parsed.pathname === '/llms.txt' || parsed.pathname === '/llm.txt') return { status: 200, body: LLMS_TXT };
   if (parsed.pathname === '/ai.txt') return { status: 200, body: AI_TXT };
   return null;
 }

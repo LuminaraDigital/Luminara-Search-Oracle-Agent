@@ -594,6 +594,22 @@ describe('crawl surfaces', () => {
     expect(text).toContain('https://www.luminarasuite.com/pricing');
   });
 
+  it('serves llm.txt as the same plain text as llms.txt', async () => {
+    const env = makeEnv({ ENVIRONMENT: 'production' });
+    const www = await worker.fetch(new Request('https://www.luminarasuite.com/llm.txt'), env, ctx);
+    expect(www.status).toBe(200);
+    expect(www.headers.get('content-type')).toContain('text/plain');
+    const alias = await www.text();
+    const canonical = await worker.fetch(new Request('https://www.luminarasuite.com/llms.txt'), env, ctx);
+    expect(canonical.status).toBe(200);
+    expect(alias).toBe(await canonical.text());
+    expect(alias).not.toContain('<!DOCTYPE html>');
+
+    const apex = await worker.fetch(new Request('https://luminarasuite.com/llm.txt'), env, ctx);
+    expect(apex.status).toBe(301);
+    expect(apex.headers.get('Location')).toBe('https://www.luminarasuite.com/llm.txt');
+  });
+
   it('serves llms.txt as plain text', async () => {
     const res = await worker.fetch(req('/llms.txt'), makeEnv(), ctx);
     expect(res.status).toBe(200);
@@ -614,6 +630,7 @@ describe('crawl surfaces', () => {
     const text = await res.text();
     expect(text).toContain('# Luminara Suite AI policy (ai.txt)');
     expect(text).toContain('Allow: /llms.txt');
+    expect(text).toContain('Allow: /llm.txt');
     expect(text).toContain('Allow: /ai.txt');
     expect(text).toContain('Disallow: /api/');
   });

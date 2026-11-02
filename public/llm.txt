@@ -1,0 +1,109 @@
+# Luminara Suite
+
+> Luminara Suite checks a website and live web search, then ranks one next fix. Live answers from specific AI products stay Not measured unless you are on Agency or you connect your own search login. Web app, Android on Google Play, Windows desktop, and a Telegram Mini App.
+
+## Methodology
+
+Instant Audit fetches a public page and a search sample when the hosted rail or the caller's keys allow it, then ranks one next fix from that evidence. LLM crawler checks read robots.txt, llms.txt, and optional ai.txt. Each check is pass, fail, or not_measured. None of them is a 0-100 score.
+
+Method, honesty glossary, and FAQ: https://www.luminarasuite.com/docs/what-is-aeo.html
+
+Agents may cite redacted teaser cards under /share/teaser/. robots.txt allows that path. Full branded reports under /share/ are unlisted and served noindex. A teaser is a redacted summary, not a verified measurement.
+
+## Honesty glossary
+
+- measured: the figure comes from evidence collected in that run
+- estimated: a labelled estimate, never presented as a measured score
+- not_measured: the provider failed, the sample was empty, or the signal was not collected
+- Glossary: https://www.luminarasuite.com/docs/what-is-aeo.html#honesty
+- Suite does not invent citation percentages, health scores, or share of voice when evidence is missing
+
+## What Instant Audit measures
+
+Instant Audit can report citation rate, share of voice, and page health only when that run collected live page or search evidence.
+
+LLM crawler readiness is pass, fail, or not_measured. The rows are llms.txt presence, llms.txt structure (a title and a short summary), common AI crawler directives, cite-path blocks, and optional ai.txt. Structure is a hint, not a score.
+
+## Answer engine targets
+
+### What is Luminara Suite?
+Luminara Suite checks whether AI answers name a real estate agency, then ranks one fix to ship next. Live answers from specific AI products stay Not measured unless you are on Agency or you connect your own search login. Rather than inventing 0-100 scores, it measures crawler directives, structured data, and answer density, ranking one prioritized remediation action per week. For independent real estate agencies in Australia, Oceania and South-East Asia.
+
+### How does Luminara compare to traditional SEO suites?
+Traditional SEO suites track blue-link keyword rankings and backlink counts. Luminara Suite monitors LLM crawler readiness and knowledge-graph grounding. Live answers from specific AI products stay Not measured unless you are on Agency or you connect your own search login. Every metric is labeled measured, estimated, or not_measured.
+
+### What is Answer Engine Optimization (AEO)?
+Answer Engine Optimization (AEO) is the discipline of structuring web content, technical crawl assets, and entity schema so an answer engine can quote the brand. AEO is not a score.
+
+## Sitemap
+
+- https://www.luminarasuite.com/sitemap.xml
+
+## Pricing (30 days)
+
+Each paid plan lasts 30 days and starts as soon as payment is confirmed. It does not renew on its own. Starter A$79, Growth A$229, Agency A$549. Pay by card for a 30-day pass that does not renew, or pay in Telegram Stars in the Mini App.
+
+- Starter: list price A$79, pay 2,500 Stars. 2 monitored domains. IDE access, 300 MCP calls a day. 10 share links a day. Monthly re-audit reminders in Telegram.
+- Growth: list price A$229, pay 7,500 Stars. 10 monitored domains. IDE access, no daily MCP cap. Share links, no daily cap. Weekly re-audit reminders in Telegram.
+- Agency: list price A$549, pay 18,000 Stars. 25 monitored domains. IDE access, no daily MCP cap. Share links, no daily cap. Daily re-audit reminders in Telegram. API access. 10 client workspaces. Daily drift check. White-label PDF. Live answers from specific AI products stay Not measured unless you are on Agency or you connect your own search login.
+- Free: 1 domain. Telegram initData or a signed-in account can use a capped hosted scout. Anonymous web visitors use their own API keys. Redacted teaser links are free. Public share links are free too, 3 a day, with a Luminara badge.
+
+## MCP
+
+- Docs: https://www.luminarasuite.com/docs/mcp.html
+- Endpoint: https://luminarasuite.com/api/mcp
+- MCP is on every plan: 100 calls a day on Free, no daily cap on Growth and Agency. Paid research needs Agency or your own DataForSEO login.
+
+## Telegram Mini App
+
+- https://t.me/LuminaraSuiteBot/app
+- Bot: https://t.me/LuminaraSuiteBot
+
+## Product
+
+- Home: https://www.luminarasuite.com/
+- Sample report: https://www.luminarasuite.com/sample-report
+- Methodology: https://www.luminarasuite.com/methodology
+- White paper: https://www.luminarasuite.com/white-paper
+- What is AEO: https://www.luminarasuite.com/docs/what-is-aeo.html
+- How it works: https://www.luminarasuite.com/how-it-works
+- Our AI: https://www.luminarasuite.com/ai
+- Why Luminara: https://www.luminarasuite.com/why
+- Pricing: https://www.luminarasuite.com/pricing
+- Windows desktop: https://www.luminarasuite.com/desktop
+- Android on Google Play: https://play.google.com/store/apps/details?id=com.luminarasuite.app
+
+## Comparisons and buyer's guides
+
+Competitor rows cite each vendor's public pages as of October 2026. No scores are published for other products.
+
+- Luminara vs Profound: https://www.luminarasuite.com/compare/profound
+- Luminara vs Ahrefs: https://www.luminarasuite.com/compare/ahrefs
+- Luminara vs Otterly: https://www.luminarasuite.com/compare/otterly
+- Luminara vs Peec: https://www.luminarasuite.com/compare/peec
+- Luminara vs Semrush: https://www.luminarasuite.com/compare/semrush
+- Luminara vs ChatSEO: https://www.luminarasuite.com/compare/chatseo
+- Best AI visibility tools for real estate: https://www.luminarasuite.com/best/ai-visibility-tools-for-real-estate-agencies
+- Best AEO audit tools for small business: https://www.luminarasuite.com/best/aeo-audit-tools-for-small-business
+- Best AI visibility tools with MCP: https://www.luminarasuite.com/best/ai-visibility-tools-with-mcp
+
+## Free tools
+
+They run in the browser with no account. Nothing typed into a tool is sent to Luminara.
+
+- All free tools: https://www.luminarasuite.com/free-tools
+- SERP snippet preview: https://www.luminarasuite.com/free-tools/serp-preview
+- Robots.txt generator for AI crawlers: https://www.luminarasuite.com/free-tools/robots-txt-generator
+- llms.txt generator: https://www.luminarasuite.com/free-tools/llms-txt-generator
+- Real estate schema generator: https://www.luminarasuite.com/free-tools/schema-generator
+
+## Studio
+
+- Luminara Digital: https://luminara.digital/
+- Services: https://luminara.digital/services/
+- Source: https://github.com/LuminaraDigital/Luminara-Search-Oracle-Agent
+
+## Legal
+
+- Privacy: https://www.luminarasuite.com/privacy
+- Terms: https://www.luminarasuite.com/terms
