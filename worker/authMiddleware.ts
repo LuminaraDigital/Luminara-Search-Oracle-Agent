@@ -143,6 +143,7 @@ export const PROTECTED_API_ROUTES: ProtectedRouteSpec[] = [
   { pattern: /^\/budgets\/self(\/resume)?$/, methods: ['GET', 'PUT', 'POST'] },
   { pattern: /^\/mcp-action-requests$/, methods: ['GET'] },
   { pattern: /^\/mcp-action-requests\/[^/]+\/(approve|deny)$/, methods: ['POST'] },
+  { pattern: /^\/agent-habitat(\/|$)/ },
   { pattern: /^\/enquiries(\/|$)/ },
   { pattern: /^\/outcomes(\/|$)/ },
   { pattern: /^\/recovery(\/|$)/ },

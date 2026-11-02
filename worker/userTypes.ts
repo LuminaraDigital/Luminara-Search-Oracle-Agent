@@ -18,10 +18,16 @@ export type HostedIdentity = {
  * OAuth tokens until their TTL drains). Scope strings: `mcp:free`, `mcp:research`.
  */
 export type McpCredential = {
-  kind: 'api_key' | 'oauth' | 'session';
-  /** api_keys.id for api_key; null otherwise. Never a secret. */
+  kind: 'api_key' | 'oauth' | 'session' | 'habitat';
+  /** api_keys.id for api_key, the token record id for habitat; null otherwise. Never a secret. */
   id: string | null;
   scopes: string[] | null;
+  /** Project a habitat token is locked to. */
+  projectId?: string | null;
+  /** Domain of that project. */
+  domain?: string | null;
+  /** Highest tool risk a habitat token may call. Destructive is never granted. */
+  maxRisk?: 'read' | 'write' | null;
 };
 
 /** Default credential for callers that predate credential plumbing (tests, cookie sessions). */
