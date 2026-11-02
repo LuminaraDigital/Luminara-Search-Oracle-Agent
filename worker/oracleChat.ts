@@ -123,11 +123,10 @@ export async function handleOracleSessionControlRoute(
     );
   }
 
-  // Clients may only read the log/state/checkpoint and resolve gates. Event publishing, turn admission,
-  // checkpoint writes, settle, and truncate stay server-internal so a caller cannot forge tool_end/approval events.
+  // Clients may only read the log/state/checkpoint and resolve gates; checkpoint writes stay server-internal.
   const allowed =
     (request.method === 'GET' && ['events', 'state', 'history', 'checkpoint'].includes(actionPath)) ||
-    (request.method === 'POST' && ['approval', 'callback', 'state/patch', 'checkpoint'].includes(actionPath));
+    (request.method === 'POST' && ['approval', 'callback', 'state/patch'].includes(actionPath));
   if (!allowed) {
     return new Response(JSON.stringify({ ok: false, error: 'Not found', code: 'NOT_FOUND' }), {
       status: 404,
@@ -698,7 +697,7 @@ export async function handleOracleChatSse(
             nodeName: 'await_approval',
             kind: 'gate',
             modelOrTool: 'research_keywords',
-            status: 'blocked',
+            status: 'waiting_approval',
             metadata: { toolId: toolCallId, reason: toolDecision.reason },
           });
         }
@@ -866,6 +865,15 @@ export async function handleOracleChatSse(
       }
 
       if (sessionStub && fullText) {
+        const cpBody = {
+          turnId: activeTurnId,
+          turnNumber: activeTurnNumber,
+          currentNode: 'settled',
+          stepIndex: 3,
+          pendingToolId: null,
+          resumable: false,
+          stateSnapshot: { projectId: resolvedProjectId, domain: resolvedDomain },
+        };
         await Promise.all([
           sessionStub.fetch('https://oracle-session/append', {
             method: 'POST',
@@ -876,15 +884,7 @@ export async function handleOracleChatSse(
             .fetch('https://oracle-session/checkpoint', {
               method: 'POST',
               headers: { 'content-type': 'application/json' },
-              body: JSON.stringify({
-                turnId: activeTurnId,
-                turnNumber: activeTurnNumber,
-                currentNode: 'settled',
-                stepIndex: 3,
-                pendingToolId: null,
-                resumable: false,
-                stateSnapshot: { projectId: resolvedProjectId, domain: resolvedDomain },
-              }),
+              body: JSON.stringify(cpBody),
             })
             .catch(() => null),
         ]);
@@ -892,19 +892,15 @@ export async function handleOracleChatSse(
 
       // Chat -> facts & bi-temporal graph pipeline (Letta/Mem0/Graphiti delta pass)
       const verifierStartMs = Date.now();
-      try {
-        await extractAndStoreChatMemory(env, {
-          accountId: billingId(user),
-          projectId: resolvedProjectId,
-          domain: resolvedDomain,
-          sessionId,
-          turnId: activeTurnId,
-          userMessage: message,
-          assistantMessage: fullText,
-        });
-      } catch {
-        /* ignore */
-      }
+      await extractAndStoreChatMemory(env, {
+        accountId: billingId(user),
+        projectId: resolvedProjectId,
+        domain: resolvedDomain,
+        sessionId,
+        turnId: activeTurnId,
+        userMessage: message,
+        assistantMessage: fullText,
+      }).catch(() => null);
 
       if (runHandle) {
         await Promise.all([
@@ -961,9 +957,7 @@ export async function handleOracleChatSse(
         await completeRun(env, runHandle.runId, 'completed');
       }
     } catch (e) {
-      if (runHandle) {
-        await completeRun(env, runHandle.runId, 'failed');
-      }
+      if (runHandle) await completeRun(env, runHandle.runId, 'failed');
       await write('error', {
         error: e instanceof Error ? e.message : 'Oracle chat failed',
         code: 'ORACLE_ERROR',
@@ -983,9 +977,7 @@ export async function handleOracleChatSse(
       } else if (!sessionStub) {
         await emitHarnessEvents([{ type: 'turn_end' }]);
       }
-      await writer.close().catch(() => {
-        /* client already disconnected */
-      });
+      await writer.close().catch(() => {});
     }
   };
 

@@ -85,6 +85,8 @@ export interface CreateVaultSnapshotResponse {
   error?: string;
 }
 
+export type UnifiedRecallResponse = Awaited<ReturnType<typeof unifiedMemoryClient.recallContext>>;
+
 const LOCAL_FACTS_KEY = 'luminara:unified_memory:facts_v1';
 const LOCAL_EDGES_KEY = 'luminara:unified_memory:edges_v1';
 const LOCAL_SNAPSHOTS_KEY = 'luminara:unified_memory:vault_snapshots_v1';

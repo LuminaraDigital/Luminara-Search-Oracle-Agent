@@ -1567,9 +1567,19 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     path.startsWith('/memory/unified/') ||
     path.startsWith('/memory/vault/')
   ) {
-    const who = await identify(request, env);
+    const who = identifiedForRequest(request) ?? (await identify(request, env));
     if (who.error || !who.user) {
       return withCors(json({ ok: false, error: who.error || 'Unauthorized', code: 'AUTH_REQUIRED' }, 401));
+    }
+    if (request.method === 'POST' && (path.startsWith('/memory/unified/') || path.startsWith('/memory/vault/'))) {
+      const dual = await enforceDualRateLimit(env, {
+        action: 'memory_agentic',
+        accountId: billingId(who.user),
+        ip,
+        limitPerKey: 30,
+        windowSec: 60,
+      });
+      if (!dual.ok) return withCors(dual.response);
     }
     if (path.startsWith('/memory/unified/')) {
       const unifiedRes = await handleUnifiedMemoryRoute(request, env, who.user, path);
@@ -2185,7 +2195,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
   }
 
   const oracleSessionMatch = path.match(
-    /^\/oracle\/session\/([^/]+)\/(events|approval|callback|state(?:\/patch)?|history)$/,
+    /^\/oracle\/session\/([^/]+)\/(events|approval|callback|state(?:\/patch)?|history|checkpoint)$/,
   );
   if (oracleSessionMatch) {
     if (!isOracleServerEnabled(env)) {

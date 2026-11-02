@@ -6,7 +6,7 @@ import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
 import type { DataPlaneDeps } from './dataPlane';
 import { trackAndScheduleErase } from './accountMirror';
-import { billingId, json } from './workerUtils';
+import { billingId, json, sha256Hex } from './workerUtils';
 import { auditOrgIdFor, recordAuditLogBestEffort } from './auditLog';
 import { deleteHostedAccount } from './accountDeletion';
 
@@ -23,11 +23,6 @@ export type PrivacyJobStatus =
   | 'cancelled'
   | 'soft_deleted'
   | 'purged';
-
-async function sha256Hex(text: string): Promise<string> {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
-}
 
 function randomToken(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(24));
@@ -66,6 +61,16 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
     `SELECT id, text, source, created_at FROM memory_facts WHERE account_id = ?`,
     accountId,
   );
+  const memoryEdges = await q<Record<string, unknown>>(
+    `SELECT id, project_id, domain, subject_entity, predicate, object_entity, valid_from, valid_to, confidence, derivation, created_at
+     FROM memory_edges WHERE account_id = ? ORDER BY created_at DESC LIMIT 500`,
+    accountId,
+  ).catch(() => [] as Record<string, unknown>[]);
+  const memoryVaultSnapshots = await q<Record<string, unknown>>(
+    `SELECT id, project_id, domain, merkle_root, leaf_count, cid, storage_backend, chain, network, tx_hash, created_at
+     FROM memory_vault_snapshots WHERE account_id = ? ORDER BY created_at DESC LIMIT 100`,
+    accountId,
+  ).catch(() => [] as Record<string, unknown>[]);
   const decisions = await q<Record<string, unknown>>(
     `SELECT id, domain, week_key, title, status, created_at, updated_at FROM weekly_decisions WHERE account_id = ?`,
     accountId,
@@ -280,6 +285,8 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
       'recovery_runs',
       'outcome_stage_events',
       'external_effects',
+      'memory_edges',
+      'memory_vault_snapshots',
     ],
     users,
     workspace: workspace.map((w) => ({
@@ -296,6 +303,8 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
     projects,
     agentReports: reports,
     memoryFacts: facts,
+    memoryEdges,
+    memoryVaultSnapshots,
     weeklyDecisions: decisions,
     auditRuns: audits,
     auditHistory,
@@ -423,6 +432,21 @@ async function softDeleteAccount(env: Env, accountId: string, deps?: DataPlaneDe
   await drop('crm_properties', `DELETE FROM crm_properties WHERE account_id = ?`);
   await drop('crm_contacts', `DELETE FROM crm_contacts WHERE account_id = ?`);
   await drop('external_effects', `DELETE FROM external_effects WHERE account_id = ?`);
+  if (env.DESKTOP_RELEASES) {
+    try {
+      const r2VaultRows = await db
+        .prepare(`SELECT cid FROM memory_vault_snapshots WHERE account_id = ? AND storage_backend = 'r2'`)
+        .bind(accountId)
+        .all<{ cid: string | null }>();
+      for (const r of r2VaultRows.results ?? []) {
+        if (r.cid) {
+          await env.DESKTOP_RELEASES.delete(`memory-vault/${accountId}/${r.cid}.json`).catch(() => null);
+        }
+      }
+    } catch {
+      /* best effort R2 vault cleanup */
+    }
+  }
   await drop('memory_edges', `DELETE FROM memory_edges WHERE account_id = ?`);
   await drop('memory_vault_snapshots', `DELETE FROM memory_vault_snapshots WHERE account_id = ?`);
   await drop('agent_trace_spans', `DELETE FROM agent_trace_spans WHERE account_id = ?`);

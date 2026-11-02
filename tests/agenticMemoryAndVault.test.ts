@@ -22,10 +22,12 @@ import {
 import {
   buildMerkleInclusionProof,
   bindMemoryVaultTonTx,
+  computeMerkleRoot,
   createMemoryVaultSnapshot,
   decryptVaultBundle,
   verifyMerkleInclusionProof,
 } from '../worker/memoryVaultService';
+import { sha256Hex } from '../worker/workerUtils';
 import { OracleSession } from '../worker/oracleSession';
 import { handleOracleSessionControlRoute } from '../worker/oracleChat';
 import { planCapsFor } from '../worker/telegramBot';
@@ -935,5 +937,154 @@ describe('Phase 7: Trust-Boundary Enforcement & Pre-0044 Schema Graceful Degrada
       kind: 'memory',
     });
     expect(span).toBeNull();
+  });
+
+  it('verifies Merkle inclusion proofs across 0, 1, 3, 5, 6, and 7 leaves, uppercase hex, and rejects 0-leaf empty-root spoofs', async () => {
+    const emptyRoot = await computeMerkleRoot([]);
+    const emptyProof = await buildMerkleInclusionProof([], emptyRoot);
+    expect(emptyProof.found).toBe(false);
+    expect(await verifyMerkleInclusionProof(emptyRoot, [], emptyRoot)).toBe(false);
+
+    for (const count of [1, 3, 5, 6, 7]) {
+      const leaves = await Promise.all(
+        Array.from({ length: count }, (_, idx) => sha256Hex(`leaf_test_${count}_${idx}`)),
+      );
+      const root = await computeMerkleRoot(leaves);
+      for (let i = 0; i < count; i++) {
+        const target = i % 2 === 0 ? leaves[i].toUpperCase() : leaves[i];
+        const built = await buildMerkleInclusionProof(leaves, target);
+        expect(built.found).toBe(true);
+        expect(built.index).toBe(i);
+        expect(built.merkleRoot).toBe(root);
+        expect(await verifyMerkleInclusionProof(target, built.proof, root)).toBe(true);
+      }
+    }
+  });
+
+  it('rejects short vault passphrases (< 8 chars) and isolates proof_anchors across accounts on empty vaults', async () => {
+    const env = makeEnv();
+    const shortRes = await createMemoryVaultSnapshot(env, {
+      accountId: 'acc_short',
+      passphrase: 'short',
+    });
+    expect(shortRes.ok).toBe(false);
+    if (!shortRes.ok) {
+      expect(shortRes.error).toMatch(/at least 8 characters/i);
+    }
+
+    const snapA = await createMemoryVaultSnapshot(env, { accountId: 'acc_tenant_a' });
+    const snapB = await createMemoryVaultSnapshot(env, { accountId: 'acc_tenant_b' });
+    expect(snapA.ok).toBe(true);
+    expect(snapB.ok).toBe(true);
+    if (!snapA.ok || !snapB.ok) return;
+
+    const anchors = await env.DB!
+      .prepare(`SELECT id, audit_run_id FROM proof_anchors WHERE kind = 'memory_snapshot'`)
+      .all<{ id: string; audit_run_id: string }>();
+    const runIds = (anchors.results || []).map((a) => a.audit_run_id);
+    expect(runIds).toContain(snapA.snapshotId);
+    expect(runIds).toContain(snapB.snapshotId);
+  });
+
+  it('times out stale await_approval checkpoints in alarm() and rejects late approvals with 409', async () => {
+    const state = makeMockDoState();
+    const session = new OracleSession(state);
+
+    const admitRes = await session.fetch(
+      new Request('https://oracle-session/admit', {
+        method: 'POST',
+        body: JSON.stringify({ messageId: 'm_timeout', content: 'Run paid keyword research' }),
+      }),
+    );
+    const { turnId, turnNumber } = (await admitRes.json()) as { turnId: string; turnNumber: number };
+
+    await session.fetch(
+      new Request('https://oracle-session/events', {
+        method: 'POST',
+        body: JSON.stringify({
+          turnId,
+          turnNumber,
+          event: {
+            type: 'tool_approval_requested',
+            tool_id: 'call_timeout_1',
+            tool_name: 'research_keywords',
+            tool_input: { seeds: ['timeout'] },
+            risk_tier: 'paid_research',
+          },
+        }),
+      }),
+    );
+
+    await session.fetch(
+      new Request('https://oracle-session/checkpoint', {
+        method: 'POST',
+        body: JSON.stringify({
+          turnId,
+          turnNumber,
+          currentNode: 'await_approval',
+          stepIndex: 1,
+          pendingToolId: 'call_timeout_1',
+          resumable: false,
+          scheduleAlarmMs: 1,
+        }),
+      }),
+    );
+
+    await new Promise((r) => setTimeout(r, 10));
+    await session.alarm();
+
+    const cpRes = await session.fetch(new Request(`https://oracle-session/checkpoint?turnId=${turnId}`));
+    const cpData = (await cpRes.json()) as {
+      checkpoint: { currentNode: string; pendingToolId: string | null; resumable: boolean };
+    };
+    expect(cpData.checkpoint.currentNode).toBe('critic_verify');
+    expect(cpData.checkpoint.pendingToolId).toBeNull();
+    expect(cpData.checkpoint.resumable).toBe(true);
+
+    const lateApprove = await session.fetch(
+      new Request('https://oracle-session/approval', {
+        method: 'POST',
+        body: JSON.stringify({
+          toolId: 'call_timeout_1',
+          toolName: 'research_keywords',
+          approved: true,
+        }),
+      }),
+    );
+    expect(lateApprove.status).toBe(409);
+  });
+
+  it('strips unowned projectId at trust boundary in rememberScopedFact and upsertTemporalEdge', async () => {
+    const env = makeEnv();
+    const otherProj = await createProject(env, 'acc_owner', {
+      domain: 'owned.io',
+      name: 'Owned Project',
+    });
+    expect(otherProj.ok).toBe(true);
+    if (!otherProj.ok) return;
+
+    const factRes = await rememberScopedFact(env, {
+      accountId: 'acc_attacker',
+      projectId: otherProj.project.id,
+      domain: 'attacker.io',
+      text: 'Attacker trying to tag another account project id.',
+    });
+    expect(factRes.ok).toBe(true);
+    if (factRes.ok) {
+      expect(factRes.fact.projectId).toBeNull();
+    }
+
+    const edgeRes = await upsertTemporalEdge(env, {
+      accountId: 'acc_attacker',
+      projectId: otherProj.project.id,
+      domain: 'attacker.io',
+      subjectEntity: 'attacker.io',
+      predicate: 'uses_cms',
+      objectEntity: 'Ghost',
+    });
+    expect(edgeRes.ok).toBe(true);
+    if (edgeRes.ok) {
+      expect(edgeRes.edge.projectId).toBeNull();
+    }
   });
 });
