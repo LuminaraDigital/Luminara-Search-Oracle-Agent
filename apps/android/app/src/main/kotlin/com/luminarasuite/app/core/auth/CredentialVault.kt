@@ -70,12 +70,17 @@ class InMemoryVaultStorage(
         email: String,
         accountId: String,
     ) {
+        val nextAccount = accountId.trim()
+        val previous = state.value.accountId
+        // A different signed-in account must not spend the keys still on this phone.
+        val byokKeys = if (previous.isNotBlank() && previous != nextAccount) ByokKeyBag() else state.value.byokKeys
         state.value =
             state.value.copy(
                 idToken = idToken,
                 refreshToken = refreshToken,
                 email = email,
-                accountId = accountId,
+                accountId = nextAccount,
+                byokKeys = byokKeys,
             )
     }
 
@@ -86,6 +91,8 @@ class InMemoryVaultStorage(
                 refreshToken = "",
                 email = "",
                 accountId = "",
+                byokKeys = ByokKeyBag(),
+                reportedTurnIds = emptySet(),
             )
     }
 
@@ -157,10 +164,18 @@ class KeystoreCredentialVault(
         accountId: String,
     ) {
         context.luminaraDataStore.edit { prefs ->
+            val nextAccount = accountId.trim()
+            val previous = prefs[KEY_ACCOUNT_ID].orEmpty()
+            if (previous.isNotBlank() && previous != nextAccount) {
+                prefs.remove(KEY_GROQ)
+                prefs.remove(KEY_NIM)
+                prefs.remove(KEY_GEMINI)
+                prefs.remove(KEY_TAVILY)
+            }
             prefs[KEY_ID_TOKEN] = encrypt(idToken)
             prefs[KEY_REFRESH_TOKEN] = encrypt(refreshToken)
             prefs[KEY_EMAIL] = email.trim()
-            prefs[KEY_ACCOUNT_ID] = accountId.trim()
+            prefs[KEY_ACCOUNT_ID] = nextAccount
         }
     }
 
@@ -170,6 +185,11 @@ class KeystoreCredentialVault(
             prefs.remove(KEY_REFRESH_TOKEN)
             prefs.remove(KEY_EMAIL)
             prefs.remove(KEY_ACCOUNT_ID)
+            prefs.remove(KEY_GROQ)
+            prefs.remove(KEY_NIM)
+            prefs.remove(KEY_GEMINI)
+            prefs.remove(KEY_TAVILY)
+            prefs.remove(KEY_REPORTED_TURNS)
         }
     }
 
