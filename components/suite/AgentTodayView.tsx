@@ -66,7 +66,10 @@ const ContactButtons: React.FC<{ phone: string | null; email: string | null }> =
   );
 };
 
-export const AgentTodayView: React.FC<{ onOpenEnquiryDesk?: () => void }> = ({ onOpenEnquiryDesk }) => {
+export const AgentTodayView: React.FC<{ onOpenEnquiryDesk?: () => void; onSignIn?: () => void }> = ({
+  onOpenEnquiryDesk,
+  onSignIn,
+}) => {
   const [state, setState] = useState<LoadState>('loading');
   const [today, setToday] = useState<AgentToday | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -131,6 +134,9 @@ export const AgentTodayView: React.FC<{ onOpenEnquiryDesk?: () => void }> = ({ o
       {state === 'signed_out' && (
         <div role="alert" className={CARD}>
           <p className="text-sm">Sign in to see your day.</p>
+          {onSignIn && (
+            <button type="button" onClick={onSignIn} className={`${BTN_PLAIN} mt-3`}>Sign in</button>
+          )}
         </div>
       )}
 

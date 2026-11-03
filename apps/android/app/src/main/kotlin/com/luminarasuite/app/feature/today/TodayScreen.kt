@@ -17,13 +17,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.viewModelScope
 import com.luminarasuite.app.core.designsystem.EyebrowKicker
 import com.luminarasuite.app.core.designsystem.FoundryButton
@@ -105,7 +106,8 @@ fun TodayScreen(
     onOpenEnquiries: () -> Unit,
 ) {
     val state by viewModel.uiState.collectAsState()
-    LaunchedEffect(signedIn) { if (signedIn) viewModel.load() }
+    // Every return to the app reloads, so tapping an alert always shows the new request.
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { if (signedIn) viewModel.load() }
     val context = LocalContext.current
 
     Column(

@@ -1896,7 +1896,11 @@ const App: React.FC = () => {
 
         {/* VIEW: Agent Today (sign-offs, call-backs, week scorecard) */}
         {view === AppView.AGENT_TODAY && (
-          <AgentTodayView onOpenEnquiryDesk={() => setView(AppView.ENQUIRY_DESK)} />
+          <AgentTodayView
+            key={appAuth.authenticated ? 'signed-in' : 'signed-out'}
+            onOpenEnquiryDesk={() => setView(AppView.ENQUIRY_DESK)}
+            onSignIn={() => openLoginWall('signin')}
+          />
         )}
 
         {/* VIEW: Ecosystem & Playbook Hub */}
