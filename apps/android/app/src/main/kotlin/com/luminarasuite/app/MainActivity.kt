@@ -124,7 +124,6 @@ private enum class Overlay { MEMORY, SETTINGS, SHARED, PROFILE, ENQUIRIES }
 
 private const val PREFS = "luminara_app"
 private const val KEY_WELCOMED = "welcomed"
-private const val KEY_AGENT_MODE = "agent_mode"
 
 /** Notification taps open the agent's Today screen. */
 const val EXTRA_OPEN = "open"
@@ -158,8 +157,8 @@ class MainActivity : ComponentActivity() {
                     sharedLinks = sharedLink,
                     showWelcome = !prefs.getBoolean(KEY_WELCOMED, false),
                     onWelcomed = { prefs.edit().putBoolean(KEY_WELCOMED, true).apply() },
-                    initialAgentMode = prefs.getBoolean(KEY_AGENT_MODE, false),
-                    onAgentModeChange = { prefs.edit().putBoolean(KEY_AGENT_MODE, it).apply() },
+                    initialAgentMode = prefs.getBoolean(AgentPush.KEY_AGENT_MODE, false),
+                    onAgentModeChange = { prefs.edit().putBoolean(AgentPush.KEY_AGENT_MODE, it).apply() },
                     openTodayRequests = openToday,
                 )
             }

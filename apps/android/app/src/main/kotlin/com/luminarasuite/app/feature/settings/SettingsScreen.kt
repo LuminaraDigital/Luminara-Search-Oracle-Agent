@@ -31,6 +31,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -356,7 +358,7 @@ private fun AgentModeSection(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                EyebrowKicker("Real-estate agent tools")
+                EyebrowKicker("For real-estate agents")
                 Text(
                     text = "Adds a Today tab: approve appraisals, call people back, and see your last 7 days. " +
                         "Alerts when someone needs your sign-off.",
@@ -372,7 +374,10 @@ private fun AgentModeSection(
                         onChange(on)
                     }
                 },
-                modifier = Modifier.testTag("agent_mode_switch"),
+                modifier =
+                Modifier
+                    .testTag("agent_mode_switch")
+                    .semantics { contentDescription = "For real-estate agents: show the Today tab and alerts" },
             )
         }
     }

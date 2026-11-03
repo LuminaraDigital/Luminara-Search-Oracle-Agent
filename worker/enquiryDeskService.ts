@@ -347,10 +347,11 @@ export async function ingestInboundEnquiry(
     attributionAuditId: args.attributionAuditId?.trim() || null, createdAt: now, updatedAt: now,
   };
 
+  await finalizeExternalEffect(env, effectCheck.effectKey, args.accountId, { enquiry: enquiryRecord, evaluation }, now);
+  // After finalize, so a retried ingest is a duplicate and never alerts twice.
   if (evaluation.action === 'escalate_to_agent') {
     await notifyAgent(env, args.accountId, callbackMessage(fullName, enquiryId));
   }
-  await finalizeExternalEffect(env, effectCheck.effectKey, args.accountId, { enquiry: enquiryRecord, evaluation }, now);
   return { ok: true, duplicate: false, effectKey: effectCheck.effectKey, enquiry: enquiryRecord, evaluation };
 }
 
@@ -521,7 +522,8 @@ export async function appendEnquiryTurn(
     now,
   });
 
-  if (evaluation.action === 'escalate_to_agent') {
+  // Only the first escalation alerts; later messages from the same person do not buzz the agent again.
+  if (evaluation.action === 'escalate_to_agent' && !existing.qualificationBrief.escalationRequired) {
     await notifyAgent(env, args.accountId, callbackMessage(existing.contactName, existing.id));
   }
 
@@ -625,6 +627,33 @@ export async function listProjectEnquiries(
     `${ENQUIRY_SELECT_SQL} WHERE e.account_id = ? AND e.project_id = ? ORDER BY e.updated_at DESC LIMIT 100`,
   )
     .bind(accountId, projectId)
+    .all<EnquiryRow>();
+  return (rows.results || []).map(mapEnquiryRow);
+}
+
+/** Only enquiries that can appear on Today, so a busy desk never pushes them out of a recent-100 window. */
+async function listTodayEnquiries(
+  env: Env,
+  accountId: string,
+  projectId: string,
+  now: number,
+): Promise<EnquiryRecord[]> {
+  if (!env.DB) return [];
+  const rows = await env.DB.prepare(
+    `${ENQUIRY_SELECT_SQL}
+     WHERE e.account_id = ? AND e.project_id = ? AND e.status != 'closed' AND (
+       (e.status = 'new' AND e.sla_due_at > 0 AND e.sla_due_at < ?)
+       OR json_extract(e.qualification_brief_json, '$.escalationRequired') = 1
+       OR e.id IN (
+         SELECT enquiry_id FROM appraisal_appointments
+         WHERE account_id = ? AND project_id = ? AND (
+           approval_status = 'pending_agent_signoff' OR (approval_status = 'approved' AND confirmed_start_at >= ?)
+         )
+       )
+     )
+     ORDER BY e.updated_at DESC LIMIT 200`,
+  )
+    .bind(accountId, projectId, now, accountId, projectId, now)
     .all<EnquiryRow>();
   return (rows.results || []).map(mapEnquiryRow);
 }
@@ -876,8 +905,8 @@ export async function handleEnquiryDeskRoute(
     const projectId = (url.searchParams.get('projectId') || 'default').trim();
     const now = Date.now();
     const [enquiries, appointments, outcomes] = await Promise.all([
-      listProjectEnquiries(env, accountId, projectId),
-      listProjectAppointments(env, accountId, projectId),
+      listTodayEnquiries(env, accountId, projectId, now),
+      listProjectAppointments(env, accountId, projectId, now),
       listRecentOutcomesBySegment(env, accountId, projectId, now - TODAY_WINDOW_MS),
     ]);
     return json({ ok: true, projectId, ...buildAgentToday({ enquiries, appointments, outcomes, now }) });

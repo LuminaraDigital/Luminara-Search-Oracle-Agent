@@ -4,7 +4,7 @@
  * first name at most: never an address, phone number or email.
  */
 import type { Env } from './env';
-import { FIREBASE_MESSAGING_SCOPE, tokenProviderFromEnv, type GcpTokenProvider } from './gcpToken';
+import { FIREBASE_MESSAGING_SCOPE, readWorkloadIdentityConfig, tokenProviderFromEnv, type GcpTokenProvider } from './gcpToken';
 import { MAX_SMALL_BODY_BYTES, readBody } from './security';
 import type { HostedIdentity } from './userTypes';
 import { billingId, json } from './workerUtils';
@@ -21,8 +21,9 @@ export type PushDeps = { fetchImpl?: typeof fetch; tokenProvider?: GcpTokenProvi
 
 let cachedProvider: { key: string; provider: GcpTokenProvider | null } | null = null;
 
+// One provider per Workload Identity config, so the FCM access token is reused across sends.
 function defaultTokenProvider(env: Env): GcpTokenProvider | null {
-  const key = [env.GCP_WIF_AUDIENCE, env.GCP_OIDC_KEY_ID, env.GCP_IMPERSONATE_SERVICE_ACCOUNT].join('|');
+  const key = JSON.stringify(readWorkloadIdentityConfig(env));
   if (cachedProvider?.key !== key) {
     cachedProvider = { key, provider: tokenProviderFromEnv(env, fetch, FIREBASE_MESSAGING_SCOPE) };
   }
@@ -59,13 +60,14 @@ export function callbackMessage(contactName: string | null | undefined, enquiryI
 export async function sendAgentPush(env: Env, accountId: string, message: PushMessage, deps: PushDeps = {}): Promise<void> {
   try {
     const projectId = env.FCM_PROJECT_ID?.trim();
-    if (!env.DB || !projectId) return;
+    const db = env.DB;
+    if (!db || !projectId) return;
     const provider = deps.tokenProvider === undefined ? defaultTokenProvider(env) : deps.tokenProvider;
     if (!provider) {
       console.log(JSON.stringify({ event: 'push_skipped', reason: 'wif_not_configured' }));
       return;
     }
-    const devices = await env.DB.prepare(`SELECT id, token FROM push_devices WHERE account_id = ?`)
+    const devices = await db.prepare(`SELECT id, token FROM push_devices WHERE account_id = ?`)
       .bind(accountId)
       .all<{ id: string; token: string }>();
     const rows = devices.results ?? [];
@@ -75,9 +77,11 @@ export async function sendAgentPush(env: Env, accountId: string, message: PushMe
     const url = `https://fcm.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/messages:send`;
     const data: Record<string, string> = { kind: message.kind, enquiryId: message.enquiryId, open: 'today' };
     if (message.appointmentId) data.appointmentId = message.appointmentId;
-    for (const device of rows) {
+    // Parallel, each bounded, so every send finishes or aborts inside the caller's wait.
+    await Promise.all(rows.map(async (device) => {
       const res = await fetchImpl(url, {
         method: 'POST',
+        signal: AbortSignal.timeout(PUSH_SEND_TIMEOUT_MS),
         headers: { 'content-type': 'application/json', authorization: `Bearer ${accessToken}` },
         body: JSON.stringify({
           message: {
@@ -88,16 +92,17 @@ export async function sendAgentPush(env: Env, accountId: string, message: PushMe
           },
         }),
       });
-      if (res.ok) continue;
+      if (res.ok) return;
       const text = await res.text().catch(() => '');
-      if (res.status === 404 || /UNREGISTERED/.test(text)) {
-        await env.DB.prepare(`DELETE FROM push_devices WHERE id = ?`).bind(device.id).run();
+      // A dead or malformed token never recovers, so it is removed.
+      if (res.status === 404 || /UNREGISTERED|INVALID_ARGUMENT/.test(text)) {
+        await db.prepare(`DELETE FROM push_devices WHERE id = ?`).bind(device.id).run();
       } else {
-        await env.DB.prepare(`UPDATE push_devices SET last_error = ?, updated_at = ? WHERE id = ?`)
+        await db.prepare(`UPDATE push_devices SET last_error = ?, updated_at = ? WHERE id = ?`)
           .bind(`fcm ${res.status}`, Date.now(), device.id)
           .run();
       }
-    }
+    }));
   } catch (err) {
     console.log(JSON.stringify({ event: 'push_failed', error: err instanceof Error ? err.message.slice(0, 120) : 'unknown' }));
   }

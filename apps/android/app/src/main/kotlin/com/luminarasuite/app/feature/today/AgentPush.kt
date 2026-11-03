@@ -19,6 +19,7 @@ import com.luminarasuite.app.core.reminders.NextFixReminder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
@@ -26,6 +27,11 @@ import kotlin.coroutines.resume
 /** Sign-off and call-back alerts for agents. Only agents who are signed in register a device. */
 object AgentPush {
     const val CHANNEL_ID = "agent_signoff"
+    const val PREFS = "luminara_app"
+    const val KEY_AGENT_MODE = "agent_mode"
+
+    fun isAgentMode(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_AGENT_MODE, false)
     private const val NOTIFICATION_ID = 11
 
     suspend fun register(
@@ -95,10 +101,11 @@ class AgentMessagingService : FirebaseMessagingService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onNewToken(token: String) {
-        val agentMode = getSharedPreferences("luminara_app", MODE_PRIVATE).getBoolean("agent_mode", false)
-        if (!agentMode) return
+        if (!AgentPush.isAgentMode(this)) return
         val app = application as LuminaraApplication
-        scope.launch { app.workspace.registerPushToken(token) }
+        scope.launch {
+            if (app.repository.vaultFlow.first().isSignedIn) app.workspace.registerPushToken(token)
+        }
     }
 
     // Runs when the app is open. In the background Android shows the notification itself.

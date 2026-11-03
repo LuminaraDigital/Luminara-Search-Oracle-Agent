@@ -38,6 +38,7 @@ import com.luminarasuite.app.core.model.EnquiryCreateRequest
 import com.luminarasuite.app.core.model.EnquiryRecord
 import com.luminarasuite.app.core.network.LuminaraRepository
 import com.luminarasuite.app.core.network.WorkspaceGateway
+import com.luminarasuite.app.feature.today.TRY_AGAIN
 import com.luminarasuite.app.feature.today.segmentLabel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -96,7 +97,7 @@ class EnquiryDeskViewModel(
                     isBusy = false,
                     enquiries = desk.getOrNull()?.enquiries ?: state.enquiries,
                     appointments = desk.getOrNull()?.appointments ?: state.appointments,
-                    errorMessage = (done.exceptionOrNull() ?: desk.exceptionOrNull())?.message,
+                    errorMessage = TRY_AGAIN.takeIf { done.isFailure || desk.isFailure },
                 )
             }
         }
@@ -180,7 +181,7 @@ fun EnquiryDeskScreen(viewModel: EnquiryDeskViewModel) {
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(text = enquiry.contactName, style = LuminaraTextStyles.SectionTitle)
-                        EyebrowKicker("${segmentLabel(enquiry.intentType)} · ${enquiry.status.replace('_', ' ')}")
+                        EyebrowKicker("${segmentLabel(enquiry.intentType)} · ${statusLabel(enquiry.status)}")
                     }
                     enquiry.conversation.lastOrNull()?.let {
                         Text(text = it.text, style = LuminaraTextStyles.Body, maxLines = 2)
@@ -237,9 +238,7 @@ private fun EnquiryDetail(
             )
             missing.isNotEmpty() ->
                 Text(
-                    text = "Still to ask: ${missing.joinToString {
-                        it.replace('_', ' ')
-                    }}",
+                    text = "Still to ask: ${missing.joinToString { QUESTION_LABELS[it] ?: it.replace('_', ' ') }}",
                     style = LuminaraTextStyles.Body,
                 )
         }
@@ -287,6 +286,33 @@ private fun EnquiryDetail(
         )
     }
 }
+
+/** Plain words for the playbook fields in services/enquiries/playbookQualificationService.ts. */
+private val QUESTION_LABELS =
+    mapOf(
+        "property_address" to "the property address",
+        "property_type" to "what kind of property",
+        "timeframe" to "when they want to sell",
+        "preferred_contact" to "the best way to reach them",
+        "buying_timeframe" to "when they want to buy",
+        "target_property_or_suburb" to "which property or suburb",
+        "inspection_preference" to "when they can inspect",
+        "occupancy_status" to "who lives there now",
+        "service_needed" to "what they need",
+        "location_or_website" to "where they are",
+    )
+
+private fun statusLabel(status: String): String =
+    when (status) {
+        "new" -> "New"
+        "conversing" -> "Talking"
+        "qualified" -> "Ready for an appraisal"
+        "booking_proposed" -> "Waiting for you to approve a time"
+        "booked" -> "Booked"
+        "stalled" -> "Gone quiet"
+        "closed" -> "Closed"
+        else -> status.replace('_', ' ')
+    }
 
 private val SEGMENTS = listOf("seller_appraisal", "buyer_enquiry", "landlord_management", "general_sme")
 

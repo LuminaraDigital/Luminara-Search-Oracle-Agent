@@ -1739,18 +1739,8 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     if (launchpadRes) return withCors(launchpadRes);
   }
 
-  // Android push device registration (migration 0047).
-  if (path === '/push/devices') {
-    const who = identifiedForRequest(request) ?? (await identify(request, env));
-    if (who.error || !who.user) {
-      return withCors(json({ ok: false, error: who.error || 'Unauthorized', code: 'AUTH_REQUIRED' }, 401));
-    }
-    const res = await handlePushRoute(request, env, who.user, path);
-    if (res) return withCors(res);
-  }
-
-  // 4-Module Conversion Spine (0042) & CMS Fixer MCP Relay.
-  if (/^\/(enquiries|outcomes|recovery|cms-mcp)(\/|$)/.test(path)) {
+  // 4-Module Conversion Spine (0042), CMS Fixer MCP Relay, and agent push devices (0047).
+  if (/^\/(enquiries|outcomes|recovery|cms-mcp|push)(\/|$)/.test(path)) {
     const who = identifiedForRequest(request) ?? (await identify(request, env));
     if (who.error || !who.user) {
       return withCors(json({ ok: false, error: who.error || 'Unauthorized', code: 'AUTH_REQUIRED' }, 401));
@@ -1764,6 +1754,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     });
     if (!dual.ok) return withCors(dual.response);
     const res =
+      (await handlePushRoute(request, env, who.user, path)) ??
       (await handleEnquiryDeskRoute(request, env, who.user, path)) ??
       (await handleRecoveryRoute(request, env, who.user, path)) ??
       (await handleCmsMcpRoute(request, env, who.user, path));

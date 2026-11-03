@@ -209,29 +209,51 @@ data class AppointmentDecisionRequest(
     val selectedSlotId: String? = null,
 )
 
-@Serializable
-data class TodaySlot(
-    val slotId: String = "",
-    val label: String = "",
-    val startAt: Long = 0L,
-    val endAt: Long = 0L,
-)
+/** What every person on the agent's Today screen has, whichever list they are in. */
+interface TodayPerson {
+    val enquiryId: String
+    val name: String
+    val phone: String?
+    val email: String?
+    val address: String?
+    val segment: String
+}
 
-/** One person on the agent's Today screen. Fields depend on the list it came from. */
 @Serializable
-data class TodayItem(
-    val enquiryId: String = "",
-    val name: String = "",
-    val phone: String? = null,
-    val email: String? = null,
-    val address: String? = null,
-    val segment: String = "",
-    val appointmentId: String? = null,
-    val slots: List<TodaySlot> = emptyList(),
-    val reason: String? = null,
+data class SignOffItem(
+    override val enquiryId: String = "",
+    override val name: String = "",
+    override val phone: String? = null,
+    override val email: String? = null,
+    override val address: String? = null,
+    override val segment: String = "",
+    val appointmentId: String = "",
+    val slots: List<BookingSlot> = emptyList(),
+) : TodayPerson
+
+@Serializable
+data class CallBackItem(
+    override val enquiryId: String = "",
+    override val name: String = "",
+    override val phone: String? = null,
+    override val email: String? = null,
+    override val address: String? = null,
+    override val segment: String = "",
+    val reason: String = "",
+) : TodayPerson
+
+@Serializable
+data class UpcomingItem(
+    override val enquiryId: String = "",
+    override val name: String = "",
+    override val phone: String? = null,
+    override val email: String? = null,
+    override val address: String? = null,
+    override val segment: String = "",
+    val appointmentId: String = "",
     val startAt: Long = 0L,
     val endAt: Long = 0L,
-)
+) : TodayPerson
 
 @Serializable
 data class ScorecardSegment(
@@ -252,9 +274,9 @@ data class Scorecard(
 @Serializable
 data class AgentTodayResponse(
     val ok: Boolean = false,
-    val needsSignOff: List<TodayItem> = emptyList(),
-    val callBack: List<TodayItem> = emptyList(),
-    val upcoming: List<TodayItem> = emptyList(),
+    val needsSignOff: List<SignOffItem> = emptyList(),
+    val callBack: List<CallBackItem> = emptyList(),
+    val upcoming: List<UpcomingItem> = emptyList(),
     val scorecard: Scorecard = Scorecard(),
 )
 

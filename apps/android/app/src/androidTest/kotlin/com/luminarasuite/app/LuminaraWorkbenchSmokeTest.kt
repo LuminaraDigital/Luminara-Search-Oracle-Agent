@@ -12,6 +12,7 @@ import com.luminarasuite.app.core.model.AgentTodayResponse
 import com.luminarasuite.app.core.model.AudioOverview
 import com.luminarasuite.app.core.model.AuditFinding
 import com.luminarasuite.app.core.model.AuditHistoryEntry
+import com.luminarasuite.app.core.model.BookingSlot
 import com.luminarasuite.app.core.model.BusinessDna
 import com.luminarasuite.app.core.model.ByokKeyBag
 import com.luminarasuite.app.core.model.CrawlerEvaluationResult
@@ -27,9 +28,8 @@ import com.luminarasuite.app.core.model.QuotaStatus
 import com.luminarasuite.app.core.model.ScoutRecheckResponse
 import com.luminarasuite.app.core.model.ShareLink
 import com.luminarasuite.app.core.model.SharedDocument
+import com.luminarasuite.app.core.model.SignOffItem
 import com.luminarasuite.app.core.model.StudioSource
-import com.luminarasuite.app.core.model.TodayItem
-import com.luminarasuite.app.core.model.TodaySlot
 import com.luminarasuite.app.core.network.AuditRead
 import com.luminarasuite.app.core.network.InstantAuditReport
 import com.luminarasuite.app.core.network.LuminaraRepository
@@ -95,13 +95,13 @@ class StubWorkspace : WorkspaceGateway {
                 ok = true,
                 needsSignOff =
                 listOf(
-                    TodayItem(
+                    SignOffItem(
                         enquiryId = "e1",
                         name = "Sam",
                         phone = "+61412345678",
                         segment = "seller_appraisal",
                         appointmentId = "a1",
-                        slots = listOf(TodaySlot(slotId = "slot_1", label = "Tomorrow 10am")),
+                        slots = listOf(BookingSlot(slotId = "slot_1", label = "Tomorrow 10am")),
                     ),
                 ),
             ),

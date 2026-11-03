@@ -5,12 +5,14 @@
 import type { EnquiryIntentType, OpportunityBrief, OutcomeStage } from './playbookQualificationService';
 
 export const TODAY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+/** Length used when an approved appraisal has no stored end time. */
+const DEFAULT_APPRAISAL_MS = 30 * 60_000;
 
 export const SEGMENT_LABELS: Record<EnquiryIntentType, string> = {
   seller_appraisal: 'Sellers',
   buyer_enquiry: 'Buyers',
   landlord_management: 'Landlords',
-  general_sme: 'Other',
+  general_sme: 'Other enquiries',
 };
 
 export interface TodayEnquiryInput {
@@ -24,6 +26,7 @@ export interface TodayEnquiryInput {
   slaDueAt: number;
   consentStatus: string;
   qualificationBrief: Pick<OpportunityBrief, 'escalationRequired' | 'escalationReason'>;
+  conversation?: ReadonlyArray<{ sender: string }>;
 }
 
 export interface TodayAppointmentInput {
@@ -98,18 +101,19 @@ export function buildAgentToday(input: {
       ...contactOf(byId.get(a.enquiryId)!),
       appointmentId: a.id,
       startAt: a.confirmedStartAt!,
-      endAt: a.confirmedEndAt ?? a.confirmedStartAt! + 30 * 60_000,
+      endAt: a.confirmedEndAt ?? a.confirmedStartAt! + DEFAULT_APPRAISAL_MS,
     }))
     .sort((x, y) => x.startAt - y.startAt);
 
   const callBack = enquiries
-    .filter((e) => e.status !== 'closed' && e.consentStatus !== 'unsubscribed')
+    // Once the agent has replied, the call-back is done and leaves the list.
+    .filter((e) => e.status !== 'closed' && e.consentStatus !== 'unsubscribed' && e.conversation?.at(-1)?.sender !== 'agent')
     .flatMap((e) => {
       if (e.qualificationBrief.escalationRequired) {
         return [{ ...contactOf(e), reason: e.qualificationBrief.escalationReason || 'They asked something only you can answer.' }];
       }
       if (e.status === 'new' && e.slaDueAt > 0 && e.slaDueAt < now) {
-        return [{ ...contactOf(e), reason: 'New enquiry waiting longer than your reply target.' }];
+        return [{ ...contactOf(e), reason: 'New enquiry, no reply yet.' }];
       }
       return [];
     });

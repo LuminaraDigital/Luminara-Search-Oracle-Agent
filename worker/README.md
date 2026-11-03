@@ -593,8 +593,9 @@ URLs, TON pricing vars, D1 `DB`, KV `LUMINARA_KV`. Secrets stay server-side.
 
 ## Agent push notifications (migration 0047, `tests/pushNotify.test.ts`)
 
-- `POST,DELETE /push/devices` (session auth, `worker/pushNotifyService.ts`) register or remove an Android FCM token for the signed-in account. Max 10 devices per account, oldest dropped. A token seen under another account moves to the caller.
-- Sends use FCM HTTP v1 with the keyless Workload Identity flow in `worker/gcpToken.ts` (scope `firebase.messaging`, separate from the Firestore token). Triggers: a booking proposal pending sign-off, and an enquiry escalating to the agent (`ingestInboundEnquiry`, `appendEnquiryTurn`). Tokens FCM reports `UNREGISTERED` or 404 are deleted.
+- `POST,DELETE /push/devices` (session auth, `worker/pushNotifyService.ts`) register or remove an Android FCM token for the signed-in account. It shares the `/enquiries` auth and 60 per minute limit. Max 10 devices per account, oldest dropped. A token seen under another account moves to the caller.
+- Sends use FCM HTTP v1 with the keyless Workload Identity flow in `worker/gcpToken.ts` (scope `firebase.messaging`, separate from the Firestore token). Devices are sent in parallel, each fetch aborted at 3 s. Triggers: a booking proposal pending sign-off, and an enquiry escalating to the agent. `ingestInboundEnquiry` alerts after the idempotency record is final, so a retry never alerts twice; `appendEnquiryTurn` alerts only on the first escalation. Tokens FCM reports `UNREGISTERED`, `INVALID_ARGUMENT` or 404 are deleted.
+- `GET /enquiries/today` (`services/enquiries/agentToday.ts`, `tests/agentTodayRegressions.test.ts`) reads only enquiries that can appear there (overdue new, escalated, or with a pending or upcoming appraisal), so a busy desk never drops them. A call-back leaves the list once the last message is the agent's.
 - Invariant: push is optional. Without `FCM_PROJECT_ID` or the WIF config, sending is a logged no-op and never fails or noticeably slows the request (3 s cap, errors swallowed).
 - Invariant: notification bodies are visible on lock screens. They carry a contact's first name at most, never an address, phone number or email.
 

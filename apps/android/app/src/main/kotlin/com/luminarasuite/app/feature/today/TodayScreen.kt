@@ -7,6 +7,8 @@ import android.net.Uri
 import android.provider.CalendarContract
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -33,20 +35,28 @@ import com.luminarasuite.app.core.designsystem.ScreenGutter
 import com.luminarasuite.app.core.designsystem.WorkbenchCard
 import com.luminarasuite.app.core.model.AgentTodayResponse
 import com.luminarasuite.app.core.model.ScorecardSegment
-import com.luminarasuite.app.core.model.TodayItem
+import com.luminarasuite.app.core.model.SignOffItem
+import com.luminarasuite.app.core.model.TodayPerson
+import com.luminarasuite.app.core.model.UpcomingItem
 import com.luminarasuite.app.core.network.WorkspaceGateway
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.text.DateFormat
-import java.util.Date
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
+
+/** Shown instead of server or network text, which agents cannot act on. */
+const val TRY_AGAIN = "That did not go through. Nothing was changed. Try again."
 
 data class TodayUiState(
     val today: AgentTodayResponse? = null,
     val isBusy: Boolean = false,
-    val errorMessage: String? = null,
+    val failed: Boolean = false,
+    val notice: String? = null,
 )
 
 class TodayViewModel(
@@ -55,19 +65,22 @@ class TodayViewModel(
     private val _uiState = MutableStateFlow(TodayUiState())
     val uiState: StateFlow<TodayUiState> = _uiState.asStateFlow()
 
-    fun load() = act { Result.success(Unit) }
+    fun load() = act(null) { Result.success(Unit) }
 
     fun approve(
-        item: TodayItem,
+        item: SignOffItem,
         slotId: String,
-    ) = item.appointmentId?.let { id -> act { workspace.decideAppointment(id, true, slotId) } }
+    ) = act("Booking approved.") { workspace.decideAppointment(item.appointmentId, true, slotId) }
 
-    fun decline(item: TodayItem) = item.appointmentId?.let { id ->
-        act { workspace.decideAppointment(id, false, null) }
+    fun decline(item: SignOffItem) = act("Booking declined.") {
+        workspace.decideAppointment(item.appointmentId, false, null)
     }
 
-    private fun act(call: suspend () -> Result<Unit>) {
-        _uiState.update { it.copy(isBusy = true, errorMessage = null) }
+    private fun act(
+        success: String?,
+        call: suspend () -> Result<Unit>,
+    ) {
+        _uiState.update { it.copy(isBusy = true, failed = false, notice = null) }
         viewModelScope.launch {
             val done = call()
             val today = workspace.loadToday()
@@ -75,7 +88,8 @@ class TodayViewModel(
                 state.copy(
                     isBusy = false,
                     today = today.getOrNull() ?: state.today,
-                    errorMessage = (done.exceptionOrNull() ?: today.exceptionOrNull())?.message,
+                    failed = done.isFailure || today.isFailure,
+                    notice = success.takeIf { done.isSuccess },
                 )
             }
         }
@@ -106,22 +120,24 @@ fun TodayScreen(
         Text(text = "Today", style = LuminaraTextStyles.DisplaySerif)
         if (!signedIn) {
             WorkbenchCard {
-                Text(
-                    text = "Sign in to see who needs your sign-off and who to call back.",
-                    style = LuminaraTextStyles.Body,
-                )
+                Text(text = "Sign in to see your day.", style = LuminaraTextStyles.Body)
                 FoundryButton(text = "Sign in", onClick = onSignIn, testTag = "today_sign_in")
             }
             return@Column
         }
         if (state.isBusy) LiveTrack()
-        state.errorMessage?.let {
+        state.notice?.let { Text(text = it, style = LuminaraTextStyles.Body, color = LuminaraColors.PassGreen) }
+        if (state.failed) {
             WorkbenchCard(railColor = LuminaraColors.ErrorRed) {
-                Text(text = it, style = LuminaraTextStyles.Body, color = LuminaraColors.ErrorRed)
+                Text(text = TRY_AGAIN, style = LuminaraTextStyles.Body, color = LuminaraColors.ErrorRed)
                 GhostPillButton(text = "Try again", onClick = viewModel::load)
             }
         }
-        val today = state.today ?: return@Column
+        val today = state.today
+        if (today == null) {
+            if (!state.failed) Text(text = "Loading your day...", style = LuminaraTextStyles.Body)
+            return@Column
+        }
 
         EyebrowKicker("Needs your sign-off")
         if (today.needsSignOff.isEmpty()) Text(text = "Nothing waiting for you.", style = LuminaraTextStyles.Body)
@@ -147,7 +163,7 @@ fun TodayScreen(
         today.callBack.forEach { item ->
             WorkbenchCard(railColor = LuminaraColors.GoldAccent) {
                 PersonHeader(item)
-                item.reason?.let { Text(text = it, style = LuminaraTextStyles.Body) }
+                Text(text = item.reason, style = LuminaraTextStyles.Body)
                 ContactButtons(context, item)
             }
         }
@@ -157,7 +173,7 @@ fun TodayScreen(
             today.upcoming.forEach { item ->
                 WorkbenchCard {
                     PersonHeader(item)
-                    Text(text = formatTime(item.startAt), style = LuminaraTextStyles.Body)
+                    Text(text = formatMelbourne(item.startAt), style = LuminaraTextStyles.Body)
                     GhostPillButton(text = "Add to calendar", onClick = { addToCalendar(context, item) })
                     ContactButtons(context, item)
                 }
@@ -165,6 +181,10 @@ fun TodayScreen(
         }
 
         EyebrowKicker("Last 7 days")
+        Text(
+            text = "${formatDay(today.scorecard.since)} to ${formatDay(today.scorecard.until)}",
+            style = LuminaraTextStyles.Body.copy(color = LuminaraColors.Ink3),
+        )
         Scorecard(today.scorecard.segments)
 
         GhostPillButton(text = "Open all enquiries", onClick = onOpenEnquiries, testTag = "today_open_enquiries")
@@ -172,7 +192,7 @@ fun TodayScreen(
 }
 
 @Composable
-private fun PersonHeader(item: TodayItem) {
+private fun PersonHeader(item: TodayPerson) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         Text(text = item.name, style = LuminaraTextStyles.SectionTitle)
         EyebrowKicker(segmentLabel(item.segment))
@@ -180,23 +200,26 @@ private fun PersonHeader(item: TodayItem) {
     item.address?.let { Text(text = it, style = LuminaraTextStyles.Body) }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ContactButtons(
     context: Context,
-    item: TodayItem,
+    item: TodayPerson,
 ) {
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        item.phone?.let { phone ->
+    val phone = dialablePhone(item.phone)
+    val email = safeEmail(item.email)
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        phone?.let {
             GhostPillButton(text = "Call", onClick = {
-                open(context, Intent(Intent.ACTION_DIAL, Uri.parse("tel:$phone")))
+                open(context, Intent(Intent.ACTION_DIAL, Uri.fromParts("tel", it, null)))
             })
-            GhostPillButton(text = "SMS", onClick = {
-                open(context, Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:$phone")))
+            GhostPillButton(text = "Text", onClick = {
+                open(context, Intent(Intent.ACTION_SENDTO, Uri.fromParts("smsto", it, null)))
             })
         }
-        item.email?.let { email ->
+        email?.let {
             GhostPillButton(text = "Email", onClick = {
-                open(context, Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:$email")))
+                open(context, Intent(Intent.ACTION_SENDTO, Uri.fromParts("mailto", it, null)))
             })
         }
     }
@@ -210,31 +233,62 @@ private fun Scorecard(segments: List<ScorecardSegment>) {
             return@WorkbenchCard
         }
         segments.forEach { s ->
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(text = s.label, style = LuminaraTextStyles.SectionTitle)
-                Text(
-                    text = "${s.enquiries} new · ${s.qualified} qualified · ${s.appraisalsBooked} booked",
-                    style = LuminaraTextStyles.Body,
-                )
-            }
+            Text(text = s.label, style = LuminaraTextStyles.SectionTitle)
+            Text(text = scorecardLine(s), style = LuminaraTextStyles.Body)
         }
     }
 }
+
+fun scorecardLine(s: ScorecardSegment): String =
+    listOf(
+        plural(s.enquiries, "new enquiry", "new enquiries"),
+        "${s.qualified} ready for an appraisal",
+        plural(s.appraisalsBooked, "appraisal booked", "appraisals booked"),
+    ).joinToString(" · ")
+
+private fun plural(
+    n: Int,
+    one: String,
+    many: String,
+) = "$n ${if (n == 1) one else many}"
 
 fun segmentLabel(segment: String): String =
     when (segment) {
         "seller_appraisal" -> "Seller"
         "buyer_enquiry" -> "Buyer"
         "landlord_management" -> "Landlord"
-        else -> "Other"
+        else -> "Other enquiry"
     }
 
-private fun formatTime(epochMs: Long): String =
-    DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(epochMs))
+/** Melbourne agencies: times read in Melbourne whatever the phone is set to. */
+private val MELBOURNE: ZoneId = ZoneId.of("Australia/Melbourne")
+private val WHEN_FORMAT = DateTimeFormatter.ofPattern(
+    "EEE d MMM, h:mm a",
+    Locale.forLanguageTag("en-AU"),
+).withZone(MELBOURNE)
+private val DAY_FORMAT = DateTimeFormatter.ofPattern("EEE d MMM", Locale.forLanguageTag("en-AU")).withZone(MELBOURNE)
+
+fun formatMelbourne(epochMs: Long): String = WHEN_FORMAT.format(
+    Instant.ofEpochMilli(epochMs),
+).replace("AM", "am").replace("PM", "pm")
+
+fun formatDay(epochMs: Long): String = DAY_FORMAT.format(Instant.ofEpochMilli(epochMs))
+
+/** Lead-supplied, so only digits and a leading + reach the dialer: no USSD or call-forward codes. */
+fun dialablePhone(raw: String?): String? {
+    val digits = raw.orEmpty().filter { it.isDigit() || it == '+' }
+    return digits.takeIf { it.length >= MIN_PHONE_DIGITS && it.lastIndexOf('+') <= 0 }
+}
+
+/** Lead-supplied, so nothing that could add a cc, bcc or body to the composer. */
+fun safeEmail(raw: String?): String? = raw?.trim()?.takeIf { EMAIL.matches(it) }
+
+private const val MIN_PHONE_DIGITS = 6
+private val EMAIL = Regex("^[^\\s?&#%@]+@[^\\s?&#%@]+\\.[^\\s?&#%@]+$")
 
 private fun addToCalendar(
     context: Context,
-    item: TodayItem,
+    item: UpcomingItem,
 ) {
     val intent =
         Intent(Intent.ACTION_INSERT, CalendarContract.Events.CONTENT_URI)
