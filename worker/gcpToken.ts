@@ -38,6 +38,8 @@ const STS_URL = 'https://sts.googleapis.com/v1/token';
 const FEDERATED_SCOPE = 'https://www.googleapis.com/auth/cloud-platform';
 /** Impersonated service-account token: Firestore only. */
 const DATASTORE_SCOPE = 'https://www.googleapis.com/auth/datastore';
+/** Impersonated token for FCM HTTP v1 sends (pass as `scope`). */
+export const FIREBASE_MESSAGING_SCOPE = 'https://www.googleapis.com/auth/firebase.messaging';
 
 export function readWorkloadIdentityConfig(env: DataPlaneEnv): WorkloadIdentityConfig | null {
   const audience = env.GCP_WIF_AUDIENCE?.trim() ?? '';
@@ -50,10 +52,14 @@ export function readWorkloadIdentityConfig(env: DataPlaneEnv): WorkloadIdentityC
   return { audience, issuer, subject, keyId, privateKeyPem, serviceAccountEmail };
 }
 
-export function tokenProviderFromEnv(env: DataPlaneEnv, fetchImpl: typeof fetch): GcpTokenProvider | null {
+export function tokenProviderFromEnv(
+  env: DataPlaneEnv,
+  fetchImpl: typeof fetch,
+  scope: string = DATASTORE_SCOPE,
+): GcpTokenProvider | null {
   const config = readWorkloadIdentityConfig(env);
   if (!config) return null;
-  return new WorkloadIdentityTokenProvider(config, fetchImpl);
+  return new WorkloadIdentityTokenProvider(config, fetchImpl, scope);
 }
 
 type CachedToken = { token: string; expiresAtMs: number };
@@ -62,15 +68,17 @@ export class WorkloadIdentityTokenProvider implements GcpTokenProvider {
   private cached: CachedToken | null = null;
   private readonly config: WorkloadIdentityConfig;
   private readonly fetchImpl: typeof fetch;
+  private readonly scope: string;
 
-  constructor(config: WorkloadIdentityConfig, fetchImpl: typeof fetch) {
+  constructor(config: WorkloadIdentityConfig, fetchImpl: typeof fetch, scope: string = DATASTORE_SCOPE) {
     this.config = config;
     this.fetchImpl = fetchImpl;
+    this.scope = scope;
   }
 
   async getAccessToken(now = Date.now()): Promise<string> {
     if (this.cached && now < this.cached.expiresAtMs - REFRESH_SKEW_MS) return this.cached.token;
-    const exchanged = await exchangeForAccessToken(this.config, this.fetchImpl, now);
+    const exchanged = await exchangeForAccessToken(this.config, this.fetchImpl, now, this.scope);
     if (!exchanged.ok) {
       const failed = exchanged.steps.find((step) => !step.ok);
       throw new Error(failed?.error ?? 'token exchange failed');
@@ -98,6 +106,7 @@ export async function exchangeForAccessToken(
   config: WorkloadIdentityConfig,
   fetchImpl: typeof fetch,
   now = Date.now(),
+  scope: string = DATASTORE_SCOPE,
 ): Promise<WorkloadIdentityExchange> {
   const steps: WifChainStep[] = [];
   const signStarted = Date.now();
@@ -122,7 +131,7 @@ export async function exchangeForAccessToken(
 
   const iamStarted = Date.now();
   try {
-    const impersonated = await impersonate(fetchImpl, config.serviceAccountEmail, federated);
+    const impersonated = await impersonate(fetchImpl, config.serviceAccountEmail, federated, scope);
     steps.push(chainStep('impersonate', iamStarted));
     return { ok: true, token: impersonated.token, expiresAtMs: impersonated.expiresAtMs, steps };
   } catch (err) {
@@ -184,7 +193,12 @@ async function stsExchange(fetchImpl: typeof fetch, audience: string, subjectTok
   return token;
 }
 
-async function impersonate(fetchImpl: typeof fetch, serviceAccountEmail: string, federatedToken: string): Promise<CachedToken> {
+async function impersonate(
+  fetchImpl: typeof fetch,
+  serviceAccountEmail: string,
+  federatedToken: string,
+  scope: string,
+): Promise<CachedToken> {
   const url = `https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${encodeURIComponent(serviceAccountEmail)}:generateAccessToken`;
   const response = await fetchImpl(url, {
     method: 'POST',
@@ -192,7 +206,7 @@ async function impersonate(fetchImpl: typeof fetch, serviceAccountEmail: string,
       'content-type': 'application/json',
       authorization: `Bearer ${federatedToken}`,
     },
-    body: JSON.stringify({ scope: [DATASTORE_SCOPE], lifetime: '3600s' }),
+    body: JSON.stringify({ scope: [scope], lifetime: '3600s' }),
   });
   if (!response.ok) {
     const reason = await iamReason(response);

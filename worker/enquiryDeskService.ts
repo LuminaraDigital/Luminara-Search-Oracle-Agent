@@ -8,6 +8,7 @@
  * 4. Evidence-Bound Opportunity Brief generation, 6-Stage Outcomes Ledger recording, and Twenty CRM sync.
  */
 
+import { callbackMessage, notifyAgent } from './pushNotifyService';
 import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
 import { billingId, json } from './workerUtils';
@@ -346,6 +347,9 @@ export async function ingestInboundEnquiry(
     attributionAuditId: args.attributionAuditId?.trim() || null, createdAt: now, updatedAt: now,
   };
 
+  if (evaluation.action === 'escalate_to_agent') {
+    await notifyAgent(env, args.accountId, callbackMessage(fullName, enquiryId));
+  }
   await finalizeExternalEffect(env, effectCheck.effectKey, args.accountId, { enquiry: enquiryRecord, evaluation }, now);
   return { ok: true, duplicate: false, effectKey: effectCheck.effectKey, enquiry: enquiryRecord, evaluation };
 }
@@ -516,6 +520,10 @@ export async function appendEnquiryTurn(
     brief,
     now,
   });
+
+  if (evaluation.action === 'escalate_to_agent') {
+    await notifyAgent(env, args.accountId, callbackMessage(existing.contactName, existing.id));
+  }
 
   return {
     ok: true,

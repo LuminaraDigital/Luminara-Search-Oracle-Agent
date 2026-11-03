@@ -7,6 +7,7 @@
  *    transitions to `approved` and records `agent_approved_booking` in the Outcomes Ledger.
  */
 
+import { notifyAgent, signoffMessage } from './pushNotifyService';
 import type { Env } from './env';
 import { recordOutcomeStageEvent } from './outcomesLedgerService';
 import { safeJsonParse } from '../services/llm/safeJsonParse';
@@ -158,6 +159,11 @@ export async function createBookingProposal(
   )
     .bind(now, args.enquiryId, args.accountId)
     .run();
+
+  const contact = await env.DB.prepare(`SELECT full_name FROM crm_contacts WHERE id = ? AND account_id = ?`)
+    .bind(resolvedContactId, args.accountId)
+    .first<{ full_name: string }>();
+  await notifyAgent(env, args.accountId, signoffMessage(contact?.full_name, args.enquiryId, id));
 
   return {
     ok: true,

@@ -152,6 +152,7 @@ import { ingestProductAnalytics } from './productAnalytics';
 import { handleWeeklyDecisionsRoute, sendWeeklyDecisionDigest } from './weeklyDecisionService';
 import { handleDreamingRoute } from './dreamingService';
 import { handleRsiRoute } from './rsiRoutes';
+import { handlePushRoute } from './pushNotifyService';
 import { handleEnquiryDeskRoute } from './enquiryDeskService';
 import { handleRecoveryRoute, sweepDueRecoveryRuns } from './recoveryCampaignService';
 import { handleCmsMcpRoute } from './cmsMcpRelay';
@@ -1736,6 +1737,16 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     const who = await identify(request, env);
     const launchpadRes = await handleLaunchpadRoute(request, env, who, path);
     if (launchpadRes) return withCors(launchpadRes);
+  }
+
+  // Android push device registration (migration 0047).
+  if (path === '/push/devices') {
+    const who = identifiedForRequest(request) ?? (await identify(request, env));
+    if (who.error || !who.user) {
+      return withCors(json({ ok: false, error: who.error || 'Unauthorized', code: 'AUTH_REQUIRED' }, 401));
+    }
+    const res = await handlePushRoute(request, env, who.user, path);
+    if (res) return withCors(res);
   }
 
   // 4-Module Conversion Spine (0042) & CMS Fixer MCP Relay.

@@ -591,6 +591,13 @@ URLs, TON pricing vars, D1 `DB`, KV `LUMINARA_KV`. Secrets stay server-side.
 - **Daily `recovery_campaign_sweep` cron (`worker/recoveryCampaignService.ts`)**: deterministic 0-LLM-token (`no-agent`) sweep that checks Australian Spam Act 2003 consent, local state calling hours (09:00-20:00 Mon-Fri, 09:00-17:00 Sat, never Sun), prospect replies, and agent takeover before dispatching due steps.
 - **3-Tier CMS Fixer MCP Relay (`worker/cmsMcpRelay.ts`)**: Tier 1 (Auto-Fix) and Tier 2 (Guided Patch) prepare idempotent JSON-RPC envelopes for WordPress (`wordpress_com_mcp`, `gobuildwp_mcp`, `respira_wp_mcp`, `instawp_mcp`), Wix (`wix_official_mcp`), and Squarespace (`squarespace_bridge`); Tier 3 full-stack/automation scope returns an architectural handoff brief pointing to `https://luminara.digital`.
 
+## Agent push notifications (migration 0047, `tests/pushNotify.test.ts`)
+
+- `POST,DELETE /push/devices` (session auth, `worker/pushNotifyService.ts`) register or remove an Android FCM token for the signed-in account. Max 10 devices per account, oldest dropped. A token seen under another account moves to the caller.
+- Sends use FCM HTTP v1 with the keyless Workload Identity flow in `worker/gcpToken.ts` (scope `firebase.messaging`, separate from the Firestore token). Triggers: a booking proposal pending sign-off, and an enquiry escalating to the agent (`ingestInboundEnquiry`, `appendEnquiryTurn`). Tokens FCM reports `UNREGISTERED` or 404 are deleted.
+- Invariant: push is optional. Without `FCM_PROJECT_ID` or the WIF config, sending is a logged no-op and never fails or noticeably slows the request (3 s cap, errors swallowed).
+- Invariant: notification bodies are visible on lock screens. They carry a contact's first name at most, never an address, phone number or email.
+
 ## Key tests
 
 - `tests/userStore.test.ts`: user/profile + workspace blob round trip.

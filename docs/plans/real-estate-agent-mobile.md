@@ -74,3 +74,15 @@ RE0 then RE1 first: they change what an agent sees on day one and reuse existing
 1. Base branch: build on `origin/main` after the Android draft PRs (319, 320, 325) land, or on `feat/android-obsidian-gold`?
 2. Agent mode as a choice, or real estate as the Android default for everyone?
 3. Push notifications: add Firebase Cloud Messaging now, or later?
+
+## Push notifications setup
+
+Worker side is built (`worker/pushNotifyService.ts`, migration `0047_push_devices.sql`). It stays a silent no-op until an operator does this:
+
+1. Enable the Firebase Cloud Messaging API in Google Cloud project `luminara-suite`.
+2. Grant the impersonated Worker service account (the value of `GCP_IMPERSONATE_SERVICE_ACCOUNT`, see `worker/gcpToken.ts`) the role "Firebase Cloud Messaging API Admin" (`roles/firebasecloudmessaging.admin`) on project `luminara-suite`.
+3. Set `FCM_PROJECT_ID=luminara-suite` as a plain var in the Worker config (`wrangler.jsonc`, the production `vars` block; staging can use the same project or stay unset). It is not a secret.
+4. Apply migration 0047 through the normal release flow (CI migrates before deploy).
+5. Android: create the `agent_signoff` notification channel and register the FCM token with `POST /api/push/devices`.
+
+Notification text never contains an address, phone number or email. Only the contact's first name appears.
