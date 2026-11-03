@@ -1,5 +1,6 @@
 package com.luminarasuite.app.core.network
 
+import com.luminarasuite.app.BuildConfig
 import com.luminarasuite.app.core.auth.FIREBASE_SDK_REFRESH
 import com.luminarasuite.app.core.auth.VaultStorage
 import com.luminarasuite.app.core.model.AuthRefreshRequest
@@ -87,10 +88,17 @@ class SessionAuthenticator(
     }
 }
 
+/** Debug builds only: routes a request to a 0% preview Worker version. Release builds pass "" (build.gradle.kts). */
+const val WORKER_VERSION_OVERRIDE_HEADER = "Cloudflare-Workers-Version-Overrides"
+
+fun Request.Builder.withWorkerVersion(override: String): Request.Builder =
+    if (override.isEmpty()) this else header(WORKER_VERSION_OVERRIDE_HEADER, override)
+
 /** Uses its own client so a refresh can never re-enter the authenticator. */
 fun refreshOverHttp(
     apiBaseUrl: String,
     json: Json,
+    workerVersionOverride: String = BuildConfig.WORKER_VERSION_OVERRIDE,
     appCheckToken: () -> String? = { null },
 ): (String) -> RefreshOutcome {
     val client = OkHttpClient.Builder().callTimeout(15, TimeUnit.SECONDS).build()
@@ -101,6 +109,7 @@ fun refreshOverHttp(
                 .url("${apiBaseUrl}api/auth/refresh")
                 .post(json.encodeToString(AuthRefreshRequest(refreshToken)).toRequestBody(jsonType))
         appCheckHeaderValue(appCheckToken())?.let { requestBuilder.header(FIREBASE_APP_CHECK_HEADER, it) }
+        requestBuilder.withWorkerVersion(workerVersionOverride)
         val request = requestBuilder.build()
         try {
             client.newCall(request).execute().use { res ->

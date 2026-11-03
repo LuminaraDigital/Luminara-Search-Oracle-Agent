@@ -21,6 +21,7 @@ import com.luminarasuite.app.core.network.WorkspaceGateway
 import com.luminarasuite.app.core.network.appCheckHeaderValue
 import com.luminarasuite.app.core.network.chooseSessionRefresh
 import com.luminarasuite.app.core.network.refreshOverHttp
+import com.luminarasuite.app.core.network.withWorkerVersion
 import kotlinx.coroutines.runBlocking
 import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
@@ -58,10 +59,7 @@ class LuminaraApplication : Application() {
                 appCheckHeaderValue(appCheckTokens.current())?.let { appCheck ->
                     reqBuilder.header(FIREBASE_APP_CHECK_HEADER, appCheck)
                 }
-                // Debug builds only: route to a 0% preview Worker version. Release builds set this to "".
-                if (BuildConfig.WORKER_VERSION_OVERRIDE.isNotEmpty()) {
-                    reqBuilder.header("Cloudflare-Workers-Version-Overrides", BuildConfig.WORKER_VERSION_OVERRIDE)
-                }
+                reqBuilder.withWorkerVersion(BuildConfig.WORKER_VERSION_OVERRIDE)
                 chain.proceed(reqBuilder.build())
             }
 
