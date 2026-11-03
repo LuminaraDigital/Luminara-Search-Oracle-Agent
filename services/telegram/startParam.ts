@@ -29,6 +29,8 @@ const VIEW_BY_TOKEN: Record<string, AppView> = {
   ASK: AppView.ORACLE_AGENT,
   DASHBOARD: AppView.DASHBOARD,
   HOME: AppView.DASHBOARD,
+  TODAY: AppView.AGENT_TODAY,
+  AGENT: AppView.AGENT_TODAY,
   HARNESS: AppView.HARNESS,
   DEV: AppView.HARNESS,
   DNA: AppView.BUSINESS_DNA,
