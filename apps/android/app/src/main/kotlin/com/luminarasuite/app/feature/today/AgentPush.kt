@@ -39,6 +39,12 @@ object AgentPush {
     /** Called before sign-out, while the session can still prove which account owns the device. */
     suspend fun unregister(workspace: WorkspaceGateway) {
         currentToken()?.let { workspace.removePushToken(it) }
+        // If the server call failed, a dead token still stops alerts: FCM reports it and the Worker drops it.
+        runCatching {
+            suspendCancellableCoroutine<Unit> { cont ->
+                FirebaseMessaging.getInstance().deleteToken().addOnCompleteListener { cont.resume(Unit) }
+            }
+        }
     }
 
     // Null when Play services or Firebase is unavailable. Alerts are optional, so the app carries on.
