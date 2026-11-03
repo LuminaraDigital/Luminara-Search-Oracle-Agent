@@ -9,7 +9,8 @@ type Appraisal = Contact & { address: string | null; startAt: number; endAt: num
 
 function phoneDigits(phone: string | null): string | null {
   const digits = (phone ?? '').replace(/[^\d+]/g, '');
-  return digits.length >= 6 ? digits : null;
+  // A + only at the start, matching the Android app.
+  return digits.length >= 6 && digits.lastIndexOf('+') <= 0 ? digits : null;
 }
 
 export function telLink(phone: string | null): string | null {

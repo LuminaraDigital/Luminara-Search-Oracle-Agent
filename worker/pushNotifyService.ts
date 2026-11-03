@@ -78,7 +78,7 @@ export async function sendAgentPush(env: Env, accountId: string, message: PushMe
     const data: Record<string, string> = { kind: message.kind, enquiryId: message.enquiryId, open: 'today' };
     if (message.appointmentId) data.appointmentId = message.appointmentId;
     // Parallel, each bounded, so every send finishes or aborts inside the caller's wait.
-    await Promise.all(rows.map(async (device) => {
+    await Promise.allSettled(rows.map(async (device) => {
       const res = await fetchImpl(url, {
         method: 'POST',
         signal: AbortSignal.timeout(PUSH_SEND_TIMEOUT_MS),
@@ -94,8 +94,8 @@ export async function sendAgentPush(env: Env, accountId: string, message: PushMe
       });
       if (res.ok) return;
       const text = await res.text().catch(() => '');
-      // A dead or malformed token never recovers, so it is removed.
-      if (res.status === 404 || /UNREGISTERED|INVALID_ARGUMENT/.test(text)) {
+      // Only a token FCM says is gone is removed. INVALID_ARGUMENT can also mean our payload, so it is kept.
+      if (res.status === 404 || /UNREGISTERED/.test(text)) {
         await db.prepare(`DELETE FROM push_devices WHERE id = ?`).bind(device.id).run();
       } else {
         await db.prepare(`UPDATE push_devices SET last_error = ?, updated_at = ? WHERE id = ?`)

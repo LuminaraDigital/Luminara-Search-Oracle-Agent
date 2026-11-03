@@ -522,8 +522,10 @@ export async function appendEnquiryTurn(
     now,
   });
 
-  // Only the first escalation alerts; later messages from the same person do not buzz the agent again.
-  if (evaluation.action === 'escalate_to_agent' && !existing.qualificationBrief.escalationRequired) {
+  // Alert when this is a new call-back: not already escalated, or the agent had replied since.
+  const alreadyWaiting =
+    existing.qualificationBrief.escalationRequired && existing.conversation.at(-1)?.sender !== 'agent';
+  if (evaluation.action === 'escalate_to_agent' && !alreadyWaiting) {
     await notifyAgent(env, args.accountId, callbackMessage(existing.contactName, existing.id));
   }
 
@@ -641,9 +643,9 @@ async function listTodayEnquiries(
   if (!env.DB) return [];
   const rows = await env.DB.prepare(
     `${ENQUIRY_SELECT_SQL}
-     WHERE e.account_id = ? AND e.project_id = ? AND e.status != 'closed' AND (
+     WHERE e.account_id = ? AND e.project_id = ? AND (
        (e.status = 'new' AND e.sla_due_at > 0 AND e.sla_due_at < ?)
-       OR json_extract(e.qualification_brief_json, '$.escalationRequired') = 1
+       OR (e.status != 'closed' AND json_extract(e.qualification_brief_json, '$.escalationRequired') = 1)
        OR e.id IN (
          SELECT enquiry_id FROM appraisal_appointments
          WHERE account_id = ? AND project_id = ? AND (

@@ -29,6 +29,7 @@ describe('agent Today helpers', () => {
     expect(smsLink('+61 412 345 678')).toBe('sms:+61412345678');
     expect(telLink(null)).toBeNull();
     expect(telLink('12')).toBeNull();
+    expect(telLink('12+34567')).toBeNull();
     expect(mailLink('sam@example.com.au')).toBe('mailto:sam@example.com.au');
     expect(mailLink('not an email')).toBeNull();
   });

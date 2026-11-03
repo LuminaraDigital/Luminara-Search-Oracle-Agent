@@ -64,19 +64,24 @@ describe('Agent Today regressions', () => {
 
     await appendEnquiryTurn(env, { accountId: AGENT.id, enquiryId: buyer.enquiry.id, sender: 'agent', text: 'Calling you now.', actorUserId: AGENT.id });
     expect((await today(env)).callBack).toEqual([]);
+
+    // A fresh legal question after the agent replied is a new call-back, so it alerts again.
+    await appendEnquiryTurn(env, { accountId: AGENT.id, enquiryId: buyer.enquiry.id, sender: 'prospect', text: SECTION_32, actorUserId: AGENT.id });
+    expect(notified).toEqual([`callback:${buyer.enquiry.id}`, `callback:${buyer.enquiry.id}`]);
+    expect((await today(env)).callBack.map((x) => x.enquiryId)).toEqual([buyer.enquiry.id]);
   });
 
-  it('removes a token FCM rejects as malformed', async () => {
+  it('keeps a device when FCM rejects the payload, so one bad message never wipes every phone', async () => {
     const env = { DB: createSqliteD1(), FCM_PROJECT_ID: 'luminara-suite' } as unknown as Env;
     await env.DB!.prepare(
-      `INSERT INTO push_devices (id, account_id, token, platform, created_at, updated_at) VALUES ('pd_1', ?, 'bad_token_aaaaaaaaaaaaaaaaaaaa', 'android', 1, 1)`,
+      `INSERT INTO push_devices (id, account_id, token, platform, created_at, updated_at) VALUES ('pd_1', ?, 'token_aaaaaaaaaaaaaaaaaaaaaaaa', 'android', 1, 1)`,
     ).bind(AGENT.id).run();
     const fetchImpl = vi.fn(async () => new Response('{"error":{"status":"INVALID_ARGUMENT"}}', { status: 400 }));
     await sendAgentPush(env, AGENT.id, signoffMessage('Sam', 'e1', 'a1'), {
       fetchImpl: fetchImpl as unknown as typeof fetch,
       tokenProvider: new StubGcpTokenProvider(),
     });
-    const left = await env.DB!.prepare('SELECT COUNT(*) AS n FROM push_devices').first<{ n: number }>();
-    expect(left?.n).toBe(0);
+    const row = await env.DB!.prepare('SELECT last_error FROM push_devices').first<{ last_error: string }>();
+    expect(row?.last_error).toBe('fcm 400');
   });
 });
