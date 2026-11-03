@@ -87,6 +87,7 @@ const ResearchView = lazyWithReload(() => import('./components/suite/ResearchVie
 const VisionView = lazyWithReload(() => import('./components/suite/VisionView').then(m => ({ default: m.VisionView })));
 const TimesFMView = lazyWithReload(() => import('./components/suite/TimesFMView').then(m => ({ default: m.TimesFMView })));
 const OracleMindView = lazyWithReload(() => import('./components/suite/OracleMindView').then(m => ({ default: m.OracleMindView })));
+const AgentTodayView = lazyWithReload(() => import('./components/suite/AgentTodayView').then(m => ({ default: m.AgentTodayView })));
 const EnquiryDeskView = lazyWithReload(() => import('./components/suite/EnquiryDeskView').then(m => ({ default: m.EnquiryDeskView })));
 const ArchyHarnessView = lazyWithReload(() => import('./components/harness/ArchyHarnessView').then(m => ({ default: m.ArchyHarnessView })));
 const OmnibarModal = lazyWithReload(() => import('./components/harness/OmnibarModal').then(m => ({ default: m.OmnibarModal })));
@@ -1365,9 +1366,9 @@ const App: React.FC = () => {
               data-header-item="more"
               aria-haspopup="menu"
               aria-expanded={showSuiteMenu}
-              aria-pressed={[AppView.DASHBOARD, AppView.ENQUIRY_DESK, AppView.TRUST_CENTER, AppView.NOTEBOOK, AppView.HARNESS, AppView.BUSINESS_DNA, AppView.STRESS_TEST, AppView.DATA_ANALYST, AppView.TIMESFM_FORECAST, AppView.ORACLE_MIND, AppView.ORGANIZER, AppView.RESEARCH, AppView.VISION, AppView.BRAND_MEMORY].includes(view)}
+              aria-pressed={[AppView.DASHBOARD, AppView.ENQUIRY_DESK, AppView.AGENT_TODAY, AppView.TRUST_CENTER, AppView.NOTEBOOK, AppView.HARNESS, AppView.BUSINESS_DNA, AppView.STRESS_TEST, AppView.DATA_ANALYST, AppView.TIMESFM_FORECAST, AppView.ORACLE_MIND, AppView.ORGANIZER, AppView.RESEARCH, AppView.VISION, AppView.BRAND_MEMORY].includes(view)}
               className={`px-2.5 sm:px-3 py-2 min-h-11 rounded text-[11px] shrink-0 whitespace-nowrap ${
-                [AppView.DASHBOARD, AppView.ENQUIRY_DESK, AppView.TRUST_CENTER, AppView.NOTEBOOK, AppView.HARNESS, AppView.BUSINESS_DNA, AppView.STRESS_TEST, AppView.DATA_ANALYST, AppView.TIMESFM_FORECAST, AppView.ORACLE_MIND, AppView.ORGANIZER, AppView.RESEARCH, AppView.VISION, AppView.BRAND_MEMORY].includes(view)
+                [AppView.DASHBOARD, AppView.ENQUIRY_DESK, AppView.AGENT_TODAY, AppView.TRUST_CENTER, AppView.NOTEBOOK, AppView.HARNESS, AppView.BUSINESS_DNA, AppView.STRESS_TEST, AppView.DATA_ANALYST, AppView.TIMESFM_FORECAST, AppView.ORACLE_MIND, AppView.ORGANIZER, AppView.RESEARCH, AppView.VISION, AppView.BRAND_MEMORY].includes(view)
                   ? 'bg-gold/20 text-gold-light hover:text-gold-light hover:bg-gold/20 border border-gold/40'
                   : ''
               }`}
@@ -1456,6 +1457,14 @@ const App: React.FC = () => {
                   >
                     <ICONS.DNA className="w-3.5 h-3.5 text-gold-light" />
                     <span>Business profile</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setView(AppView.AGENT_TODAY); setShowSuiteMenu(false); }}
+                    className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                  >
+                    <ICONS.Organizer className="w-3.5 h-3.5 text-gold-light" />
+                    <span>Today (agents)</span>
                   </button>
                   <button
                     type="button"
@@ -1883,6 +1892,15 @@ const App: React.FC = () => {
         {/* VIEW: Enquiry Desk & 6-Stage Outcomes Ledger */}
         {view === AppView.ENQUIRY_DESK && (
           <EnquiryDeskView />
+        )}
+
+        {/* VIEW: Agent Today (sign-offs, call-backs, week scorecard) */}
+        {view === AppView.AGENT_TODAY && (
+          <AgentTodayView
+            key={appAuth.authenticated ? 'signed-in' : 'signed-out'}
+            onOpenEnquiryDesk={() => setView(AppView.ENQUIRY_DESK)}
+            onSignIn={() => openLoginWall('signin')}
+          />
         )}
 
         {/* VIEW: Ecosystem & Playbook Hub */}

@@ -38,6 +38,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Assignment
 import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Dashboard
 import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.Headphones
@@ -58,6 +59,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
@@ -98,6 +100,9 @@ import com.luminarasuite.app.feature.share.SharedReportScreen
 import com.luminarasuite.app.feature.share.SharedViewModel
 import com.luminarasuite.app.feature.studio.StudioScreen
 import com.luminarasuite.app.feature.studio.StudioViewModel
+import com.luminarasuite.app.feature.today.AgentPush
+import com.luminarasuite.app.feature.today.TodayScreen
+import com.luminarasuite.app.feature.today.TodayViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
@@ -107,6 +112,7 @@ enum class LuminaraTab(
     val icon: ImageVector,
     val tag: String,
 ) {
+    TODAY("Today", Icons.Outlined.CheckCircle, "nav_tab_today"),
     HOME("Home", Icons.Outlined.Dashboard, "nav_tab_home"),
     ASK("Ask", Icons.Outlined.AutoAwesome, "nav_tab_ask"),
     SCOUT("Scout", Icons.Outlined.Explore, "nav_tab_scout"),
@@ -119,17 +125,24 @@ private enum class Overlay { MEMORY, SETTINGS, SHARED, PROFILE, ENQUIRIES }
 private const val PREFS = "luminara_app"
 private const val KEY_WELCOMED = "welcomed"
 
+/** Notification taps open the agent's Today screen. */
+const val EXTRA_OPEN = "open"
+const val OPEN_TODAY = "today"
+
 class MainActivity : ComponentActivity() {
     private val sharedLink = MutableStateFlow<ShareLink?>(null)
+    private val openToday = MutableStateFlow(false)
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         sharedLink.value = ShareLink.parse(intent.dataString)
+        openToday.value = intent.getStringExtra(EXTRA_OPEN) == OPEN_TODAY
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         sharedLink.value = ShareLink.parse(intent?.dataString)
+        openToday.value = intent?.getStringExtra(EXTRA_OPEN) == OPEN_TODAY
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.dark(Color.Transparent.toArgb()),
             navigationBarStyle = SystemBarStyle.dark(Color.Transparent.toArgb()),
@@ -144,6 +157,9 @@ class MainActivity : ComponentActivity() {
                     sharedLinks = sharedLink,
                     showWelcome = !prefs.getBoolean(KEY_WELCOMED, false),
                     onWelcomed = { prefs.edit().putBoolean(KEY_WELCOMED, true).apply() },
+                    initialAgentMode = prefs.getBoolean(AgentPush.KEY_AGENT_MODE, false),
+                    onAgentModeChange = { prefs.edit().putBoolean(AgentPush.KEY_AGENT_MODE, it).apply() },
+                    openTodayRequests = openToday,
                 )
             }
         }
@@ -157,25 +173,51 @@ fun LuminaraWorkbenchApp(
     sharedLinks: StateFlow<ShareLink?> = MutableStateFlow(null),
     showWelcome: Boolean = false,
     onWelcomed: () -> Unit = {},
+    initialAgentMode: Boolean = false,
+    onAgentModeChange: (Boolean) -> Unit = {},
+    openTodayRequests: MutableStateFlow<Boolean> = MutableStateFlow(false),
 ) {
     var welcome by rememberSaveable { mutableStateOf(showWelcome) }
-    var selectedTab by rememberSaveable { mutableStateOf(LuminaraTab.HOME) }
+    var agentMode by rememberSaveable { mutableStateOf(initialAgentMode) }
+    val homeTab = if (agentMode) LuminaraTab.TODAY else LuminaraTab.HOME
+    var selectedTab by rememberSaveable { mutableStateOf(homeTab) }
     var overlay by rememberSaveable { mutableStateOf<Overlay?>(null) }
     var askSeed by rememberSaveable { mutableStateOf<String?>(null) }
 
     val auditViewModel = viewModel { AuditViewModel(repository) }
     val askViewModel = viewModel { AskViewModel(repository) }
     val dashboardViewModel = viewModel { DashboardViewModel(repository) }
-    val settingsViewModel = viewModel { SettingsViewModel(repository) }
+    val settingsViewModel =
+        viewModel { SettingsViewModel(repository, beforeSignOut = { AgentPush.unregister(workspace) }) }
     val scoutViewModel = viewModel { ScoutViewModel(repository) }
     val studioViewModel = viewModel { StudioViewModel(repository) }
     val sharedViewModel = viewModel { SharedViewModel(workspace, repository) }
     val profileViewModel = viewModel { BusinessProfileViewModel(workspace) }
     val enquiryViewModel = viewModel { EnquiryDeskViewModel(workspace, repository) }
+    val todayViewModel = viewModel { TodayViewModel(workspace) }
+
+    fun setAgentMode(on: Boolean) {
+        agentMode = on
+        onAgentModeChange(on)
+        if (!on && selectedTab == LuminaraTab.TODAY) selectedTab = LuminaraTab.HOME
+    }
 
     val quota by repository.quotaFlow.collectAsState()
     val vault by repository.vaultFlow.collectAsState(initial = VaultSnapshot())
     LaunchedEffect(vault.isSignedIn) { repository.refreshQuota() }
+    val context = LocalContext.current
+    LaunchedEffect(vault.isSignedIn, agentMode) {
+        if (vault.isSignedIn && agentMode) AgentPush.register(context, workspace)
+    }
+    val todayRequested by openTodayRequests.collectAsState()
+    LaunchedEffect(todayRequested) {
+        if (todayRequested) {
+            welcome = false
+            overlay = null
+            selectedTab = LuminaraTab.TODAY
+            openTodayRequests.value = false
+        }
+    }
 
     // People upgrading with saved audits already know the app, so they skip first-run.
     val hasHistory by remember { repository.auditHistoryFlow.map { it.isNotEmpty() } }
@@ -219,12 +261,18 @@ fun LuminaraWorkbenchApp(
                 welcome = false
                 onWelcomed()
             },
+            onAgent = {
+                welcome = false
+                onWelcomed()
+                setAgentMode(true)
+                selectedTab = LuminaraTab.TODAY
+            },
         )
         return
     }
 
     BackHandler(enabled = overlay != null) { overlay = null }
-    BackHandler(enabled = overlay == null && selectedTab != LuminaraTab.HOME) { selectedTab = LuminaraTab.HOME }
+    BackHandler(enabled = overlay == null && selectedTab != homeTab) { selectedTab = homeTab }
 
     ObsidianBackdrop {
         Column(
@@ -238,7 +286,7 @@ fun LuminaraWorkbenchApp(
                 vault = vault,
                 onMark = {
                     overlay = null
-                    selectedTab = LuminaraTab.HOME
+                    selectedTab = homeTab
                 },
                 onAccount = { overlay = Overlay.SETTINGS },
             )
@@ -268,10 +316,19 @@ fun LuminaraWorkbenchApp(
                                 viewModel = settingsViewModel,
                                 onOpenProfile = { overlay = Overlay.PROFILE },
                                 onOpenEnquiries = { overlay = Overlay.ENQUIRIES },
+                                agentMode = agentMode,
+                                onAgentModeChange = ::setAgentMode,
                             )
                         Overlay.SHARED.name -> SharedReportScreen(viewModel = sharedViewModel)
                         Overlay.PROFILE.name -> BusinessProfileScreen(viewModel = profileViewModel)
                         Overlay.ENQUIRIES.name -> EnquiryDeskScreen(viewModel = enquiryViewModel)
+                        LuminaraTab.TODAY.name ->
+                            TodayScreen(
+                                viewModel = todayViewModel,
+                                signedIn = vault.isSignedIn,
+                                onSignIn = { overlay = Overlay.SETTINGS },
+                                onOpenEnquiries = { overlay = Overlay.ENQUIRIES },
+                            )
                         LuminaraTab.ASK.name ->
                             AskScreen(
                                 viewModel = askViewModel,
@@ -320,6 +377,7 @@ fun LuminaraWorkbenchApp(
             val keyboardOpen = WindowInsets.ime.getBottom(LocalDensity.current) > 0
             if (!keyboardOpen) {
                 Dock(
+                    tabs = LuminaraTab.entries.filter { agentMode || it != LuminaraTab.TODAY },
                     selected = selectedTab.takeIf { overlay == null },
                     onSelect = {
                         overlay = null
@@ -410,6 +468,7 @@ private fun quotaLabel(quota: QuotaStatus?): String? =
 
 @Composable
 private fun Dock(
+    tabs: List<LuminaraTab>,
     selected: LuminaraTab?,
     onSelect: (LuminaraTab) -> Unit,
 ) {
@@ -424,7 +483,7 @@ private fun Dock(
             .padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        LuminaraTab.entries.forEach { tab ->
+        tabs.forEach { tab ->
             val active = tab == selected
             val tint = if (active) LuminaraColors.GoldAccent else LuminaraColors.Ink3
             Column(

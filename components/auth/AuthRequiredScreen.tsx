@@ -43,6 +43,8 @@ function featureExplanation(view?: string): string | null {
       return 'Reports need a free account so saved audits stay on this login.';
     case 'ENQUIRY_DESK':
       return 'Enquiry Desk cloud sync needs a free account so your leads and Outcomes Ledger stay on this login.';
+    case 'AGENT_TODAY':
+      return 'Today needs a free account so your sign-offs and call-backs stay on this login.';
     default:
       return null;
   }

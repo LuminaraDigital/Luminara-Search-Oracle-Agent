@@ -7,6 +7,7 @@
  *    transitions to `approved` and records `agent_approved_booking` in the Outcomes Ledger.
  */
 
+import { notifyAgent, signoffMessage } from './pushNotifyService';
 import type { Env } from './env';
 import { recordOutcomeStageEvent } from './outcomesLedgerService';
 import { safeJsonParse } from '../services/llm/safeJsonParse';
@@ -116,10 +117,12 @@ export async function createBookingProposal(
   }
 
   const enquiryRow = await env.DB.prepare(
-    `SELECT id, contact_id, property_id FROM enquiries WHERE id = ? AND account_id = ? AND project_id = ? LIMIT 1`,
+    `SELECT e.id, e.contact_id, e.property_id, c.full_name
+     FROM enquiries e LEFT JOIN crm_contacts c ON c.id = e.contact_id AND c.account_id = e.account_id
+     WHERE e.id = ? AND e.account_id = ? AND e.project_id = ? LIMIT 1`,
   )
     .bind(args.enquiryId, args.accountId, args.projectId)
-    .first<{ id: string; contact_id: string; property_id: string | null }>();
+    .first<{ id: string; contact_id: string; property_id: string | null; full_name: string | null }>();
   if (!enquiryRow) {
     return {
       ok: false,
@@ -158,6 +161,8 @@ export async function createBookingProposal(
   )
     .bind(now, args.enquiryId, args.accountId)
     .run();
+
+  await notifyAgent(env, args.accountId, signoffMessage(enquiryRow.full_name, args.enquiryId, id));
 
   return {
     ok: true,
@@ -357,21 +362,27 @@ export async function decideBookingAppointment(
   };
 }
 
+/** With `openFrom`, only the ones still needing the agent: pending sign-off, or approved and not yet started. */
 export async function listProjectAppointments(
   env: Env,
   accountId: string,
   projectId: string,
+  openFrom?: number,
 ): Promise<AppraisalAppointmentRecord[]> {
   if (!env.DB) return [];
+  const open =
+    openFrom === undefined
+      ? ''
+      : `AND (approval_status = 'pending_agent_signoff' OR (approval_status = 'approved' AND confirmed_start_at >= ?))`;
   const rows = await env.DB.prepare(
     `SELECT id, account_id, project_id, enquiry_id, contact_id, property_id, assigned_agent_id,
             proposed_slots_json, confirmed_start_at, confirmed_end_at, approval_status,
             approved_by_user_id, approved_at, calendar_external_id, created_at, updated_at
      FROM appraisal_appointments
-     WHERE account_id = ? AND project_id = ?
+     WHERE account_id = ? AND project_id = ? ${open}
      ORDER BY created_at DESC LIMIT 100`,
   )
-    .bind(accountId, projectId)
+    .bind(...(openFrom === undefined ? [accountId, projectId] : [accountId, projectId, openFrom]))
     .all<Record<string, unknown>>();
   return (rows.results || []).map((row) => {
     const rawSlots = safeJsonParse<unknown[]>(String(row.proposed_slots_json || '[]'), []);
