@@ -58,6 +58,10 @@ class LuminaraApplication : Application() {
                 appCheckHeaderValue(appCheckTokens.current())?.let { appCheck ->
                     reqBuilder.header(FIREBASE_APP_CHECK_HEADER, appCheck)
                 }
+                // Debug builds only: route to a 0% preview Worker version. Release builds set this to "".
+                if (BuildConfig.WORKER_VERSION_OVERRIDE.isNotEmpty()) {
+                    reqBuilder.header("Cloudflare-Workers-Version-Overrides", BuildConfig.WORKER_VERSION_OVERRIDE)
+                }
                 chain.proceed(reqBuilder.build())
             }
 

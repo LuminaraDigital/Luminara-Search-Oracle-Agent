@@ -101,6 +101,9 @@ android {
       // Point a debug build at a test Worker: -Pluminara.debugApiBaseUrl=https://staging.luminarasuite.com/
       val debugApi = providers.gradleProperty("luminara.debugApiBaseUrl").orNull ?: "https://www.luminarasuite.com/"
       buildConfigField("String", "API_BASE_URL", "\"$debugApi\"")
+      // Reach a 0% Worker version on that host: -Pluminara.debugWorkerVersion='worker-name="version-id"'
+      val debugVersion = providers.gradleProperty("luminara.debugWorkerVersion").orNull.orEmpty().replace("\"", "\\\"")
+      buildConfigField("String", "WORKER_VERSION_OVERRIDE", "\"$debugVersion\"")
       buildConfigField("String", "WEB_BASE_URL", "\"https://www.luminarasuite.com\"")
     }
     release {
@@ -112,6 +115,7 @@ android {
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
       buildConfigField("String", "API_BASE_URL", "\"https://www.luminarasuite.com/\"")
       buildConfigField("String", "WEB_BASE_URL", "\"https://www.luminarasuite.com\"")
+      buildConfigField("String", "WORKER_VERSION_OVERRIDE", "\"\"")
     }
   }
 
