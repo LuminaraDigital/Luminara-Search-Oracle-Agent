@@ -1,5 +1,6 @@
 package com.luminarasuite.app.feature.enquiry
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -36,6 +38,7 @@ import com.luminarasuite.app.core.model.EnquiryCreateRequest
 import com.luminarasuite.app.core.model.EnquiryRecord
 import com.luminarasuite.app.core.network.LuminaraRepository
 import com.luminarasuite.app.core.network.WorkspaceGateway
+import com.luminarasuite.app.feature.today.segmentLabel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -49,6 +52,9 @@ data class EnquiryUiState(
     val name: String = "",
     val message: String = "",
     val contact: String = "",
+    val address: String = "",
+    val segment: String = "general_sme",
+    val filter: String? = null,
     val reply: String = "",
     val isBusy: Boolean = false,
     val errorMessage: String? = null,
@@ -69,6 +75,12 @@ class EnquiryDeskViewModel(
     fun updateContact(value: String) = _uiState.update { it.copy(contact = value) }
 
     fun updateReply(value: String) = _uiState.update { it.copy(reply = value) }
+
+    fun updateAddress(value: String) = _uiState.update { it.copy(address = value) }
+
+    fun updateSegment(value: String) = _uiState.update { it.copy(segment = value) }
+
+    fun updateFilter(value: String?) = _uiState.update { it.copy(filter = value) }
 
     fun select(id: String?) = _uiState.update { it.copy(selectedId = id, reply = "") }
 
@@ -99,8 +111,10 @@ class EnquiryDeskViewModel(
                 initialMessage = state.message.trim(),
                 email = contact.takeIf { it.contains('@') },
                 phoneE164 = contact.takeIf { it.startsWith("+") },
+                intentType = state.segment,
+                propertyAddress = state.address.trim().ifBlank { null },
             )
-        _uiState.update { it.copy(name = "", message = "", contact = "") }
+        _uiState.update { it.copy(name = "", message = "", contact = "", address = "") }
         act { workspace.createEnquiry(request) }
     }
 
@@ -155,8 +169,10 @@ fun EnquiryDeskScreen(viewModel: EnquiryDeskViewModel) {
             NewEnquiryForm(state = state, viewModel = viewModel)
             if (state.enquiries.isEmpty() && !state.isBusy) {
                 Text(text = "No enquiries yet.", style = LuminaraTextStyles.Body)
+            } else {
+                SegmentChips(selected = state.filter, allowAll = true, onSelect = viewModel::updateFilter)
             }
-            state.enquiries.forEach { enquiry ->
+            state.enquiries.filter { state.filter == null || it.intentType == state.filter }.forEach { enquiry ->
                 WorkbenchCard(onClick = { viewModel.select(enquiry.id) }) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -164,7 +180,7 @@ fun EnquiryDeskScreen(viewModel: EnquiryDeskViewModel) {
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(text = enquiry.contactName, style = LuminaraTextStyles.SectionTitle)
-                        EyebrowKicker(enquiry.status.replace('_', ' '))
+                        EyebrowKicker("${segmentLabel(enquiry.intentType)} · ${enquiry.status.replace('_', ' ')}")
                     }
                     enquiry.conversation.lastOrNull()?.let {
                         Text(text = it.text, style = LuminaraTextStyles.Body, maxLines = 2)
@@ -182,9 +198,16 @@ private fun NewEnquiryForm(
 ) {
     WorkbenchCard {
         EyebrowKicker("Log an enquiry")
+        Text(text = "Who is it?", style = LuminaraTextStyles.Body)
+        SegmentChips(selected = state.segment, allowAll = false, onSelect = {
+            viewModel.updateSegment(
+                it ?: "general_sme",
+            )
+        })
         DeskField("Their name", state.name, "enquiry_name_input", viewModel::updateName)
         DeskField("What they asked", state.message, "enquiry_message_input", viewModel::updateMessage)
         DeskField("Email or +61 phone (optional)", state.contact, "enquiry_contact_input", viewModel::updateContact)
+        DeskField("Property address (optional)", state.address, "enquiry_address_input", viewModel::updateAddress)
         FoundryButton(
             text = "Add enquiry",
             onClick = viewModel::create,
@@ -205,6 +228,20 @@ private fun EnquiryDetail(
         Text(text = enquiry.contactName, style = LuminaraTextStyles.HeadlineSerif)
         listOfNotNull(enquiry.contactEmail, enquiry.contactPhone, enquiry.propertyAddress).forEach {
             Text(text = it, style = LuminaraTextStyles.Body)
+        }
+        val missing = enquiry.qualificationBrief.missingRequiredFields
+        when {
+            enquiry.qualificationBrief.qualified -> Text(
+                text = "Qualified: ready for an appraisal.",
+                style = LuminaraTextStyles.Body,
+            )
+            missing.isNotEmpty() ->
+                Text(
+                    text = "Still to ask: ${missing.joinToString {
+                        it.replace('_', ' ')
+                    }}",
+                    style = LuminaraTextStyles.Body,
+                )
         }
         GhostPillButton(
             text = if (enquiry.automationPaused) "Resume suggested replies" else "Take over from suggested replies",
@@ -248,6 +285,32 @@ private fun EnquiryDetail(
             enabled = state.reply.isNotBlank() && !state.isBusy,
             testTag = "enquiry_reply_button",
         )
+    }
+}
+
+private val SEGMENTS = listOf("seller_appraisal", "buyer_enquiry", "landlord_management", "general_sme")
+
+@Composable
+private fun SegmentChips(
+    selected: String?,
+    allowAll: Boolean,
+    onSelect: (String?) -> Unit,
+) {
+    Row(
+        modifier = Modifier.horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        if (allowAll) {
+            FilterChip(selected = selected == null, onClick = { onSelect(null) }, label = { Text("All") })
+        }
+        SEGMENTS.forEach { segment ->
+            FilterChip(
+                selected = selected == segment,
+                onClick = { onSelect(segment) },
+                label = { Text(segmentLabel(segment)) },
+                modifier = Modifier.testTag("segment_$segment"),
+            )
+        }
     }
 }
 

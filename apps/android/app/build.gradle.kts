@@ -222,6 +222,7 @@ dependencies {
   implementation(libs.androidx.work.runtime)
   implementation(platform(libs.firebase.bom))
   implementation(libs.firebase.auth)
+  implementation(libs.firebase.messaging)
   releaseImplementation(libs.firebase.appcheck.playintegrity)
   debugImplementation(libs.firebase.appcheck.debug)
 

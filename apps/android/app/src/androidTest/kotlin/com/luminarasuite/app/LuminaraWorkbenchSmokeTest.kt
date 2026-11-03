@@ -8,6 +8,7 @@ import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.luminarasuite.app.core.auth.InMemoryVaultStorage
+import com.luminarasuite.app.core.model.AgentTodayResponse
 import com.luminarasuite.app.core.model.AudioOverview
 import com.luminarasuite.app.core.model.AuditFinding
 import com.luminarasuite.app.core.model.AuditHistoryEntry
@@ -27,11 +28,15 @@ import com.luminarasuite.app.core.model.ScoutRecheckResponse
 import com.luminarasuite.app.core.model.ShareLink
 import com.luminarasuite.app.core.model.SharedDocument
 import com.luminarasuite.app.core.model.StudioSource
+import com.luminarasuite.app.core.model.TodayItem
+import com.luminarasuite.app.core.model.TodaySlot
 import com.luminarasuite.app.core.network.AuditRead
 import com.luminarasuite.app.core.network.InstantAuditReport
 import com.luminarasuite.app.core.network.LuminaraRepository
 import com.luminarasuite.app.core.network.OracleEvent
 import com.luminarasuite.app.core.network.WorkspaceGateway
+import com.luminarasuite.app.feature.today.TodayScreen
+import com.luminarasuite.app.feature.today.TodayViewModel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -77,7 +82,32 @@ class StubWorkspace : WorkspaceGateway {
         id: String,
         approve: Boolean,
         slotId: String?,
-    ) = Result.success(Unit)
+    ): Result<Unit> {
+        decisions += "$id:${if (approve) "approve" else "decline"}:$slotId"
+        return Result.success(Unit)
+    }
+
+    val decisions = mutableListOf<String>()
+
+    override suspend fun loadToday() =
+        Result.success(
+            AgentTodayResponse(
+                ok = true,
+                needsSignOff =
+                listOf(
+                    TodayItem(
+                        enquiryId = "e1",
+                        name = "Sam",
+                        phone = "+61412345678",
+                        segment = "seller_appraisal",
+                        appointmentId = "a1",
+                        slots = listOf(TodaySlot(slotId = "slot_1", label = "Tomorrow 10am")),
+                    ),
+                ),
+            ),
+        )
+
+    override suspend fun registerPushToken(token: String) = Result.success(Unit)
 }
 
 class StubInstrumentationRepository : LuminaraRepository {
@@ -242,6 +272,39 @@ class LuminaraWorkbenchSmokeTest {
         composeRule.onNodeWithTag("nav_tab_settings").performClick()
         composeRule.onNodeWithTag("developer_byok_switch").assertExists().performClick()
         composeRule.onNodeWithTag("save_byok_button").assertExists().performClick()
+    }
+
+    @Test
+    fun agentModeAddsTodayWithoutRemovingTheOtherTabs() {
+        composeRule.setContent {
+            LuminaraWorkbenchApp(
+                repository = StubInstrumentationRepository(),
+                workspace = StubWorkspace(),
+                showWelcome = true,
+            )
+        }
+        composeRule.onNodeWithTag("welcome_agent_button").performClick()
+        composeRule.onNodeWithTag("today_sign_in").assertExists()
+        listOf("nav_tab_today", "nav_tab_home", "nav_tab_ask", "nav_tab_scout", "nav_tab_audit", "nav_tab_studio")
+            .forEach { composeRule.onNodeWithTag(it).assertExists() }
+    }
+
+    @Test
+    fun todayShowsSignOffsAndApprovesASlot() {
+        val workspace = StubWorkspace()
+        composeRule.setContent {
+            TodayScreen(
+                viewModel = TodayViewModel(workspace),
+                signedIn = true,
+                onSignIn = {},
+                onOpenEnquiries = {},
+            )
+        }
+        composeRule.onNodeWithText("Sam").assertExists()
+        composeRule.onNodeWithText("Call").assertExists()
+        composeRule.onNodeWithTag("today_approve_a1_slot_1").performClick()
+        composeRule.waitForIdle()
+        assertTrue(workspace.decisions.contains("a1:approve:slot_1"))
     }
 
     @Test

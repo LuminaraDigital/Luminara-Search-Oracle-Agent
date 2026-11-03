@@ -64,6 +64,21 @@
         <data android:pathPrefix="/share/" />
       </intent-filter>
     </activity>
+
+    <!-- Agent sign-off alerts. Background notifications use this channel and open Today on tap. -->
+    <service
+      android:name=".feature.today.AgentMessagingService"
+      android:exported="false">
+      <intent-filter>
+        <action android:name="com.google.firebase.MESSAGING_EVENT" />
+      </intent-filter>
+    </service>
+    <meta-data
+      android:name="com.google.firebase.messaging.default_notification_channel_id"
+      android:value="agent_signoff" />
+    <meta-data
+      android:name="com.google.firebase.messaging.default_notification_icon"
+      android:resource="@drawable/ic_launcher_monochrome" />
   </application>
 
 </manifest>

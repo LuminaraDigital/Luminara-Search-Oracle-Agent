@@ -44,6 +44,7 @@ import com.luminarasuite.app.core.designsystem.ObsidianBackdrop
 fun WelcomeScreen(
     onCheckSite: (String) -> Unit,
     onSkip: () -> Unit,
+    onAgent: () -> Unit = {},
 ) {
     var host by rememberSaveable { mutableStateOf("") }
     ObsidianBackdrop {
@@ -95,6 +96,9 @@ fun WelcomeScreen(
             )
             TextButton(onClick = onSkip, modifier = Modifier.testTag("welcome_skip_button")) {
                 Text(text = "Look around first", color = LuminaraColors.Ink2)
+            }
+            TextButton(onClick = onAgent, modifier = Modifier.testTag("welcome_agent_button")) {
+                Text(text = "I'm a real-estate agent", color = LuminaraColors.GoldLight)
             }
             Text(
                 text =

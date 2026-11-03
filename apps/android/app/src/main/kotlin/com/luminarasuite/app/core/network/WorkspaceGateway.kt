@@ -1,11 +1,13 @@
 package com.luminarasuite.app.core.network
 
+import com.luminarasuite.app.core.model.AgentTodayResponse
 import com.luminarasuite.app.core.model.AppointmentDecisionRequest
 import com.luminarasuite.app.core.model.BusinessDna
 import com.luminarasuite.app.core.model.EnquiryCreateRequest
 import com.luminarasuite.app.core.model.EnquiryDeskResponse
 import com.luminarasuite.app.core.model.EnquiryTakeoverRequest
 import com.luminarasuite.app.core.model.EnquiryTurnRequest
+import com.luminarasuite.app.core.model.PushDeviceRequest
 import com.luminarasuite.app.core.model.ShareCreateRequest
 import com.luminarasuite.app.core.model.ShareLink
 import com.luminarasuite.app.core.model.SharedDocument
@@ -56,6 +58,10 @@ interface WorkspaceGateway {
         approve: Boolean,
         slotId: String?,
     ): Result<Unit>
+
+    suspend fun loadToday(): Result<AgentTodayResponse>
+
+    suspend fun registerPushToken(token: String): Result<Unit>
 }
 
 class DefaultWorkspaceGateway(
@@ -175,6 +181,14 @@ class DefaultWorkspaceGateway(
                 id,
                 AppointmentDecisionRequest(decision = if (approve) "approve" else "decline", selectedSlotId = slotId),
             )
+            Unit
+        }
+
+    override suspend fun loadToday(): Result<AgentTodayResponse> = safely { api.getAgentToday() }
+
+    override suspend fun registerPushToken(token: String): Result<Unit> =
+        safely {
+            api.registerPushDevice(PushDeviceRequest(token = token))
             Unit
         }
 

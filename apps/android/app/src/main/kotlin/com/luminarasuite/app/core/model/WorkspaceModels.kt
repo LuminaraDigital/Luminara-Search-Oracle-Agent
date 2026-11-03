@@ -148,6 +148,13 @@ data class EnquiryRecord(
     val automationPaused: Boolean = false,
     val conversation: List<EnquiryMessage> = emptyList(),
     val updatedAt: Long = 0L,
+    val qualificationBrief: QualificationBrief = QualificationBrief(),
+)
+
+@Serializable
+data class QualificationBrief(
+    val qualified: Boolean = false,
+    val missingRequiredFields: List<String> = emptyList(),
 )
 
 @Serializable
@@ -182,6 +189,7 @@ data class EnquiryCreateRequest(
     val projectId: String = "default",
     val sourceChannel: String = "manual",
     val intentType: String = "general_sme",
+    val propertyAddress: String? = null,
 )
 
 @Serializable
@@ -199,4 +207,59 @@ data class EnquiryTakeoverRequest(
 data class AppointmentDecisionRequest(
     val decision: String,
     val selectedSlotId: String? = null,
+)
+
+@Serializable
+data class TodaySlot(
+    val slotId: String = "",
+    val label: String = "",
+    val startAt: Long = 0L,
+    val endAt: Long = 0L,
+)
+
+/** One person on the agent's Today screen. Fields depend on the list it came from. */
+@Serializable
+data class TodayItem(
+    val enquiryId: String = "",
+    val name: String = "",
+    val phone: String? = null,
+    val email: String? = null,
+    val address: String? = null,
+    val segment: String = "",
+    val appointmentId: String? = null,
+    val slots: List<TodaySlot> = emptyList(),
+    val reason: String? = null,
+    val startAt: Long = 0L,
+    val endAt: Long = 0L,
+)
+
+@Serializable
+data class ScorecardSegment(
+    val segment: String = "",
+    val label: String = "",
+    val enquiries: Int = 0,
+    val qualified: Int = 0,
+    val appraisalsBooked: Int = 0,
+)
+
+@Serializable
+data class Scorecard(
+    val since: Long = 0L,
+    val until: Long = 0L,
+    val segments: List<ScorecardSegment> = emptyList(),
+)
+
+@Serializable
+data class AgentTodayResponse(
+    val ok: Boolean = false,
+    val needsSignOff: List<TodayItem> = emptyList(),
+    val callBack: List<TodayItem> = emptyList(),
+    val upcoming: List<TodayItem> = emptyList(),
+    val scorecard: Scorecard = Scorecard(),
+)
+
+@Serializable
+data class PushDeviceRequest(
+    val token: String,
+    val platform: String = "android",
 )
