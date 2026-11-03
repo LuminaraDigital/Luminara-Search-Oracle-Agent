@@ -86,3 +86,46 @@ Worker side is built (`worker/pushNotifyService.ts`, migration `0047_push_device
 5. Android: create the `agent_signoff` notification channel and register the FCM token with `POST /api/push/devices`.
 
 Notification text never contains an address, phone number or email. Only the contact's first name appears.
+
+### Staging status (2026-11-03)
+
+Done and verified. `suite-worker@luminara-suite-staging` has the Firebase Cloud Messaging API Admin role on `luminara-suite`, and a real alert reached a test phone and opened Today.
+
+### Production: owner steps
+
+Production has no Workload Identity setup yet, so production alerts do nothing until these steps are done. Every other agent feature works without them. Each step changes access or secrets, so the owner runs it. Production reuses the existing `suite-worker-firestore@luminara-suite.iam.gserviceaccount.com`, which already holds only Cloud Datastore User.
+
+1. Create the pool and provider in project `luminara-suite`:
+
+   ```bash
+   gcloud iam workload-identity-pools create suite-worker --project=luminara-suite --location=global --display-name="Suite Worker"
+   gcloud iam workload-identity-pools providers create-oidc suite-worker-oidc --project=luminara-suite --location=global --workload-identity-pool=suite-worker --issuer-uri="https://www.luminarasuite.com/api/gcp-oidc" --attribute-mapping="google.subject=assertion.sub" --attribute-condition='assertion.sub == "suite-worker"'
+   ```
+
+2. Let the pool act as the service account, and let the service account send FCM messages:
+
+   ```bash
+   gcloud iam service-accounts add-iam-policy-binding suite-worker-firestore@luminara-suite.iam.gserviceaccount.com --project=luminara-suite --role=roles/iam.workloadIdentityUser --member="principal://iam.googleapis.com/projects/274315225068/locations/global/workloadIdentityPools/suite-worker/subject/suite-worker"
+   gcloud projects add-iam-policy-binding luminara-suite --role=roles/firebasecloudmessaging.admin --member="serviceAccount:suite-worker-firestore@luminara-suite.iam.gserviceaccount.com"
+   ```
+
+3. Make the Worker's signing key. The private key goes straight into the secret; the two lines printed after it are the public values:
+
+   ```bash
+   node scripts/gcp-oidc-keypair.mjs prod-1 | npx wrangler secret put GCP_OIDC_SIGNING_KEY --env production
+   ```
+
+4. Set the remaining production secrets (as staging does), using the values from step 3 and these:
+
+   | Secret | Value |
+   |--------|-------|
+   | `GCP_OIDC_KEY_ID` | `prod-1` |
+   | `GCP_OIDC_PUBLIC_JWK` | the JSON line printed in step 3 |
+   | `GCP_OIDC_ISSUER` | `https://www.luminarasuite.com/api/gcp-oidc` |
+   | `GCP_OIDC_SUBJECT` | `suite-worker` |
+   | `GCP_WIF_AUDIENCE` | `//iam.googleapis.com/projects/274315225068/locations/global/workloadIdentityPools/suite-worker/providers/suite-worker-oidc` |
+   | `GCP_IMPERSONATE_SERVICE_ACCOUNT` | `suite-worker-firestore@luminara-suite.iam.gserviceaccount.com` |
+
+   Leave `GCP_PROJECT_ID` and `DATA_PLANE` unset in production. Firestore mirroring stays off.
+
+5. Check: `https://www.luminarasuite.com/api/gcp-oidc/jwks` returns 200. Then, with agent mode on and signed in on a phone, create a booking proposal. "Needs your sign-off" arrives, and `push_devices.last_error` stays empty.
