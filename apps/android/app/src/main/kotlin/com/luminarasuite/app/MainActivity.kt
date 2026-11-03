@@ -188,7 +188,8 @@ fun LuminaraWorkbenchApp(
     val auditViewModel = viewModel { AuditViewModel(repository) }
     val askViewModel = viewModel { AskViewModel(repository) }
     val dashboardViewModel = viewModel { DashboardViewModel(repository) }
-    val settingsViewModel = viewModel { SettingsViewModel(repository) }
+    val settingsViewModel =
+        viewModel { SettingsViewModel(repository, beforeSignOut = { AgentPush.unregister(workspace) }) }
     val scoutViewModel = viewModel { ScoutViewModel(repository) }
     val studioViewModel = viewModel { StudioViewModel(repository) }
     val sharedViewModel = viewModel { SharedViewModel(workspace, repository) }

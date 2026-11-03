@@ -33,14 +33,23 @@ object AgentPush {
         workspace: WorkspaceGateway,
     ) {
         createChannel(context)
-        val token =
-            suspendCancellableCoroutine<String?> { cont ->
+        currentToken()?.let { workspace.registerPushToken(it) }
+    }
+
+    /** Called before sign-out, while the session can still prove which account owns the device. */
+    suspend fun unregister(workspace: WorkspaceGateway) {
+        currentToken()?.let { workspace.removePushToken(it) }
+    }
+
+    // Null when Play services or Firebase is unavailable. Alerts are optional, so the app carries on.
+    private suspend fun currentToken(): String? =
+        runCatching {
+            suspendCancellableCoroutine { cont ->
                 FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
                     cont.resume(task.result.takeIf { task.isSuccessful })
                 }
-            } ?: return
-        workspace.registerPushToken(token)
-    }
+            }
+        }.getOrNull()
 
     fun createChannel(context: Context) {
         context.getSystemService(NotificationManager::class.java)?.createNotificationChannel(

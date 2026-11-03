@@ -62,6 +62,8 @@ interface WorkspaceGateway {
     suspend fun loadToday(): Result<AgentTodayResponse>
 
     suspend fun registerPushToken(token: String): Result<Unit>
+
+    suspend fun removePushToken(token: String): Result<Unit>
 }
 
 class DefaultWorkspaceGateway(
@@ -189,6 +191,12 @@ class DefaultWorkspaceGateway(
     override suspend fun registerPushToken(token: String): Result<Unit> =
         safely {
             api.registerPushDevice(PushDeviceRequest(token = token))
+            Unit
+        }
+
+    override suspend fun removePushToken(token: String): Result<Unit> =
+        safely {
+            api.removePushDevice(PushDeviceRequest(token = token))
             Unit
         }
 

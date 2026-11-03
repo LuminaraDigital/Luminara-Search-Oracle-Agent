@@ -98,7 +98,9 @@ android {
 
   buildTypes {
     debug {
-      buildConfigField("String", "API_BASE_URL", "\"https://www.luminarasuite.com/\"")
+      // Point a debug build at a test Worker: -Pluminara.debugApiBaseUrl=https://staging.luminarasuite.com/
+      val debugApi = providers.gradleProperty("luminara.debugApiBaseUrl").orNull ?: "https://www.luminarasuite.com/"
+      buildConfigField("String", "API_BASE_URL", "\"$debugApi\"")
       buildConfigField("String", "WEB_BASE_URL", "\"https://www.luminarasuite.com\"")
     }
     release {

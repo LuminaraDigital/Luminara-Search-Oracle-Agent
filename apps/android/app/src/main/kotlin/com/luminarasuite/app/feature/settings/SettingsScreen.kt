@@ -77,6 +77,7 @@ data class SettingsUiState(
 
 class SettingsViewModel(
     private val repository: LuminaraRepository,
+    private val beforeSignOut: suspend () -> Unit = {},
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(SettingsUiState())
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
@@ -203,6 +204,7 @@ class SettingsViewModel(
 
     fun signOut() {
         viewModelScope.launch {
+            beforeSignOut()
             repository.signOut()
             _uiState.update {
                 it.copy(quota = null, statusBanner = "Signed out.", errorBanner = null)

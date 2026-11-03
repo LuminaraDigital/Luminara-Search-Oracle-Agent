@@ -108,6 +108,8 @@ class StubWorkspace : WorkspaceGateway {
         )
 
     override suspend fun registerPushToken(token: String) = Result.success(Unit)
+
+    override suspend fun removePushToken(token: String) = Result.success(Unit)
 }
 
 class StubInstrumentationRepository : LuminaraRepository {
