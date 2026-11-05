@@ -112,6 +112,7 @@ import {
   looksLikeJwt,
 } from './authMiddleware';
 import { guardApiAccessRoute, resolveMcpUser } from './apiAccess';
+import { isOracleAgentEnabled } from './oracleAgent/admission';
 import { handleShareRoute } from './shareService';
 import { handleFindingsRoute } from './findingsService';
 import { handleAuditHistoryRoute } from './auditHistoryRoute';
@@ -415,6 +416,8 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
         // from this; without it the panel has nothing to list.
         plans: publicPlanCatalogue(),
         stripeCheckout: isStripeCheckoutLive(env), lumens: env.LUMENS_ENABLED === 'true',
+        // Oracle chat runs its tool loop for every signed-in plan (worker/oracleAgent).
+        oracleAgent: isOracleServerEnabled(env) && isOracleAgentEnabled(env),
         trust: { receiptsEnabled: isTrustReceiptsEnabled(env), domainVerifyEnabled: isDomainVerifyEnabled(env) },
       }));
     }

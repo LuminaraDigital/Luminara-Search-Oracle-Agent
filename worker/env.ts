@@ -259,6 +259,16 @@ export interface Env extends DataPlaneEnv {
    * Default off: require invokeTool + confirmTool for paid tool side effects.
    */
   ORACLE_AUTO_TOOLS?: string;
+  /** Oracle chat tool loop for every signed-in plan (docs/rea/agentic-oracle/Blueprint.md). Off by default. */
+  ORACLE_AGENT_ENABLED?: string;
+  /** Change-only Oracle notes on citation watch runs. Needs CITATION_WATCH_LIVE. Off by default. */
+  WATCH_AGENT_ENABLED?: string;
+  /** Optional JSON override of per-plan Oracle tool-loop limits (worker/oracleAgent/limits.ts). */
+  ORACLE_AGENT_LIMITS?: string;
+  /** Optional cap on Oracle agent turns per UTC day across all accounts. */
+  ORACLE_AGENT_GLOBAL_TURNS?: string;
+  /** Optional cap on Oracle agent turns per UTC day per client IP. */
+  ORACLE_AGENT_IP_TURNS?: string;
   AUDIT_QUEUE_ENABLED?: string;
   /** Google PageSpeed Insights API key (optional hosted). */
   PAGESPEED_API_KEY?: string;

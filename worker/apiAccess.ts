@@ -29,6 +29,15 @@ export function isApiAccessRoute(path: string): boolean {
   return API_ACCESS_PATH_PATTERNS.some((re) => re.test(path));
 }
 
+/**
+ * With ORACLE_AGENT_ENABLED, every signed-in plan may use Oracle chat and decide its approval
+ * cards. Only these paths; the session route narrows non-Agency plans further (worker/oracleChat.ts).
+ */
+export function isAgentChatExemptRoute(env: Env, path: string): boolean {
+  if (String(env.ORACLE_AGENT_ENABLED || '').toLowerCase() !== 'true') return false;
+  return path === '/oracle/chat' || /^\/oracle\/session\/[^/]+\/(approval|history|events)$/.test(path);
+}
+
 export function isMcpAccessRoute(path: string): boolean {
   return MCP_ACCESS_PATH_PATTERNS.some((re) => re.test(path));
 }
@@ -93,6 +102,7 @@ export async function guardApiAccessRoute(
       { 'WWW-Authenticate': 'Bearer error="invalid_token", Cookie name="__session"' },
     );
   }
+  if (isAgentChatExemptRoute(env, path)) return null;
   return requireApiAccess(env, who.user);
 }
 
