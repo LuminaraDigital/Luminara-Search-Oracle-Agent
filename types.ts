@@ -184,6 +184,27 @@ export interface Message {
   sources?: any[];
   /** Present when a fallback model wrote this reply. */
   fallback?: FallbackAnswerInfo;
+  /** Oracle tool loop: what it checked this turn, built by code on the server. */
+  oracleSteps?: OracleStep[];
+  /** Oracle tool loop: actions waiting for the user's approval. */
+  approvalCards?: OracleApprovalCardData[];
+}
+
+export interface OracleStep {
+  summary: string;
+  status: string;
+  measured: boolean;
+}
+
+export interface OracleApprovalCardData {
+  actionId: string;
+  preview: string;
+  costNote: string;
+  tainted: boolean;
+  expiresAt: number;
+  /** pending until decided; then approved_done, denied, failed, expired, failed_unknown, already_decided. */
+  status: string;
+  summary?: string | null;
 }
 
 export interface SearchGroundingChunk {

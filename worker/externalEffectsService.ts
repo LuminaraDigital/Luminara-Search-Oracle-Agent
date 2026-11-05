@@ -63,6 +63,42 @@ export async function checkOrRecordExternalEffect<T>(
   return { duplicate: false, effectKey, payloadHash };
 }
 
+/**
+ * Single-use claim for an approved Oracle action (worker/oracleAgent/approvals.ts). Unlike
+ * checkOrRecordExternalEffect this is a lock: the key is the action id, the insert does nothing
+ * on conflict, and only the caller whose insert changed a row may run the action. A second caller
+ * gets the existing row's status and must not run it (an unknown outcome is never retried).
+ */
+export async function claimExternalEffect(
+  env: Env,
+  args: {
+    actionId: string;
+    accountId: string;
+    projectId: string | null;
+    targetSystem: string;
+    actionKind: string;
+    payloadHash: string;
+    now?: number;
+  },
+): Promise<{ claimed: true; effectKey: string } | { claimed: false; effectKey: string; status: string | null }> {
+  const effectKey = `oracle_action:${args.actionId}`;
+  if (!env.DB) return { claimed: false, effectKey, status: null };
+  const now = args.now ?? Date.now();
+  const res = await env.DB.prepare(
+    `INSERT INTO external_effects (
+      effect_key, account_id, project_id, target_system, action_kind, payload_hash, status, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+    ON CONFLICT(effect_key) DO NOTHING`,
+  )
+    .bind(effectKey, args.accountId, args.projectId ?? '', args.targetSystem, args.actionKind, args.payloadHash, now, now)
+    .run();
+  if (Number(res.meta?.changes ?? 0) === 1) return { claimed: true, effectKey };
+  const existing = await env.DB.prepare(`SELECT status FROM external_effects WHERE effect_key = ? AND account_id = ?`)
+    .bind(effectKey, args.accountId)
+    .first<{ status: string }>();
+  return { claimed: false, effectKey, status: existing?.status ?? null };
+}
+
 export async function finalizeExternalEffect(
   env: Env,
   effectKey: string,
