@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Env } from '../worker/env';
 import type { HostedIdentity } from '../worker/userTypes';
-import { AGENT_ACTION_EXECUTING_MS, OracleSession } from '../worker/oracleSession';
+import { OracleSession } from '../worker/oracleSession';
+import { AGENT_ACTION_EXECUTING_MS } from '../worker/oracleAgent/actionStore';
 import { decideAction, parkAction } from '../worker/oracleAgent/approvals';
 import { buildAgentToolContext } from '../worker/oracleAgent/context';
 import { admitAgentTurn, refundAgentTurn } from '../worker/oracleAgent/admission';
@@ -253,8 +254,10 @@ describe('who may start an agent turn', () => {
     const limits = agentLimitsFor('agency');
     expect((await admitAgentTurn({ env, accountId: 'a1', ip: '1.1.1.1', limits, isContinue: false })).ok).toBe(true);
     expect((await admitAgentTurn({ env, accountId: 'a2', ip: '1.1.1.1', limits, isContinue: false })).ok).toBe(true);
+    // The IP meter refuses a3, and the global unit a3 spent is given back.
     expect(await admitAgentTurn({ env, accountId: 'a3', ip: '1.1.1.1', limits, isContinue: false })).toMatchObject({ ok: false, which: 'ip' });
-    expect(await admitAgentTurn({ env, accountId: 'a4', ip: '2.2.2.2', limits, isContinue: false })).toMatchObject({ ok: false, which: 'global' });
+    expect((await admitAgentTurn({ env, accountId: 'a4', ip: '2.2.2.2', limits, isContinue: false })).ok).toBe(true);
+    expect(await admitAgentTurn({ env, accountId: 'a5', ip: '3.3.3.3', limits, isContinue: false })).toMatchObject({ ok: false, which: 'global' });
   });
 
   it('exempts only chat, approval, history and events, and only with the flag on', () => {
@@ -288,5 +291,50 @@ describe('who may start an agent turn', () => {
       'approval',
     );
     expect(legacy.status).toBe(400);
+  });
+});
+
+describe('flag-off session route', () => {
+  it('keeps a session literally named "default" when the tool loop is off', async () => {
+    const names: string[] = [];
+    const base = sessionNamespace();
+    const recording = {
+      idFromName: (name: string) => {
+        names.push(name);
+        return base.idFromName(name);
+      },
+      get: (id: DurableObjectId) => base.get(id),
+    } as unknown as DurableObjectNamespace;
+    const agency: HostedIdentity = { id: 'fb:ag', source: 'firebase', accountId: 'acct_ag' };
+    const off = { ...makeEnv({ acct_ag: 'agency' }), ORACLE_AGENT_ENABLED: 'false', ORACLE_SESSION: recording } as Env;
+    await handleOracleSessionControlRoute(new Request('https://x/api/oracle/session/default/history'), off, agency, 'default', 'history');
+    const on = { ...off, ORACLE_AGENT_ENABLED: 'true' } as Env;
+    await handleOracleSessionControlRoute(new Request('https://x/api/oracle/session/default/history'), on, agency, 'default', 'history');
+    expect(names).toEqual(['acct_ag:default', 'acct_ag:sess_fb:ag']);
+  });
+});
+
+describe('action store', () => {
+  it('rejects bad ids, duplicates and oversized arguments, and keeps live cards when evicting', async () => {
+    const { parkGate, refreshActions, MAX_AGENT_ACTIONS } = await import('../worker/oracleAgent/actionStore');
+    const actions = {};
+    const never = () => false;
+    expect(parkGate(actions, { actionId: 'nope', toolName: 't', requesterId: 'a' }, 1, null, never).status).toBe(400);
+    const id = '66666666-6666-4666-8666-666666666666';
+    expect(parkGate(actions, { actionId: id, toolName: 't', requesterId: 'a' }, 1, null, never).status).toBe(200);
+    expect(parkGate(actions, { actionId: id, toolName: 't', requesterId: 'a' }, 1, null, never).status).toBe(409);
+    const big = { blob: 'x'.repeat(5000) };
+    expect(parkGate(actions, { actionId: '77777777-7777-4777-8777-777777777777', toolName: 't', requesterId: 'a', args: big }, 1, null, never).status).toBe(413);
+    expect(parkGate(actions, { actionId: '88888888-8888-4888-8888-888888888888', toolName: 'resolve_approval', requesterId: 'a' }, 1, null, (n) => n === 'resolve_approval').status).toBe(400);
+
+    const many: Record<string, unknown> = {};
+    for (let i = 0; i < MAX_AGENT_ACTIONS + 5; i++) {
+      const aid = `${String(i).padStart(8, '0')}-0000-4000-8000-000000000000`;
+      parkGate(many as never, { actionId: aid, toolName: 't', requesterId: 'a' }, i, null, never);
+      if (i > 3) (many[aid] as { status: string }).status = 'denied';
+    }
+    const kept = refreshActions(many as never, 100).actions;
+    expect(Object.keys(kept)).toHaveLength(MAX_AGENT_ACTIONS);
+    expect(Object.values(kept).filter((g) => g.status === 'pending')).toHaveLength(4);
   });
 });

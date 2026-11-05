@@ -35,20 +35,10 @@ import { lazyWithReload } from './utils/lazyWithReload';
 import { isDesktopShell } from './services/desktop/desktopShell';
 import { productTelemetry } from './services/analytics/productTelemetry';
 import { draftPersistenceService, DRAFT_KEYS } from './services/state/draftPersistenceService';
-import {
-  apiBase,
-  decideOracleAction,
-  getCurrentQuotaSync,
-  getServerHealthSync,
-  loadOracleActions,
-  loadServerHealth,
-  setAccountSignedIn,
-  streamOracleChat,
-} from './services/apiClient';
-import { listSeoProjects } from './services/projects/projectClient';
-import type { OracleApprovalCardData, OracleStep } from './types';
+import { apiBase, getCurrentQuotaSync, setAccountSignedIn, streamOracleChat } from './services/apiClient';
 import { agentConnectTarget, resumeAgentConnect } from './services/auth/agentConnect';
 import { entitlementsFor } from './services/plans/planEntitlements';
+import { createOracleTurnCollector, useOracleAgent } from './hooks/useOracleAgent';
 import { hasPersistedAuthSession } from './services/auth/firebaseIdToken';
 import type { AuditHandoff } from './services/activation/auditHandoff';
 import { MarketingChromeContext, type MarketingChrome } from './components/marketing/marketingChrome';
@@ -136,19 +126,8 @@ interface SendOptions {
   displayContent?: string;
   /** Skip the live SERP lookup for this turn. */
   skipSearch?: boolean;
-  /** Oracle tool loop: continue after this approval card was decided (server builds the text). */
+  /** Oracle step-by-step mode: continue after this approval card was decided (the server builds the text). */
   continueAfterAction?: string;
-}
-
-/**
- * After the server says the step-by-step Oracle is closed for now (a daily cap, or it could not
- * answer), the chat uses the simple mode for a few minutes instead of asking again every message.
- */
-let oracleAgentClosedUntil = 0;
-const ORACLE_AGENT_RETRY_MS = 5 * 60 * 1000;
-
-function oracleAgentOpen(): boolean {
-  return getServerHealthSync().oracleAgent === true && Date.now() >= oracleAgentClosedUntil;
 }
 
 import { parseUrlSwapRoute, type UrlSwapRouteParams } from './utils/urlSwapRouting';
@@ -734,59 +713,7 @@ const App: React.FC = () => {
     };
   }, [view]);
 
-  // The project Oracle reads in chat: the account's only project, or its most recently updated one.
-  // The step list names the domain it read, so the choice is always visible. Never creates a project.
-  const oracleProjectRef = useRef<{ forAuth: boolean; id: string | null } | null>(null);
-  const resolveOracleProjectId = useCallback(async (): Promise<string | null> => {
-    if (oracleProjectRef.current && oracleProjectRef.current.forAuth === appAuth.authenticated) {
-      return oracleProjectRef.current.id;
-    }
-    let id: string | null = null;
-    try {
-      const projects = await listSeoProjects();
-      id = [...projects].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))[0]?.id ?? null;
-    } catch {
-      id = null;
-    }
-    oracleProjectRef.current = { forAuth: appAuth.authenticated, id };
-    return id;
-  }, [appAuth.authenticated]);
-
-  // Approval cards survive a reload: show the session's pending cards once after sign-in.
-  const pendingCardsShownRef = useRef(false);
-  useEffect(() => {
-    if (!appAuth.authenticated || pendingCardsShownRef.current || !apiBase()) return;
-    let cancelled = false;
-    void (async () => {
-      const health = await loadServerHealth();
-      if (cancelled || health.oracleAgent !== true) return;
-      const actions = await loadOracleActions();
-      const pending = actions.filter((a) => a.status === 'pending' && a.expiresAt > Date.now());
-      if (cancelled || pending.length === 0) return;
-      pendingCardsShownRef.current = true;
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `oracle-pending-${Date.now()}`,
-          role: 'model',
-          content: pending.length === 1 ? 'One action is waiting for your approval.' : `${pending.length} actions are waiting for your approval.`,
-          timestamp: Date.now(),
-          approvalCards: pending.map((a) => ({
-            actionId: a.actionId,
-            preview: a.preview,
-            costNote: a.costNote,
-            tainted: a.tainted,
-            expiresAt: a.expiresAt,
-            status: a.status,
-            summary: a.summary,
-          })),
-        },
-      ]);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [appAuth.authenticated]);
+  const oracleAgent = useOracleAgent({ authenticated: appAuth.authenticated, setMessages });
 
   const handleSendMessage = useCallback(async (content: string, opts: SendOptions = {}) => {
     if (isThinking || !content.trim()) return;
@@ -850,19 +777,18 @@ const App: React.FC = () => {
       let usedServerOracle = false;
 
       // Hosted Oracle (validators + provenance). Fall back to BYOK client path on soft failure.
-      // Agency always; every signed-in plan when the server's step-by-step Oracle is open.
-      const agentOpen = oracleAgentOpen();
+      // Agency always; every signed-in plan while the server's step-by-step mode is open.
+      const agentOpen = oracleAgent.isOpen();
       const preferServer =
         appAuth.authenticated &&
         Boolean(apiBase()) &&
         !opts.skipSearch &&
         (entitlementsFor(getCurrentQuotaSync()?.plan).apiAccess || agentOpen);
-      let oracleSteps: OracleStep[] = [];
-      const approvalCards: OracleApprovalCardData[] = [];
+      const turnExtras = createOracleTurnCollector();
 
       if (preferServer) {
         let softFail = false;
-        const projectId = agentOpen ? await resolveOracleProjectId() : null;
+        const projectId = agentOpen ? await oracleAgent.resolveProjectId() : null;
         for await (const ev of streamOracleChat({
           message: content,
           projectId: projectId ?? undefined,
@@ -871,8 +797,8 @@ const App: React.FC = () => {
           signal: controller.signal,
         })) {
           if (controller.signal.aborted) break;
+          turnExtras.onEvent(ev);
           if (ev.type === 'error') {
-            if (ev.code === 'AGENT_CAP' || ev.fallback) oracleAgentClosedUntil = Date.now() + ORACLE_AGENT_RETRY_MS;
             if (!usedServerOracle) {
               softFail = true;
               break;
@@ -882,19 +808,6 @@ const App: React.FC = () => {
           if (ev.type === 'status') {
             setAgentStep(ev.text || (ev.stage === 'thinking' ? 'Thinking' : ev.stage || 'Getting ready'));
             setProgress(20);
-          }
-          if (ev.type === 'tool' && ev.stage === 'needs_approval' && ev.actionId) {
-            approvalCards.push({
-              actionId: ev.actionId,
-              preview: ev.preview || '',
-              costNote: ev.costNote || '',
-              tainted: ev.tainted !== false,
-              expiresAt: ev.expiresAt || Date.now() + 30 * 60 * 1000,
-              status: 'pending',
-            });
-          }
-          if (ev.type === 'done' && ev.receipts) {
-            oracleSteps = ev.receipts.map((r) => ({ summary: r.summary, status: r.status, measured: r.measured }));
           }
           if (ev.type === 'tool') {
             setProgress(35);
@@ -929,13 +842,22 @@ const App: React.FC = () => {
           usedServerOracle = false;
           reply = newStreamedReply();
           firstToken = true;
-          oracleSteps = [];
-          approvalCards.length = 0;
+          turnExtras.reset();
         }
       }
       if (opts.continueAfterAction && !usedServerOracle) {
-        // A continue turn has no text of its own to send anywhere else.
-        setMessages((prev) => prev.filter((m) => m.id !== modelId && m.id !== userMsg.id));
+        // A continue turn has no text of its own for the simple chat to answer.
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === modelId
+              ? {
+                  ...m,
+                  isStreaming: false,
+                  content: 'Oracle could not continue this time. The result of your card is saved; ask again and it will pick up from there.',
+                }
+              : m,
+          ),
+        );
         return;
       }
 
@@ -972,11 +894,8 @@ const App: React.FC = () => {
         { question: content, stopped: controller.signal.aborted, skipSearch: opts.skipSearch },
         replyEffects,
       );
-      if (usedServerOracle && (oracleSteps.length > 0 || approvalCards.length > 0)) {
-        setMessages((prev) =>
-          prev.map((m) => (m.id === modelId ? { ...m, oracleSteps, approvalCards: [...approvalCards] } : m)),
-        );
-      }
+      const extras = usedServerOracle ? turnExtras.extras() : null;
+      if (extras) setMessages((prev) => prev.map((m) => (m.id === modelId ? { ...m, ...extras } : m)));
     } catch (error: any) {
       console.error('Luminara Search Error:', error);
       const reason = error?.message || 'Unknown error';
@@ -1001,32 +920,17 @@ const App: React.FC = () => {
       setProgress(0);
       setHeaderSearch('');
     }
-  }, [mode, isThinking, dna, view, messages, setView, appAuth.authenticated, resolveOracleProjectId]);
+  }, [mode, isThinking, dna, view, messages, setView, appAuth.authenticated, oracleAgent]);
 
   const handleDecideAction = useCallback(
-    async (messageId: string, actionId: string, approved: boolean) => {
-      const res = await decideOracleAction(actionId, approved);
-      const status = res.action?.status || res.status;
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === messageId
-            ? {
-                ...m,
-                approvalCards: m.approvalCards?.map((c) =>
-                  c.actionId === actionId ? { ...c, status, summary: res.summary ?? res.action?.summary ?? null } : c,
-                ),
-              }
-            : m,
-        ),
-      );
-      if (status === 'approved_done' || status === 'denied') {
+    (messageId: string, actionId: string, approved: boolean) =>
+      void oracleAgent.decide(messageId, actionId, approved, (decidedId, wasApproved) => {
         void handleSendMessage('Continue', {
-          displayContent: approved ? 'Continue after approving' : 'Continue after rejecting',
-          continueAfterAction: actionId,
+          displayContent: wasApproved ? 'Continue after approving' : 'Continue after rejecting',
+          continueAfterAction: decidedId,
         });
-      }
-    },
-    [handleSendMessage],
+      }),
+    [oracleAgent, handleSendMessage],
   );
 
   const handleStop = useCallback(() => {
@@ -2063,7 +1967,14 @@ const App: React.FC = () => {
                   </div>
                 </div>
               )}
-              <ChatTranscript messages={messages} isThinking={isThinking} activeTool={activeTool} onSimplify={handleSimplify} onDecideAction={handleDecideAction} />
+              <ChatTranscript
+                messages={messages}
+                isThinking={isThinking}
+                activeTool={activeTool}
+                onSimplify={handleSimplify}
+                // Cards cannot be decided while a reply is running: the continue turn would be dropped.
+                onDecideAction={isThinking ? undefined : handleDecideAction}
+              />
               
               {agentStep && (
                 <div

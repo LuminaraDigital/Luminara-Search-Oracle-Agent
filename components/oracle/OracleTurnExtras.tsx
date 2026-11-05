@@ -50,6 +50,8 @@ export function OracleApprovalCard({
 }) {
   const [now, setNow] = useState(() => Date.now());
   const [busy, setBusy] = useState(false);
+  // A new status or note from the server (for example a failed request) re-enables the buttons.
+  useEffect(() => setBusy(false), [card.status, card.summary]);
   useEffect(() => {
     if (card.status !== 'pending') return;
     const timer = setInterval(() => setNow(Date.now()), 30000);
@@ -93,6 +95,7 @@ export function OracleApprovalCard({
             Reject
           </button>
           <span className="text-[11px] text-gray-500">Expires in {minutesLeft(card.expiresAt, now)} min</span>
+          {card.summary && <span className="w-full text-xs text-warning-400" role="status">{card.summary}</span>}
         </div>
       ) : (
         <p className="mt-3 text-xs text-gray-300" role="status">

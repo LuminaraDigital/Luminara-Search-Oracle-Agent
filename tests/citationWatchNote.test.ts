@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { acceptWatchAction, groqWatchAction } from '../services/citationWatch/agentNote';
-import { handleCitationWatchRoute, runCitationWatchTick, type CitationProbe } from '../worker/citationWatch';
+import { acceptWatchAction } from '../services/citationWatch/agentNote';
+import { handleCitationWatchRoute, runCitationWatchTick, watchActionFromModel, type CitationProbe } from '../worker/citationWatch';
 import type { Env } from '../worker/env';
 import type { HostedIdentity } from '../worker/userTypes';
 import { createSqliteD1 } from './helpers/sqliteD1';
@@ -132,17 +132,9 @@ describe('watch notes', () => {
       throw new Error('boom');
     });
     expect((await noteCount(env))!.n).toBe(1);
-    const slow = await groqWatchAction(
-      'key',
-      { system: 's', user: 'u' },
-      {
-        timeoutMs: 20,
-        fetchImpl: ((_url: string, init: RequestInit) =>
-          new Promise((_resolve, reject) => init.signal!.addEventListener('abort', () => reject(new Error('aborted'))))) as never,
-      },
-    );
-    expect(slow).toBeNull();
-    expect(await groqWatchAction(undefined, { system: 's', user: 'u' })).toBeNull();
+    const timedOut = await watchActionFromModel(env, { system: 's', user: 'u' }, async () => ({ ok: false, status: 0, code: 'TIMEOUT', detail: 'slow' }));
+    expect(timedOut).toBeNull();
+    expect(await watchActionFromModel({} as Env, { system: 's', user: 'u' })).toBeNull();
   });
 
   it('keeps the run and next_run_at when note storage fails', async () => {

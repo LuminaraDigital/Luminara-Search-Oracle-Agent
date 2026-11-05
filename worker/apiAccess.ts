@@ -12,6 +12,7 @@ import { identifyApiKey } from './apiKeyService';
 import { bearerFromAuthorization } from './firebaseAuth';
 import { identifyMcpOAuthToken, mcpResourceMetadataUrl } from './mcpOAuth';
 import { identifyHabitatToken } from './selfDrivingHabitat';
+import { AGENT_SESSION_ACTIONS } from './oracleAgent/approvals';
 
 /** Paths that require an Agency (apiAccess) plan in addition to authentication. */
 export const API_ACCESS_PATH_PATTERNS: RegExp[] = [
@@ -35,7 +36,9 @@ export function isApiAccessRoute(path: string): boolean {
  */
 export function isAgentChatExemptRoute(env: Env, path: string): boolean {
   if (String(env.ORACLE_AGENT_ENABLED || '').toLowerCase() !== 'true') return false;
-  return path === '/oracle/chat' || /^\/oracle\/session\/[^/]+\/(approval|history|events)$/.test(path);
+  if (path === '/oracle/chat') return true;
+  const m = /^\/oracle\/session\/[^/]+\/([a-z/]+)$/.exec(path);
+  return Boolean(m && (AGENT_SESSION_ACTIONS as readonly string[]).includes(m[1]!));
 }
 
 export function isMcpAccessRoute(path: string): boolean {

@@ -1,9 +1,10 @@
 /**
  * Who may start an Oracle agent turn (Blueprint section 6, section 13 items 10, 11, 17).
  *
- * Three daily meters, all failing closed: per account (by plan), per client IP, and one global
- * ceiling that works as a kill switch. A continue turn after an approval skips the account meter
- * but still counts against the IP and global meters. Over any cap the chat answers with
+ * Three daily meters, all failing closed: one global ceiling (a kill switch), per client IP, and
+ * per account (by plan). A continue turn after an approval skips the account meter but still
+ * counts against the IP and global meters. When a later meter refuses, the earlier ones are given
+ * back; a turn that produced no answer gives all of them back. Over any cap the chat answers
  * AGENT_CAP and the client falls back to today's chat.
  */
 import type { Env } from '../env';
@@ -14,15 +15,20 @@ export function isOracleAgentEnabled(env: Env): boolean {
   return String(env.ORACLE_AGENT_ENABLED || '').toLowerCase() === 'true';
 }
 
-export type AgentAdmission =
-  | { ok: true; accountMeter: string | null; accountLimit: number }
-  | { ok: false; which: 'account' | 'ip' | 'global'; message: string };
+type SpentMeter = { key: string; limit: number };
+type MeterName = 'global' | 'ip' | 'account';
 
-const CAP_MESSAGE: Record<'account' | 'ip' | 'global', string> = {
-  account: "Today's Oracle step-by-step answers are used up on this plan. Oracle answers in the simple mode until tomorrow.",
+export type AgentAdmission = { ok: true; spent: SpentMeter[] } | { ok: false; which: MeterName; message: string };
+
+const CAP_MESSAGE: Record<MeterName, string> = {
+  account: "Today's step-by-step Oracle answers are used up on this plan. Oracle answers in the simple mode until tomorrow.",
   ip: 'Too many Oracle answers from this network today. Oracle answers in the simple mode until tomorrow.',
   global: 'Oracle is very busy today. It answers in the simple mode for now.',
 };
+
+async function refundAll(env: Env, spent: SpentMeter[]): Promise<void> {
+  await Promise.all(spent.map((m) => refundDailyQuota(env, m.key, m.limit).catch(() => undefined)));
+}
 
 export async function admitAgentTurn(opts: {
   env: Env;
@@ -32,22 +38,26 @@ export async function admitAgentTurn(opts: {
   isContinue: boolean;
 }): Promise<AgentAdmission> {
   const { env } = opts;
-  const global = await spendDailyQuota(env, 'oracle-agent-global', globalTurnsPerDay(env.ORACLE_AGENT_GLOBAL_TURNS));
-  if (!global.ok) return { ok: false, which: 'global', message: CAP_MESSAGE.global };
-  if (opts.ip) {
-    const ipSpend = await spendDailyQuota(env, `oracle-agent-ip:${opts.ip}`, ipTurnsPerDay(env.ORACLE_AGENT_IP_TURNS));
-    if (!ipSpend.ok) return { ok: false, which: 'ip', message: CAP_MESSAGE.ip };
+  const meters: Array<{ which: MeterName; id: string; limit: number }> = [
+    { which: 'global', id: 'oracle-agent-global', limit: globalTurnsPerDay(env.ORACLE_AGENT_GLOBAL_TURNS) },
+    ...(opts.ip ? [{ which: 'ip' as const, id: `oracle-agent-ip:${opts.ip}`, limit: ipTurnsPerDay(env.ORACLE_AGENT_IP_TURNS) }] : []),
+    ...(opts.isContinue ? [] : [{ which: 'account' as const, id: `${opts.accountId}:oracle-agent`, limit: opts.limits.turnsPerDay }]),
+  ];
+  const spent: SpentMeter[] = [];
+  for (const meter of meters) {
+    const result = await spendDailyQuota(env, meter.id, meter.limit);
+    if (!result.ok) {
+      await refundAll(env, spent);
+      return { ok: false, which: meter.which, message: CAP_MESSAGE[meter.which] };
+    }
+    spent.push({ key: result.meterKey, limit: meter.limit });
   }
-  if (opts.isContinue) return { ok: true, accountMeter: null, accountLimit: 0 };
-  const account = await spendDailyQuota(env, `${opts.accountId}:oracle-agent`, opts.limits.turnsPerDay);
-  if (!account.ok) return { ok: false, which: 'account', message: CAP_MESSAGE.account };
-  return { ok: true, accountMeter: account.meterKey, accountLimit: opts.limits.turnsPerDay };
+  return { ok: true, spent };
 }
 
-/** Give back the account's turn when the agent produced no answer (the client falls back). */
-export async function refundAgentTurn(env: Env, admission: AgentAdmission): Promise<void> {
-  if (!admission.ok || !admission.accountMeter) return;
-  await refundDailyQuota(env, admission.accountMeter, admission.accountLimit).catch(() => undefined);
+/** Give back every meter a turn spent, when it produced no answer (the client falls back). */
+export async function refundAgentTurn(env: Env, admission: AgentAdmission | null): Promise<void> {
+  if (admission?.ok) await refundAll(env, admission.spent);
 }
 
 const SEEN_TTL_SECONDS = 8 * 24 * 60 * 60;

@@ -186,3 +186,81 @@ describe('Oracle chat with the tool loop on (Free plan)', () => {
     }
   });
 });
+
+describe('review blockers: admission order and the flag-off path', () => {
+  let originalFetch: typeof fetch;
+  beforeEach(() => {
+    originalFetch = globalThis.fetch;
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    vi.restoreAllMocks();
+  });
+
+  it('spends no daily turn on a busy-session 409', async () => {
+    const env = await makeEnv();
+    // Make the session busy with a turn of its own.
+    const stub = env.ORACLE_SESSION!.get(env.ORACLE_SESSION!.idFromName(`acct_free1:sess_${freeUser.id}`));
+    await stub.fetch('https://oracle-session/admit', { method: 'POST', body: JSON.stringify({ midTurn: 'reject' }) });
+    fakeGroq([{ text: 'never' }]);
+    const busy = await chat(env, { message: 'hello' });
+    expect(busy.res.status).toBe(409);
+    await stub.fetch('https://oracle-session/settle', { method: 'POST', body: JSON.stringify({}) });
+    for (let i = 0; i < 5; i++) {
+      fakeGroq([{ text: 'ok' }]);
+      expect((await chat(env, { message: `q${i}` })).res.status).toBe(200);
+    }
+  });
+
+  it('answers NO_LLM before spending anything when no model key is set', async () => {
+    const env = { ...(await makeEnv()), GROQ_API_KEY: undefined } as Env;
+    const { res, text } = await chat(env, { message: 'hello' });
+    expect(res.status).toBe(503);
+    expect(JSON.parse(text)).toMatchObject({ code: 'NO_LLM', fallback: true });
+    const withKey = { ...env, GROQ_API_KEY: 'gsk_test' } as Env;
+    for (let i = 0; i < 5; i++) {
+      fakeGroq([{ text: 'ok' }]);
+      expect((await chat(withKey, { message: `q${i}` })).res.status).toBe(200);
+    }
+  });
+});
+
+describe('a tool-loop turn that throws before its answer', () => {
+  let originalFetch: typeof fetch;
+  beforeEach(() => {
+    originalFetch = globalThis.fetch;
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    vi.restoreAllMocks();
+  });
+
+  it('gives the caps back and tells the client to fall back', async () => {
+    const env = await makeEnv();
+    globalThis.fetch = vi.fn(async () => {
+      throw new TypeError('socket hang up');
+    }) as unknown as typeof fetch;
+    // The model call's own catch turns a fetch failure into an error result, so make the turn
+    // itself throw: a session store that fails on append after admission.
+    const realGet = env.ORACLE_SESSION!.get.bind(env.ORACLE_SESSION);
+    (env.ORACLE_SESSION as unknown as { get: typeof realGet }).get = (id: DurableObjectId) => {
+      const stub = realGet(id);
+      return {
+        fetch: (input: string, init?: RequestInit) =>
+          String(input).endsWith('/append') ? Promise.reject(new Error('store down')) : stub.fetch(input, init),
+      } as unknown as DurableObjectStub;
+    };
+    const { frames } = await chat(env, { message: 'hello' });
+    expect(frames.find((f) => f.event === 'error')?.data).toMatchObject({ code: 'ORACLE_ERROR', fallback: true });
+    (env.ORACLE_SESSION as unknown as { get: typeof realGet }).get = realGet;
+    for (let i = 0; i < 5; i++) {
+      fakeGroq([{ text: 'ok' }]);
+      expect((await chat(env, { message: `q${i}` })).res.status).toBe(200);
+    }
+  });
+});

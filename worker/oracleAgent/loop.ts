@@ -14,7 +14,8 @@ import { fenceToolResult } from '../oracleInteractionGuard';
 import { canonicalJson, sha256HexOf } from '../../services/trust/receiptCrypto';
 import { TOOL_RESULT_PROMPT_CHARS, TURN_TOOL_PROMPT_CHARS } from './limits';
 import { callOracleModel, type CallModel, type ChatMessage, type ModelToolSpec } from './modelCall';
-import { offeredTools, type AgentTool, type AgentToolContext, type ExternalPreparation } from './toolTable';
+import { offeredTools } from './toolTable';
+import type { AgentTool, AgentToolContext, ExternalPreparation, ToolOutcome } from './types';
 
 /** Rules added once to the stable system prefix. Never injected mid-run. */
 export const AGENT_LOOP_RULES = [
@@ -49,9 +50,9 @@ export type LoopEvent =
   | { type: 'tool_running'; callId: string; tool: string; args: Record<string, unknown> }
   | { type: 'tool_done'; callId: string; tool: string; receipt: ToolReceipt; output: string }
   | { type: 'tool_blocked'; callId: string; tool: string; reason: string }
-  | { type: 'needs_approval'; callId: string; tool: string; actionId: string; preview: string; costNote: string };
+  | { type: 'needs_approval'; callId: string; tool: string; actionId: string; preview: string; costNote: string; expiresAt: number };
 
-export type ParkResult = { ok: true; actionId: string } | { ok: false; error: string };
+export type ParkResult = { ok: true; actionId: string; expiresAt: number } | { ok: false; error: string };
 
 export type LoopInput = {
   env: Env;
@@ -230,14 +231,22 @@ export async function runAgentLoop(input: LoopInput): Promise<LoopResult> {
           outputHash: null,
           summary: `Asked for your approval: ${tool.status.toLowerCase()}`,
         });
-        await emit({ type: 'needs_approval', callId: call.id, tool: name, actionId: parked.actionId, preview: prepared.preview, costNote: prepared.costNote });
+        await emit({
+          type: 'needs_approval',
+          callId: call.id,
+          tool: name,
+          actionId: parked.actionId,
+          preview: prepared.preview,
+          costNote: prepared.costNote,
+          expiresAt: parked.expiresAt,
+        });
         await reply("Waiting for the user's approval. The card is shown in the chat. Do not call this again; say in one line what it would do.");
         continue;
       }
 
       await emit({ type: 'status', text: tool.status });
       await emit({ type: 'tool_running', callId: call.id, tool: name, args: parsed.args });
-      let outcome;
+      let outcome: ToolOutcome;
       try {
         outcome = await tool.run!(parsed.args, ctx);
       } catch (err) {

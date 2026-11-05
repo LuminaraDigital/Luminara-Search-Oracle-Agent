@@ -206,11 +206,15 @@ Built on `feat/agentic-oracle`. Gates: `npm run typecheck`, `npm run lint` (0 er
 
 **Differs from the design**
 
-1. Agent actions are a separate record in the session object (`agentActions`), not new fields on the old tool gate, so the old `remember` cascade cannot reach them. Same shape as section 5.
-2. `STALE_TURN_MS` is 3 minutes (was 10) now that `activeTurnAt` is persisted and refreshed each round.
+1. Agent actions are a separate record in the session object (`agentActions`, state machine in `worker/oracleAgent/actionStore.ts`), not new fields on the old tool gate, so the old `remember` cascade cannot reach them. Same shape as section 5.
+2. The turn lock is unchanged (`activeTurnAt` stays in memory, 10-minute stale window), so the flag-off path keeps its behaviour. An object evicted in the middle of an agent turn could admit a second turn; agent turns are short (30-second tool budget) and the loop keeps the object active, so this is accepted for slice 1 and noted for SW1.
 3. Watch notes record a structured log line, not a cost event; retry reads each watch's latest 3 runs (2 missed a case).
 4. The web chat has no open-project concept, so it uses the account's only or most recently updated project; the step list names the domain.
 5. The honesty filter is today's: a figure about unnamed third parties ("rivals get N visits") is not redacted, in either mode (`worker/oracleAgent/README.md`, known limits).
+
+**Thermo-nuclear review (AGENTS.md) and fixes, 2026-11-06.** Verdict "fix first": the agent branch was tangled into the old chat handler, three flag-off changes (stale window, persisted turn time, a remapped "default" session), and caps spent before a busy-session 409 or a missing key. Fixed: the turn moved to `chatTurn.ts`, today's stream to `oracleLegacyStream.ts`, both paths share `checkOracleReply`; the flag-off changes reverted except the stored-input cap, which is deliberate and documented; admission now follows the session admission and the key check, with full refunds. Also done: the card state machine moved to `actionStore.ts`; tools split by kind; `create_watch` calls `createCitationWatch` directly instead of an internal HTTP request; the watch note's model call goes through `callOracleModel` with a time budget; client state moved to `hooks/useOracleAgent.ts` (a failed project lookup is no longer cached, a failed continue shows a message, cards cannot be decided mid-reply). Regression tests for each blocker are in `tests/oracleAgentChat.test.ts` and `tests/oracleAgentApprovals.test.ts`.
+
+**Re-review: ship as draft.** Fixed after it: a turn that throws after admission now refunds every meter and tells the client to fall back; a card decision that fails on the network stays pending and says so; a card without a server expiry is not shown as live. Left as a known limit: the watch-note time budget starts when note writing starts, not at the cron tick's start, so a slow probe pass plus 50 notes (each two calls at most, 9 s timeout) can run long. Bounded; revisit with SW1's engine.
 
 **Not verified**
 

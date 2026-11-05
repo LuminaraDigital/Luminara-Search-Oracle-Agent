@@ -8,7 +8,6 @@ import { billingId } from './workerUtils';
 import { buildPaidToolRuntime, executePaidTool, PAID_TOOL_CATALOGUE, BROWSER_ACTION_CATALOGUE } from '../services/tools/registry';
 import { planCapsFor } from './telegramBot';
 import { getActiveSubscription } from './quotaMiddleware';
-import { GROQ_DEFAULT_MODEL } from '../services/llm/nativeModelDefaults';
 import { hasDataForSeoCredentials } from '../services/config/runtimeKeys';
 import { startRun, completeRun } from './runProvenance';
 import { loadAgentSkill } from './agentSkills';
@@ -19,18 +18,16 @@ import {
   recordCostEvent,
 } from './budgets';
 import { auditOrgIdFor, recordAuditLogBestEffort } from './auditLog';
-import { runAllValidators, summarizeFindings } from './agentOutputValidators';
 import {
   buildOracleSystemPrompt,
   extractKeywordSeed,
   fenceToolResult,
-  monitorOracleOutput,
   parseAllowRegexAutoTools,
   resolveOracleHistory,
   shouldInvokeResearchKeywords,
   type SessionTurn,
 } from './oracleInteractionGuard';
-import { guardPasteReadyCopy, HEALTH_CLAIM_WARNING, withHealthClaimRule } from '../services/audit/healthClaimGuard';
+import { HEALTH_CLAIM_WARNING, withHealthClaimRule } from '../services/audit/healthClaimGuard';
 import {
   ClaimLedger,
   buildRouterState,
@@ -49,13 +46,14 @@ import {
 import { markProjectContextLoaded, requireProjectContextBeforePaid } from './mcpServer';
 import { getProjectContext } from './projectContextService';
 import { scheduleWaitUntil } from './welcomeEmail';
-import { withoutUnmeasuredClaims } from './chatHonesty';
+import { checkOracleReply } from './oracleReplyChecks';
+import { streamLegacyAnswer } from './oracleLegacyStream';
 import { clientIp } from './security';
-import { getProject } from './projectService';
-import { runAgentLoop, stripUncheckedUrls, type LoopEvent, type LoopResult } from './oracleAgent/loop';
+import type { LoopResult } from './oracleAgent/loop';
 import type { ChatMessage } from './oracleAgent/modelCall';
 import { buildAgentToolContext } from './oracleAgent/context';
-import { ACTION_TTL_MS, decideAction, parkAction } from './oracleAgent/approvals';
+import { agentSessionAccess, handleAgentActionDecision } from './oracleAgent/approvals';
+import { runAgentChatTurn, sendAgentAnswer } from './oracleAgent/chatTurn';
 import {
   admitAgentTurn,
   countAgentTurn,
@@ -75,10 +73,10 @@ const UNMEASURED_CLAIM_WARNING =
 const MAX_CONTROL_BODY_CHARS = 64 * 1024;
 /** Cap for tool_end text persisted in DO event log so 500 events stay well below the 2 MB DO value limit. */
 const MAX_HARNESS_TOOL_OUTPUT_CHARS = 2048;
-/** No new tool round starts after this long; the loop then writes its answer (Blueprint s13 item 7). */
-const AGENT_TURN_BUDGET_MS = 30_000;
 /** The model-visible text of a continue turn. The client sends only the action id. */
 const CONTINUE_MESSAGE = 'Continue from the approval card I just decided. The result is in the chat history.';
+/** Stored assistant turns are capped; the receipt line is added after the cap so it stays whole. */
+const MAX_STORED_ASSISTANT_CHARS = 11_000;
 
 export function isOracleServerEnabled(env: Env): boolean {
   return String(env.ORACLE_SERVER_ENABLED || '').toLowerCase() === 'true';
@@ -103,7 +101,7 @@ type OracleChatBody = {
   rememberTool?: boolean;
   /** Busy-turn policy: `accept` joins the active turn, `reject` (default on chat) returns 409. */
   midTurn?: MidTurnPolicy;
-  /** Agent mode: a continue turn after an approval card. Carries only the action id; no client text. */
+  /** Tool-loop mode: a continue turn after an approval card. Carries only the action id; no client text. */
   kind?: 'continue';
   actionId?: string;
 };
@@ -154,25 +152,15 @@ export async function handleOracleSessionControlRoute(
   }
 
   const agentOpen = isOracleAgentEnabled(env);
-  // With the agent off, the upstream guard already required Agency: behave exactly as before.
-  const agencyAccess = agentOpen ? planCapsFor((await getActiveSubscription(env, user))?.plan || 'free').apiAccess : true;
-  if (!agencyAccess) {
-    // Non-Agency plans reach this route only through the agent exemption (worker/apiAccess.ts):
-    // their own fixed session, and only reading history and events or deciding an agent action.
-    const narrow =
-      agentOpen &&
-      ((request.method === 'GET' && ['events', 'history'].includes(actionPath)) ||
-        (request.method === 'POST' && actionPath === 'approval'));
-    if (!narrow) {
-      return new Response(JSON.stringify({ ok: false, error: 'Not available on this plan', code: 'PLAN_LIMIT' }), {
-        status: 403,
-        headers: { 'content-type': 'application/json' },
-      });
-    }
+  let sessionId = String(sessionIdRaw || `sess_${user.id}`).slice(0, 128);
+  let agencyAccess = true;
+  if (agentOpen) {
+    // Every signed-in plan reaches this route while the tool loop is on; non-Agency plans are narrowed.
+    const access = await agentSessionAccess({ env, user, method: request.method, actionPath, sessionIdRaw });
+    if ('response' in access) return access.response;
+    sessionId = access.sessionId;
+    agencyAccess = access.agencyAccess;
   }
-  // 'default' names the chat's default session, which the client cannot spell (it holds the login id).
-  const rawSession = sessionIdRaw === 'default' ? '' : sessionIdRaw;
-  const sessionId = agencyAccess ? String(rawSession || `sess_${user.id}`).slice(0, 128) : `sess_${user.id}`;
   const accountId = billingId(user);
   const id = env.ORACLE_SESSION.idFromName(`${accountId}:${sessionId}`);
   const stub = env.ORACLE_SESSION.get(id);
@@ -190,46 +178,17 @@ export async function handleOracleSessionControlRoute(
     }
   }
 
-  if (actionPath === 'approval' && request.method === 'POST') {
-    const parsed = (() => {
-      try {
-        return JSON.parse(bodyText || '{}') as { actionId?: unknown; approved?: unknown };
-      } catch {
-        return {};
-      }
-    })();
-    if (typeof parsed.actionId === 'string') {
-      if (!agentOpen) {
-        return new Response(JSON.stringify({ ok: false, error: 'Not found', code: 'NOT_FOUND' }), {
-          status: 404,
-          headers: { 'content-type': 'application/json' },
-        });
-      }
-      // Arguments come from the stored card, never from this request body.
-      const decided = await decideAction({
-        env,
-        user,
-        stub,
-        actionId: parsed.actionId,
-        approved: parsed.approved === true,
-        byokHeader: request.headers.get('x-provider-key'),
-      });
-      await recordAuditLogBestEffort(env, {
-        org_id: auditOrgIdFor(accountId),
-        actor_id: user.id,
-        action: decided.status === 'approved_done' ? 'oracle_tool_allow' : 'oracle_tool_block',
-        target_id: decided.action?.toolName || 'agent_action',
-        details: { surface: 'agent_action', sessionId, status: decided.status },
-      });
-      const httpStatus = decided.ok || decided.status === 'denied' ? 200 : decided.status === 'forbidden' ? 403 : decided.status === 'not_found' ? 404 : decided.status === 'bad_request' ? 400 : 409;
-      return new Response(JSON.stringify(decided), { status: httpStatus, headers: { 'content-type': 'application/json' } });
-    }
-    if (!agencyAccess) {
-      return new Response(JSON.stringify({ ok: false, error: 'actionId required', code: 'BAD_REQUEST' }), {
-        status: 400,
-        headers: { 'content-type': 'application/json' },
-      });
-    }
+  if (agentOpen && actionPath === 'approval' && request.method === 'POST') {
+    const decided = await handleAgentActionDecision({
+      env,
+      user,
+      stub,
+      bodyText: bodyText || '',
+      sessionId,
+      agencyAccess,
+      byokHeader: request.headers.get('x-provider-key'),
+    });
+    if (decided) return decided;
   }
 
   const doRes = await stub.fetch(targetUrl, {
@@ -321,8 +280,8 @@ export async function handleOracleChatSse(
   const dfsCred =
     byok && hasDataForSeoCredentials({ luminara_dataforseo_key: byok }) ? byok : null;
 
-  // Agent mode (ORACLE_AGENT_ENABLED): every signed-in plan, capped per plan, IP and globally.
-  // Non-Agency plans get one fixed session per account so they cannot create unlimited objects.
+  // Tool-loop mode (ORACLE_AGENT_ENABLED): every signed-in plan. Non-Agency plans get one fixed
+  // session per account so they cannot create unlimited session objects.
   if (agentMode && !caps.apiAccess) sessionId = `sess_${user.id}`;
   const agentCtx = agentMode
     ? await buildAgentToolContext({
@@ -333,17 +292,12 @@ export async function handleOracleChatSse(
         runId: runHandle?.runId ?? null,
       })
     : null;
-  let admission: AgentAdmission | null = null;
-  if (agentCtx) {
-    admission = await admitAgentTurn({ env, accountId, ip: clientIp(request) || null, limits: agentCtx.limits, isContinue });
-    if (!admission.ok) {
-      console.log(JSON.stringify({ event: 'oracle_agent_cap', plan: agentCtx.plan, which: admission.which }));
-      if (runHandle) await completeRun(env, runHandle.runId, 'failed');
-      return new Response(
-        JSON.stringify({ ok: false, error: admission.message, code: 'AGENT_CAP', which: admission.which, fallback: true }),
-        { status: 429, headers: { 'content-type': 'application/json' } },
-      );
-    }
+  if (agentCtx && !(env.GROQ_API_KEY || env.GROQ_API_KEY_FALLBACK)) {
+    if (runHandle) await completeRun(env, runHandle.runId, 'failed');
+    return new Response(
+      JSON.stringify({ ok: false, error: 'Hosted Groq key not configured', code: 'NO_LLM', fallback: true }),
+      { status: 503, headers: { 'content-type': 'application/json' } },
+    );
   }
 
   const durableObjectAvailable = Boolean(env.ORACLE_SESSION);
@@ -422,6 +376,29 @@ export async function handleOracleChatSse(
     }
   }
 
+  // Daily caps are spent only for a turn the session admitted, so a busy-session 409 costs nothing.
+  let admission: AgentAdmission | null = null;
+  if (agentCtx) {
+    admission = await admitAgentTurn({ env, accountId, ip: clientIp(request) || null, limits: agentCtx.limits, isContinue });
+    if (!admission.ok) {
+      console.log(JSON.stringify({ event: 'oracle_agent_cap', plan: agentCtx.plan, which: admission.which }));
+      if (turnAdmitted && sessionStub) {
+        await sessionStub
+          .fetch('https://oracle-session/settle', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ turnId: activeTurnId }),
+          })
+          .catch(() => undefined);
+      }
+      if (runHandle) await completeRun(env, runHandle.runId, 'failed');
+      return new Response(
+        JSON.stringify({ ok: false, error: admission.message, code: 'AGENT_CAP', which: admission.which, fallback: true }),
+        { status: 429, headers: { 'content-type': 'application/json' } },
+      );
+    }
+  }
+
   const { readable, writable } = new TransformStream(
     undefined,
     { highWaterMark: 128 },
@@ -441,6 +418,8 @@ export async function handleOracleChatSse(
     }
   };
 
+  // Set once the tool-loop answer starts going out; until then a failure gives the caps back.
+  let agentAnswerSent = false;
   const run = async () => {
     const emitHarnessEvents = async (items: AgentStreamItem[]) => {
       if (items.length === 0) return;
@@ -515,7 +494,7 @@ export async function handleOracleChatSse(
         rememberedTools,
       });
 
-      const wantsPaidTool = !agentMode && Boolean(body.projectId && caps.apiAccess && toolDecision.invoke && toolDecision.seed);
+      const wantsPaidTool = !agentCtx && Boolean(body.projectId && caps.apiAccess && toolDecision.invoke && toolDecision.seed);
       const toolNow = Date.now();
       const budgetHalted = wantsPaidTool ? await isBudgetHalted(env, accountId, toolNow) : false;
       const toolCallId = `call_${toolNow}`;
@@ -749,7 +728,7 @@ export async function handleOracleChatSse(
             },
           });
         }
-      } else if (!agentMode && body.invokeTool === 'research_keywords' && !toolDecision.invoke) {
+      } else if (!agentCtx && body.invokeTool === 'research_keywords' && !toolDecision.invoke) {
         const seedPreview = extractKeywordSeed(message) || 'general';
         await emitHarnessEvents([
           {
@@ -798,7 +777,7 @@ export async function handleOracleChatSse(
       } catch (err) {
         console.error('[oracle] owner rules unavailable:', err);
       }
-      const messages = [
+      const messages: ChatMessage[] = [
         { role: 'system', content: systemPrompt },
         ...historySource,
         { role: 'user', content: message + toolNote },
@@ -811,63 +790,23 @@ export async function handleOracleChatSse(
         return;
       }
 
-      let fullText = '';
+      let fullText: string;
       let agentResult: LoopResult | null = null;
+      agentAnswerSent = false;
       if (agentCtx) {
-        const emitAgentEvent = async (ev: LoopEvent) => {
-          if (ev.type === 'status') {
-            await write('status', { stage: 'working', text: ev.text });
-          } else if (ev.type === 'tool_running') {
-            await emitHarnessEvents([{ type: 'tool_start', tool_id: ev.callId, tool_name: ev.tool, tool_input: ev.args }]);
-            await write('tool', { tool: ev.tool, toolId: ev.callId, stage: 'running' });
-          } else if (ev.type === 'tool_done') {
-            await emitHarnessEvents([
-              {
-                type: 'tool_end',
-                tool_id: ev.callId,
-                tool_name: ev.tool,
-                tool_output: ev.output.slice(0, MAX_HARNESS_TOOL_OUTPUT_CHARS),
-                measurement_status: ev.receipt.measured ? 'measured' : 'not_measured',
-              },
-            ]);
-            await write('tool', {
-              tool: ev.tool,
-              toolId: ev.callId,
-              stage: ev.receipt.status === 'error' ? 'error' : 'done',
-              summary: ev.receipt.summary,
-              measured: ev.receipt.measured,
-            });
-          } else if (ev.type === 'tool_blocked') {
-            await write('tool', { tool: ev.tool, toolId: ev.callId, stage: 'blocked', reason: ev.reason });
-          } else {
-            await write('tool', {
-              tool: ev.tool,
-              toolId: ev.callId,
-              stage: 'needs_approval',
-              actionId: ev.actionId,
-              preview: ev.preview,
-              costNote: ev.costNote,
-              tainted: true,
-              expiresAt: Date.now() + ACTION_TTL_MS,
-            });
-          }
-        };
-        const loopCtx = agentCtx;
-        agentResult = await runAgentLoop({
+        agentResult = await runAgentChatTurn({
           env,
-          ctx: loopCtx,
-          messages: messages as ChatMessage[],
-          emit: emitAgentEvent,
-          park: (tool, prepared) =>
-            sessionStub
-              ? parkAction({ stub: sessionStub, tool, prepared, ctx: loopCtx, turnId: activeTurnId })
-              : Promise.resolve({ ok: false as const, error: 'approval cards need the session store' }),
+          ctx: agentCtx,
+          messages,
+          write,
+          emitHarnessEvents,
+          sessionStub,
+          turnId: activeTurnId,
           isClientGone: () => clientGone,
-          deadlineAt: Date.now() + AGENT_TURN_BUDGET_MS,
         });
         if (!agentResult.ok && !agentResult.text.trim()) {
-          // No answer at all: give the turn back and let the client answer in the simple mode.
-          if (admission) await refundAgentTurn(env, admission);
+          // No answer at all: give the caps back and let the client answer in the simple mode.
+          await refundAgentTurn(env, admission);
           await write('error', { error: 'Oracle could not answer step by step this time.', code: 'AGENT_FALLBACK', fallback: true });
           await write('done', { ok: false, fallback: true });
           if (runHandle) await completeRun(env, runHandle.runId, 'failed');
@@ -875,119 +814,62 @@ export async function handleOracleChatSse(
         }
         fullText = agentResult.text;
       } else {
-        const llmRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${groqKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: GROQ_DEFAULT_MODEL,
-            messages,
-            temperature: 0.5,
-            max_tokens: 2048,
-            stream: true,
-          }),
-        });
-
-        if (!llmRes.ok || !llmRes.body) {
-          const errText = await llmRes.text();
-          await write('error', { error: `LLM error ${llmRes.status}`, detail: errText.slice(0, 200) });
-          await write('done', { ok: false });
-          return;
-        }
-
-        const reader = llmRes.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || '';
-          for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed.startsWith('data: ')) continue;
-            const dataStr = trimmed.slice(6);
-            if (dataStr === '[DONE]') continue;
-            try {
-              const parsed = JSON.parse(dataStr);
-              const delta = parsed.choices?.[0]?.delta?.content;
-              if (delta) {
-                fullText += delta;
-                await write('token', { text: delta });
-              }
-            } catch {
-              // ignore
-            }
-          }
-        }
+        const streamed = await streamLegacyAnswer(groqKey, messages, write);
+        if (streamed === null) return;
+        fullText = streamed;
       }
 
-      // Agent turns: every check runs before any answer text is sent. Today's streaming path keeps
-      // its order (tokens first, warnings after).
-      const evidenceTexts = agentResult ? agentResult.measuredTexts : measuredToolText ? [measuredToolText] : [];
-      const pendingWarnings: string[] = [];
-      const monitor = monitorOracleOutput(fullText, evidenceTexts.length > 0);
-      const guarded = guardPasteReadyCopy(fullText);
-      if (guarded.changed) {
-        // Tokens already sent keep the original phrases. The warning follows them, and history stores the stripped copy.
-        if (agentResult) pendingWarnings.push(HEALTH_CLAIM_WARNING);
-        else await write('token', { text: `\n\n${HEALTH_CLAIM_WARNING}` });
-        fullText = guarded.text;
-      }
-      if (!monitor.ok) {
-        await write('monitor', {
-          ok: false,
-          flags: monitor.flags,
-          notes: monitor.notes,
-        });
-      }
-
-      // Honesty validators: flag into provenance only (v1 never blocks the stream).
-      const validation = runAllValidators(fullText);
-      const validationSummary = summarizeFindings(validation.findings);
-
-      // A number nobody measured: the warning follows the tokens already sent, and history stores
-      // the filtered copy. Figures the user gave, here or in account memory, and the numbers of a
-      // measured tool result stay.
+      // Figures the user gave, here or in account memory or their stored project, and the numbers
+      // of a measured tool result stay; a number nobody measured is replaced.
       const userTexts = [
         ...memoryFacts,
         ...historySource.filter((t) => t.role === 'user').map((t) => t.content),
         message,
         ...(agentResult ? agentResult.userProvidedTexts : []),
       ];
-      const honest = withoutUnmeasuredClaims(fullText, userTexts, evidenceTexts);
-      if (honest.replaced > 0) {
-        if (agentResult) pendingWarnings.push(UNMEASURED_CLAIM_WARNING);
-        else await write('token', { text: `\n\n${UNMEASURED_CLAIM_WARNING}` });
-        fullText = honest.text;
-        console.warn(JSON.stringify({ event: 'oracle_output_redacted', sentences: honest.replaced }));
+      const checked = checkOracleReply(fullText, {
+        userTexts,
+        evidenceTexts: agentResult ? agentResult.measuredTexts : measuredToolText ? [measuredToolText] : [],
+      });
+      const { monitor, validation, validationSummary } = checked;
+      fullText = checked.text;
+      if (checked.unmeasuredReplaced > 0) {
+        console.warn(JSON.stringify({ event: 'oracle_output_redacted', sentences: checked.unmeasuredReplaced }));
       }
-
       if (agentResult && agentCtx) {
-        const project = agentCtx.projectId ? await getProject(env, accountId, agentCtx.projectId) : null;
-        const sourced = stripUncheckedUrls(fullText, { sourceUrls: agentResult.sourceUrls, projectDomain: project?.domain ?? null });
-        if (sourced.removed > 0) console.warn(JSON.stringify({ event: 'oracle_link_removed', links: sourced.removed }));
-        fullText = sourced.text;
-        // Only now does any answer text reach the user, in small chunks so the chat renders as before.
-        const outgoing = [fullText, ...pendingWarnings].filter(Boolean).join('\n\n');
-        for (let i = 0; i < outgoing.length; i += 120) {
-          await write('token', { text: outgoing.slice(i, i + 120) });
-        }
+        // Tool-loop mode: every check has run and nothing has been sent yet.
+        if (!monitor.ok) await write('monitor', { ok: false, flags: monitor.flags, notes: monitor.notes });
+        const warnings = [
+          ...(checked.healthChanged ? [HEALTH_CLAIM_WARNING] : []),
+          ...(checked.unmeasuredReplaced > 0 ? [UNMEASURED_CLAIM_WARNING] : []),
+        ];
+        agentAnswerSent = true;
+        fullText = await sendAgentAnswer({
+          text: fullText,
+          warnings,
+          sourceUrls: agentResult.sourceUrls,
+          projectDomain: agentCtx.projectDomain,
+          write,
+        });
+      } else {
+        // Today's path: the tokens were sent as they came; the warnings follow them, and history
+        // stores the filtered copy.
+        if (checked.healthChanged) await write('token', { text: `\n\n${HEALTH_CLAIM_WARNING}` });
+        if (!monitor.ok) await write('monitor', { ok: false, flags: monitor.flags, notes: monitor.notes });
+        if (checked.unmeasuredReplaced > 0) await write('token', { text: `\n\n${UNMEASURED_CLAIM_WARNING}` });
       }
 
       if (sessionStub && fullText) {
-        // Agent turns keep one line of receipts so the next turn knows what was checked.
-        const receiptLine = agentResult && agentResult.receipts.length > 0
-          ? `\n\n[Oracle checked: ${agentResult.receipts.map((r) => r.summary).join('; ')}]`
-          : '';
+        // Tool-loop turns keep one code-built line of receipts so the next turn knows what was checked.
+        const receiptLine =
+          agentResult && agentResult.receipts.length > 0
+            ? `\n\n[Oracle checked: ${agentResult.receipts.map((r) => r.summary).join('; ')}]`
+            : '';
+        const content = agentResult ? `${fullText.slice(0, MAX_STORED_ASSISTANT_CHARS)}${receiptLine}` : fullText;
         await sessionStub.fetch('https://oracle-session/append', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ role: 'assistant', content: `${fullText}${receiptLine}`.slice(0, 12000) }),
+          body: JSON.stringify({ role: 'assistant', content }),
         });
       }
 
@@ -1044,9 +926,14 @@ export async function handleOracleChatSse(
       if (runHandle) {
         await completeRun(env, runHandle.runId, 'failed');
       }
+      // A tool-loop turn that failed before its answer went out gives its caps back, and the client
+      // answers in the simple mode instead.
+      const agentFallback = Boolean(agentCtx) && !agentAnswerSent;
+      if (agentFallback) await refundAgentTurn(env, admission);
       await write('error', {
         error: e instanceof Error ? e.message : 'Oracle chat failed',
         code: 'ORACLE_ERROR',
+        ...(agentFallback ? { fallback: true } : {}),
       });
       await write('done', { ok: false });
     } finally {

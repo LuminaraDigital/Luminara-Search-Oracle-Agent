@@ -3,10 +3,10 @@
  * Runs are stored in D1. Counts stay null unless the probe measured every prompt.
  */
 import type { Env } from './env';
+import { callOracleModel, type CallModel } from './oracleAgent/modelCall';
 import type { HostedIdentity } from './userTypes';
 import {
   buildWatchNote,
-  groqWatchAction,
   noteDue,
   parseWatchNote,
   type WatchActionRequest,
@@ -271,6 +271,76 @@ async function readWatch(env: Env, id: string, accountId: string): Promise<Watch
     .first<WatchRow>();
 }
 
+/**
+ * Create a citation watch for the signed-in account. Checks the domain, engine, prompts, plan
+ * cadence and watch limit. Used by POST /citation-watches and by Oracle's approved create_watch.
+ */
+export async function createCitationWatch(
+  env: Env,
+  user: HostedIdentity,
+  body: unknown,
+  deps: CitationWatchDeps = {},
+): Promise<{ status: number; body: Record<string, unknown> }> {
+  if (!env.DB) return { body: { ok: false, error: 'Citation Watch needs D1.', code: 'D1_UNAVAILABLE' }, status: 503 };
+  const accountId = billingId(user);
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return { body: { ok: false, error: 'JSON object required.' }, status: 400 };
+  const domain = safePublicHostname(typeof own(body, 'domain') === 'string' ? String(own(body, 'domain')) : '');
+  if (!domain) return { body: { ok: false, error: 'domain must be a public hostname such as acme.com.' }, status: 400 };
+  const engineRaw = own(body, 'engine');
+  if (typeof engineRaw !== 'string' || !isCitationWatchEngine(engineRaw)) {
+    return { body: { ok: false, error: 'engine must be chatgpt, google_aio, or perplexity.' }, status: 400 };
+  }
+  const parsedPrompts = parsePromptList(own(body, 'prompts'));
+  if (!parsedPrompts.ok) return { body: { ok: false, error: parsedPrompts.error }, status: 400 };
+  const prompts = parsedPrompts.prompts;
+  const clientRaw = own(body, 'clientId');
+  const clientId = clientRaw == null || clientRaw === '' ? '' : typeof clientRaw === 'string' ? clientRaw.trim() : null;
+  if (clientId === null || clientId.length > 64 || (clientId && !/^[a-zA-Z0-9_-]+$/.test(clientId))) {
+    return { body: { ok: false, error: 'clientId must be empty or 1 to 64 letters, numbers, "_" or "-".' }, status: 400 };
+  }
+  const sub = await getActiveSubscription(env, user);
+  const plan = entitlementsFor(sub?.plan);
+  const planCadence = plan.scheduledReaudit;
+  if (planCadence === 'none' || plan.sentinelLimit <= 0) {
+    return { body: { ok: false, error: 'Citation Watch needs a plan with scheduled re-audits.', code: 'PLAN_LIMIT' }, status: 402 };
+  }
+  const requested = own(body, 'cadence');
+  const cadence: WatchCadence = typeof requested === 'string' && isWatchCadence(requested) ? requested : planCadence;
+  if (!watchCadenceAllowed(planCadence, cadence)) {
+    return { body: { ok: false, error: `This plan's schedule is ${planCadence}. ${cadence} is faster than the plan allows.`, code: 'PLAN_LIMIT' }, status: 402 };
+  }
+  const owned = await env.DB.prepare(`SELECT COUNT(*) AS n FROM citation_watches WHERE account_id = ? AND active = 1`)
+    .bind(accountId)
+    .first<{ n: number }>();
+  if (Number(owned?.n ?? 0) >= plan.sentinelLimit) {
+    return { body: { ok: false, error: `This plan allows ${plan.sentinelLimit} citation watches.`, code: 'PLAN_LIMIT', limit: plan.sentinelLimit }, status: 402 };
+  }
+  const id = `cw_${crypto.randomUUID().replace(/-/g, '')}`;
+  const createdAt = nowMs(deps);
+  const promptsJson = JSON.stringify(prompts);
+  const promptsSha = await sha256HexOf(canonicalJson(prompts));
+  try {
+    await env.DB.prepare(
+      `INSERT INTO citation_watches
+        (id, account_id, client_id, domain, engine, prompts_json, prompts_sha256, cadence, active, next_run_at, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+    )
+      .bind(id, accountId, clientId, domain, engineRaw, promptsJson, promptsSha, cadence, createdAt, createdAt)
+      .run();
+  } catch (err) {
+    if (/unique/i.test(err instanceof Error ? err.message : String(err))) {
+      return { body: { ok: false, error: 'A watch already exists for this client, domain, engine, and prompt set.', code: 'WATCH_EXISTS' }, status: 409 };
+    }
+    throw err;
+  }
+  const row = await readWatch(env, id, accountId);
+  const minPrompts = citationWatchThresholds(env.CITATION_WATCH_THRESHOLDS)[engineRaw].minPrompts;
+  const warning = prompts.length < minPrompts
+    ? `This set has ${prompts.length} prompts. Consistent and drift need ${minPrompts} measured prompts.`
+    : undefined;
+  return { body: { ok: true, watch: row ? watchJson(row, true) : { id }, ...(warning ? { warning } : {}) }, status: 201 };
+}
+
 export async function handleCitationWatchRoute(
   request: Request,
   env: Env,
@@ -294,66 +364,8 @@ export async function handleCitationWatchRoute(
     if (path === '/citation-watches' && request.method === 'POST') {
       const read = await readBody(request, MAX_SMALL_BODY_BYTES);
       if (!read.ok) return json({ ok: false, error: read.error }, read.status);
-      const body = read.value;
-      if (!body || typeof body !== 'object' || Array.isArray(body)) return json({ ok: false, error: 'JSON object required.' }, 400);
-      const domain = safePublicHostname(typeof own(body, 'domain') === 'string' ? String(own(body, 'domain')) : '');
-      if (!domain) return json({ ok: false, error: 'domain must be a public hostname such as acme.com.' }, 400);
-      const engineRaw = own(body, 'engine');
-      if (typeof engineRaw !== 'string' || !isCitationWatchEngine(engineRaw)) {
-        return json({ ok: false, error: 'engine must be chatgpt, google_aio, or perplexity.' }, 400);
-      }
-      const parsedPrompts = parsePromptList(own(body, 'prompts'));
-      if (!parsedPrompts.ok) return json({ ok: false, error: parsedPrompts.error }, 400);
-      const prompts = parsedPrompts.prompts;
-      const clientRaw = own(body, 'clientId');
-      const clientId = clientRaw == null || clientRaw === '' ? '' : typeof clientRaw === 'string' ? clientRaw.trim() : null;
-      if (clientId === null || clientId.length > 64 || (clientId && !/^[a-zA-Z0-9_-]+$/.test(clientId))) {
-        return json({ ok: false, error: 'clientId must be empty or 1 to 64 letters, numbers, "_" or "-".' }, 400);
-      }
-      const sub = await getActiveSubscription(env, user);
-      const plan = entitlementsFor(sub?.plan);
-      const planCadence = plan.scheduledReaudit;
-      if (planCadence === 'none' || plan.sentinelLimit <= 0) {
-        return json({ ok: false, error: 'Citation Watch needs a plan with scheduled re-audits.', code: 'PLAN_LIMIT' }, 402);
-      }
-      const requested = own(body, 'cadence');
-      const cadence: WatchCadence = typeof requested === 'string' && isWatchCadence(requested) ? requested : planCadence;
-      if (!watchCadenceAllowed(planCadence, cadence)) {
-        return json(
-          { ok: false, error: `This plan's schedule is ${planCadence}. ${cadence} is faster than the plan allows.`, code: 'PLAN_LIMIT' },
-          402,
-        );
-      }
-      const owned = await env.DB.prepare(`SELECT COUNT(*) AS n FROM citation_watches WHERE account_id = ? AND active = 1`)
-        .bind(accountId)
-        .first<{ n: number }>();
-      if (Number(owned?.n ?? 0) >= plan.sentinelLimit) {
-        return json({ ok: false, error: `This plan allows ${plan.sentinelLimit} citation watches.`, code: 'PLAN_LIMIT', limit: plan.sentinelLimit }, 402);
-      }
-      const id = `cw_${crypto.randomUUID().replace(/-/g, '')}`;
-      const createdAt = nowMs(deps);
-      const promptsJson = JSON.stringify(prompts);
-      const promptsSha = await sha256HexOf(canonicalJson(prompts));
-      try {
-        await env.DB.prepare(
-          `INSERT INTO citation_watches
-            (id, account_id, client_id, domain, engine, prompts_json, prompts_sha256, cadence, active, next_run_at, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
-        )
-          .bind(id, accountId, clientId, domain, engineRaw, promptsJson, promptsSha, cadence, createdAt, createdAt)
-          .run();
-      } catch (err) {
-        if (/unique/i.test(err instanceof Error ? err.message : String(err))) {
-          return json({ ok: false, error: 'A watch already exists for this client, domain, engine, and prompt set.', code: 'WATCH_EXISTS' }, 409);
-        }
-        throw err;
-      }
-      const row = await readWatch(env, id, accountId);
-      const minPrompts = citationWatchThresholds(env.CITATION_WATCH_THRESHOLDS)[engineRaw].minPrompts;
-      const warning = prompts.length < minPrompts
-        ? `This set has ${prompts.length} prompts. Consistent and drift need ${minPrompts} measured prompts.`
-        : undefined;
-      return json({ ok: true, watch: row ? watchJson(row, true) : { id }, ...(warning ? { warning } : {}) }, 201);
+      const created = await createCitationWatch(env, user, read.value, deps);
+      return json(created.body, created.status);
     }
 
     const match = path.match(/^\/citation-watches\/(cw_[a-f0-9]{32})(\/run)?$/);
@@ -448,6 +460,8 @@ export async function handleCitationWatchRoute(
 }
 
 const MAX_NOTES_PER_TICK = 50;
+/** Wall-clock budget for writing notes in one cron tick. */
+const NOTE_TIME_BUDGET_MS = 60_000;
 
 type NoteRunRow = {
   id: string;
@@ -477,10 +491,30 @@ const noteState = (r: NoteRunRow): WatchRunState => ({
  * Looks only at each watch's latest two runs (three rows read), so a note that failed last tick is retried here.
  * A failure here never touches a run row or next_run_at.
  */
+/**
+ * The default watch-note action: one short model call through the Oracle model seam, on the
+ * fallback key. Returns null on any failure, so the note uses its fixed template.
+ */
+export async function watchActionFromModel(env: Env, request: WatchActionRequest, callModel: CallModel = callOracleModel): Promise<string | null> {
+  const res = await callModel(env, {
+    messages: [
+      { role: 'system', content: request.system },
+      { role: 'user', content: request.user },
+    ],
+    maxTokens: 120,
+    timeoutMs: 9000,
+    preferFallbackKey: true,
+  });
+  return res.ok && res.text.trim() ? res.text : null;
+}
+
 async function writeWatchNotes(env: Env, watches: WatchRow[], deps: CitationWatchDeps): Promise<void> {
-  const modelAction = deps.watchAction || ((request: WatchActionRequest) => groqWatchAction(env.GROQ_API_KEY_FALLBACK || env.GROQ_API_KEY, request));
+  const modelAction = deps.watchAction || ((request: WatchActionRequest) => watchActionFromModel(env, request));
+  const startedAt = Date.now();
   let written = 0;
   for (const watch of watches) {
+    // A cron tick has a time budget as well as a count cap; unwritten notes wait for the next tick.
+    if (Date.now() - startedAt > NOTE_TIME_BUDGET_MS) return;
     try {
       const { results } = await env.DB!.prepare(
         `SELECT id, measurement_status, verdict, cited_count, prompt_count, share, delta_share, reason,

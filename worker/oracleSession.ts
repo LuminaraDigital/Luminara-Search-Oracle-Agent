@@ -15,6 +15,15 @@
  */
 
 import {
+  claimGate,
+  finishGate,
+  listViews,
+  parkGate,
+  refreshActions,
+  type AgentActions,
+  type StoreResult,
+} from './oracleAgent/actionStore';
+import {
   applyOps,
   cloneJson,
   type JsonPatchOp,
@@ -50,51 +59,6 @@ export interface PendingToolGate {
   resolvedAt?: number;
 }
 
-/**
- * An external action the Oracle tool loop proposed (worker/oracleAgent/approvals.ts). Kept apart
- * from PendingToolGate on purpose: no remember cascade, no allow-list, single use, expiry enforced.
- * Shape follows Track SW's approval rules (args hash, requester, expiry, single use) so it can move
- * into SW2's store later.
- */
-export interface AgentActionGate {
-  actionId: string;
-  toolName: string;
-  args: Record<string, unknown>;
-  argsHash: string;
-  projectId: string | null;
-  requesterId: string;
-  preview: string;
-  costNote: string;
-  tainted: boolean;
-  turnId: string;
-  status: 'pending' | 'executing' | 'approved_done' | 'denied' | 'expired' | 'failed' | 'failed_unknown';
-  summary: string | null;
-  createdAt: number;
-  expiresAt: number;
-  executingAt?: number;
-  resolvedAt?: number;
-}
-
-/** The fields of an AgentActionGate a client may see (no args, no requester). */
-export type AgentActionView = Pick<
-  AgentActionGate,
-  'actionId' | 'toolName' | 'preview' | 'costNote' | 'tainted' | 'status' | 'summary' | 'createdAt' | 'expiresAt'
->;
-
-export function agentActionView(gate: AgentActionGate): AgentActionView {
-  return {
-    actionId: gate.actionId,
-    toolName: gate.toolName,
-    preview: gate.preview,
-    costNote: gate.costNote,
-    tainted: gate.tainted,
-    status: gate.status,
-    summary: gate.summary,
-    createdAt: gate.createdAt,
-    expiresAt: gate.expiresAt,
-  };
-}
-
 export interface PendingCallbackGate {
   toolId: string;
   toolName: string;
@@ -123,16 +87,15 @@ const MAX_TOOL_NAME_LEN = 64;
 const MAX_STATE_BUCKETS = 32;
 const MAX_STATE_DOC_CHARS = 64 * 1024;
 const MAX_EVENT_TEXT_CHARS = 2048;
-/** Cap for any tool_input stored in the event log or a gate, as JSON characters. */
+/** Cap for any tool_input stored in the event log, as JSON characters (keeps every storage put small). */
 const MAX_STORED_INPUT_CHARS = 2048;
-/** A turn not refreshed for this long is stale. The tool loop refreshes it on every /events post. */
-const STALE_TURN_MS = 3 * 60 * 1000;
-const MAX_AGENT_ACTIONS = 30;
-/** An approved action still "executing" after this long is reported as an unknown outcome, never retried. */
-export const AGENT_ACTION_EXECUTING_MS = 2 * 60 * 1000;
+const STALE_TURN_MS = 10 * 60 * 1000;
 const FORBIDDEN_RECORD_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
-/** Keep stored tool input small so one oversized event can never make a storage put fail. */
+/**
+ * Keep stored tool input small so one oversized event can never make a storage put fail and lock
+ * the session. Applies to every caller: inputs over the cap are stored as a truncated preview.
+ */
 export function capStoredInput(input: unknown): Record<string, unknown> {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return {};
   let json = '';
@@ -160,14 +123,15 @@ export class OracleSession {
   private nextOffset = 1;
   private currentTurnNumber = 0;
   private activeTurnId: string | null = null;
-  /** Persisted and refreshed on every /events post, so an evicted object does not admit a second turn. */
+  /** In-memory only: after a DO restart this is 0, so an inherited active turn is treated as stale. */
   private activeTurnAt = 0;
   private turnQueue: QueuedTurnMessage[] = [];
   private rememberedTools: string[] = [];
   private pendingApprovals: Record<string, PendingToolGate> = {};
   private pendingCallbacks: Record<string, PendingCallbackGate> = {};
   private stateBuckets: Record<string, ObservableStateBucket> = {};
-  private agentActions: Record<string, AgentActionGate> = {};
+  /** Oracle tool-loop approval cards (worker/oracleAgent/actionStore.ts). */
+  private agentActions: AgentActions = {};
 
   constructor(state: DurableObjectState) {
     this.state = state;
@@ -184,7 +148,6 @@ export class OracleSession {
         storedCallbacks,
         storedBuckets,
         storedActions,
-        storedActiveTurnAt,
       ] = await Promise.all([
         this.state.storage.get<typeof this.turns>('turns'),
         this.state.storage.get<AgentEventEnvelope[]>('events'),
@@ -196,8 +159,7 @@ export class OracleSession {
         this.state.storage.get<Record<string, PendingToolGate>>('pendingApprovals'),
         this.state.storage.get<Record<string, PendingCallbackGate>>('pendingCallbacks'),
         this.state.storage.get<Record<string, ObservableStateBucket>>('stateBuckets'),
-        this.state.storage.get<Record<string, AgentActionGate>>('agentActions'),
-        this.state.storage.get<number>('activeTurnAt'),
+        this.state.storage.get<AgentActions>('agentActions'),
       ]);
 
       if (storedTurns) this.turns = storedTurns;
@@ -211,7 +173,6 @@ export class OracleSession {
       if (storedCallbacks) this.pendingCallbacks = storedCallbacks;
       if (storedBuckets) this.stateBuckets = storedBuckets;
       if (storedActions) this.agentActions = storedActions;
-      if (typeof storedActiveTurnAt === 'number') this.activeTurnAt = storedActiveTurnAt;
     });
   }
 
@@ -260,129 +221,14 @@ export class OracleSession {
     ]);
   }
 
-  /** Expire and time out actions in place. Returns true when anything changed. */
-  private refreshActions(now: number): boolean {
-    let changed = false;
-    for (const gate of Object.values(this.agentActions)) {
-      if (gate.status === 'pending' && now >= gate.expiresAt) {
-        gate.status = 'expired';
-        gate.resolvedAt = now;
-        changed = true;
-      } else if (gate.status === 'executing' && now - (gate.executingAt ?? now) >= AGENT_ACTION_EXECUTING_MS) {
-        gate.status = 'failed_unknown';
-        gate.summary = 'We could not confirm this ran. Check before trying again.';
-        gate.resolvedAt = now;
-        changed = true;
-      }
-    }
-    const entries = Object.entries(this.agentActions);
-    if (entries.length > MAX_AGENT_ACTIONS) {
-      const live = (g: AgentActionGate) => (g.status === 'pending' || g.status === 'executing' ? 1 : 0);
-      const keep = entries
-        .sort((a, b) => live(b[1]) - live(a[1]) || b[1].createdAt - a[1].createdAt)
-        .slice(0, MAX_AGENT_ACTIONS);
-      this.agentActions = Object.fromEntries(keep);
-      changed = true;
-    }
-    return changed;
-  }
-
-  private actionViews(): AgentActionView[] {
-    this.refreshActions(Date.now());
-    return Object.values(this.agentActions)
-      .sort((a, b) => b.createdAt - a.createdAt)
-      .slice(0, 10)
-      .map(agentActionView);
-  }
-
-  private async parkAction(request: Request): Promise<Response> {
-    const body = (await request.json().catch(() => ({}))) as Partial<AgentActionGate> & { ttlMs?: number };
-    const actionId = String(body.actionId || '');
-    const toolName = String(body.toolName || '').trim();
-    const requesterId = String(body.requesterId || '');
-    if (
-      !/^[0-9a-f-]{36}$/.test(actionId) ||
-      !toolName ||
-      toolName.length > MAX_TOOL_NAME_LEN ||
-      isControlPlaneToolName(toolName) ||
-      !requesterId
-    ) {
-      return Response.json({ ok: false, error: 'actionId, toolName and requesterId required', code: 'BAD_REQUEST' }, { status: 400 });
-    }
-    if (ownRecordGet(this.agentActions, actionId)) {
-      return Response.json({ ok: false, error: 'action already exists', code: 'DUPLICATE' }, { status: 409 });
-    }
-    const args = body.args && typeof body.args === 'object' && !Array.isArray(body.args) ? body.args : {};
-    if (JSON.stringify(args).length > MAX_STORED_INPUT_CHARS) {
-      return Response.json({ ok: false, error: 'action arguments too large', code: 'TOO_LARGE' }, { status: 413 });
-    }
+  /** Run one action-store step, write the record back when it changed, and answer. */
+  private async actionStep(step: (actions: AgentActions, now: number) => StoreResult): Promise<Response> {
     const now = Date.now();
-    const ttl = Math.min(Math.max(Number(body.ttlMs) || 30 * 60 * 1000, 60 * 1000), 60 * 60 * 1000);
-    this.agentActions[actionId] = {
-      actionId,
-      toolName,
-      args,
-      argsHash: String(body.argsHash || '').slice(0, 128),
-      projectId: typeof body.projectId === 'string' ? body.projectId.slice(0, 128) : null,
-      requesterId: requesterId.slice(0, 256),
-      preview: String(body.preview || '').slice(0, 1500),
-      costNote: String(body.costNote || '').slice(0, 400),
-      tainted: body.tainted !== false,
-      turnId: String(body.turnId || this.activeTurnId || '').slice(0, 64),
-      status: 'pending',
-      summary: null,
-      createdAt: now,
-      expiresAt: now + ttl,
-    };
-    this.refreshActions(now);
-    await this.state.storage.put('agentActions', this.agentActions);
-    return Response.json({ ok: true, action: agentActionView(this.agentActions[actionId]) });
-  }
-
-  /**
-   * The single latch. Approved: pending -> executing, and the stored gate (with args) goes back to
-   * the Worker to run. Rejected: pending -> denied. Anything else is reported, never re-run.
-   */
-  private async claimAction(request: Request): Promise<Response> {
-    const body = (await request.json().catch(() => ({}))) as { actionId?: string; requesterId?: string; approved?: boolean };
-    const actionId = String(body.actionId || '');
-    const now = Date.now();
-    const changed = this.refreshActions(now);
-    const gate = ownRecordGet(this.agentActions, actionId);
-    if (!gate) {
-      if (changed) await this.state.storage.put('agentActions', this.agentActions);
-      return Response.json({ ok: false, status: 'not_found', error: 'No such action.' }, { status: 404 });
-    }
-    if (String(body.requesterId || '') !== gate.requesterId) {
-      return Response.json({ ok: false, status: 'forbidden', error: 'This action belongs to another account.' }, { status: 403 });
-    }
-    if (gate.status !== 'pending') {
-      if (changed) await this.state.storage.put('agentActions', this.agentActions);
-      const status = gate.status === 'expired' || gate.status === 'failed_unknown' ? gate.status : 'already_decided';
-      return Response.json({ ok: false, status, action: agentActionView(gate) }, { status: 409 });
-    }
-    if (body.approved === true) {
-      gate.status = 'executing';
-      gate.executingAt = now;
-    } else {
-      gate.status = 'denied';
-      gate.resolvedAt = now;
-    }
-    await this.state.storage.put('agentActions', this.agentActions);
-    return Response.json({ ok: true, status: gate.status, gate });
-  }
-
-  private async finishAction(request: Request): Promise<Response> {
-    const body = (await request.json().catch(() => ({}))) as { actionId?: string; ok?: boolean; summary?: string };
-    const gate = ownRecordGet(this.agentActions, String(body.actionId || ''));
-    if (!gate || gate.status !== 'executing') {
-      return Response.json({ ok: false, error: 'Action is not executing.' }, { status: 409 });
-    }
-    gate.status = body.ok ? 'approved_done' : 'failed';
-    gate.summary = String(body.summary || '').slice(0, 400) || null;
-    gate.resolvedAt = Date.now();
-    await this.state.storage.put('agentActions', this.agentActions);
-    return Response.json({ ok: true, action: agentActionView(gate) });
+    const refreshed = refreshActions(this.agentActions, now);
+    this.agentActions = refreshed.actions;
+    const result = step(this.agentActions, now);
+    if (refreshed.changed || result.changed) await this.state.storage.put('agentActions', this.agentActions);
+    return Response.json(result.body, { status: result.status });
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -399,18 +245,21 @@ export class OracleSession {
         currentTurnNumber: this.currentTurnNumber,
         activeTurnId: this.activeTurnId,
         nextOffset: this.nextOffset,
-        actions: this.actionViews(),
+        actions: listViews(refreshActions(this.agentActions, Date.now()).actions),
       });
     }
 
     if (request.method === 'POST' && pathname.endsWith('/action/park')) {
-      return this.parkAction(request);
+      const body = (await request.json().catch(() => ({}))) as Parameters<typeof parkGate>[1];
+      return this.actionStep((actions, now) => parkGate(actions, body, now, this.activeTurnId, isControlPlaneToolName));
     }
     if (request.method === 'POST' && pathname.endsWith('/action/claim')) {
-      return this.claimAction(request);
+      const body = (await request.json().catch(() => ({}))) as Parameters<typeof claimGate>[1];
+      return this.actionStep((actions, now) => claimGate(actions, body, now));
     }
     if (request.method === 'POST' && pathname.endsWith('/action/finish')) {
-      return this.finishAction(request);
+      const body = (await request.json().catch(() => ({}))) as Parameters<typeof finishGate>[1];
+      return this.actionStep((actions, now) => finishGate(actions, body, now));
     }
 
     if (request.method === 'POST' && pathname.endsWith('/append')) {
@@ -545,7 +394,6 @@ export class OracleSession {
         this.persistEvents(),
         this.state.storage.put('currentTurnNumber', this.currentTurnNumber),
         this.state.storage.put('activeTurnId', this.activeTurnId),
-        this.state.storage.put('activeTurnAt', this.activeTurnAt),
         this.state.storage.put('turnQueue', this.turnQueue),
       ]);
 
@@ -595,7 +443,6 @@ export class OracleSession {
         this.persistEvents(),
         this.state.storage.put('currentTurnNumber', this.currentTurnNumber),
         this.state.storage.put('activeTurnId', this.activeTurnId),
-        this.state.storage.put('activeTurnAt', this.activeTurnAt),
         this.state.storage.put('turnQueue', this.turnQueue),
       ]);
 
@@ -689,15 +536,10 @@ export class OracleSession {
         );
       }
 
-      if (this.activeTurnId && (!body.turnId || body.turnId === this.activeTurnId)) {
-        this.activeTurnAt = Date.now();
-      }
-
       await Promise.all([
         this.persistEvents(),
         this.state.storage.put('pendingApprovals', this.pendingApprovals),
         this.state.storage.put('pendingCallbacks', this.pendingCallbacks),
-        this.state.storage.put('activeTurnAt', this.activeTurnAt),
       ]);
 
       return Response.json({

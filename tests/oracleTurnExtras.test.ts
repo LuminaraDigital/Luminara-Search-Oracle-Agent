@@ -61,3 +61,16 @@ describe('Oracle turn extras', () => {
     expect(html).not.toMatch(/\bagent\b|autonomous|does the work/);
   });
 });
+
+describe('a card whose decision did not reach the server', () => {
+  it('stays pending with its buttons and shows the note', () => {
+    const html = renderToStaticMarkup(
+      createElement(OracleApprovalCard, {
+        card: card({ summary: 'Could not reach Luminara. Nothing was decided; try again.' }),
+        onDecide: () => {},
+      }),
+    );
+    expect(html).toContain('>Approve<');
+    expect(html).toContain('Could not reach Luminara');
+  });
+});

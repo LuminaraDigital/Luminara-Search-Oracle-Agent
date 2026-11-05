@@ -4,7 +4,6 @@
  * and that sentence is dropped for a fixed template if it brings in a number, domain or brand
  * the stored rows do not contain. Pure functions only, no D1; the network is reached only by groqWatchAction.
  */
-import { GROQ_DEFAULT_MODEL } from '../llm/nativeModelDefaults';
 
 export type WatchRunState = {
   id: string;
@@ -15,6 +14,17 @@ export type WatchRunState = {
   share: number | null;
   deltaShare: number | null;
   reason: string;
+};
+
+/** The figures a note may state, all from stored runs. */
+export type WatchNumbers = {
+  citedCount: number | null;
+  promptCount: number | null;
+  sharePercent: number | null;
+  deltaShare: number | null;
+  previousCitedCount: number | null;
+  previousPromptCount: number | null;
+  previousSharePercent: number | null;
 };
 
 export type WatchNoteKind = 'first_measured' | 'up' | 'down' | 'same' | 'check_failed';
@@ -28,7 +38,7 @@ export type WatchNote = {
   sentence: string;
   action: string;
   actionSource: 'model' | 'template';
-  numbers: Record<string, number | null>;
+  numbers: WatchNumbers;
 };
 
 export type WatchActionRequest = {
@@ -59,7 +69,7 @@ function noteKind(latest: WatchRunState, previous: WatchRunState | null): WatchN
   return a > b ? 'up' : a < b ? 'down' : 'same';
 }
 
-export function watchNoteNumbers(latest: WatchRunState, previous: WatchRunState | null): Record<string, number | null> {
+export function watchNoteNumbers(latest: WatchRunState, previous: WatchRunState | null): WatchNumbers {
   const prev = previous && isMeasured(previous) ? previous : null;
   return {
     citedCount: latest.citedCount,
@@ -72,7 +82,7 @@ export function watchNoteNumbers(latest: WatchRunState, previous: WatchRunState 
   };
 }
 
-function verdictSentence(kind: WatchNoteKind, latest: WatchRunState, n: Record<string, number | null>): string {
+function verdictSentence(kind: WatchNoteKind, latest: WatchRunState, n: WatchNumbers): string {
   const now = `${n.sharePercent}% (${n.citedCount} of ${n.promptCount} prompts)`;
   const was = `${n.previousSharePercent}% (${n.previousCitedCount} of ${n.previousPromptCount})`;
   if (kind === 'up') return `Citation share rose to ${now}, from ${was} on the previous check.`;
@@ -98,7 +108,7 @@ const SYSTEM =
 export function buildWatchActionRequest(
   kind: WatchNoteKind,
   sentence: string,
-  numbers: Record<string, number | null>,
+  numbers: WatchNumbers,
   previousNote: string | null,
 ): WatchActionRequest {
   const clean = (text: string) => text.replace(/[<>]/g, ' ').slice(0, 400);
@@ -115,7 +125,7 @@ const KNOWN_WORDS = ['chatgpt', 'google', 'perplexity', 'ai', 'oracle', 'citatio
 /** Returns the action as one clean sentence, or null when it brings in anything the stored rows lack. */
 export function acceptWatchAction(
   raw: string,
-  allowed: { numbers: Record<string, number | null>; domain: string; prompts: string[]; reason: string },
+  allowed: { numbers: WatchNumbers; domain: string; prompts: string[]; reason: string },
 ): string | null {
   const text = raw.replace(/\s+/g, ' ').trim().replace(/^["'`]+|["'`]+$/g, '');
   if (!text || text.length > 240) return null;
@@ -183,37 +193,6 @@ export async function buildWatchNote(input: {
 }
 
 /** Groq chat completion for the one action sentence. Returns null on any failure or timeout. */
-export async function groqWatchAction(
-  apiKey: string | undefined,
-  request: WatchActionRequest,
-  options: { timeoutMs?: number; fetchImpl?: typeof fetch } = {},
-): Promise<string | null> {
-  if (!apiKey) return null;
-  try {
-    const res = await (options.fetchImpl || fetch)('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: GROQ_DEFAULT_MODEL,
-        messages: [
-          { role: 'system', content: request.system },
-          { role: 'user', content: request.user },
-        ],
-        reasoning_effort: 'low',
-        temperature: 0.3,
-        max_tokens: 120,
-      }),
-      signal: AbortSignal.timeout(options.timeoutMs ?? 9000),
-    });
-    if (!res.ok) return null;
-    const body = (await res.json()) as { choices?: { message?: { content?: unknown } }[] };
-    const content = body.choices?.[0]?.message?.content;
-    return typeof content === 'string' && content.trim() ? content : null;
-  } catch {
-    return null;
-  }
-}
-
 /** Reads a stored agentNote back out of json text. Returns null for anything malformed. */
 export function parseWatchNote(text: unknown): WatchNote | null {
   if (typeof text !== 'string' || !text) return null;
