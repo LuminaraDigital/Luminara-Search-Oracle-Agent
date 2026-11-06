@@ -266,3 +266,37 @@ describe('a tool-loop turn that throws before its answer', () => {
     }
   });
 });
+
+describe('history in tool-loop mode', () => {
+  let originalFetch: typeof fetch;
+  beforeEach(() => {
+    originalFetch = globalThis.fetch;
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    vi.restoreAllMocks();
+  });
+
+  it('sends only the last three exchanges, with long earlier answers shortened', async () => {
+    const env = await makeEnv();
+    const stub = env.ORACLE_SESSION!.get(env.ORACLE_SESSION!.idFromName(`acct_free1:sess_${freeUser.id}`));
+    for (let i = 0; i < 10; i++) {
+      await stub.fetch('https://oracle-session/append', { method: 'POST', body: JSON.stringify({ role: 'user', content: `old question ${i}` }) });
+      await stub.fetch('https://oracle-session/append', {
+        method: 'POST',
+        body: JSON.stringify({ role: 'assistant', content: `old answer ${i} ${'x'.repeat(2000)}` }),
+      });
+    }
+    const bodies = fakeGroq([{ text: 'Answer to the new question.' }]);
+    await chat(env, { message: 'the new question' });
+    const sent = bodies[0].messages.filter((m) => m.role !== 'system');
+    // Six history turns plus the new message.
+    expect(sent).toHaveLength(7);
+    expect(String(sent[0].content)).toBe('old question 7');
+    expect(String(sent.at(-1)?.content)).toBe('the new question');
+    const answers = sent.filter((m) => m.role === 'assistant').map((m) => String(m.content));
+    expect(answers.every((a) => a.length < 900 && a.endsWith('[earlier answer shortened]'))).toBe(true);
+  });
+});

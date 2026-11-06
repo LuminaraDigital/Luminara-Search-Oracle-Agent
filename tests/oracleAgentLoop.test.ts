@@ -420,3 +420,13 @@ describe('check before finishing', () => {
     expect(noProject.requests).toHaveLength(1);
   });
 });
+
+describe('check before finishing, narrowed', () => {
+  it('does not send back an answer that already rests on a search', async () => {
+    const { requests } = await runWith({
+      responses: [tools(call('live_search', { q: 'who' }, 's1')), text('From the search: A and B.')],
+      tools: [readTool('get_last_audit'), readTool('live_search')],
+    });
+    expect(requests).toHaveLength(2);
+  });
+});

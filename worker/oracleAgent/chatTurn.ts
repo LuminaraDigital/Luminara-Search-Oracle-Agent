@@ -19,6 +19,21 @@ export const AGENT_TURN_BUDGET_MS = 30_000;
 const HARNESS_OUTPUT_CHARS = 2048;
 /** Answer frames: large enough to be few, small enough to render as a stream. */
 const ANSWER_CHUNK_CHARS = 1000;
+/**
+ * History the tool loop sees: the last three exchanges, earlier answers shortened. On staging a
+ * long history of similar answers made the model repeat an earlier answer instead of answering
+ * the new question (Blueprint section 15).
+ */
+export const AGENT_HISTORY_TURNS = 6;
+export const AGENT_HISTORY_ANSWER_CHARS = 800;
+
+export function agentHistory<T extends { role: string; content: string }>(turns: T[]): T[] {
+  return turns.slice(-AGENT_HISTORY_TURNS).map((turn) =>
+    turn.role === 'assistant' && turn.content.length > AGENT_HISTORY_ANSWER_CHARS
+      ? { ...turn, content: `${turn.content.slice(0, AGENT_HISTORY_ANSWER_CHARS)} [earlier answer shortened]` }
+      : turn,
+  );
+}
 
 function eventMapper(write: Write, emitHarnessEvents: (items: AgentStreamItem[]) => Promise<void>) {
   return async (ev: LoopEvent): Promise<void> => {

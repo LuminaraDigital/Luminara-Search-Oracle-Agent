@@ -53,7 +53,7 @@ import type { LoopResult } from './oracleAgent/loop';
 import type { ChatMessage } from './oracleAgent/modelCall';
 import { buildAgentToolContext } from './oracleAgent/context';
 import { agentSessionAccess, handleAgentActionDecision } from './oracleAgent/approvals';
-import { runAgentChatTurn, sendAgentAnswer } from './oracleAgent/chatTurn';
+import { agentHistory, runAgentChatTurn, sendAgentAnswer } from './oracleAgent/chatTurn';
 import {
   admitAgentTurn,
   countAgentTurn,
@@ -749,11 +749,13 @@ export async function handleOracleChatSse(
       }
 
       const clientHistory = Array.isArray(body.history) ? body.history.slice(-12) : [];
-      const historySource = resolveOracleHistory({
+      const fullHistory = resolveOracleHistory({
         durableObjectAvailable,
         doHistory,
         clientHistory,
       });
+      // Tool-loop mode sees less history, so earlier answers do not crowd out the new question.
+      const historySource = agentCtx ? agentHistory(fullHistory) : fullHistory;
       const bundledOraclePrompt = buildOracleSystemPrompt();
       const oracleSkill = await loadAgentSkill(env, ORACLE_CHAT_SKILL_SLUG, {
         fallbackPrompt: bundledOraclePrompt,
@@ -899,6 +901,7 @@ export async function handleOracleChatSse(
               graceUsed: agentResult.graceUsed,
               stopReason: agentResult.stopReason,
               usedFallbackModel: agentResult.usedFallbackModel,
+              notes: agentResult.notes.slice(0, 10),
             }
           : undefined,
         toolsAvailable: [

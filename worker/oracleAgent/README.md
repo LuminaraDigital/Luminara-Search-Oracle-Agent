@@ -35,4 +35,6 @@ Shared with today's path: `worker/oracleReplyChecks.ts` (every reply's checks, a
 - **Deploy note:** approval cards live in the `OracleSession` Durable Object, and a Durable Object runs the code of the version that serves traffic, not a 0% version reached with a version-override header. A 0% or gradual preview of this mode therefore cannot store cards (the step shows as "no card (not stored)"). A normal 100% release updates the objects with the Worker.
 
 - The honesty filter is today's: it redacts figures about the user, the site under discussion or a named site. A general sentence with a figure about unnamed third parties ("rivals get N visits") is not redacted, in this mode or in the old one.
+- This mode sees the last 3 exchanges of history, earlier answers cut to 800 characters (`agentHistory`). The done frame carries `stopReason` and a per-round `notes` trace for diagnosis.
+- A cause about the site stated in words without a number is not caught by code; the rules ask the model to label web evidence as such.
 - Browser tools, deep research (RLM) and the learning loop are not wired here yet (Blueprint section 11).
