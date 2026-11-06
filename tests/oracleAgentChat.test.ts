@@ -146,7 +146,9 @@ describe('Oracle chat with the tool loop on (Free plan)', () => {
 
   it('refuses paid research on the Free plan and still answers', async () => {
     const env = await makeEnv();
-    fakeGroq([{ tool: 'get_domain_overview', args: {} }, { text: 'Verdict: run an audit first. One action: run an Instant Audit of acme.com.' }]);
+    const answer = 'Verdict: not measured yet. One action: run an Instant Audit of acme.com.';
+    // The check-before-finish note asks once for the last audit and live search; the model answers again.
+    fakeGroq([{ tool: 'get_domain_overview', args: {} }, { text: answer }, { text: answer }]);
     const { frames, streamed } = await chat(env, { message: 'How strong is my domain?', projectId: 'proj_1' });
     expect(frames.find((f) => f.event === 'tool' && f.data.stage === 'blocked')?.data.reason).toMatch(/Agency plan/);
     expect(streamed).toContain('One action');

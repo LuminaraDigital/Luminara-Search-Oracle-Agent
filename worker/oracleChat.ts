@@ -893,7 +893,13 @@ export async function handleOracleChatSse(
         monitor: monitor.ok ? { ok: true, flags: [] } : { ok: false, flags: monitor.flags, notes: monitor.notes },
         validation: { ok: validation.ok, summary: validationSummary },
         agent: agentResult
-          ? { receipts: agentResult.receipts, rounds: agentResult.rounds, graceUsed: agentResult.graceUsed }
+          ? {
+              receipts: agentResult.receipts,
+              rounds: agentResult.rounds,
+              graceUsed: agentResult.graceUsed,
+              stopReason: agentResult.stopReason,
+              usedFallbackModel: agentResult.usedFallbackModel,
+            }
           : undefined,
         toolsAvailable: [
           ...PAID_TOOL_CATALOGUE.map((t) => t.name),
@@ -906,6 +912,8 @@ export async function handleOracleChatSse(
           rounds: agentResult.rounds,
           tools: agentResult.receipts.length,
           grace: agentResult.graceUsed,
+          stop: agentResult.stopReason,
+          fallbackModel: agentResult.usedFallbackModel,
           continue: isContinue,
         });
       }

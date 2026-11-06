@@ -73,7 +73,8 @@ export const callOracleModel: CallModel = async (env, req) => {
     messages: req.messages,
     temperature: 0.4,
     max_tokens: req.maxTokens ?? 2048,
-    reasoning_effort: 'low',
+    // Medium: low made the model skip tools in staging tests; answers still came in about 3 s.
+    reasoning_effort: 'medium',
     stream: false,
   };
   if (req.tools && req.tools.length > 0) {

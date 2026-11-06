@@ -223,3 +223,33 @@ Built on `feat/agentic-oracle`. Gates: `npm run typecheck`, `npm run lint` (0 er
 3. The card flow with a real user on a plan that can create a watch (`starter` and up have scheduled re-audits; to confirm on staging).
 4. No web screen shows citation watches yet, so watch notes are readable only through the runs API.
 5. Real-volume cost on the Free plan.
+
+## 15. Staging test, 2026-11-07
+
+Method: the branch was uploaded as a staging version with `ORACLE_AGENT_ENABLED=true` set on that version only, deployed at 0% beside the live version, and reached with the `Cloudflare-Workers-Version-Overrides` header; live staging traffic stayed 100% on the current version throughout. Signed in through the Worker's own `/api/auth/sign-in` with the staging-only test account (Free plan). One test project was created on staging (`luminarasuite.com`). Afterwards the deployment was restored exactly (current version 100%, PR 337's preview 0%).
+
+**Verified live**
+
+| Item | Result |
+|---|---|
+| Groq tool calling on `openai/gpt-oss-120b` | Works: the model chose `get_project_context`, `get_last_audit` and `live_search` itself and read their results |
+| Latency (Blueprint s13 item 7) | Warm: first status 0.66-1.2 s, full answer 2.6-5.6 s. Cold first request: first status 3.6 s |
+| Free daily cap | After 5 agent turns: `429 AGENT_CAP`, `which: account`, `fallback: true` |
+| `ORACLE_AGENT_LIMITS` override | Raised the Free cap on the test version only |
+| Live search on staging | Tavily returned 5 results |
+| Payment rule | "I paid but nothing happened" was pointed to `/paysupport`, never told to pay again |
+| Override isolation | `/api/health` shows `oracleAgent: true` only with the header |
+
+**Found and fixed during the test** (builds 2 to 4)
+
+1. The model skipped `get_last_audit` and stated an unmeasured cause as fact. Fixed with a check-before-finish note (Hermes stop gate, asked once, first answer kept as fallback, only for evidence tools that can run), a rule against stating unmeasured causes, and `reasoning_effort` raised to medium. After: "not measured", with "run an Instant Audit" as the one action.
+2. Free's 3 rounds were too few once the note uses one: now 4.
+3. The model wrote the raw code `not_measured` as the verdict: rule plus a code-level fix (`plainStatusWords`).
+4. After a Groq rate limit the loop jumped to a tool-less grace answer: it now keeps its tools on the fallback model. Each turn reports a `stopReason`.
+
+**Still open**
+
+1. **Groq rate limits are the binding constraint.** A burst of about 15 turns exhausted the staging key within seconds (`stopReason: rate_limited` on both models). Staging has no `GROQ_API_KEY_FALLBACK`; production has one, but Free traffic shares a provider account. Before Free plans get this mode: a separate key or a paid Groq tier for agent traffic, and a check of production rate limits.
+2. Under rate limiting, the fallback model (`gpt-oss-20b`) leaned on the session history and repeated an earlier answer instead of using its search results. Made worse by the test account's history of repeated test turns; worth a limit on history turns in this mode.
+3. The approval-card flow is not tested live: the test account is on Free, which cannot create watches. Testing it needs a plan on the test account in staging (a staging KV write, the owner's call).
+4. The cold first status (3.6 s) is over the 2 s target; warm requests meet it.

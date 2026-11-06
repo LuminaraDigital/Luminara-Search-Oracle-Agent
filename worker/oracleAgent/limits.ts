@@ -18,7 +18,8 @@ export type AgentLimits = {
 };
 
 export const DEFAULT_AGENT_LIMITS: Readonly<Record<PlanId, AgentLimits>> = Object.freeze({
-  free: { rounds: 3, toolCalls: 4, turnsPerDay: 5, searchesPerDay: 3 },
+  // Four rounds: the check-before-finish note can use one (staging, 2026-11-07).
+  free: { rounds: 4, toolCalls: 5, turnsPerDay: 5, searchesPerDay: 3 },
   starter: { rounds: 4, toolCalls: 6, turnsPerDay: 50, searchesPerDay: 30 },
   growth: { rounds: 6, toolCalls: 10, turnsPerDay: 200, searchesPerDay: 120 },
   agency: { rounds: 8, toolCalls: 14, turnsPerDay: 1000, searchesPerDay: 500 },

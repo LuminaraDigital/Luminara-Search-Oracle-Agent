@@ -143,7 +143,7 @@ describe('Oracle tool loop', () => {
     expect(requests[2].messages.at(-1)).toEqual({ role: 'user', content: GRACE_NOTE });
   });
 
-  it('switches the grace call to the fallback model after a rate limit mid-loop', async () => {
+  it('keeps its tools and moves to the fallback model after a rate limit', async () => {
     const { result, requests } = await runWith({
       responses: [
         tools(call('lookup', { q: '1' })),
@@ -153,7 +153,25 @@ describe('Oracle tool loop', () => {
       tools: [readTool('lookup')],
     });
     expect(result.text).toBe('answer on fallback');
-    expect(requests[2]).toMatchObject({ toolChoice: 'none', fallback: true });
+    expect(requests[2]).toMatchObject({ toolChoice: 'auto', fallback: true });
+    expect(result).toMatchObject({ stopReason: 'answered', usedFallbackModel: true, graceUsed: false });
+  });
+
+  it('makes the grace call on the fallback model when the fallback is rate limited too', async () => {
+    const limited = { ok: false as const, status: 429, code: 'RATE_LIMITED' as const, detail: 'slow down' };
+    const { result, requests } = await runWith({
+      responses: [tools(call('lookup', { q: '1' })), limited, limited, text('grace on fallback')],
+      tools: [readTool('lookup')],
+    });
+    expect(result.text).toBe('grace on fallback');
+    expect(requests.at(-1)).toMatchObject({ toolChoice: 'none', fallback: true });
+    expect(result.stopReason).toBe('rate_limited');
+  });
+
+  it('writes a leaked status code as words', async () => {
+    const { result } = await runWith({ responses: [text('Verdict: not_measured. One action: run an audit.')], tools: [] });
+    expect(result.text).toBe('Verdict: not measured yet. One action: run an audit.');
+    expect(result.stopReason).toBe('answered');
   });
 
   it('fails the turn when the very first model call fails', async () => {
@@ -309,7 +327,7 @@ describe('limits', () => {
     expect(agentLimitsFor('free').turnsPerDay).toBe(5);
     expect(agentLimitsFor('free').searchesPerDay).toBe(3);
     expect(agentLimitsFor('pro').rounds).toBe(DEFAULT_AGENT_LIMITS.agency.rounds);
-    expect(agentLimitsFor('free', '{"free":{"turnsPerDay":8,"rounds":0}}')).toMatchObject({ turnsPerDay: 8, rounds: 3 });
+    expect(agentLimitsFor('free', '{"free":{"turnsPerDay":8,"rounds":0}}')).toMatchObject({ turnsPerDay: 8, rounds: 4 });
     expect(agentLimitsFor('free', 'not json').turnsPerDay).toBe(5);
   });
 });
@@ -338,5 +356,44 @@ describe('source check', () => {
     expect(out.text).toContain('https://acme.com/pricing');
     expect(out.text).toContain('https://luminarasuite.com/r/1');
     expect(out.text).not.toContain('evil.example');
+  });
+});
+
+describe('check before finishing', () => {
+  const evidenceTools = () => [readTool('get_last_audit', { measured: true, text: 'Health score: 58' }), readTool('live_search')];
+
+  it('sends the model back once for the audit and search, then accepts its answer', async () => {
+    const { result, requests } = await runWith({
+      responses: [text('Guess without evidence.'), tools(call('get_last_audit', {}, 'c1')), text('Verdict from the audit: 58. One action: add schema.')],
+      tools: evidenceTools(),
+    });
+    expect(requests).toHaveLength(3);
+    const note = requests[1].messages.at(-1);
+    expect(note?.role).toBe('user');
+    expect(String(note?.content)).toMatch(/not read the last audit.*not searched live sources/);
+    expect(result.text).toContain('58');
+    expect(result.measuredTexts).toEqual(['Health score: 58']);
+  });
+
+  it('asks only once, and keeps the first answer when the model repeats or fails', async () => {
+    const repeat = await runWith({ responses: [text('Same answer.'), text('Same answer.')], tools: evidenceTools() });
+    expect(repeat.requests).toHaveLength(2);
+    expect(repeat.result.text).toBe('Same answer.');
+
+    const failing = await runWith({
+      responses: [text('First answer.'), { ok: false, status: 500, code: 'UPSTREAM', detail: 'down' }, { ok: false, status: 500, code: 'UPSTREAM', detail: 'down' }],
+      tools: evidenceTools(),
+    });
+    expect(failing.result.text).toBe('First answer.');
+  });
+
+  it('does not ask when the evidence was already gathered or no project is open', async () => {
+    const gathered = await runWith({
+      responses: [tools(call('get_last_audit', {}, 'a')), tools(call('live_search', { q: 'x' }, 'b')), text('Done with evidence.')],
+      tools: evidenceTools(),
+    });
+    expect(gathered.requests).toHaveLength(3);
+    const noProject = await runWith({ responses: [text('ok')], tools: [readTool('get_last_audit')], ctx: ctxFor({ projectId: null }) });
+    expect(noProject.requests).toHaveLength(1);
   });
 });
