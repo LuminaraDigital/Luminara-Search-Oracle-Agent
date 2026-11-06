@@ -281,13 +281,13 @@ export async function runAgentLoop(input: LoopInput): Promise<LoopResult> {
 
       if (tool.effect === 'external') {
         const prepared = await tool.prepare!(parsed.args, ctx);
-        if (!prepared.ok) {
-          await reply(`Not proposed: ${prepared.error}`);
-          continue;
-        }
-        const parked = await input.park(tool, prepared, call.id);
-        if (!parked.ok) {
-          await reply(`Could not show the approval card: ${parked.error}`);
+        const parked = prepared.ok ? await input.park(tool, prepared, call.id) : null;
+        if (!prepared.ok || !parked || !parked.ok) {
+          // The user sees why no card appeared, as a step; the model is told the same.
+          const why = !prepared.ok ? `Not proposed: ${prepared.error}` : `Could not show the approval card: ${parked && !parked.ok ? parked.error : 'unknown'}`;
+          result.receipts.push({ id: call.id, tool: name, status: 'blocked', measured: false, outputHash: null, summary: `${name}: no card (${!prepared.ok ? 'not valid' : 'not stored'})` });
+          await emit({ type: 'tool_blocked', callId: call.id, tool: name, reason: why });
+          await reply(`${why}. Tell the user plainly that no card was created.`);
           continue;
         }
         result.receipts.push({

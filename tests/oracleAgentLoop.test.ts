@@ -221,6 +221,29 @@ describe('Oracle tool loop', () => {
     expect(toolMsg.content).toMatch(/Waiting for the user's approval/);
   });
 
+  it('shows a blocked step when the approval card cannot be stored', async () => {
+    const external: AgentTool = {
+      name: 'do_outside',
+      description: 'd',
+      parameters: { type: 'object', properties: {}, additionalProperties: false },
+      effect: 'external',
+      paid: false,
+      status: 'Preparing',
+      gate: () => null,
+      prepare: async () => ({ ok: true, args: {}, preview: 'p', costNote: '' }),
+      execute: vi.fn(),
+    };
+    const { result, events, requests } = await runWith({
+      responses: [tools(call('do_outside', {}, 'c1')), text('No card this time.')],
+      tools: [external],
+      park: async () => ({ ok: false, error: 'the approval card could not be stored' }),
+    });
+    expect(result.receipts[0]).toMatchObject({ status: 'blocked', summary: 'do_outside: no card (not stored)' });
+    expect(events.find((e) => e.type === 'tool_blocked')).toMatchObject({ reason: expect.stringContaining('could not be stored') });
+    const toolMsg = requests[1].messages.find((m) => m.role === 'tool') as Extract<ChatMessage, { role: 'tool' }>;
+    expect(toolMsg.content).toMatch(/no card was created/);
+  });
+
   it('gives the gate refusal to the model and records a blocked step', async () => {
     const gated = { ...readTool('paid_thing'), gate: () => 'Paid research needs the Agency plan.' };
     const { result, events } = await runWith({ responses: [tools(call('paid_thing', {})), text('ok')], tools: [gated] });
