@@ -34,7 +34,7 @@
 
 import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
-import { validateInitData, createTelegramSessionToken } from './telegramAuth';
+import { INIT_DATA_EXPIRED_REASON, validateInitData, createTelegramSessionToken } from './telegramAuth';
 import { bearerFromAuthorization, verifyFirebaseIdToken } from './firebaseAuth';
 import { handleAccountBoot } from './accountBoot';
 import { withStageTiming } from './serverTiming';
@@ -1051,7 +1051,19 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     if (typeof initData !== 'string' || !initData) return withCors(json({ error: 'initData required' }, 400));
     if (!env.BOT_TOKEN) return withCors(json({ error: 'BOT_TOKEN not configured' }, 503));
     const v = await validateInitData(initData, env.BOT_TOKEN);
-    if (!v.ok) return withCors(json({ error: v.reason }, 401));
+    if (!v.ok) {
+      // A Stars purchase from a Mini App open over an hour: stale initData, but the Telegram
+      // session the app already holds still names the buyer. Signing in again stays strict.
+      if (path === '/telegram/invoice' && v.reason === INIT_DATA_EXPIRED_REASON) {
+        const who = await identify(request, env);
+        if (who.user?.source === 'telegram' && /^\d+$/.test(who.user.id)) {
+          if (typeof plan !== 'string' || !plan) return withCors(json({ error: 'initData and plan required' }, 400));
+          const link = await createInvoiceLink(env, Number(who.user.id), normalizePlanId(plan));
+          return withCors(link.ok ? json({ ok: true, url: link.url }) : json({ error: link.error }, 400));
+        }
+      }
+      return withCors(json({ error: v.reason }, 401));
+    }
 
     if (path === '/telegram/auth') {
       const csrf = refuseCrossSiteSessionWrite(request, env);

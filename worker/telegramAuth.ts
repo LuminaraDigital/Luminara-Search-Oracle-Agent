@@ -37,6 +37,9 @@ function constantTimeEqual(a: string, b: string): boolean {
 /** Default Mini App initData freshness window (1 hour). Reopen the Mini App to refresh. */
 export const TELEGRAM_INIT_DATA_TTL_SECONDS = 3600;
 
+/** Signed by Telegram but older than the window: the app has simply been open a while. */
+export const INIT_DATA_EXPIRED_REASON = 'initData expired; reopen the app';
+
 export async function validateInitData(
   initData: string,
   botToken: string,
@@ -88,7 +91,7 @@ export async function validateInitData(
   const authDate = Number(params.get('auth_date') || 0);
   if (!authDate) return { ok: false, reason: 'initData missing auth_date' };
   if (authDate > nowSec + 60) return { ok: false, reason: 'initData auth_date is in the future' };
-  if (nowSec - authDate > ttlSeconds) return { ok: false, reason: 'initData expired; reopen the app' };
+  if (nowSec - authDate > ttlSeconds) return { ok: false, reason: INIT_DATA_EXPIRED_REASON };
 
   const userRaw = params.get('user');
   if (!userRaw) return { ok: false, reason: 'initData has no user' };

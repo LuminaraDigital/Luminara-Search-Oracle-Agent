@@ -1,6 +1,6 @@
 import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
-import { validateInitData, verifyTelegramSessionToken } from './telegramAuth';
+import { INIT_DATA_EXPIRED_REASON, validateInitData, verifyTelegramSessionToken } from './telegramAuth';
 import { bearerFromAuthorization, firebaseAuthTiming, verifyFirebaseIdToken, type FirebaseAuthTiming } from './firebaseAuth';
 import { withAccountId } from './userStore';
 import {
@@ -152,26 +152,34 @@ export async function identify(request: Request, env: Env): Promise<{
   const authBearer = bearerFromAuthorization(request.headers.get('authorization'));
   const cookieToken = authBearer ? null : getSessionCookieToken(request);
 
-  // CSRF: cookie-authenticated mutations require an allowlisted Origin (fail closed if missing).
-  // Bearer and Telegram initData paths are not cookie CSRF vectors.
-  if (cookieToken && !initData && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method)) {
-    const refusal = crossSiteRefusal(request, env);
-    if (refusal) return pack({ user: null, error: CSRF_ERRORS[refusal] });
-  }
-
   let telegramUser: HostedIdentity | null = null;
   let firebaseUser: HostedIdentity | null = null;
+  // Set when the Mini App's initData is genuine but past its 1h window. The session the app
+  // already holds (cookie or bearer) can still sign the request in; this error is the answer if not.
+  let staleInitDataError: string | null = null;
 
   if (initData) {
     if (!env.BOT_TOKEN) return pack({ user: null, error: 'Server has no BOT_TOKEN configured' });
     const result = await validateInitData(initData, env.BOT_TOKEN);
-    if (!result.ok) return pack({ user: null, error: result.reason });
-    const tg = result.user;
-    telegramUser = {
-      id: String(tg.id),
-      source: 'telegram',
-      name: [tg.first_name, tg.last_name].filter(Boolean).join(' ') || tg.username,
-    };
+    if (result.ok) {
+      const tg = result.user;
+      telegramUser = {
+        id: String(tg.id),
+        source: 'telegram',
+        name: [tg.first_name, tg.last_name].filter(Boolean).join(' ') || tg.username,
+      };
+    } else if (result.reason === INIT_DATA_EXPIRED_REASON) {
+      staleInitDataError = result.reason;
+    } else {
+      return pack({ user: null, error: result.reason });
+    }
+  }
+
+  // CSRF: cookie-authenticated mutations require an allowlisted Origin (fail closed if missing).
+  // Bearer and fresh Telegram initData are not cookie CSRF vectors; stale initData leaves the cookie in charge.
+  if (cookieToken && !telegramUser && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method)) {
+    const refusal = crossSiteRefusal(request, env);
+    if (refusal) return pack({ user: null, error: CSRF_ERRORS[refusal] });
   }
 
   // Opaque server session (preferred): cookie holds sid_*, identity resolved from KV.
@@ -192,8 +200,8 @@ export async function identify(request: Request, env: Env): Promise<{
           name: sess.name,
         };
       }
-    } else if (!initData) {
-      return pack({ user: null, error: 'Session expired or revoked' });
+    } else if (!initData || staleInitDataError) {
+      return pack({ user: null, error: staleInitDataError || 'Session expired or revoked' });
     }
   }
 
@@ -270,6 +278,8 @@ export async function identify(request: Request, env: Env): Promise<{
       return pack({ user: primary });
     }
   }
+
+  if (staleInitDataError) return pack({ user: null, error: staleInitDataError });
 
   if (env.REQUIRE_TG_AUTH === 'true') {
     const hint = env.FIREBASE_PROJECT_ID
