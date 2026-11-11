@@ -24,7 +24,10 @@ Sentry (`@sentry/cloudflare` on the Worker, `@sentry/browser` in the client) sta
 | `POST /auth/logout` | worker/index.ts | none | Session clear. Revokes the first `__session` cookie; a malformed cookie is ignored. Same Origin rule as `POST /auth/session` |
 | `POST /auth/reset-password` | worker/index.ts | none | Email reset |
 | `POST /auth/sign-up`, `/auth/sign-in` | worker/authCredentialGateway.ts | none | Password auth. Only a wrong password or unknown email counts toward the sign-in lockout (5 in 15 minutes). A network error, a provider 5xx, `PASSWORD_LOGIN_DISABLED` or a key/config fault is 503 `AUTH_UNAVAILABLE` (log `auth_unavailable` with a `reason`) and records nothing; the browser then falls back to the Firebase SDK |
-| `GET,POST /email/unsubscribe` | worker/welcomeEmail.ts | none | One-click opt-out for welcome mail. `RESEND_API_KEY` is a Worker secret. A new account is mailed once from `hello@luminarasuite.com`; migration 0036 stamps older rows so they are not mailed. The send runs in `waitUntil` and a Resend error does not fail sign-in |
+| `GET,POST /email/unsubscribe` | worker/welcomeEmail.ts | none | One-click opt-out for welcome mail. `?list=weekly` turns off only the weekly visibility email. A link with no list opts out of product email, including the weekly report. `RESEND_API_KEY` is a Worker secret. A new account is mailed once from `hello@luminarasuite.com`; migration 0036 stamps older rows so they are not mailed. The send runs in `waitUntil` and a Resend error does not fail sign-in |
+| `GET,POST /email/weekly-report` | worker/weeklyVisibilityEmail.ts | session | Opt in to the weekly visibility email. The daily cron sends it once per ISO week, only when `RESEND_API_KEY` is set. It re-reads the public homepage and spends the audit allowance (one domain on the free allowance, three on a paid plan). A failed send gives that allowance back. The full audit crew does not run |
+| `POST /fix-drafts` | worker/fixDraftRoute.ts | session | Paste-ready agency draft. Spends one Ask. Does not publish |
+| `GET /gsc/status`, `POST /gsc/connect`, `POST /gsc/disconnect`, `GET /gsc/callback` | worker/gscOAuth.ts | session when the flag is on | 404 while `GSC_OAUTH_ENABLED` is not on. Read-only scope only. Setup: `docs/runbooks/gsc-oauth-setup.md` |
 | `POST /auth/request-otp`, `/auth/verify-otp` | worker/authOtpSms.ts | none | SMS OTP |
 | `POST /auth/send-verification` | worker/index.ts | none | Email verification |
 | `POST /webhooks/auth` | worker/index.ts | webhook secret | Firebase webhook. `REQUEST_SIGNING_REQUIRED=true` switches this route to HMAC request signing (`x-luminara-key-id`, timestamp, nonce, signature) with keys from `REQUEST_SIGNING_KEYS`. The flag is off in production, and the old `x-auth-signature` check stays. `user.deleted` also revokes the user's sessions: a KV marker kept for one session lifetime (14 days) makes every session for that uid fail to load, including one minted later from an unexpired ID token. A Firebase Bearer ID token itself still works until it expires (at most an hour) |
@@ -574,11 +577,15 @@ npm run db:backfill:firestore -- --from-users users.json --from-audits audits.js
 
 See `docs/adr/0001-firebase-gcp-data-plane.md` for the staging export commands and the GCP checklist. No service account JSON key.
 
+## Homepage hero experiment
+
+`HERO_AB_ENABLED=true` assigns cookie `lx_hero` (`answer` or `employee`) on the first HTML response for `/`. A valid cookie is not replaced. `?hero=answer` or `?hero=employee` sets it while the flag is on. Staging is `true`. The top-level and production vars are `false`, so production serves the employee headline until the owner turns the flag on. The readout query is `docs/runbooks/hero-ab.md`. The events are `hero_exposed` (browser, once per variant), `instant_audit_started` (when a scout run token is minted, no account id), and `variant` on `signup_completed`.
+
 ## Env vars
 
 Read: `ADMIN_SECRET`, `BOT_TOKEN`, `FIREBASE_PROJECT_ID`, `MCP_OAUTH_SECRET`,
 `PAGESPEED_API_KEY`, `REQUIRE_APP_CHECK`, `REQUIRE_TG_AUTH`,
-`REQUIRE_SUBSCRIPTION`, `FREE_DAILY_LIMIT`, `AUDIT_QUEUE_ENABLED`, provider
+`REQUIRE_SUBSCRIPTION`, `FREE_DAILY_LIMIT`, `AUDIT_QUEUE_ENABLED`, `HERO_AB_ENABLED`, provider
 keys (`GEMINI`, `GROQ`, `OPENROUTER`, `DATAFORSEO`, `NIM`, `OLLAMA`), sidecar
 URLs, TON pricing vars, D1 `DB`, KV `LUMINARA_KV`. Secrets stay server-side.
 
@@ -600,3 +607,4 @@ URLs, TON pricing vars, D1 `DB`, KV `LUMINARA_KV`. Secrets stay server-side.
 - `tests/evalsRunner.test.ts`, `tests/honestyGates.test.ts`: honesty gates.
 - `tests/conversionEnquirySpine.test.ts`: enquiry ingestion, statutory escalation, booking sign-off, 6-stage outcomes ledger, recovery guardrails, and Twenty CRM sync.
 - `tests/cmsMcpAndDesktop.test.ts`: 3-Tier CMS remediation router, CMS MCP relay, Celesto 2-tier browser policy, sub-agent matrix validation, and Electron desktop coordinator.
+- `tests/heroExperiment.test.ts`: hero assignment, query override, kill switch, and the three events.

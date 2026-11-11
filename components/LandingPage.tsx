@@ -3,16 +3,22 @@
  * 2. Statement: AI gives one answer (the globe pulls back to the full planet)
  * 3. How it works: four chapters beside the globe (crawl, engines, evidence, fix)
  * 4. What you get: an illustrative report
- * 5. Where to use it: web, Telegram Mini App, Google Play
- * 6. Why Luminara: three value props and the MCP line for developers
- * 7. FAQ (1:1 with FAQPage JSON-LD)
- * 8. Closing call to action over a second horizon, then the footer
+ * 5. Evidence labels: Measured, Estimated, Not measured
+ * 6. Jobs an agency would otherwise do by hand
+ * 7. Kim W. Fulwood, who visits agencies
+ * 8. Where to use it: web, Telegram Mini App, Google Play
+ * 9. Why Luminara: three value props
+ * 10. Use Suite from your AI (free MCP)
+ * 11. FAQ (1:1 with FAQPage JSON-LD)
+ * 12. Trust strip, then the closing call to action and the footer
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import './marketing/space.css';
 import { MarketingNav } from './MarketingNav';
 import { MarketingFooter } from './marketing/MarketingFooter';
+import { MarketingCompareTable } from './marketing/MarketingCompareTable';
 import { MarketingFaq } from './marketing/MarketingFaq';
+import { TrustStrip } from './marketing/TrustStrip';
 import { PlatformHeroLinks, PlatformSurfaces } from './marketing/PlatformSurfaces';
 import { SpaceStage } from './marketing/SpaceStage';
 import { DomainCheck } from './marketing/DomainCheck';
@@ -28,7 +34,22 @@ import {
 } from './marketing/earth/globeStory';
 import type { AuditHandoff } from '../services/activation/auditHandoff';
 import { GUEST_HERO_NOTE, GUEST_REPORT_NOTE } from '../services/audit/hostedScoutRail';
-import { HOME_HERO } from '../services/marketing/marketingHeroCopy';
+import { productTelemetry } from '../services/analytics/productTelemetry';
+import { LIVE_ANSWER_CHECKS } from '../services/marketing/engineCoverage';
+import { claimHeroExposure, HERO_EXPOSURE_STORAGE_KEY } from '../services/marketing/heroExperiment';
+import { heroExperimentOn, heroVariantInBrowser } from '../services/marketing/heroExperimentClient';
+import { homeHeroForVariant } from '../services/marketing/marketingHeroCopy';
+import {
+  MCP_BODY,
+  MCP_DOCS_PATH,
+  MCP_HEADING,
+  PRACTITIONER,
+  PROOF_BODY,
+  PROOF_HEADING,
+  STACK_HEADING,
+  STACK_INTRO,
+  STACK_ROWS,
+} from '../services/marketing/marketingPositioning';
 import { checkHostFromPath } from '../services/marketing/homepageSnippet';
 
 interface LandingPageProps {
@@ -100,6 +121,26 @@ const LandingPage: React.FC<LandingPageProps> = ({
   const anchorsRef = useRef<Array<HTMLElement | null>>([]);
   const [chapter, setChapter] = useState(-1);
   const [copied, setCopied] = useState(false);
+  const [heroVariant] = useState(() => heroVariantInBrowser());
+  const hero = homeHeroForVariant(heroVariant);
+
+  useEffect(() => {
+    let seen: string | null = null;
+    try {
+      seen = localStorage.getItem(HERO_EXPOSURE_STORAGE_KEY);
+    } catch {
+      seen = null;
+    }
+    const variant = claimHeroExposure({ experimentOn: heroExperimentOn(), variant: heroVariant, seen });
+    if (!variant) return;
+    try {
+      localStorage.setItem(HERO_EXPOSURE_STORAGE_KEY, variant);
+    } catch {
+      // A blocked store can record this exposure again on the next load.
+    }
+    productTelemetry.track('hero_exposed', { variant });
+    void productTelemetry.flushToServer();
+  }, [heroVariant]);
 
   // Stable callback refs (hero, statement, one per chapter) so anchors never detach on re-render.
   const anchorRefs = useMemo(
@@ -188,18 +229,18 @@ const LandingPage: React.FC<LandingPageProps> = ({
             aria-hidden
             className="pointer-events-none absolute left-1/2 top-[8svh] -z-10 h-[78svh] w-[min(1100px,130vw)] -translate-x-1/2 bg-[radial-gradient(ellipse_at_center,rgb(0_0_0/0.62)_0%,rgb(0_0_0/0.35)_45%,transparent_70%)]"
           />
-          <p className="lx-eyebrow lx-enter-rise lx-d1 lx-fp-text">{HOME_HERO.eyebrow}</p>
+          <p className="lx-eyebrow lx-enter-rise lx-d1 lx-fp-text">{hero.eyebrow}</p>
           <h1 id="hero-heading" className="lx-display lx-h1 mt-6 max-w-5xl lx-fp-text">
             <span className="lx-enter-mask">
-              <span className="lx-enter-line lx-d2">{HOME_HERO.titleLead}</span>
+              <span className="lx-enter-line lx-d2">{hero.titleLead}</span>
             </span>{' '}
             <span className="lx-enter-mask">
-              <span className="lx-enter-line lx-d3 italic lx-gold-text pr-[0.08em]">{HOME_HERO.titleEm}</span>
+              <span className="lx-enter-line lx-d3 italic lx-gold-text pr-[0.08em]">{hero.titleEm}</span>
             </span>
           </h1>
           <span aria-hidden className="lx-rule lx-enter-draw lx-d4 mt-8 lx-fp-text" />
           <p className="lx-lede lx-enter-rise lx-d4 mt-7 max-w-2xl lx-fp-text">
-            {HOME_HERO.lede}
+            {hero.lede}
           </p>
           <div className="lx-enter-rise lx-d5 mt-9 w-full">
             <DomainCheck
@@ -386,6 +427,69 @@ const LandingPage: React.FC<LandingPageProps> = ({
         </div>
       </section>
 
+      <section
+        id="evidence"
+        aria-labelledby="evidence-heading"
+        className="relative z-10 border-t lx-hairline px-5 py-16 sm:px-8 sm:py-20"
+      >
+        <div className="mx-auto max-w-3xl" data-reveal>
+          <p className="lx-eyebrow">How a result is labeled</p>
+          <h2 id="evidence-heading" className="lx-display lx-h2 mt-6">
+            {PROOF_HEADING}
+          </h2>
+          <p className="lx-lede mt-7">{PROOF_BODY}</p>
+          <ul className="m-0 mt-8 list-none space-y-3 p-0">
+            {EVIDENCE_LEGEND.map((row) => (
+              <li key={row.state} className="flex items-baseline gap-3">
+                <span className="inline-flex translate-y-[1px]">
+                  <EvidenceGlyph state={row.state} />
+                </span>
+                <p className="text-[15px] leading-snug text-[var(--color-ink-2)]">
+                  <span className="font-medium text-[var(--color-ink)]">{row.state}.</span> {row.meaning}
+                </p>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-8 leading-relaxed text-[var(--color-ink-2)]">{LIVE_ANSWER_CHECKS}</p>
+          <button type="button" onClick={onNavigateMethodology} className="lx-link mt-6 text-sm">
+            How we measure
+          </button>
+        </div>
+      </section>
+
+      <section
+        id="stack"
+        aria-labelledby="stack-heading"
+        className="relative z-10 border-t lx-hairline px-5 py-16 sm:px-8 sm:py-20"
+      >
+        <div className="mx-auto max-w-6xl">
+          <div className="max-w-3xl" data-reveal>
+            <p className="lx-eyebrow">One plan</p>
+            <h2 id="stack-heading" className="lx-display lx-h2 mt-6">
+              {STACK_HEADING}
+            </h2>
+            <p className="lx-lede mt-7">{STACK_INTRO}</p>
+          </div>
+          <MarketingCompareTable themLabel="By hand" usLabel="One Suite plan" labelHeading="Job" rows={STACK_ROWS} />
+        </div>
+      </section>
+
+      <section
+        id="practitioners"
+        aria-labelledby="practitioners-heading"
+        className="relative z-10 border-t lx-hairline px-5 py-16 sm:px-8 sm:py-20"
+      >
+        <div className="mx-auto max-w-3xl" data-reveal>
+          <p className="lx-eyebrow">{PRACTITIONER.eyebrow}</p>
+          <h2 id="practitioners-heading" className="lx-display lx-h2 mt-6">
+            {PRACTITIONER.heading}
+          </h2>
+          <p className="mt-8 font-serif text-3xl text-[var(--color-ink)]">{PRACTITIONER.name}</p>
+          <p className="mt-2 text-sm text-[var(--gold-light)]">{PRACTITIONER.role}</p>
+          <p className="lx-lede mt-6">{PRACTITIONER.body}</p>
+        </div>
+      </section>
+
       <PlatformSurfaces onCheckSite={focusHeroInput} />
 
       <section
@@ -437,27 +541,6 @@ const LandingPage: React.FC<LandingPageProps> = ({
             ))}
           </div>
 
-          <div
-            className="lx-glass mt-16 flex flex-col gap-5 rounded-2xl p-5 sm:p-6 lg:flex-row lg:items-center lg:justify-between"
-            data-reveal
-          >
-            <div className="max-w-md">
-              <p className="text-[15px] font-medium text-[var(--color-ink)]">For developers and agencies</p>
-              <p className="mt-1 text-sm leading-relaxed text-[var(--color-ink-2)]">
-                Pull your latest verdict and fix into Cursor or Claude Code over MCP. Free on every plan.{' '}
-                <a href="/docs/mcp.html" className="lx-link">
-                  Setup guide
-                </a>
-              </p>
-            </div>
-            <div className="flex min-w-0 w-full max-w-xl items-center gap-2 rounded-2xl border border-[var(--color-rule)] bg-black/50 py-1.5 pl-4 pr-1.5">
-              <code tabIndex={0} className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap rounded font-mono text-xs text-[var(--color-ink)] outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--gold-light)]">{MCP_COMMAND}</code>
-              <button type="button" onClick={copyMcp} className="lx-btn lx-btn-ghost !min-h-8 shrink-0 !px-3.5 !py-1.5 text-xs">
-                {copied ? 'Copied' : 'Copy'}
-              </button>
-            </div>
-          </div>
-
           <p className="mx-auto mt-14 max-w-2xl text-center leading-relaxed text-[var(--color-ink-2)]" data-reveal>
             For owners who want a straight answer, marketers who need the exact page to fix, and agencies who
             share proof with clients.{' '}
@@ -465,6 +548,36 @@ const LandingPage: React.FC<LandingPageProps> = ({
               See plans
             </button>
           </p>
+        </div>
+      </section>
+
+      <section
+        id="use-from-ai"
+        aria-labelledby="mcp-heading"
+        className="relative z-10 border-t lx-hairline px-5 py-16 sm:px-8 sm:py-20"
+      >
+        <div className="mx-auto max-w-6xl">
+          <div className="max-w-3xl" data-reveal>
+            <p className="lx-eyebrow">For your own assistant</p>
+            <h2 id="mcp-heading" className="lx-display lx-h2 mt-6">
+              {MCP_HEADING}
+            </h2>
+            <p className="lx-lede mt-7">
+              {MCP_BODY}{' '}
+              <a href={MCP_DOCS_PATH} className="lx-link">
+                Setup guide
+              </a>
+            </p>
+          </div>
+          <div
+            className="mt-10 flex min-w-0 w-full max-w-3xl items-center gap-2 rounded-2xl border border-[var(--color-rule)] bg-black/50 py-1.5 pl-4 pr-1.5"
+            data-reveal
+          >
+            <code tabIndex={0} className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap rounded font-mono text-xs text-[var(--color-ink)] outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--gold-light)]">{MCP_COMMAND}</code>
+            <button type="button" onClick={copyMcp} className="lx-btn lx-btn-ghost !min-h-8 shrink-0 !px-3.5 !py-1.5 text-xs">
+              {copied ? 'Copied' : 'Copy'}
+            </button>
+          </div>
         </div>
       </section>
 
@@ -485,6 +598,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
               Run the free check now. Create a free account to run the full audit and get your first fix, with every engine row labeled by how it was measured.
             </p>
           </div>
+          <TrustStrip className="mx-auto mt-12 max-w-4xl" />
           <div className="mt-10">
             <DomainCheck inputId="closing-domain" isAuthenticated={isAuthenticated} onFullAudit={fullAudit} />
           </div>

@@ -803,7 +803,7 @@ describe('crawl surfaces', () => {
     const unknown = await worker.fetch(req('/some-unknown-page', { headers: { accept: 'text/html' } }), env, ctx);
     expect(unknown.status).toBe(404);
     const unknownHtml = await unknown.text();
-    expect(unknownHtml).toContain('<html class="lx-skip-splash" lang="en">');
+    expect(unknownHtml).toContain('<html data-hero-ab="off" class="lx-skip-splash" lang="en">');
     expect(unknownHtml).toContain('html.lx-skip-splash #boot-splash { display: none; }');
 
     for (const path of ['/dashboard', '/labs', '/audit/example.com', '/']) {
