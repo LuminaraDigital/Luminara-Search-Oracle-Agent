@@ -17,10 +17,10 @@ export interface MarketingHeroCopy {
 export const HOME_HERO: MarketingHeroCopy = {
   path: '/',
   layout: 'home',
-  eyebrow: 'AI visibility, measured',
-  titleLead: 'Be the answer',
-  titleEm: 'AI gives.',
-  lede: `Buyers and sellers now ask AI which agent to call. Luminara Suite checks whether those answers name your agency, flags the page leaks that cost you appraisal calls, and gives you the one fix to ship next. ${REAL_ESTATE_AUDIENCE} ${LIVE_ANSWER_CHECKS}`,
+  eyebrow: 'AI visibility specialist',
+  titleLead: 'An AI employee',
+  titleEm: 'for your agency.',
+  lede: `It checks whether AI answers name your agency, flags the page leaks that cost appraisal calls, and hands you the next fix. ${REAL_ESTATE_AUDIENCE}`,
 };
 
 export const PRICING_HERO: MarketingHeroCopy = {

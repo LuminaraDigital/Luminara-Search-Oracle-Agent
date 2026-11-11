@@ -10,9 +10,21 @@ import {
   PUBLIC_BRAND,
 } from '../legal/consumerTerms';
 import { parseUrlSwapRoute } from '../../utils/urlSwapRouting';
-import { HONEST_VISIBILITY_PROMISE, LIVE_ANSWER_CHECKS } from './engineCoverage';
-import { buildFaqPageJsonLd } from './marketingFaqContent';
-import { REAL_ESTATE_AUDIENCE } from './marketingHeroCopy';
+import { LIVE_ANSWER_CHECKS } from './engineCoverage';
+import { buildFaqPageJsonLd, MARKETING_FAQ } from './marketingFaqContent';
+import { HOME_HERO, REAL_ESTATE_AUDIENCE } from './marketingHeroCopy';
+import {
+  MCP_BODY,
+  MCP_DOCS_PATH,
+  MCP_HEADING,
+  PRACTITIONER,
+  PROOF_BODY,
+  PROOF_HEADING,
+  STACK_HEADING,
+  STACK_INTRO,
+  STACK_ROWS,
+  TRUST_ITEMS,
+} from './marketingPositioning';
 import { PLAY_STORE_URL, TELEGRAM_BOT_URL, TELEGRAM_MINI_APP_PUBLIC_URL } from './platformSurfaces';
 import { HUB_FAQ_HEADING, HUB_PAGES, HUB_REVIEWED, type HubPage } from './seoHubPages';
 import { FREE_TOOLS, FREE_TOOLS_CLOSING, FREE_TOOLS_HUB, FREE_TOOLS_PATH, type FreeTool } from './freeTools';
@@ -20,7 +32,7 @@ import { checkHostFromPath, checkPathForHost } from './homepageSnippet';
 import { CONTACT_CRAWLER, FAQ_CRAWLER } from '../help/helpPages';
 import { privacyCrawlerBody } from '../legal/privacyCrawler';
 
-const HOME_META = `${REAL_ESTATE_AUDIENCE} ${HONEST_VISIBILITY_PROMISE} No invented scores.`;
+const HOME_META = `${REAL_ESTATE_AUDIENCE} An AI employee for your agency: it checks whether AI answers name you, flags page leaks, and hands you the next fix. ${LIVE_ANSWER_CHECKS} No invented scores.`;
 
 export const MARKETING_ORIGIN = 'https://www.luminarasuite.com';
 export const DEFAULT_OG_IMAGE = `${MARKETING_ORIGIN}/og-image.png`;
@@ -121,6 +133,53 @@ const linkList = (links: readonly { label: string; href: string }[]) =>
 
 const faqHtml = (items: readonly { question: string; answer: string }[]) =>
   items.map((item) => `<h3>${esc(item.question)}</h3><p>${esc(item.answer)}</p>`).join('');
+
+/** Home crawler copy. The first-paint block already supplies the only h1. */
+function homeCrawlerBody(): string {
+  const stack = STACK_ROWS.map((row) => `<tr><td>${esc(row.label)}</td><td>${esc(row.them)}</td><td>${esc(row.us)}</td></tr>`).join('');
+  const trust = TRUST_ITEMS.map((item) => `<li>${esc(item.title)}: ${esc(item.body)}</li>`).join('');
+  return `
+<section>
+  <p>${esc(HOME_HERO.lede)}</p>
+  <h2>${esc(PROOF_HEADING)}</h2>
+  <p>${esc(PROOF_BODY)}</p>
+  <p>${esc(LIVE_ANSWER_CHECKS)}</p>
+  <h2>${esc(STACK_HEADING)}</h2>
+  <p>${esc(STACK_INTRO)}</p>
+  <table><thead><tr><th>Job</th><th>By hand</th><th>One Suite plan</th></tr></thead><tbody>${stack}</tbody></table>
+  <h2>${esc(PRACTITIONER.eyebrow)}</h2>
+  <h3>${esc(PRACTITIONER.name)}</h3>
+  <p>${esc(PRACTITIONER.role)}. ${esc(PRACTITIONER.body)}</p>
+  <h2>${esc(MCP_HEADING)}</h2>
+  <p>${esc(MCP_BODY)} <a href="${MCP_DOCS_PATH}">MCP docs</a></p>
+  <h2>Common questions</h2>${faqHtml(MARKETING_FAQ)}
+  <h2>Before you pay</h2>
+  <ul>${trust}</ul>
+  <p>Illustrative example, not a real agency and not a measurement: an independent agency, checked for a suburb question.</p>
+  <p>Luminara Suite is on the web, in the Telegram Mini App, and on Android from Google Play. Card upgrades stay on the website. Stars checkout is in Telegram. The Play app is a free companion and does not take card checkout.</p>
+  <ul>
+    <li><a href="/sample-report">Sample report</a></li>
+    <li><a href="/methodology">Methodology</a></li>
+    <li><a href="/white-paper">White paper</a></li>
+    <li><a href="/docs/what-is-aeo.html">What is AEO</a></li>
+    <li><a href="/how-it-works">How it works</a></li>
+    <li><a href="/ai">Our AI</a></li>
+    <li><a href="/why">Why Luminara</a></li>
+    <li><a href="/pricing">Pricing</a></li>
+    <li><a href="${MCP_DOCS_PATH}">MCP for agents</a></li>
+    <li><a href="/index.md">Home markdown</a></li>
+    <li><a href="/pricing.md">Pricing markdown</a></li>
+    <li><a href="/mcp.md">MCP markdown</a></li>
+    <li><a href="${TELEGRAM_MINI_APP_PUBLIC_URL}">Telegram Mini App</a></li>
+    <li><a href="${TELEGRAM_BOT_URL}">Telegram bot</a></li>
+    <li><a href="${PLAY_STORE_URL}">Google Play</a></li>
+    <li><a href="/desktop">Windows app</a></li>
+    <li><a href="/privacy">Privacy</a></li>
+    <li><a href="/terms">Terms</a></li>
+  </ul>
+  <p>Produced by <a href="${COMPANY_SERVICES_URL}">Luminara Digital</a>.</p>
+</section>`;
+}
 
 function itemListNode(id: string, name: string, items: readonly { name: string; url: string }[]) {
   return {
@@ -243,32 +302,7 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
       true,
       [buildFaqPageJsonLd()],
     ),
-    crawlerBody: `
-<section>
-  <h1>Be the answer AI gives.</h1>
-  <p>${REAL_ESTATE_AUDIENCE} ${HONEST_VISIBILITY_PROMISE}</p>
-  <p>Illustrative example, not a real agency and not a measurement: an independent agency, checked for a suburb question.</p>
-  <p>Free check of your homepage title and description, robots.txt and llms.txt. No card. A full audit needs sign-in or your own keys. Every result is labeled Measured, Estimated or Not measured. No blended AI visibility score.</p>
-  <p>Luminara Suite is on the web, in the Telegram Mini App, and on Android from Google Play. Card upgrades stay on the website. Stars checkout is in Telegram. The Play app is a free companion and does not take card checkout.</p>
-  <ul>
-    <li><a href="/sample-report">Sample report</a></li>
-    <li><a href="/methodology">Methodology</a></li>
-    <li><a href="/white-paper">White paper</a></li>
-    <li><a href="/docs/what-is-aeo.html">What is AEO</a></li>
-    <li><a href="/how-it-works">How it works</a></li>
-    <li><a href="/ai">Our AI</a></li>
-    <li><a href="/why">Why Luminara</a></li>
-    <li><a href="/pricing">Pricing</a></li>
-    <li><a href="/docs/mcp.html">MCP for agents</a></li>
-    <li><a href="${TELEGRAM_MINI_APP_PUBLIC_URL}">Telegram Mini App</a></li>
-    <li><a href="${TELEGRAM_BOT_URL}">Telegram bot</a></li>
-    <li><a href="${PLAY_STORE_URL}">Google Play</a></li>
-    <li><a href="/desktop">Windows app</a></li>
-    <li><a href="/privacy">Privacy</a></li>
-    <li><a href="/terms">Terms</a></li>
-  </ul>
-  <p>Produced by <a href="${COMPANY_SERVICES_URL}">Luminara Digital</a>.</p>
-</section>`,
+    crawlerBody: homeCrawlerBody(),
   },
   '/white-paper': {
     path: '/white-paper',
@@ -302,7 +336,6 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
     ),
     crawlerBody: `
 <section>
-  <h1>Methodology</h1>
   <p>Measured means live evidence. Estimated is directional only. Not measured means missing data is labeled, never invented.</p>
   <p>The free check on the landing page reads the homepage title and description, robots.txt, llms.txt and ai.txt. ${LIVE_ANSWER_CHECKS}</p>
   <p><a href="/sample-report">Sample report</a> · <a href="/pricing">Pricing</a> · <a href="/">Home</a></p>
@@ -389,8 +422,8 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
     jsonLd: graph('/pricing', 'Pricing', `${REAL_ESTATE_AUDIENCE} ${listPriceSummary()}`),
     crawlerBody: `
 <section>
-  <h1>Pricing</h1>
   <p>${REAL_ESTATE_AUDIENCE} ${listPriceSummary()}</p>
+  <ul>${TRUST_ITEMS.map((item) => `<li>${esc(item.title)}: ${esc(item.body)}</li>`).join('')}</ul>
   <p>Free: labeled sample insight and Instant Audit with your own keys where configured. Save, share, and hosted spend need an account. A free account gets public share links and MCP with daily caps.</p>
   <p>Starter: web audits for a small site set, with higher daily caps on share links and MCP and your own branding on shared reports.</p>
   <p>Growth: share links and MCP with no daily cap, for Cursor, Claude, and the Luminara plugin.</p>

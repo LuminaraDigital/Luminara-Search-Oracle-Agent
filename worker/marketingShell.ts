@@ -1,3 +1,4 @@
+import { markdownAlternatePath } from '../services/marketing/agentMarkdown';
 import { marketingHeroForPath, type MarketingHeroCopy } from '../services/marketing/marketingHeroCopy';
 import {
   DEFAULT_OG_IMAGE,
@@ -160,6 +161,20 @@ export function injectMarketingMeta(html: string, page: MarketingShellMeta): str
       /<\/head>/i,
       () => `  <script type="application/ld+json" id="luminara-marketing-jsonld">${jsonLd}</script>\n</head>`,
     );
+  }
+
+  const markdownPath = markdownAlternatePath(page.path);
+  if (markdownPath) {
+    const markdownHref = escapeHtml(`${MARKETING_ORIGIN}${markdownPath}`);
+    const markdownTag = `<link rel="alternate" type="text/markdown" href="${markdownHref}" title="Markdown version">`;
+    if (/<link\s+rel="alternate"\s+type="text\/markdown"/i.test(out)) {
+      out = out.replace(
+        /<link\s+rel="alternate"\s+type="text\/markdown"[^>]*>/i,
+        () => markdownTag,
+      );
+    } else {
+      out = out.replace(/<\/head>/i, () => `  ${markdownTag}\n</head>`);
+    }
   }
 
   if (!/<link\s+rel="canonical"/i.test(out)) {

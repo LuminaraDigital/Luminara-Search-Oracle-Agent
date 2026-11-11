@@ -241,6 +241,14 @@ ${llmsPaidPlanBlock()}
 - ${TELEGRAM_MINI_APP_PUBLIC_URL}
 - Bot: ${TELEGRAM_BOT_URL}
 
+## Markdown for agents
+
+Same pages as markdown. HTML heads on the home and pricing pages link these with rel=alternate.
+
+- Home: https://www.luminarasuite.com/index.md
+- Pricing: https://www.luminarasuite.com/pricing.md
+- MCP: https://www.luminarasuite.com/mcp.md
+
 ## Product
 
 - Home: https://www.luminarasuite.com/
