@@ -10,6 +10,8 @@ import { checkHostedQuota, QUOTA_CAPACITY_ERROR, refundMeteredQuota, type QuotaS
 import { recheckOneFix } from './recheckFix';
 import { handleFreeAiAnswer } from './freeAiAnswer';
 import { sameSiteHost } from '../services/audit/sameSiteHost';
+import { heroAbEnabled, heroVariantFromCookie, type HeroVariant } from '../services/marketing/heroExperiment';
+import { recordAnonymousEvent } from './productAnalytics';
 import { safePublicHostname } from './security';
 
 export const AUDIT_RUN_TTL_SEC = 10 * 60;
@@ -87,6 +89,7 @@ export async function mintAuditRun(
   env: Env,
   user: HostedIdentity,
   domainInput: string,
+  hero: HeroVariant | null = null,
 ): Promise<Response> {
   const domain = auditHostname(domainInput);
   if (!domain) {
@@ -126,6 +129,7 @@ export async function mintAuditRun(
     if (quota.meterKey) await refundMeteredQuota(env, quota);
     return json({ ok: true, domain }, 200);
   }
+  if (hero) await recordAnonymousEvent(env.DB, 'instant_audit_started', '/', { variant: hero });
   return json(
     { ok: true, token, domain, calls: AUDIT_RUN_CALL_CAP, ttlSec: AUDIT_RUN_TTL_SEC },
     200,
@@ -247,5 +251,8 @@ export async function handleAuditScoutRun(request: Request, env: Env): Promise<R
     return refundAuditRun(env, who.user, token, unmeasured);
   }
   const domain = typeof body.domain === 'string' ? body.domain : '';
-  return mintAuditRun(env, who.user, domain);
+  const hero = heroAbEnabled(env)
+    ? (heroVariantFromCookie(request.headers.get('cookie')) ?? 'employee')
+    : null;
+  return mintAuditRun(env, who.user, domain, hero);
 }

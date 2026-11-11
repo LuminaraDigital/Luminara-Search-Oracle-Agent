@@ -36,7 +36,8 @@ export type TelemetryEventType =
   | 'upgrade_prompt_dismissed'
   | 'share_clicked'
   | 'share_page_view'
-  | 'free_tool_copied';
+  | 'free_tool_copied'
+  | 'hero_exposed';
 
 export interface TelemetryEvent {
   id: string;

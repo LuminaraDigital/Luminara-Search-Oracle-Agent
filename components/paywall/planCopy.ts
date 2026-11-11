@@ -45,6 +45,7 @@ export function freePlanLines(): PlanBullet[] {
     { included: true, text: `${free.domainLimit} monitored domain` },
     { included: true, text: 'On-demand audits' },
     { included: true, text: '3 hosted Instant Audit checks a day' },
+    { included: true, text: '10 Ask questions a day' },
     { included: true, text: `IDE access (Cursor / Claude / Codex), ${free.mcpDailyCallLimit} MCP calls a day` },
     { included: true, text: `${free.shareDailyLimit} public share links a day, with a Luminara badge` },
   ];

@@ -266,9 +266,23 @@ export interface Env extends DataPlaneEnv {
   PATCHRIGHT_URL?: string;
   /** Shared secret for the crawler sidecar (optional; maps to x-crawler-token). */
   CRAWLER_TOKEN?: string;
-  /** Google OAuth for GSC (optional). */
+  /**
+   * Search Console OAuth. Off until Google verifies the read-only scope.
+   * Absent and "false" both stay off. Do not set this true in production before verification.
+   */
+  GSC_OAUTH_ENABLED?: string;
+  /**
+   * Homepage hero experiment. "true" assigns lx_hero on the first HTML response for /.
+   * Anything else serves the employee headline and does not write the cookie.
+   * Staging is "true". Production stays "false" until the owner turns it on.
+   */
+  HERO_AB_ENABLED?: string;
+  /** Google OAuth client id for the read-only Search Console scope (Worker secret). */
   GOOGLE_OAUTH_CLIENT_ID?: string;
+  /** Google OAuth client secret (Worker secret). */
   GOOGLE_OAUTH_CLIENT_SECRET?: string;
+  /** Encrypts the Search Console refresh token at rest. `wrangler secret put GSC_TOKEN_KEY`. */
+  GSC_TOKEN_KEY?: string;
   /** MCP OAuth signing secret. Required in production; staging/local may fall back to AUTH_WEBHOOK_SECRET / BOT_TOKEN. */
   MCP_OAUTH_SECRET?: string;
   /**

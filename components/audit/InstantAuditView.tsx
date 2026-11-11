@@ -9,6 +9,7 @@ import { ReportDisplay } from './ReportDisplay';
 import { WeeklyDecisionCard } from './WeeklyDecisionCard';
 import { PageSpeedPanel } from './PageSpeedPanel';
 import { GscPanel } from './GscPanel';
+import { FixDraftPanel } from './FixDraftPanel';
 import { pickPrimaryFinding, readLastBoardDomain } from '../../services/audit/findingBoardService';
 import { PastReports } from './PastReports';
 import { focusLabel, focusTip } from '../../services/audit/focusLabel';
@@ -972,6 +973,13 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
             <PageSpeedPanel url={url.startsWith('http') ? url : `https://${url}`} />
             <GscPanel domain={url} />
           </div>
+          <FixDraftPanel
+            domain={url}
+            businessName={dna?.name}
+            suburb={dna?.suburb}
+            serviceArea={dna?.suburb && dna.state ? `${dna.suburb}, ${dna.state}` : dna?.suburb}
+            findingTitle={pickPrimaryFinding(boardFindings)?.title}
+          />
           <ReportDisplay
             markdownText={report.text}
             sources={report.sources}
