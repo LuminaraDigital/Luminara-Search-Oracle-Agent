@@ -68,6 +68,25 @@ describe('crawler file detection', () => {
     expect(checks.find((check) => check.id === 'ai_bot_directives')?.detail).toMatch(/No robots\.txt was found/);
   });
 
+  it('treats a short plain-text not found message as missing', async () => {
+    const { snapshot, checks } = await crawl({
+      '/llms.txt': { body: 'Page not found' },
+      '/ai.txt': { body: '404 Not Found\n' },
+      '/robots.txt': { body: ROBOTS },
+    });
+    expect(snapshot.llmsHttpStatus).toBe(404);
+    expect(status(checks, 'llms_txt')).toBe('fail');
+    expect(status(checks, 'ai_txt')).toBe('fail');
+    expect(servedWebPage('Cannot GET /llms.txt')).toBe(true);
+    expect(servedWebPage('The requested file was not found on this server.')).toBe(true);
+  });
+
+  it('keeps a real file that mentions not found', () => {
+    expect(servedWebPage(`${LLMS}\n## Help\n- [Page not found help](https://example.com/help): what to do\n`)).toBe(false);
+    expect(servedWebPage('User-agent: *\nDisallow: /404\n')).toBe(false);
+    expect(servedWebPage('# Acme\n\n> We fix broken links when a page is not found.\n')).toBe(false);
+  });
+
   it('keeps a bot challenge as not measured, not missing', async () => {
     const { checks } = await crawl({
       '/llms.txt': { body: '<html><title>Just a moment...</title></html>', type: 'text/html' },

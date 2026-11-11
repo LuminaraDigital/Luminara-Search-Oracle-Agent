@@ -95,7 +95,9 @@ export class AeoTrustPackService {
   public build(input: TrustPackInput): TrustPackSummary {
     const findings: TrustPackFinding[] = [];
 
-    const securityTrust = input.security?.trustScore ?? 0;
+    // A failed security check measured nothing, so it adds nothing to the composite.
+    const securityTrust =
+      input.security && input.security.measurementConfidence !== 'failed' ? input.security.trustScore : 0;
     const citationIntegrity = input.integrity?.integrityScore ?? 0;
     const empiricalMeasured =
       Boolean(input.empirical) &&

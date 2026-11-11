@@ -19,15 +19,24 @@ const FETCH_MS = 5_000;
 const MAX_REDIRECTS = 3;
 const FOLLOW_REDIRECT = new Set([301, 302, 303, 307, 308]);
 
+/** Short plain-text error pages such as "404 Not Found", "Page not found" or "Cannot GET /llms.txt". */
+const NOT_FOUND_TEXT = /^(?:error\s*)?404\b|^not\s+found\b|^cannot\s+get\s+\/|\b(?:page|file|resource|document)\s+(?:was\s+)?not\s+found\b/i;
+const MAX_NOT_FOUND_TEXT = 300;
+
 /**
- * A soft 404: the site answered with a web page or an API error (often its homepage,
- * after a redirect) instead of the text file. A 200 alone is not proof the file exists.
- * Crawler files are plain text and never open with a tag or a JSON object. The body
- * decides, not the content type: servers often label real text files text/html.
+ * A soft 404: the site answered with a web page, an API error (often its homepage,
+ * after a redirect) or a short "not found" message instead of the text file. A 200
+ * alone is not proof the file exists. Crawler files are plain text and never open
+ * with a tag or a JSON object. The body decides, not the content type: servers often
+ * label real text files text/html.
  */
 export function servedWebPage(body: string): boolean {
   const text = body.trimStart().replace(/^(?:<!--[\s\S]*?-->\s*)+/, '');
-  return /^[<{]/.test(text);
+  if (/^[<{]/.test(text)) return true;
+  // Only a short body whose first line is the error counts; a real file opens with its title.
+  const trimmed = text.trim();
+  const firstLine = trimmed.split('\n', 1)[0];
+  return trimmed.length <= MAX_NOT_FOUND_TEXT && !firstLine.startsWith('#') && NOT_FOUND_TEXT.test(firstLine);
 }
 
 async function fetchOne(
