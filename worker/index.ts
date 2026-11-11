@@ -62,7 +62,8 @@ import { DELETE_ACCOUNT_HTML, maybeServeAndroidLegalHtml } from './androidLegalH
 import { isAndroidPlayClientSearch } from '../services/legal/playClient';
 import { markdownForPath } from '../services/marketing/agentMarkdown';
 import { AI_TXT, LLMS_TXT, SITEMAP_XML, applyHostRobots, buildSitemapXml, robotsTxtForHost } from './crawlDocuments';
-import { maybeServeMarketingHtml, maybeServeReceiptHtml, maybeServeShareHtml, withSkippedBootSplash } from './marketingShell';
+import { heroAbEnabled } from '../services/marketing/heroExperiment';
+import { maybeServeMarketingHtml, maybeServeReceiptHtml, maybeServeShareHtml, withHeroAbFlag, withSkippedBootSplash } from './marketingShell';
 import { desktopLatestJson, desktopWindowsDownload } from './desktopDownloads';
 import { resolveAppView } from '../utils/marketingRoutes';
 import { AppView } from '../types';
@@ -2348,7 +2349,8 @@ const handler = {
     const guard = async (res: Response) => {
       const secured = withSecurityHeaders(res);
       const html = await decoratePublicHtml(secured, env.ASSETS);
-      return applyHostRobots(url, env.ENVIRONMENT, html);
+      const flagged = await withHeroAbFlag(html, heroAbEnabled(env));
+      return applyHostRobots(url, env.ENVIRONMENT, flagged);
     };
 
     const oauthDiscovery = handleOAuthDiscovery(request);
@@ -2522,7 +2524,7 @@ const handler = {
     if (androidLegal) return guard(androidLegal);
 
     // Marketing paths: SPA shell with path-specific title, description, canonical and JSON-LD.
-    const marketingHtml = await maybeServeMarketingHtml(request, env.ASSETS);
+    const marketingHtml = await maybeServeMarketingHtml(request, env.ASSETS, env);
     if (marketingHtml) {
       return guard(marketingHtml);
     }

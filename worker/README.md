@@ -577,11 +577,15 @@ npm run db:backfill:firestore -- --from-users users.json --from-audits audits.js
 
 See `docs/adr/0001-firebase-gcp-data-plane.md` for the staging export commands and the GCP checklist. No service account JSON key.
 
+## Homepage hero experiment
+
+`HERO_AB_ENABLED=true` assigns cookie `lx_hero` (`answer` or `employee`) on the first HTML response for `/`. A valid cookie is not replaced. `?hero=answer` or `?hero=employee` sets it while the flag is on. Staging is `true`. The top-level and production vars are `false`, so production serves the employee headline until the owner turns the flag on. The readout query is `docs/runbooks/hero-ab.md`. The events are `hero_exposed` (browser, once per variant), `instant_audit_started` (when a scout run token is minted, no account id), and `variant` on `signup_completed`.
+
 ## Env vars
 
 Read: `ADMIN_SECRET`, `BOT_TOKEN`, `FIREBASE_PROJECT_ID`, `MCP_OAUTH_SECRET`,
 `PAGESPEED_API_KEY`, `REQUIRE_APP_CHECK`, `REQUIRE_TG_AUTH`,
-`REQUIRE_SUBSCRIPTION`, `FREE_DAILY_LIMIT`, `AUDIT_QUEUE_ENABLED`, provider
+`REQUIRE_SUBSCRIPTION`, `FREE_DAILY_LIMIT`, `AUDIT_QUEUE_ENABLED`, `HERO_AB_ENABLED`, provider
 keys (`GEMINI`, `GROQ`, `OPENROUTER`, `DATAFORSEO`, `NIM`, `OLLAMA`), sidecar
 URLs, TON pricing vars, D1 `DB`, KV `LUMINARA_KV`. Secrets stay server-side.
 
@@ -603,3 +607,4 @@ URLs, TON pricing vars, D1 `DB`, KV `LUMINARA_KV`. Secrets stay server-side.
 - `tests/evalsRunner.test.ts`, `tests/honestyGates.test.ts`: honesty gates.
 - `tests/conversionEnquirySpine.test.ts`: enquiry ingestion, statutory escalation, booking sign-off, 6-stage outcomes ledger, recovery guardrails, and Twenty CRM sync.
 - `tests/cmsMcpAndDesktop.test.ts`: 3-Tier CMS remediation router, CMS MCP relay, Celesto 2-tier browser policy, sub-agent matrix validation, and Electron desktop coordinator.
+- `tests/heroExperiment.test.ts`: hero assignment, query override, kill switch, and the three events.

@@ -271,6 +271,12 @@ export interface Env extends DataPlaneEnv {
    * Absent and "false" both stay off. Do not set this true in production before verification.
    */
   GSC_OAUTH_ENABLED?: string;
+  /**
+   * Homepage hero experiment. "true" assigns lx_hero on the first HTML response for /.
+   * Anything else serves the employee headline and does not write the cookie.
+   * Staging is "true". Production stays "false" until the owner turns it on.
+   */
+  HERO_AB_ENABLED?: string;
   /** Google OAuth client id for the read-only Search Console scope (Worker secret). */
   GOOGLE_OAUTH_CLIENT_ID?: string;
   /** Google OAuth client secret (Worker secret). */

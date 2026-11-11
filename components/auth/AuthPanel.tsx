@@ -14,6 +14,7 @@ import { isInTelegram } from '../../services/telegram/tma';
 import { linkTelegramFirebaseAccounts } from '../../services/apiClient';
 import { pullWorkspaceOnLogin } from '../../services/sync/workspaceSyncService';
 import { productTelemetry } from '../../services/analytics/productTelemetry';
+import { signupHeroData } from '../../services/marketing/heroExperimentClient';
 import '../marketing/space.css';
 import { ConfirmModal } from '../ui/ConfirmModal';
 
@@ -227,7 +228,7 @@ export const AuthPanel: React.FC<{
     if (mode === 'signup') {
       void run(async () => {
         await signUpWithEmail(trimmedEmail, password, { keepSignedIn });
-        productTelemetry.track('signup_completed', { method: 'email' });
+        productTelemetry.track('signup_completed', { method: 'email', ...signupHeroData() });
       });
     } else {
       void run(async () => {
@@ -405,7 +406,7 @@ export const AuthPanel: React.FC<{
           run(async () => {
             await signInWithGoogle({ keepSignedIn });
             if (mode === 'signup') {
-              productTelemetry.track('signup_completed', { method: 'google' });
+              productTelemetry.track('signup_completed', { method: 'google', ...signupHeroData() });
             }
           })
         }
