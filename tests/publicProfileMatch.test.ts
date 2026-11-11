@@ -60,6 +60,16 @@ describe('public profile match', () => {
     expect(report.nextFix).toContain('RealEstateAgent JSON-LD');
   });
 
+  it('does not invent a phone mismatch from a long excerpt that omits the number', () => {
+    const report = reportFromAuditPages([{
+      title: 'Harbour and Co',
+      rawTextSnippet: 'Homes for sale in Richmond. '.repeat(40),
+      schemasFound: [{ rawJson: JSON.stringify({ '@type': 'RealEstateAgent', name: 'Harbour and Co', telephone: '03 9999 8888' }) }],
+    }]);
+    expect(report.signals.name).toBe('match');
+    expect(report.signals.phone).toBe('not_measured');
+  });
+
   it('calls a phone mismatch only when the page text is complete and the number is absent', () => {
     const report = reportPublicProfile({
       pageRead: true,
