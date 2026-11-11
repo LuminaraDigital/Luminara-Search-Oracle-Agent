@@ -7,8 +7,9 @@
  *
  * APPCHECK_ENFORCE: off (default) | log | enforce.
  * off skips verification. log records a bad or missing token and still serves
- * the request. enforce returns 401. Health, robots.txt, llms.txt, llm.txt, and webhook
- * routes are exempt. REQUIRE_APP_CHECK still gates Worker-mediated sign-in.
+ * the request. enforce returns 401. Health, robots.txt, llms.txt, llm.txt, ai.txt,
+ * the agent markdown pages, and webhook routes are exempt.
+ * REQUIRE_APP_CHECK still gates Worker-mediated sign-in.
  */
 import { createLocalJWKSet, errors, jwtVerify, type JSONWebKeySet, type JWTPayload } from 'jose';
 import type { Env } from './env';
@@ -207,10 +208,20 @@ function appCheckResponse(status: number, code: string, error: string): Response
   });
 }
 
-/** Health, robots.txt, llms.txt, llm.txt, ai.txt, and any path containing /webhook. */
+/** Health, crawl files, agent markdown, and any path containing /webhook. */
 export function isAppCheckExempt(url: URL): boolean {
   const path = url.pathname.replace(/\/+$/, '') || '/';
-  if (path === '/robots.txt' || path === '/llms.txt' || path === '/llm.txt' || path === '/ai.txt' || path === '/api/health' || path === '/health') return true;
+  if (
+    path === '/robots.txt' ||
+    path === '/llms.txt' ||
+    path === '/llm.txt' ||
+    path === '/ai.txt' ||
+    path === '/index.md' ||
+    path === '/pricing.md' ||
+    path === '/mcp.md' ||
+    path === '/api/health' ||
+    path === '/health'
+  ) return true;
   return path.includes('/webhook');
 }
 

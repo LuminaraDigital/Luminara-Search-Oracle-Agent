@@ -60,6 +60,7 @@ import { activateLicenseKey, generateLicenseKeys, importLicenseKeys } from './li
 import { TERMS_HTML, buildTermsHtml } from './termsPolicy';
 import { DELETE_ACCOUNT_HTML, maybeServeAndroidLegalHtml } from './androidLegalHtml';
 import { isAndroidPlayClientSearch } from '../services/legal/playClient';
+import { markdownForPath } from '../services/marketing/agentMarkdown';
 import { AI_TXT, LLMS_TXT, SITEMAP_XML, applyHostRobots, buildSitemapXml, robotsTxtForHost } from './crawlDocuments';
 import { maybeServeMarketingHtml, maybeServeReceiptHtml, maybeServeShareHtml, withSkippedBootSplash } from './marketingShell';
 import { desktopLatestJson, desktopWindowsDownload } from './desktopDownloads';
@@ -2412,6 +2413,18 @@ const handler = {
           status: 200,
           headers: {
             'Content-Type': 'application/xml; charset=utf-8',
+            'Cache-Control': 'public, max-age=3600',
+          },
+        }),
+      );
+    }
+    const agentMarkdown = markdownForPath(url.pathname);
+    if (agentMarkdown && (request.method === 'GET' || request.method === 'HEAD')) {
+      return guard(
+        new Response(request.method === 'HEAD' ? null : agentMarkdown, {
+          status: 200,
+          headers: {
+            'Content-Type': 'text/markdown; charset=utf-8',
             'Cache-Control': 'public, max-age=3600',
           },
         }),

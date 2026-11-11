@@ -21,6 +21,10 @@ export const OPERATOR_LINE = `${LEGAL_ENTITY_LINE}, trading as ${PUBLIC_BRAND}, 
 
 export const CONTACT_EMAIL = 'info@luminara.digital';
 
+/** Same sentence on /faq, /contact, and the pricing trust strip. */
+export const REFUND_LINE =
+  `A paid plan lasts 30 days and does not renew, so there is nothing to cancel. For a refund, email ${CONTACT_EMAIL}. Australian Consumer Law still applies.`;
+
 export const PUBLIC_CONTACT_LINE = `Email ${CONTACT_EMAIL}.`;
 
 export const COMPANY_SITE_URL = 'https://luminara.digital/';
