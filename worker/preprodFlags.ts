@@ -20,6 +20,7 @@ export const PREPROD_GATED_FLAGS = [
   'LAUNCHPAD_SKIP_CHAIN_VERIFY',
   'OTP_SMS_ENABLED',
   'REQUEST_SIGNING_REQUIRED',
+  'GSC_OAUTH_ENABLED',
 ] as const satisfies readonly (keyof Env)[];
 
 export type PreprodGatedFlag = (typeof PREPROD_GATED_FLAGS)[number];

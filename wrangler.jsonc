@@ -160,6 +160,8 @@
     "LAUNCHPAD_MAINNET_ENABLED": "false",
     "LAUNCHPAD_SKIP_CHAIN_VERIFY": "false",
     "OTP_SMS_ENABLED": "false",
+    // Search Console OAuth stays off until Google verifies webmasters.readonly. See docs/runbooks/gsc-oauth-setup.md.
+    "GSC_OAUTH_ENABLED": "false",
     "REQUEST_SIGNING_REQUIRED": "false",
     "AUDIT_QUEUE_ENABLED": "true",
     // Budget hard stops: off | soft | hard. Production defaults to hard; staging stays soft for dogfood.
@@ -302,6 +304,8 @@
         "LAUNCHPAD_MAINNET_ENABLED": "false",
         "LAUNCHPAD_SKIP_CHAIN_VERIFY": "false",
         "OTP_SMS_ENABLED": "false",
+    // Search Console OAuth stays off until Google verifies webmasters.readonly. See docs/runbooks/gsc-oauth-setup.md.
+    "GSC_OAUTH_ENABLED": "false",
         "REQUEST_SIGNING_REQUIRED": "false",
         "AUDIT_QUEUE_ENABLED": "true",
         // Test keys and the staging webhook are set. Production stays "false".
@@ -415,6 +419,8 @@
         "LAUNCHPAD_MAINNET_ENABLED": "false",
         "LAUNCHPAD_SKIP_CHAIN_VERIFY": "false",
         "OTP_SMS_ENABLED": "false",
+    // Search Console OAuth stays off until Google verifies webmasters.readonly. See docs/runbooks/gsc-oauth-setup.md.
+    "GSC_OAUTH_ENABLED": "false",
         "REQUEST_SIGNING_REQUIRED": "false",
         "AUDIT_QUEUE_ENABLED": "true",
         // Live card checkout. Opens only with the sk_live_ key and live webhook secret set as Worker secrets.
