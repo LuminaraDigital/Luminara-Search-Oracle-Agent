@@ -175,7 +175,8 @@ function pageDigits(input: PublicProfileInput): string {
 }
 
 function comparable(input: PublicProfileInput): boolean {
-  return input.textComplete || haystack(input).trim().length >= TEXT_ENOUGH;
+  // An excerpt can be long and still omit the phone in the footer. Length alone must not turn that into a mismatch.
+  return input.textComplete && haystack(input).trim().length >= TEXT_ENOUGH;
 }
 
 function measured(id: PublicProfileCheck['id'], label: string, signal: ProfileSignal, detail: string): PublicProfileCheck {
