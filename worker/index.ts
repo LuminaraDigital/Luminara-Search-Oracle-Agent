@@ -151,6 +151,9 @@ import { handlePrivacyRoute, purgeExpiredPrivacyDeletes } from './privacyService
 import { isCronMapped, jobsForCron, shouldRunScheduledJob } from './scheduledJobs';
 import { ingestProductAnalytics } from './productAnalytics';
 import { handleWeeklyDecisionsRoute, sendWeeklyDecisionDigest } from './weeklyDecisionService';
+import { handleWeeklyReportRoute, sendWeeklyVisibilityEmails } from './weeklyVisibilityEmail';
+import { handleFixDraftRoute } from './fixDraftRoute';
+import { handleGscRoute } from './gscOAuth';
 import { handleDreamingRoute } from './dreamingService';
 import { handleRsiRoute } from './rsiRoutes';
 import { handleEnquiryDeskRoute } from './enquiryDeskService';
@@ -389,6 +392,13 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
   // Agency API surfaces require apiAccess (Agency) after authentication
   const apiAccessGuard = await guardApiAccessRoute(request, env, path);
   if (apiAccessGuard) return withCors(apiAccessGuard);
+
+  const weeklyMail = await handleWeeklyReportRoute(request, env, path);
+  if (weeklyMail) return withCors(weeklyMail);
+  const fixDraft = await handleFixDraftRoute(request, env, path);
+  if (fixDraft) return withCors(fixDraft);
+  const gscConnect = await handleGscRoute(request, env, path);
+  if (gscConnect) return withCors(gscConnect);
 
   const oidc = handleGcpOidcRoute(request, env, path);
   if (oidc) return withCors(oidc);
@@ -2583,6 +2593,13 @@ const handler = {
     if (jobs.includes('stars_charge_sweep')) ctx.waitUntil(runStarsChargeSweep(env).then(() => undefined));
     if (jobs.includes('payment_support_sweep')) ctx.waitUntil(runPaymentSupportSweep(env).then(() => undefined));
     if (jobs.includes('weekly_decision_digest')) ctx.waitUntil(sendWeeklyDecisionDigest(env).then(() => undefined));
+    if (jobs.includes('weekly_visibility_email')) {
+      ctx.waitUntil(
+        sendWeeklyVisibilityEmails(env)
+          .then(() => undefined)
+          .catch((err) => console.error('[WeeklyEmail] sweep failed', err)),
+      );
+    }
     if (jobs.includes('rsi_skill_curator')) ctx.waitUntil(runRsiSkillCurator(env).then(() => undefined));
     if (jobs.includes('rsi_posting_reflection')) ctx.waitUntil(runPostingReflection(env).then(() => undefined));
     if (jobs.includes('citation_watch')) {
