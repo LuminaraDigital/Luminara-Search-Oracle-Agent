@@ -56,6 +56,7 @@ export const TOOL_GOVERNANCE: Record<string, ToolGovernanceEntry> = {
   create_dev_ticket_from_finding: { risk: 'write', status: 'active' },
   compile_review_to_skill: { risk: 'write', status: 'active' },
   mint_habitat_token: { risk: 'write', status: 'active' },
+  draft_fix: { risk: 'read', status: 'active' },
 };
 
 /** Unknown tools default to write/active and are still logged. */

@@ -13,6 +13,7 @@ import { getInitDataRaw, isInTelegram } from '../../services/telegram/tma';
 import { TELEGRAM_MINI_APP_URL } from '../paywall/paymentOptions';
 import { checksLeftLine, planDetailLine, planTitle } from '../../services/account/accountSummary';
 import { Button } from '../ui/Button';
+import { GscConnectPanel, WeeklyReportToggle } from './AgencyConnectPanels';
 
 type DeleteProof = { idToken?: string; initData?: string };
 
@@ -175,6 +176,9 @@ export const AccountPanel: React.FC = () => {
           Open Telegram
         </a>
       </section>
+
+      <WeeklyReportToggle />
+      <GscConnectPanel />
 
       <section className="space-y-2 border-t border-white/10 pt-4">
         <h2 className="text-xs font-bold uppercase tracking-wider text-gold-light">Your data</h2>

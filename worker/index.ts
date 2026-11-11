@@ -60,8 +60,10 @@ import { activateLicenseKey, generateLicenseKeys, importLicenseKeys } from './li
 import { TERMS_HTML, buildTermsHtml } from './termsPolicy';
 import { DELETE_ACCOUNT_HTML, maybeServeAndroidLegalHtml } from './androidLegalHtml';
 import { isAndroidPlayClientSearch } from '../services/legal/playClient';
+import { markdownForPath } from '../services/marketing/agentMarkdown';
 import { AI_TXT, LLMS_TXT, SITEMAP_XML, applyHostRobots, buildSitemapXml, robotsTxtForHost } from './crawlDocuments';
-import { maybeServeMarketingHtml, maybeServeReceiptHtml, maybeServeShareHtml, withSkippedBootSplash } from './marketingShell';
+import { heroAbEnabled } from '../services/marketing/heroExperiment';
+import { maybeServeMarketingHtml, maybeServeReceiptHtml, maybeServeShareHtml, withHeroAbFlag, withSkippedBootSplash } from './marketingShell';
 import { desktopLatestJson, desktopWindowsDownload } from './desktopDownloads';
 import { resolveAppView } from '../utils/marketingRoutes';
 import { AppView } from '../types';
@@ -150,6 +152,9 @@ import { handlePrivacyRoute, purgeExpiredPrivacyDeletes } from './privacyService
 import { isCronMapped, jobsForCron, shouldRunScheduledJob } from './scheduledJobs';
 import { ingestProductAnalytics } from './productAnalytics';
 import { handleWeeklyDecisionsRoute, sendWeeklyDecisionDigest } from './weeklyDecisionService';
+import { handleWeeklyReportRoute, sendWeeklyVisibilityEmails } from './weeklyVisibilityEmail';
+import { handleFixDraftRoute } from './fixDraftRoute';
+import { handleGscRoute } from './gscOAuth';
 import { handleDreamingRoute } from './dreamingService';
 import { handleRsiRoute } from './rsiRoutes';
 import { handleEnquiryDeskRoute } from './enquiryDeskService';
@@ -388,6 +393,13 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
   // Agency API surfaces require apiAccess (Agency) after authentication
   const apiAccessGuard = await guardApiAccessRoute(request, env, path);
   if (apiAccessGuard) return withCors(apiAccessGuard);
+
+  const weeklyMail = await handleWeeklyReportRoute(request, env, path);
+  if (weeklyMail) return withCors(weeklyMail);
+  const fixDraft = await handleFixDraftRoute(request, env, path);
+  if (fixDraft) return withCors(fixDraft);
+  const gscConnect = await handleGscRoute(request, env, path);
+  if (gscConnect) return withCors(gscConnect);
 
   const oidc = handleGcpOidcRoute(request, env, path);
   if (oidc) return withCors(oidc);
@@ -2337,7 +2349,8 @@ const handler = {
     const guard = async (res: Response) => {
       const secured = withSecurityHeaders(res);
       const html = await decoratePublicHtml(secured, env.ASSETS);
-      return applyHostRobots(url, env.ENVIRONMENT, html);
+      const flagged = await withHeroAbFlag(html, heroAbEnabled(env));
+      return applyHostRobots(url, env.ENVIRONMENT, flagged);
     };
 
     const oauthDiscovery = handleOAuthDiscovery(request);
@@ -2412,6 +2425,18 @@ const handler = {
           status: 200,
           headers: {
             'Content-Type': 'application/xml; charset=utf-8',
+            'Cache-Control': 'public, max-age=3600',
+          },
+        }),
+      );
+    }
+    const agentMarkdown = markdownForPath(url.pathname);
+    if (agentMarkdown && (request.method === 'GET' || request.method === 'HEAD')) {
+      return guard(
+        new Response(request.method === 'HEAD' ? null : agentMarkdown, {
+          status: 200,
+          headers: {
+            'Content-Type': 'text/markdown; charset=utf-8',
             'Cache-Control': 'public, max-age=3600',
           },
         }),
@@ -2499,7 +2524,7 @@ const handler = {
     if (androidLegal) return guard(androidLegal);
 
     // Marketing paths: SPA shell with path-specific title, description, canonical and JSON-LD.
-    const marketingHtml = await maybeServeMarketingHtml(request, env.ASSETS);
+    const marketingHtml = await maybeServeMarketingHtml(request, env.ASSETS, env);
     if (marketingHtml) {
       return guard(marketingHtml);
     }
@@ -2570,6 +2595,13 @@ const handler = {
     if (jobs.includes('stars_charge_sweep')) ctx.waitUntil(runStarsChargeSweep(env).then(() => undefined));
     if (jobs.includes('payment_support_sweep')) ctx.waitUntil(runPaymentSupportSweep(env).then(() => undefined));
     if (jobs.includes('weekly_decision_digest')) ctx.waitUntil(sendWeeklyDecisionDigest(env).then(() => undefined));
+    if (jobs.includes('weekly_visibility_email')) {
+      ctx.waitUntil(
+        sendWeeklyVisibilityEmails(env)
+          .then(() => undefined)
+          .catch((err) => console.error('[WeeklyEmail] sweep failed', err)),
+      );
+    }
     if (jobs.includes('rsi_skill_curator')) ctx.waitUntil(runRsiSkillCurator(env).then(() => undefined));
     if (jobs.includes('rsi_posting_reflection')) ctx.waitUntil(runPostingReflection(env).then(() => undefined));
     if (jobs.includes('citation_watch')) {
