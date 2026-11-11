@@ -21,6 +21,7 @@ export const PREPROD_GATED_FLAGS = [
   'OTP_SMS_ENABLED',
   'REQUEST_SIGNING_REQUIRED',
   'GSC_OAUTH_ENABLED',
+  'HERO_AB_ENABLED',
 ] as const satisfies readonly (keyof Env)[];
 
 export type PreprodGatedFlag = (typeof PREPROD_GATED_FLAGS)[number];

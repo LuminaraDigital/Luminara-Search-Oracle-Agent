@@ -34,8 +34,11 @@ import {
 } from './marketing/earth/globeStory';
 import type { AuditHandoff } from '../services/activation/auditHandoff';
 import { GUEST_HERO_NOTE, GUEST_REPORT_NOTE } from '../services/audit/hostedScoutRail';
+import { productTelemetry } from '../services/analytics/productTelemetry';
 import { LIVE_ANSWER_CHECKS } from '../services/marketing/engineCoverage';
-import { HOME_HERO } from '../services/marketing/marketingHeroCopy';
+import { claimHeroExposure, HERO_EXPOSURE_STORAGE_KEY } from '../services/marketing/heroExperiment';
+import { heroExperimentOn, heroVariantInBrowser } from '../services/marketing/heroExperimentClient';
+import { homeHeroForVariant } from '../services/marketing/marketingHeroCopy';
 import {
   MCP_BODY,
   MCP_DOCS_PATH,
@@ -118,6 +121,26 @@ const LandingPage: React.FC<LandingPageProps> = ({
   const anchorsRef = useRef<Array<HTMLElement | null>>([]);
   const [chapter, setChapter] = useState(-1);
   const [copied, setCopied] = useState(false);
+  const [heroVariant] = useState(() => heroVariantInBrowser());
+  const hero = homeHeroForVariant(heroVariant);
+
+  useEffect(() => {
+    let seen: string | null = null;
+    try {
+      seen = localStorage.getItem(HERO_EXPOSURE_STORAGE_KEY);
+    } catch {
+      seen = null;
+    }
+    const variant = claimHeroExposure({ experimentOn: heroExperimentOn(), variant: heroVariant, seen });
+    if (!variant) return;
+    try {
+      localStorage.setItem(HERO_EXPOSURE_STORAGE_KEY, variant);
+    } catch {
+      // A blocked store can record this exposure again on the next load.
+    }
+    productTelemetry.track('hero_exposed', { variant });
+    void productTelemetry.flushToServer();
+  }, [heroVariant]);
 
   // Stable callback refs (hero, statement, one per chapter) so anchors never detach on re-render.
   const anchorRefs = useMemo(
@@ -206,18 +229,18 @@ const LandingPage: React.FC<LandingPageProps> = ({
             aria-hidden
             className="pointer-events-none absolute left-1/2 top-[8svh] -z-10 h-[78svh] w-[min(1100px,130vw)] -translate-x-1/2 bg-[radial-gradient(ellipse_at_center,rgb(0_0_0/0.62)_0%,rgb(0_0_0/0.35)_45%,transparent_70%)]"
           />
-          <p className="lx-eyebrow lx-enter-rise lx-d1 lx-fp-text">{HOME_HERO.eyebrow}</p>
+          <p className="lx-eyebrow lx-enter-rise lx-d1 lx-fp-text">{hero.eyebrow}</p>
           <h1 id="hero-heading" className="lx-display lx-h1 mt-6 max-w-5xl lx-fp-text">
             <span className="lx-enter-mask">
-              <span className="lx-enter-line lx-d2">{HOME_HERO.titleLead}</span>
+              <span className="lx-enter-line lx-d2">{hero.titleLead}</span>
             </span>{' '}
             <span className="lx-enter-mask">
-              <span className="lx-enter-line lx-d3 italic lx-gold-text pr-[0.08em]">{HOME_HERO.titleEm}</span>
+              <span className="lx-enter-line lx-d3 italic lx-gold-text pr-[0.08em]">{hero.titleEm}</span>
             </span>
           </h1>
           <span aria-hidden className="lx-rule lx-enter-draw lx-d4 mt-8 lx-fp-text" />
           <p className="lx-lede lx-enter-rise lx-d4 mt-7 max-w-2xl lx-fp-text">
-            {HOME_HERO.lede}
+            {hero.lede}
           </p>
           <div className="lx-enter-rise lx-d5 mt-9 w-full">
             <DomainCheck

@@ -23,6 +23,20 @@ export const HOME_HERO: MarketingHeroCopy = {
   lede: `It checks whether AI answers name your agency, flags the page leaks that cost appraisal calls, and hands you the next fix. ${REAL_ESTATE_AUDIENCE}`,
 };
 
+/** Previous homepage headline. The lede stays the employee copy: the test is the headline. */
+export const ANSWER_HERO: MarketingHeroCopy = {
+  path: '/',
+  layout: 'home',
+  eyebrow: HOME_HERO.eyebrow,
+  titleLead: 'Be the answer',
+  titleEm: 'AI gives.',
+  lede: HOME_HERO.lede,
+};
+
+export function homeHeroForVariant(variant: 'answer' | 'employee'): MarketingHeroCopy {
+  return variant === 'answer' ? ANSWER_HERO : HOME_HERO;
+}
+
 export const PRICING_HERO: MarketingHeroCopy = {
   path: '/pricing',
   layout: 'pricing',

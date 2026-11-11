@@ -167,7 +167,9 @@
     // Budget hard stops: off | soft | hard. Production defaults to hard; staging stays soft for dogfood.
     // Card checkout stays closed until test keys are set and this is flipped to "true".
     "STRIPE_CHECKOUT_LIVE": "false",
-    "BUDGET_ENFORCEMENT": "hard"
+    "BUDGET_ENFORCEMENT": "hard",
+    // Homepage hero experiment. Off until the owner turns it on. Staging is the exception.
+    "HERO_AB_ENABLED": "false"
     // Optional secrets (wrangler secret put): SENTRY_DSN, AZURE_AI_SEARCH_KEY, GCP_VERTEX_ACCESS_TOKEN
     // Optional Vectorize: add vectorize binding MEMORY_VECTORS after `wrangler vectorize create luminara-memory`
   },
@@ -310,7 +312,9 @@
         "AUDIT_QUEUE_ENABLED": "true",
         // Test keys and the staging webhook are set. Production stays "false".
         "STRIPE_CHECKOUT_LIVE": "true",
-        "BUDGET_ENFORCEMENT": "soft"
+        "BUDGET_ENFORCEMENT": "soft",
+        // Homepage hero experiment. On here so staging can measure it. Production stays off.
+        "HERO_AB_ENABLED": "true"
       }
     },
     "production": {
@@ -425,7 +429,9 @@
         "AUDIT_QUEUE_ENABLED": "true",
         // Live card checkout. Opens only with the sk_live_ key and live webhook secret set as Worker secrets.
         "STRIPE_CHECKOUT_LIVE": "true",
-        "BUDGET_ENFORCEMENT": "hard"
+        "BUDGET_ENFORCEMENT": "hard",
+        // Homepage hero experiment. Off until the owner turns it on.
+        "HERO_AB_ENABLED": "false"
       }
     }
   }

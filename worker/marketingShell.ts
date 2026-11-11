@@ -1,5 +1,11 @@
 import { markdownAlternatePath } from '../services/marketing/agentMarkdown';
-import { marketingHeroForPath, type MarketingHeroCopy } from '../services/marketing/marketingHeroCopy';
+import {
+  assignHomeHero,
+  heroAbEnabled,
+  stampHeroAbFlag,
+  type HeroVariant,
+} from '../services/marketing/heroExperiment';
+import { homeHeroForVariant, marketingHeroForPath, type MarketingHeroCopy } from '../services/marketing/marketingHeroCopy';
 import {
   DEFAULT_OG_IMAGE,
   MARKETING_ORIGIN,
@@ -31,18 +37,19 @@ export function withSkippedBootSplash(html: string): string {
   return addHtmlClass(html, 'lx-skip-splash');
 }
 
-function firstPaintBlock(hero: MarketingHeroCopy): string {
+function firstPaintBlock(hero: MarketingHeroCopy, variant: HeroVariant | null): string {
   const layout = hero.layout === 'home' ? 'lx-fp-home' : 'lx-fp-pricing';
   const titleClass = hero.layout === 'home' ? 'lx-display lx-h1' : 'lx-display lx-h2';
   const title = hero.layout === 'home'
     ? `<span class="lx-fp-line">${escapeHtml(hero.titleLead)}</span><span class="lx-fp-line lx-fp-em lx-gold-text">${escapeHtml(hero.titleEm)}</span>`
     : `${escapeHtml(hero.titleLead)} <span class="lx-fp-em lx-gold-text">${escapeHtml(hero.titleEm)}</span>`;
-  return `<div id="lx-first-paint" class="${layout}" data-path="${hero.path}"><p class="lx-eyebrow">${escapeHtml(hero.eyebrow)}</p><h1 class="${titleClass}">${title}</h1><span class="lx-rule" aria-hidden="true"></span><p class="lx-lede">${escapeHtml(hero.lede)}</p></div>`;
+  const variantAttr = variant ? ` data-variant="${variant}"` : '';
+  return `<div id="lx-first-paint" class="${layout}" data-path="${hero.path}"${variantAttr}><p class="lx-eyebrow">${escapeHtml(hero.eyebrow)}</p><h1 class="${titleClass}">${title}</h1><span class="lx-rule" aria-hidden="true"></span><p class="lx-lede">${escapeHtml(hero.lede)}</p></div>`;
 }
 
-function injectFirstPaint(html: string, hero: MarketingHeroCopy): string {
+function injectFirstPaint(html: string, hero: MarketingHeroCopy, variant: HeroVariant | null): string {
   if (html.includes('id="lx-first-paint"')) return html;
-  const block = firstPaintBlock(hero);
+  const block = firstPaintBlock(hero, variant);
   if (html.includes('<div id="root">')) return html.replace('<div id="root">', `${block}\n  <div id="root">`);
   return html.replace(/<\/body>/i, `${block}\n</body>`);
 }
@@ -62,12 +69,16 @@ export function deferRenderBlockingCss(html: string): string {
  * Meta plus, on /, /pricing, and /methodology, a visible hero so the lede paints before JS.
  * shortcut: /real-estate-ready is not a route, so it gets no hero.
  */
-export function applyMarketingDocument(html: string, page: MarketingShellMeta): string {
+export function applyMarketingDocument(
+  html: string,
+  page: MarketingShellMeta,
+  home: { variant: HeroVariant } | null = null,
+): string {
   let out = injectMarketingMeta(html, page);
-  const hero = marketingHeroForPath(page.path);
+  const hero = home && page.path === '/' ? homeHeroForVariant(home.variant) : marketingHeroForPath(page.path);
   if (!hero) return out;
   out = addHtmlClass(withSkippedBootSplash(out), 'lx-fp-live');
-  out = injectFirstPaint(out, hero);
+  out = injectFirstPaint(out, hero, home && page.path === '/' ? home.variant : null);
   out = deferRenderBlockingCss(out);
   return out.replace(/<img\b[^>]*\bsrc="\/boot-mark\.webp"[^>]*>/i, '');
 }
@@ -222,6 +233,7 @@ export function marketingDocumentForPath(pathname: string): MarketingShellMeta |
 export async function maybeServeMarketingHtml(
   request: Request,
   assets: Fetcher,
+  env: { HERO_AB_ENABLED?: string } = {},
 ): Promise<Response | null> {
   const url = new URL(request.url);
   const page = marketingDocumentForPath(url.pathname);
@@ -240,18 +252,51 @@ export async function maybeServeMarketingHtml(
   const contentType = assetRes.headers.get('content-type') || '';
   if (!contentType.includes('text/html')) return null;
 
-  const headers: Record<string, string> = {
+  const enabled = heroAbEnabled(env);
+  // shortcut: a browser that drops Set-Cookie shows this hero until React finds no cookie and renders employee.
+  const assignment = page.path === '/'
+    ? assignHomeHero({
+      enabled,
+      cookieHeader: request.headers.get('cookie'),
+      heroQuery: url.searchParams.get('hero'),
+      userAgent: request.headers.get('user-agent'),
+    })
+    : null;
+
+  const headers = new Headers({
     'Content-Type': 'text/html; charset=utf-8',
-    'Cache-Control': 'no-cache',
-  };
-  if (page.robots) headers['X-Robots-Tag'] = page.robots;
+    // A personalized home document must not be stored by a shared cache.
+    'Cache-Control': assignment && enabled ? 'private, no-store' : 'no-cache',
+  });
+  if (page.robots) headers.set('X-Robots-Tag', page.robots);
+  if (assignment?.setCookie) headers.set('Set-Cookie', assignment.setCookie);
 
   if (request.method === 'HEAD') {
     return new Response(null, { status: 200, headers });
   }
 
-  const html = applyMarketingDocument(await assetRes.text(), page);
+  const html = stampHeroAbFlag(
+    applyMarketingDocument(
+      await assetRes.text(),
+      page,
+      assignment ? { variant: assignment.variant } : null,
+    ),
+    enabled,
+  );
   return new Response(html, { status: 200, headers });
+}
+
+/** Puts data-hero-ab on any HTML document the guard serves, including the app shell. */
+export async function withHeroAbFlag(res: Response, enabled: boolean): Promise<Response> {
+  const contentType = res.headers.get('content-type') || '';
+  if (!/text\/html/i.test(contentType) || res.body === null) return res;
+  const headers = new Headers(res.headers);
+  headers.delete('content-length');
+  return new Response(stampHeroAbFlag(await res.text(), enabled), {
+    status: res.status,
+    statusText: res.statusText,
+    headers,
+  });
 }
 
 const SHARE_TOKEN_PATH = /^\/share\/([a-f0-9]{64})$/i;
