@@ -53,6 +53,7 @@ import com.luminarasuite.app.core.model.IdeaCreateResponse
 import com.luminarasuite.app.core.model.IdeaDetailResponse
 import com.luminarasuite.app.core.model.IdeaListResponse
 import com.luminarasuite.app.core.model.OracleChatRequest
+import com.luminarasuite.app.core.model.OracleTurn
 import com.luminarasuite.app.core.model.PasswordResetRequest
 import com.luminarasuite.app.core.model.PasswordResetResponse
 import com.luminarasuite.app.core.model.PrivacyExportResponse
@@ -412,6 +413,8 @@ class FakeLuminaraApi : LuminaraApi {
     /** Server Oracle stream. A status code means the route answered with that error. */
     var oracleStatus: Int = 404
     var oracleBody: String = ""
+    var oracleErrorBody: String = "{}"
+    var oracleFailure: IOException? = null
     var oracleCalls = 0
     var lastOracle: OracleChatRequest? = null
 
@@ -421,9 +424,10 @@ class FakeLuminaraApi : LuminaraApi {
     ): ResponseBody {
         oracleCalls += 1
         lastOracle = body
+        oracleFailure?.let { throw it }
         if (oracleStatus != 200) {
             throw HttpException(
-                Response.error<Unit>(oracleStatus, "{}".toResponseBody("application/json".toMediaType())),
+                Response.error<Unit>(oracleStatus, oracleErrorBody.toResponseBody("application/json".toMediaType())),
             )
         }
         return oracleBody.toResponseBody("text/event-stream".toMediaType())
@@ -901,12 +905,28 @@ class LuminaraRepositoryTest {
             assertEquals("Add H1.", turn.nextAction)
         }
 
-    private fun signedInRepo(api: FakeLuminaraApi) =
-        DefaultLuminaraRepository(
-            api = api,
-            dao = FakeLuminaraDao(),
-            vault = InMemoryVaultStorage(VaultSnapshot(idToken = "t", email = "a@b.co")),
-        )
+    private fun signedInRepo(
+        api: FakeLuminaraApi,
+        clockMs: () -> Long = { 1_000L },
+    ) = DefaultLuminaraRepository(
+        api = api,
+        dao = FakeLuminaraDao(),
+        vault = InMemoryVaultStorage(VaultSnapshot(idToken = "t", email = "a@b.co")),
+        clockMs = clockMs,
+    )
+
+    private fun oracleStream(vararg events: String) = events.joinToString("") { "$it\n\n" }
+
+    private fun tokenEvent(text: String) = "event: token\ndata: {\"text\":\"$text\"}"
+
+    private suspend fun askOracle(
+        api: FakeLuminaraApi,
+        body: String,
+    ): OracleTurn {
+        api.oracleStatus = 200
+        api.oracleBody = body
+        return (signedInRepo(api).streamOracle("Q", emptyList()).toList().last() as OracleEvent.Complete).turn
+    }
 
     private val oracleOk =
         "event: status\ndata: {\"stage\":\"thinking\"}\n\n" +
@@ -923,8 +943,8 @@ class LuminaraRepositoryTest {
             val events = signedInRepo(api).streamOracle("Why?", emptyList()).toList()
 
             val turn = (events.last() as OracleEvent.Complete).turn
-            assertEquals("Your llms.txt is missing.", turn.verdict)
-            assertEquals("Publish /llms.txt this week.", turn.nextAction)
+            assertEquals("Your llms.txt is missing.\n\nPublish /llms.txt this week.", turn.verdict)
+            assertEquals(DEFAULT_NEXT_ACTION, turn.nextAction)
             assertEquals("Why?", api.lastOracle?.message)
             assertNull(api.lastChat)
             assertTrue(events.any { it is OracleEvent.Partial })
@@ -933,7 +953,7 @@ class LuminaraRepositoryTest {
     @Test
     fun streamOracle_fallsBackToRelayWhenOracleIsNotForThisPlan() =
         runTest {
-            for (status in listOf(403, 404, 409)) {
+            for (status in listOf(403, 404, 409, 500, 502)) {
                 val api = FakeLuminaraApi()
                 api.oracleStatus = status
                 val events = signedInRepo(api).streamOracle("Q", emptyList()).toList()
@@ -941,6 +961,118 @@ class LuminaraRepositoryTest {
                 assertEquals(1, api.oracleCalls)
                 assertEquals("Publish /llms.txt - now.", (events.last() as OracleEvent.Complete).turn.verdict)
             }
+        }
+
+    @Test
+    fun streamOracle_cloudflareHtml503BeforeTokensFallsBackToRelay() =
+        runTest {
+            val api = FakeLuminaraApi()
+            api.oracleStatus = 503
+            api.oracleErrorBody = "<html><body>Service Unavailable</body></html>"
+            val events = signedInRepo(api).streamOracle("Q", emptyList()).toList()
+
+            assertEquals("Publish /llms.txt - now.", (events.last() as OracleEvent.Complete).turn.verdict)
+        }
+
+    @Test
+    fun streamOracle_ioFailureBeforeTokensFallsBackToRelay() =
+        runTest {
+            val api = FakeLuminaraApi()
+            api.oracleFailure = IOException("timeout")
+            val events = signedInRepo(api).streamOracle("Q", emptyList()).toList()
+
+            assertEquals("Publish /llms.txt - now.", (events.last() as OracleEvent.Complete).turn.verdict)
+        }
+
+    @Test
+    fun streamOracle_forbiddenIsNotAskedAgainForTenMinutes() =
+        runTest {
+            val api = FakeLuminaraApi()
+            api.oracleStatus = 403
+            var now = 1_000L
+            val repo = signedInRepo(api) { now }
+            repo.streamOracle("Q", emptyList()).toList()
+            now += 9 * 60 * 1000L
+            repo.streamOracle("Q", emptyList()).toList()
+            assertEquals(1, api.oracleCalls)
+
+            now += 2 * 60 * 1000L
+            repo.streamOracle("Q", emptyList()).toList()
+            assertEquals(2, api.oracleCalls)
+        }
+
+    @Test
+    fun streamOracle_serverWarningStaysWithTheAnswerAndActionIsDefault() =
+        runTest {
+            val warning = "Some numbers here were not measured."
+            val turn =
+                askOracle(
+                    FakeLuminaraApi(),
+                    oracleStream(
+                        tokenEvent("Your llms.txt is missing."),
+                        tokenEvent("\\n\\n$warning"),
+                        "event: done\ndata: {\"ok\":true}",
+                    ),
+                )
+
+            assertEquals("Your llms.txt is missing.\n\n$warning", turn.verdict)
+            assertEquals(DEFAULT_NEXT_ACTION, turn.nextAction)
+        }
+
+    @Test
+    fun streamOracle_multiParagraphAnswerIsKeptWhole() =
+        runTest {
+            val turn =
+                askOracle(
+                    FakeLuminaraApi(),
+                    oracleStream(
+                        tokenEvent("First point.\\n\\nSecond point.\\n\\nNEXT_ACTION: Add the H1."),
+                        "event: done\ndata: {\"ok\":true}",
+                    ),
+                )
+
+            assertEquals("First point.\n\nSecond point.\n\nNEXT_ACTION: Add the H1.", turn.verdict)
+            assertEquals("Add the H1.", turn.nextAction)
+        }
+
+    @Test
+    fun streamOracle_monitorNoteReachesTheAnswerAndStaysNotMeasured() =
+        runTest {
+            val turn =
+                askOracle(
+                    FakeLuminaraApi(),
+                    oracleStream(
+                        tokenEvent("Traffic will double."),
+                        "event: monitor\ndata: {\"ok\":false,\"flags\":[\"unsupported\"],\"notes\":[\"Claim has no source.\"]}",
+                        "event: done\ndata: {\"ok\":true}",
+                    ),
+                )
+
+            assertTrue(turn.verdict.endsWith("Oracle check: Claim has no source."))
+            assertEquals("not_measured", turn.measurementStatus)
+        }
+
+    @Test
+    fun streamOracle_doneNotOkIsAFailure() =
+        runTest {
+            val api = FakeLuminaraApi()
+            api.oracleStatus = 200
+            api.oracleBody = oracleStream(tokenEvent("Half"), "event: done\ndata: {\"ok\":false}")
+            val result = runCatching { signedInRepo(api).streamOracle("Q", emptyList()).toList() }
+
+            assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("could not finish"))
+        }
+
+    @Test
+    fun streamOracle_errorAfterTokensDoesNotCallRelay() =
+        runTest {
+            val api = FakeLuminaraApi()
+            api.oracleStatus = 200
+            api.oracleBody = oracleStream(tokenEvent("Half"), "event: error\ndata: {\"error\":\"LLM error\"}")
+            val result = runCatching { signedInRepo(api).streamOracle("Q", emptyList()).toList() }
+
+            assertEquals("LLM error", result.exceptionOrNull()?.message)
+            assertNull(api.lastChat)
         }
 
     @Test

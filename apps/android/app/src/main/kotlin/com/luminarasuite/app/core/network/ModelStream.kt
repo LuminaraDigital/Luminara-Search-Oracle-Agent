@@ -61,8 +61,10 @@ internal fun labelledLine(
         ?.trim(' ', '*', '_')
         ?.takeIf { it.isNotEmpty() }
 
+internal fun String.withoutEmDash() = replace("\u2014", "-")
+
 fun streamingVerdict(raw: String): String =
-    raw.replace("—", "-")
+    raw.withoutEmDash()
         .substringBefore("NEXT_ACTION")
         .replace(VERDICT_LABEL, "")
         .trim(' ', '\n', '*', '_')

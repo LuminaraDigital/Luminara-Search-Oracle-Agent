@@ -1,7 +1,13 @@
 package com.luminarasuite.app.core.network
 
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -21,6 +27,11 @@ sealed interface OracleSseEvent {
     data class Done(
         val ok: Boolean,
     ) : OracleSseEvent
+
+    /** The server's output monitor flagged the answer. It is only sent when the answer did not pass. */
+    data class Monitor(
+        val notes: List<String>,
+    ) : OracleSseEvent
 }
 
 private val SSE_JSON = Json { ignoreUnknownKeys = true }
@@ -36,20 +47,36 @@ internal fun decodeOracleEvent(
         "token" -> str("text")?.let { OracleSseEvent.Token(it) }
         "error" -> OracleSseEvent.Error(str("error") ?: "The Oracle could not answer.", str("code"))
         "done" -> OracleSseEvent.Done(str("ok") == "true")
+        "monitor" ->
+            if (str("ok") == "false") {
+                val notes = (obj["notes"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+                OracleSseEvent.Monitor(notes.filter { it.isNotBlank() })
+            } else {
+                null
+            }
         else -> null
     }
 }
 
 /**
  * Reads Server-Sent Events. A blank line ends an event, several `data:` lines join with a newline,
- * and event types this app does not use (status, tool, monitor, harness_event) are skipped.
+ * and event types this app does not use (status, tool, provenance, harness_event) are skipped.
+ * Cancelling the caller closes the body, which also stops a read blocked on a quiet socket.
  */
 suspend fun readOracleStream(
     body: ResponseBody,
     onEvent: suspend (OracleSseEvent) -> Unit,
-) {
-    body.use { response ->
-        val source = response.source()
+) = coroutineScope {
+    val closer =
+        launch {
+            try {
+                awaitCancellation()
+            } finally {
+                body.close()
+            }
+        }
+    try {
+        val source = body.source()
         var name = "message"
         val data = mutableListOf<String>()
 
@@ -59,6 +86,7 @@ suspend fun readOracleStream(
             data.clear()
         }
         while (true) {
+            ensureActive()
             val line = source.readUtf8Line() ?: break
             when {
                 line.isEmpty() -> dispatch()
@@ -68,5 +96,8 @@ suspend fun readOracleStream(
             }
         }
         dispatch()
+    } finally {
+        closer.cancel()
+        body.close()
     }
 }
