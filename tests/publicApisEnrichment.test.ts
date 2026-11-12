@@ -416,5 +416,12 @@ describe('PublicApisEnrichmentService', () => {
       expect(result.wayback.status).toBe('historic_authority');
       expect(result.security.measurementConfidence).toBe('full');
     });
+
+    it('does not cache a security check that reached nothing, so the next audit measures again', async () => {
+      vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'));
+      const result = await publicApisEnrichmentService.enrichAudit('https://unreachable-domain.com', 'Unreachable');
+      expect(result.security.measurementConfidence).toBe('failed');
+      expect(JSON.parse(storage['luminara_entity_enrichment_cache'] || '{}')['unreachable-domain.com']).toBeUndefined();
+    });
   });
 });

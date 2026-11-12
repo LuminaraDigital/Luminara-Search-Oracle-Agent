@@ -223,8 +223,9 @@ export async function identify(request: Request, env: Env): Promise<{
     }
   }
 
-  // Stale initData stands in only for a session of the user Telegram signed, never another one.
-  if (staleInitData && telegramUser && telegramUser.id !== staleInitData.userId) {
+  // Stale initData stands in only for a Telegram session of the user Telegram signed. Any other
+  // session, a Firebase one included, gets the expired-initData error, as before the fallback.
+  if (staleInitData && (!telegramUser || telegramUser.id !== staleInitData.userId)) {
     return pack({ user: null, error: staleInitData.error });
   }
 

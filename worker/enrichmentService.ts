@@ -131,7 +131,8 @@ export async function handleEntityEnrichment(request: Request, env: Env): Promis
   };
 
   try {
-    if (env.LUMINARA_KV) {
+    // A security check that reached nothing is not cached, so the next audit measures again.
+    if (env.LUMINARA_KV && security.measurementConfidence !== 'failed') {
       await env.LUMINARA_KV.put(cacheKey, JSON.stringify(result), { expirationTtl: 604800 });
     }
   } catch {

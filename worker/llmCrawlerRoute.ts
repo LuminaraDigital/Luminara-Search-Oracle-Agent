@@ -24,8 +24,9 @@ const FOLLOW_REDIRECT = new Set([301, 302, 303, 307, 308]);
  * starts with 404 ("404 Media") or that goes on after the phrase ("File not found handling") does not. */
 const NOT_FOUND_START =
   /^(?:error\s*)?404(?:\s*[-:|]?\s*(?:(?:page|file)\s+)?(?:not\s+found|error)\b|\s*$)|^not\s+found\b|^cannot\s+get\s+\/|^(?:the\s+)?(?:requested\s+)?(?:page|file|resource|document)(?:\s+you\s+requested)?\s+(?:was\s+)?not\s+found[.!]?$/i;
-/** A one-line message such as "The requested file was not found on this server." */
-const NOT_FOUND_PHRASE = /\b(?:page|file|resource|document)\s+(?:was\s+)?not\s+found\b/i;
+/** A one-line message such as "The requested file was not found on this server." The phrase must
+ * end a sentence, so a one-line title such as "File not found handling" is not a 404. */
+const NOT_FOUND_PHRASE = /\b(?:page|file|resource|document)\s+(?:was\s+)?not\s+found(?:\s+on\s+this\s+server)?(?:[.!]|\s*$)/i;
 const MAX_NOT_FOUND_TEXT = 300;
 
 /**

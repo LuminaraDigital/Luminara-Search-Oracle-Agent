@@ -82,6 +82,17 @@ describe('identify() with stale Mini App initData', () => {
     expect(who.error).toBe(INIT_DATA_EXPIRED_REASON);
   });
 
+  it('refuses stale initData with a Firebase session instead of signing in that account', async () => {
+    const env = makeEnv();
+    const sid = await mintOpaqueSession(env, { uid: 'web-user-b', name: 'Bea' });
+    if (!sid) throw new Error('no session minted');
+    const who = await identify(new Request(`${ORIGIN}/api/auth/session`, {
+      headers: { 'x-telegram-init-data': signInitData(77007, TWO_HOURS), cookie: `__session=${encodeURIComponent(sid)}` },
+    }), env);
+    expect(who.user).toBeNull();
+    expect(who.error).toBe(INIT_DATA_EXPIRED_REASON);
+  });
+
   it('refuses forged initData even with a valid session', async () => {
     const env = makeEnv();
     const who = await identify(new Request(`${ORIGIN}/api/auth/session`, {
