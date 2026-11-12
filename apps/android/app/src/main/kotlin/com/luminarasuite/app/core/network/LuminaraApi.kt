@@ -29,6 +29,7 @@ import com.luminarasuite.app.core.model.GatewayExecuteRequest
 import com.luminarasuite.app.core.model.GatewayExecuteResponse
 import com.luminarasuite.app.core.model.GoogleSignInRequest
 import com.luminarasuite.app.core.model.GroqChatRequest
+import com.luminarasuite.app.core.model.OracleChatRequest
 import com.luminarasuite.app.core.model.GroqChatResponse
 import com.luminarasuite.app.core.model.IdeaCreateRequest
 import com.luminarasuite.app.core.model.IdeaCreateResponse
@@ -261,6 +262,13 @@ interface LuminaraApi {
         @Header("x-audit-domain") auditDomain: String? = null,
         @Body body: GroqChatRequest,
     ): GroqChatResponse
+
+    @Streaming
+    @POST("api/oracle/chat")
+    suspend fun streamOracleChat(
+        @Header("Accept") accept: String = "text/event-stream",
+        @Body body: OracleChatRequest,
+    ): ResponseBody
 
     @Streaming
     @POST("api/providers/groq/chat/completions")

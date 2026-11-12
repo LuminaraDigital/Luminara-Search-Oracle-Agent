@@ -52,6 +52,7 @@ import com.luminarasuite.app.core.model.IdeaCreateRequest
 import com.luminarasuite.app.core.model.IdeaCreateResponse
 import com.luminarasuite.app.core.model.IdeaDetailResponse
 import com.luminarasuite.app.core.model.IdeaListResponse
+import com.luminarasuite.app.core.model.OracleChatRequest
 import com.luminarasuite.app.core.model.PasswordResetRequest
 import com.luminarasuite.app.core.model.PasswordResetResponse
 import com.luminarasuite.app.core.model.PrivacyExportResponse
@@ -407,6 +408,26 @@ class FakeLuminaraApi : LuminaraApi {
         "data: {\"choices\":[{\"delta\":{\"content\":\"VERDICT: Publish /llms.txt \\u2014 now.\\n\"}}]}\n\n" +
             "data: {\"choices\":[{\"delta\":{\"content\":\"NEXT_ACTION: Add H1.\"}}]}\n\n" +
             "data: [DONE]\n\n"
+
+    /** Server Oracle stream. A status code means the route answered with that error. */
+    var oracleStatus: Int = 404
+    var oracleBody: String = ""
+    var oracleCalls = 0
+    var lastOracle: OracleChatRequest? = null
+
+    override suspend fun streamOracleChat(
+        accept: String,
+        body: OracleChatRequest,
+    ): ResponseBody {
+        oracleCalls += 1
+        lastOracle = body
+        if (oracleStatus != 200) {
+            throw HttpException(
+                Response.error<Unit>(oracleStatus, "{}".toResponseBody("application/json".toMediaType())),
+            )
+        }
+        return oracleBody.toResponseBody("text/event-stream".toMediaType())
+    }
 
     override suspend fun streamGroq(
         providerKey: String?,
@@ -878,6 +899,120 @@ class LuminaraRepositoryTest {
             val turn = (events.last() as OracleEvent.Complete).turn
             assertEquals("Publish /llms.txt - now.", turn.verdict)
             assertEquals("Add H1.", turn.nextAction)
+        }
+
+    private fun signedInRepo(api: FakeLuminaraApi) =
+        DefaultLuminaraRepository(
+            api = api,
+            dao = FakeLuminaraDao(),
+            vault = InMemoryVaultStorage(VaultSnapshot(idToken = "t", email = "a@b.co")),
+        )
+
+    private val oracleOk =
+        "event: status\ndata: {\"stage\":\"thinking\"}\n\n" +
+            "event: token\ndata: {\"text\":\"Your llms.txt is missing.\"}\n\n" +
+            "event: token\ndata: {\"text\":\"\\n\\nPublish /llms.txt this week.\"}\n\n" +
+            "event: done\ndata: {\"ok\":true}\n\n"
+
+    @Test
+    fun streamOracle_signedInUsesServerOracleAndSkipsRelay() =
+        runTest {
+            val api = FakeLuminaraApi()
+            api.oracleStatus = 200
+            api.oracleBody = oracleOk
+            val events = signedInRepo(api).streamOracle("Why?", emptyList()).toList()
+
+            val turn = (events.last() as OracleEvent.Complete).turn
+            assertEquals("Your llms.txt is missing.", turn.verdict)
+            assertEquals("Publish /llms.txt this week.", turn.nextAction)
+            assertEquals("Why?", api.lastOracle?.message)
+            assertNull(api.lastChat)
+            assertTrue(events.any { it is OracleEvent.Partial })
+        }
+
+    @Test
+    fun streamOracle_fallsBackToRelayWhenOracleIsNotForThisPlan() =
+        runTest {
+            for (status in listOf(403, 404, 409)) {
+                val api = FakeLuminaraApi()
+                api.oracleStatus = status
+                val events = signedInRepo(api).streamOracle("Q", emptyList()).toList()
+
+                assertEquals(1, api.oracleCalls)
+                assertEquals("Publish /llms.txt - now.", (events.last() as OracleEvent.Complete).turn.verdict)
+            }
+        }
+
+    @Test
+    fun streamOracle_sessionExpiredSurfacesSignInWithoutFallback() =
+        runTest {
+            val api = FakeLuminaraApi()
+            api.oracleStatus = 401
+            val result = runCatching { signedInRepo(api).streamOracle("Q", emptyList()).toList() }
+
+            assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("Sign in again"))
+            assertEquals(1, api.oracleCalls)
+        }
+
+    @Test
+    fun streamOracle_rateLimitIsNamedNotRetriedOnRelay() =
+        runTest {
+            val api = FakeLuminaraApi()
+            api.oracleStatus = 429
+            val result = runCatching { signedInRepo(api).streamOracle("Q", emptyList()).toList() }
+
+            assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("too fast"))
+        }
+
+    @Test
+    fun streamOracle_errorEventAfterPartialKeepsPartialThenFails() =
+        runTest {
+            val api = FakeLuminaraApi()
+            api.oracleStatus = 200
+            api.oracleBody =
+                "event: token\ndata: {\"text\":\"Half an answer\"}\n\n" +
+                    "event: error\ndata: {\"error\":\"LLM error 500\"}\n\n"
+            val seen = mutableListOf<OracleEvent>()
+            val result =
+                runCatching { signedInRepo(api).streamOracle("Q", emptyList()).collect { seen.add(it) } }
+
+            assertEquals("LLM error 500", result.exceptionOrNull()?.message)
+            assertTrue(seen.any { it is OracleEvent.Partial && it.text == "Half an answer" })
+            assertTrue(seen.none { it is OracleEvent.Complete })
+        }
+
+    @Test
+    fun streamOracle_streamEndingWithoutDoneIsReportedAsCutOff() =
+        runTest {
+            val api = FakeLuminaraApi()
+            api.oracleStatus = 200
+            api.oracleBody = "event: token\ndata: {\"text\":\"Half\"}\n\n"
+            val result = runCatching { signedInRepo(api).streamOracle("Q", emptyList()).toList() }
+
+            assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("dropped"))
+        }
+
+    @Test
+    fun readOracleStream_joinsMultiLineDataAndSkipsOtherEvents() =
+        runTest {
+            val raw =
+                ": keep-alive\n" +
+                    "event: tool\ndata: {\"tool\":\"x\"}\n\n" +
+                    "event: token\ndata: {\"text\":\n" +
+                    "data: \"line one\"}\n\n" +
+                    "event: error\ndata: {\"error\":\"Nope\",\"code\":\"NO_LLM\"}\n\n" +
+                    "event: done\ndata: {\"ok\":false}"
+            val seen = mutableListOf<OracleSseEvent>()
+            readOracleStream(raw.toResponseBody("text/event-stream".toMediaType())) { seen.add(it) }
+
+            assertEquals(
+                listOf(
+                    OracleSseEvent.Token("line one"),
+                    OracleSseEvent.Error("Nope", "NO_LLM"),
+                    OracleSseEvent.Done(false),
+                ),
+                seen,
+            )
         }
 
     @Test

@@ -25,6 +25,7 @@ import com.luminarasuite.app.core.model.FindingPatchRequest
 import com.luminarasuite.app.core.model.FindingsBulkItem
 import com.luminarasuite.app.core.model.FindingsBulkRequest
 import com.luminarasuite.app.core.model.GroqChatRequest
+import com.luminarasuite.app.core.model.OracleChatRequest
 import com.luminarasuite.app.core.model.GroqMessage
 import com.luminarasuite.app.core.model.IdeaCard
 import com.luminarasuite.app.core.model.IdeaCreateRequest
@@ -45,6 +46,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -210,6 +212,11 @@ class DefaultLuminaraRepository(
         private const val RESET_SENT_COPY =
             "If an account uses that email, a reset link is on its way. Check your inbox and spam."
         private const val NO_ANSWER_COPY = "The AI did not answer. Try again."
+        private const val SESSION_ENDED_COPY = "Your session ended. Sign in again to keep asking."
+        private const val RATE_LIMITED_COPY = "You are asking too fast. Wait a minute and try again."
+        private const val CUT_OFF_COPY = "The connection dropped before the answer finished. Try again."
+        private const val DEFAULT_NEXT_ACTION =
+            "Run Instant Audit on your target domain and publish /llms.txt with canonical links."
         private const val BAD_REPLY_COPY = "Luminara sent a reply this app could not read. Try again."
         private const val FAILED_COPY = "That did not go through. Try again in a minute."
         private const val UNTRUSTED_RULE =
@@ -537,6 +544,11 @@ class DefaultLuminaraRepository(
                 GuestTrial.hostedSignInMessage(snap.guestTrialUsed, GuestTrial.SIGN_IN_FOR_HOSTED)
             }
             if (groqKey == null) ensureAskOpen()
+            // Hosted Ask uses the same server Oracle as the web. Own-key Ask keeps the direct path.
+            if (groqKey == null && streamFromServerOracle(trimmed)) {
+                refreshQuotaQuietly()
+                return@flow
+            }
             emit(OracleEvent.Status("Searching the live web"))
             val site = lastAuditedSite()
             val sources = fetchOracleEvidence(trimmed, site, tavilyKey, snap.isSignedIn)
@@ -556,6 +568,68 @@ class DefaultLuminaraRepository(
             refreshQuotaQuietly()
         }.catch { throw unwrapWorkerError(it) }
             .flowOn(Dispatchers.IO)
+
+    /**
+     * Tries the server Oracle. Returns true when it answered (the turn is already emitted) and false
+     * when Oracle is not available to this account, so the caller falls back to the hosted relay.
+     * A 409 (a turn is still running on the server) also falls back instead of waiting.
+     * A 401 is never a fallback: the session is over and the person has to sign in.
+     */
+    private suspend fun FlowCollector<OracleEvent>.streamFromServerOracle(question: String): Boolean {
+        emit(OracleEvent.Status("Asking the Oracle"))
+        val body =
+            try {
+                api.streamOracleChat(body = OracleChatRequest(message = question))
+            } catch (err: HttpException) {
+                when (err.code()) {
+                    401 -> throw IllegalStateException(SESSION_ENDED_COPY)
+                    429 -> throw IllegalStateException(RATE_LIMITED_COPY)
+                    403, 404, 409 -> return false
+                    503 -> {
+                        val raw = runCatching { err.response()?.errorBody()?.string() }.getOrNull().orEmpty()
+                        if ("ORACLE_DISABLED" in raw || "DO_UNAVAILABLE" in raw) return false
+                        throw err
+                    }
+                    else -> throw err
+                }
+            }
+        val answer = StringBuilder()
+        var finished = false
+        readOracleStream(body) { event ->
+            when (event) {
+                is OracleSseEvent.Token -> {
+                    answer.append(event.text)
+                    emit(OracleEvent.Partial(streamingVerdict(answer.toString())))
+                }
+                is OracleSseEvent.Error -> throw IllegalStateException(event.message)
+                is OracleSseEvent.Done -> finished = true
+            }
+        }
+        if (answer.isBlank()) throw IllegalStateException(NO_ANSWER_COPY)
+        // The stream ended without its done event, so the answer may be cut off. Say so.
+        check(finished) { CUT_OFF_COPY }
+        emit(OracleEvent.Complete(parseServerOracleTurn(question, answer.toString())))
+        return true
+    }
+
+    private fun parseServerOracleTurn(
+        question: String,
+        rawContent: String,
+    ): OracleTurn {
+        val clean = rawContent.replace("—", "-").trim()
+        val paragraphs = clean.split(Regex("\\n\\s*\\n"), limit = 2)
+        val now = clockMs()
+        return OracleTurn(
+            id = "turn-$now-${question.hashCode().toUInt().toString(16)}",
+            question = question,
+            verdict = paragraphs.first().replace(VERDICT_LABEL, "").trim(),
+            nextAction = paragraphs.getOrNull(1)?.trim()?.takeIf { it.isNotEmpty() } ?: DEFAULT_NEXT_ACTION,
+            sources = emptyList(),
+            modelLabel = "Suite hosted",
+            measurementStatus = "not_measured",
+            timestampMs = now,
+        )
+    }
 
     private suspend fun lastAuditedSite(): String? = auditHistoryFlow.first().firstOrNull()?.domain
 
@@ -753,7 +827,7 @@ class DefaultLuminaraRepository(
                 ?: clean.lineSequence().first { it.isNotBlank() }.trim()
         val actionLine =
             labelledLine(clean, ACTION_LABEL)
-                ?: "Run Instant Audit on your target domain and publish /llms.txt with canonical links."
+                ?: DEFAULT_NEXT_ACTION
         val now = clockMs()
         return OracleTurn(
             id = "turn-$now-${question.hashCode().toUInt().toString(16)}",
