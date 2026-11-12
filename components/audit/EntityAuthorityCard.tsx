@@ -10,6 +10,8 @@ export const EntityAuthorityCard: React.FC<EntityAuthorityCardProps> = ({ enrich
   if (!enriched) return null;
 
   const { wikidata, wayback, security, sameAsUrls, domain, brandName } = enriched;
+  // A failed security check measured nothing: show that instead of a score or a SECURE badge.
+  const securityMeasured = security.measurementConfidence !== 'failed';
 
   return (
     <div className="my-6 glass-morphism rounded-2xl border border-gold/40 p-5 bg-gradient-to-br from-black via-black/90 to-black/80 shadow-2xl">
@@ -22,9 +24,11 @@ export const EntityAuthorityCard: React.FC<EntityAuthorityCardProps> = ({ enrich
           <div>
             <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
               Entity Authority & Knowledge Graph Grounding
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-success-500/20 text-success-300 border border-success-500/30">
-                Open APIs Verified
-              </span>
+              {securityMeasured && (
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-success-500/20 text-success-300 border border-success-500/30">
+                  Open APIs Verified
+                </span>
+              )}
             </h3>
             <p className="text-xs text-gray-400">
               Authority signals from Wikidata, Internet Archive, and HTTP Security Observatories.
@@ -34,8 +38,8 @@ export const EntityAuthorityCard: React.FC<EntityAuthorityCardProps> = ({ enrich
 
         <div className="flex items-center gap-2">
           <span className="text-[10px] font-mono text-gray-500 uppercase">Security Trust:</span>
-          <span className="text-xs font-bold font-mono text-success-400">
-            {security.trustScore}/100
+          <span className={`text-xs font-bold font-mono ${securityMeasured ? 'text-success-400' : 'text-gray-400'}`}>
+            {securityMeasured ? `${security.trustScore}/100` : 'Not measured'}
           </span>
           <span
             className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${
@@ -143,9 +147,11 @@ export const EntityAuthorityCard: React.FC<EntityAuthorityCardProps> = ({ enrich
             <div className="flex items-center justify-between text-[10px] font-mono text-gray-400 uppercase tracking-wider mb-1.5">
               <span>HTTP Security Baseline</span>
               <div className="flex items-center gap-1.5">
-                <span className={`px-1.5 py-0.5 rounded ${security.httpsEnforced ? 'bg-success-500/20 text-success-300' : 'bg-danger-500/20 text-danger-300'}`}>
-                  {security.httpsEnforced ? 'SECURE' : 'INSECURE'}
-                </span>
+                {securityMeasured && (
+                  <span className={`px-1.5 py-0.5 rounded ${security.httpsEnforced ? 'bg-success-500/20 text-success-300' : 'bg-danger-500/20 text-danger-300'}`}>
+                    {security.httpsEnforced ? 'SECURE' : 'INSECURE'}
+                  </span>
+                )}
                 {security.measurementConfidence && (
                   <span className={`px-1.5 py-0.5 rounded border ${
                     security.measurementConfidence === 'full'
@@ -160,6 +166,11 @@ export const EntityAuthorityCard: React.FC<EntityAuthorityCardProps> = ({ enrich
               </div>
             </div>
 
+            {!securityMeasured ? (
+              <p className="text-xs text-gray-400">
+                The security check could not measure this site, so HTTPS and its security headers are unknown. Run the audit again to measure them.
+              </p>
+            ) : (
             <div className="space-y-1.5 text-xs text-gray-300">
               <div className="flex items-center justify-between">
                 <span>HTTPS Enforced:</span>
@@ -192,6 +203,7 @@ export const EntityAuthorityCard: React.FC<EntityAuthorityCardProps> = ({ enrich
                 </span>
               </div>
             </div>
+            )}
           </div>
 
           <div className="mt-2.5 pt-2 border-t border-white/5 text-[10px] text-gray-500 font-mono">

@@ -95,7 +95,9 @@ export class AeoTrustPackService {
   public build(input: TrustPackInput): TrustPackSummary {
     const findings: TrustPackFinding[] = [];
 
-    const securityTrust = input.security?.trustScore ?? 0;
+    // A failed security check measured nothing, so it adds nothing to the composite.
+    const securityTrust =
+      input.security && input.security.measurementConfidence !== 'failed' ? input.security.trustScore : 0;
     const citationIntegrity = input.integrity?.integrityScore ?? 0;
     const empiricalMeasured =
       Boolean(input.empirical) &&
@@ -143,7 +145,15 @@ export class AeoTrustPackService {
       });
     }
 
-    if (input.security && !input.security.httpsEnforced) {
+    // A failed check measured nothing, so it supports no finding about HTTPS or HSTS either way.
+    const securityMeasured = Boolean(input.security) && input.security?.measurementConfidence !== 'failed';
+    if (input.security && !securityMeasured) {
+      findings.push({
+        severity: 'medium',
+        title: 'Security check could not reach the site',
+        detail: 'HTTPS and its security headers were not measured in this run. Run the audit again to check them.',
+      });
+    } else if (input.security && !input.security.httpsEnforced) {
       findings.push({
         severity: 'critical',
         title: 'HTTPS not enforced',
@@ -192,7 +202,7 @@ export class AeoTrustPackService {
       });
     }
 
-    if (ymylTier === 'high' && input.security && (!input.security.httpsEnforced || !input.security.hstsEnabled)) {
+    if (ymylTier === 'high' && input.security && securityMeasured && (!input.security.httpsEnforced || !input.security.hstsEnabled)) {
       findings.push({
         severity: 'critical',
         title: 'YMYL transport trust gap',

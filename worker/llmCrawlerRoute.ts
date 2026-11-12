@@ -19,15 +19,32 @@ const FETCH_MS = 5_000;
 const MAX_REDIRECTS = 3;
 const FOLLOW_REDIRECT = new Set([301, 302, 303, 307, 308]);
 
+/** A first line that is an error: "404", "404 Not Found", "Not Found - nginx", "Cannot GET /llms.txt",
+ * or a whole line such as "Page not found." or "The page you requested was not found". A title that only
+ * starts with 404 ("404 Media") or that goes on after the phrase ("File not found handling") does not. */
+const NOT_FOUND_START =
+  /^(?:error\s*)?404(?:\s*[-:|]?\s*(?:(?:page|file)\s+)?(?:not\s+found|error)\b|\s*$)|^not\s+found\b|^cannot\s+get\s+\/|^(?:the\s+)?(?:requested\s+)?(?:page|file|resource|document)(?:\s+you\s+requested)?\s+(?:was\s+)?not\s+found[.!]?$/i;
+/** A one-line message such as "The requested file was not found on this server." */
+const NOT_FOUND_PHRASE = /\b(?:page|file|resource|document)\s+(?:was\s+)?not\s+found\b/i;
+const MAX_NOT_FOUND_TEXT = 300;
+
 /**
- * A soft 404: the site answered with a web page or an API error (often its homepage,
- * after a redirect) instead of the text file. A 200 alone is not proof the file exists.
- * Crawler files are plain text and never open with a tag or a JSON object. The body
- * decides, not the content type: servers often label real text files text/html.
+ * A soft 404: the site answered with a web page, an API error (often its homepage,
+ * after a redirect) or a short "not found" message instead of the text file. A 200
+ * alone is not proof the file exists. Crawler files are plain text and never open
+ * with a tag or a JSON object. The body decides, not the content type: servers often
+ * label real text files text/html.
  */
-export function servedWebPage(body: string): boolean {
+export function isSoft404Body(body: string): boolean {
   const text = body.trimStart().replace(/^(?:<!--[\s\S]*?-->\s*)+/, '');
-  return /^[<{]/.test(text);
+  if (/^[<{]/.test(text)) return true;
+  // Only a short body that reads as the error counts; a real file opens with its title, and a
+  // "not found" phrase counts only when it is the whole one-line body.
+  const trimmed = text.trim();
+  if (trimmed.length > MAX_NOT_FOUND_TEXT) return false;
+  const firstLine = trimmed.split('\n', 1)[0];
+  if (firstLine.startsWith('#')) return false;
+  return NOT_FOUND_START.test(firstLine) || (!trimmed.includes('\n') && NOT_FOUND_PHRASE.test(trimmed));
 }
 
 async function fetchOne(
@@ -87,7 +104,7 @@ async function fetchOne(
       const body = await readCapped(res, MAX_BYTES);
       // A bot challenge stays as served, so readers report it as blocked. Any other web page is
       // recorded as a 404 so every reader, including the Android client, sees the file as missing.
-      if (!responseBlocked(res.status, body) && servedWebPage(body)) {
+      if (!responseBlocked(res.status, body) && isSoft404Body(body)) {
         return { status: 404, body: '' };
       }
       return { status: res.status, body };
