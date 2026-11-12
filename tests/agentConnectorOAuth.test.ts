@@ -132,7 +132,14 @@ describe('agent connector discovery', () => {
     expect(await server.json()).toMatchObject({
       issuer: 'https://luminarasuite.com',
       registration_endpoint: 'https://luminarasuite.com/api/oauth/mcp/register',
+      revocation_endpoint: 'https://luminarasuite.com/api/oauth/mcp/revoke',
+      revocation_endpoint_auth_methods_supported: ['none'],
       token_endpoint_auth_methods_supported: ['none'],
+    });
+    const alias = await call(prod, '/api/oauth/mcp/.well-known/oauth-authorization-server');
+    expect(await alias.json()).toMatchObject({
+      revocation_endpoint: 'https://luminarasuite.com/api/oauth/mcp/revoke',
+      revocation_endpoint_auth_methods_supported: ['none'],
     });
   });
 });
@@ -217,10 +224,70 @@ describe('connected agents', () => {
 describe('browser MCP clients', () => {
   it('can preflight register and token from any origin', async () => {
     const { env } = makeEnv();
-    for (const path of ['/api/oauth/mcp/register', '/api/oauth/mcp/token']) {
+    for (const path of ['/api/oauth/mcp/register', '/api/oauth/mcp/token', '/api/oauth/mcp/revoke']) {
       const res = await call(env, path, { method: 'OPTIONS', headers: { origin: 'https://inspector.example' } });
       expect(res.headers.get('access-control-allow-origin')).toBe('*');
     }
+  });
+});
+
+describe('token revocation', () => {
+  function revoke(env: Env, body: Record<string, string>, jsonBody = false) {
+    return call(env, '/api/oauth/mcp/revoke', {
+      method: 'POST',
+      headers: { 'content-type': jsonBody ? 'application/json' : 'application/x-www-form-urlencoded' },
+      body: jsonBody ? JSON.stringify(body) : new URLSearchParams(body).toString(),
+    });
+  }
+
+  function mcp(env: Env, token: string) {
+    return call(env, '/api/mcp', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ping' }),
+    });
+  }
+
+  it('revokes a live token so /api/mcp returns 401, and an unknown token returns 200', async () => {
+    const { env, store } = makeEnv();
+    const token = await connect(env);
+    expect((await mcp(env, token)).status).toBe(200);
+    const hashedKey = [...store.keys()].find((key) => /^mcp_oauth_token:[a-f0-9]{64}$/.test(key));
+    if (!hashedKey) throw new Error('hashed token key missing');
+
+    const revoked = await revoke(env, { token, token_type_hint: 'access_token', client_id: 'mcpc_ignored' });
+    expect(revoked.status).toBe(200);
+    expect((await mcp(env, token)).status).toBe(401);
+    expect(store.has(hashedKey)).toBe(false);
+    const listed = (await (await call(env, '/api/agent-connections', {}, 77001)).json()) as {
+      connections: unknown[];
+    };
+    expect(listed.connections).toEqual([]);
+
+    const unknown = await revoke(env, { token: 'mcp_not_a_real_token' }, true);
+    expect(unknown.status).toBe(200);
+    expect((await revoke(env, {})).status).toBe(400);
+  });
+
+  it('deletes a legacy unhashed token and does not treat a hash as that token', async () => {
+    const { env, store } = makeEnv();
+    const token = 'mcp_legacy_plain_token';
+    const legacyKey = `mcp_oauth_token:${token}`;
+    store.set(
+      legacyKey,
+      JSON.stringify({ accountId: '77001', userId: '77001', plan: 'growth', scope: 'mcp:free' }),
+    );
+    expect((await revoke(env, { token }, true)).status).toBe(200);
+    expect(store.has(legacyKey)).toBe(false);
+    expect(await identifyMcpOAuthToken(env, token)).toBeNull();
+
+    const live = await connect(env);
+    const liveKey = [...store.keys()].find((key) => /^mcp_oauth_token:[a-f0-9]{64}$/.test(key));
+    if (!liveKey) throw new Error('hashed token key missing');
+    const hash = liveKey.slice('mcp_oauth_token:'.length);
+    expect((await revoke(env, { token: hash }, true)).status).toBe(200);
+    expect(store.has(liveKey)).toBe(true);
+    expect((await identifyMcpOAuthToken(env, live))?.scope).toBe('mcp:free');
   });
 });
 
