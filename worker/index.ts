@@ -325,11 +325,18 @@ async function compileDenialIntoRule(
   }
 }
 
+/** Public MCP OAuth posts. Separate buckets: hosted agents share egress IPs. */
+const MCP_OAUTH_PUBLIC_POST_LIMITS: Record<string, { action: string; limitPerKey: number }> = {
+  '/oauth/mcp/token': { action: 'mcp_oauth_token', limitPerKey: 60 },
+  '/oauth/mcp/register': { action: 'mcp_oauth_register', limitPerKey: 20 },
+  '/oauth/mcp/revoke': { action: 'mcp_oauth_revoke', limitPerKey: 60 },
+};
+
 async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   const url = new URL(request.url);
   const path = url.pathname.replace(/^\/api/, '');
-  // MCP clients run on any origin. These two routes never read a cookie, so a wildcard is safe.
-  const cors = path === '/oauth/mcp/token' || path === '/oauth/mcp/register' ? MCP_OAUTH_PUBLIC_CORS : corsHeaders(env, request);
+  // MCP clients run on any origin. These routes never read a cookie, so a wildcard is safe.
+  const cors = MCP_OAUTH_PUBLIC_POST_LIMITS[path] ? MCP_OAUTH_PUBLIC_CORS : corsHeaders(env, request);
 
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
 
@@ -1621,15 +1628,15 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     return withCors(handleEntityEnrichment(request, env));
   }
 
-  // MCP OAuth 2.1 + PKCE (token + metadata public; authorize needs session)
+  // MCP OAuth 2.1 + PKCE (token, revoke, and metadata public; authorize needs session)
   if (path.startsWith('/oauth/mcp')) {
-    if ((path === '/oauth/mcp/token' || path === '/oauth/mcp/register') && request.method === 'POST') {
+    const limit = request.method === 'POST' ? MCP_OAUTH_PUBLIC_POST_LIMITS[path] : undefined;
+    if (limit) {
       const dual = await enforceDualRateLimit(env, {
-        // Hosted agents share egress IPs, so token and register keep separate, wider buckets.
-        action: path === '/oauth/mcp/token' ? 'mcp_oauth_token' : 'mcp_oauth_register',
+        action: limit.action,
         accountId: null,
         ip,
-        limitPerKey: path === '/oauth/mcp/token' ? 60 : 20,
+        limitPerKey: limit.limitPerKey,
         windowSec: 60,
       });
       if (!dual.ok) return withCors(dual.response);

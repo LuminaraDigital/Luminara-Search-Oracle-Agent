@@ -3,7 +3,7 @@
  * Handles DOM element creation, object URL lifecycle management, and cleanup.
  */
 export function downloadBlob(
-  content: Blob | string | Uint8Array,
+  content: Blob | string | Uint8Array<ArrayBuffer>,
   filename: string,
   mimeType: string = 'application/octet-stream'
 ): void {
