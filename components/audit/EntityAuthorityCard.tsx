@@ -168,7 +168,7 @@ export const EntityAuthorityCard: React.FC<EntityAuthorityCardProps> = ({ enrich
 
             {!securityMeasured ? (
               <p className="text-xs text-gray-400">
-                We could not reach this site over HTTPS, so HTTPS and its security headers are unknown. Run the audit again to measure them.
+                The security check could not measure this site, so HTTPS and its security headers are unknown. Run the audit again to measure them.
               </p>
             ) : (
             <div className="space-y-1.5 text-xs text-gray-300">

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { evaluateLlmCrawlerReadiness, type LlmCrawlerCheck } from '../services/audit/llmCrawlerReadiness';
-import { loadCrawlerSnapshot, servedWebPage } from '../worker/llmCrawlerRoute';
+import { loadCrawlerSnapshot, isSoft404Body } from '../worker/llmCrawlerRoute';
 import { summarizeProbeCrawl } from '../worker/probeCrawlRoute';
 import { crawlerFixes, type CrawlerCheckRow } from '../services/audit/crawlerFixes';
 import { buildGuestScoutSummary } from '../services/audit/guestScoutSummary';
@@ -77,14 +77,19 @@ describe('crawler file detection', () => {
     expect(snapshot.llmsHttpStatus).toBe(404);
     expect(status(checks, 'llms_txt')).toBe('fail');
     expect(status(checks, 'ai_txt')).toBe('fail');
-    expect(servedWebPage('Cannot GET /llms.txt')).toBe(true);
-    expect(servedWebPage('The requested file was not found on this server.')).toBe(true);
+    expect(isSoft404Body('Cannot GET /llms.txt')).toBe(true);
+    expect(isSoft404Body('The requested file was not found on this server.')).toBe(true);
   });
 
   it('keeps a real file that mentions not found', () => {
-    expect(servedWebPage(`${LLMS}\n## Help\n- [Page not found help](https://example.com/help): what to do\n`)).toBe(false);
-    expect(servedWebPage('User-agent: *\nDisallow: /404\n')).toBe(false);
-    expect(servedWebPage('# Acme\n\n> We fix broken links when a page is not found.\n')).toBe(false);
+    expect(isSoft404Body('404 Media\n\n> Independent tech journalism.\n')).toBe(false);
+    expect(isSoft404Body('404\n')).toBe(true);
+    expect(isSoft404Body('404 - Not Found')).toBe(true);
+    expect(isSoft404Body('Error 404: page not found')).toBe(true);
+    expect(isSoft404Body('Not Found - nginx')).toBe(true);
+    expect(isSoft404Body(`${LLMS}\n## Help\n- [Page not found help](https://example.com/help): what to do\n`)).toBe(false);
+    expect(isSoft404Body('User-agent: *\nDisallow: /404\n')).toBe(false);
+    expect(isSoft404Body('# Acme\n\n> We fix broken links when a page is not found.\n')).toBe(false);
   });
 
   it('keeps a bot challenge as not measured, not missing', async () => {
@@ -104,7 +109,7 @@ describe('crawler file detection', () => {
     expect(status(checks, 'llms_txt')).toBe('pass');
     expect(status(checks, 'llms_structure')).toBe('pass');
     expect(status(checks, 'ai_txt')).toBe('pass');
-    expect(servedWebPage('<!-- generated -->\n# Example Co\n')).toBe(false);
+    expect(isSoft404Body('<!-- generated -->\n# Example Co\n')).toBe(false);
   });
 
   it('reads real files a server mislabels as text/html', async () => {

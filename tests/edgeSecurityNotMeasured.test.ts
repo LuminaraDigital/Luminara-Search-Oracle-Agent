@@ -92,9 +92,69 @@ describe('EntityAuthorityCard with an unreachable site', () => {
     } as unknown as EnrichedEntityIntelligence;
     const html = renderToStaticMarkup(createElement(EntityAuthorityCard, { enriched }));
     expect(html).toContain('Not measured');
-    expect(html).toContain('could not reach this site over HTTPS');
+    expect(html).toContain('security check could not measure this site');
     expect(html).not.toContain('SECURE');
     expect(html).not.toContain('Open APIs Verified');
     expect(html).not.toContain('0/100');
+  });
+});
+
+describe('trust packs with an unreachable site', () => {
+  const failedSecurity = {
+    httpsEnforced: false,
+    redirectsToHttps: false,
+    hstsEnabled: false,
+    cspDetected: false,
+    referrerPolicy: false,
+    xFrameOptions: false,
+    securityTxtPresent: false,
+    trustScore: 0,
+    measurementConfidence: 'failed' as const,
+  };
+
+  it('raises no HTTPS or HSTS finding, only that the check did not run', () => {
+    const pack = aeoTrustPackService.build({
+      security: failedSecurity,
+      reportText: 'dental clinic health services',
+      domain: 'acme.example',
+    });
+    const titles = pack.findings.map((f) => f.title);
+    expect(titles).toContain('Security check could not reach the site');
+    expect(titles).not.toContain('HTTPS not enforced');
+    expect(titles).not.toContain('Secure connection header missing');
+    expect(titles).not.toContain('YMYL transport trust gap');
+  });
+
+  it('still reports HTTPS missing when it was measured', () => {
+    const pack = aeoTrustPackService.build({
+      security: { ...failedSecurity, measurementConfidence: 'full', trustScore: 40 },
+      domain: 'acme.example',
+    });
+    expect(pack.findings.map((f) => f.title)).toContain('HTTPS not enforced');
+  });
+
+  it('marks enterprise HTTPS controls unknown and never vetoes on them', async () => {
+    const { buildEnterpriseTrustPack } = await import('../services/trust/enterpriseTrustPackService');
+    const pack = buildEnterpriseTrustPack({
+      domain: 'acme.example',
+      enriched: {
+        domain: 'acme.example',
+        brandName: 'Acme',
+        wikidata: null,
+        wayback: { hasArchive: false, status: 'unindexed' },
+        metadata: null,
+        security: failedSecurity,
+        sameAsUrls: [],
+        timestamp: 1,
+      } as unknown as EnrichedEntityIntelligence,
+    });
+    const https = pack.controls.find((c) => c.id === 'ctrl-target-https');
+    const hsts = pack.controls.find((c) => c.id === 'ctrl-hsts');
+    const eeat = pack.eeatSignals.find((s) => s.id === 'eeat-trust-https');
+    expect(https?.status).toBe('unknown');
+    expect(https?.detail).toMatch(/not measured/);
+    expect(hsts?.status).toBe('unknown');
+    expect(eeat?.status).toBe('unknown');
+    expect(eeat?.veto).toBe(false);
   });
 });

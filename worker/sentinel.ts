@@ -43,7 +43,7 @@ export interface EdgeSecurityPosture {
 }
 
 /** The site could not be reached over HTTPS: every signal is unknown and the score is 0, not a guess. */
-export const SECURITY_NOT_MEASURED: EdgeSecurityPosture = {
+export const SECURITY_NOT_MEASURED: Readonly<EdgeSecurityPosture> = Object.freeze({
   httpsEnforced: false,
   redirectsToHttps: false,
   hstsEnabled: false,
@@ -53,7 +53,7 @@ export const SECURITY_NOT_MEASURED: EdgeSecurityPosture = {
   securityTxtPresent: false,
   trustScore: 0,
   measurementConfidence: 'failed',
-};
+});
 
 /** Edge security audit without CORS limits. Score: https40+redir15+hsts15+csp10+ref5+xfo5+sectxt10. */
 export async function auditSecurityOnEdge(domain: string): Promise<EdgeSecurityPosture> {
@@ -185,7 +185,8 @@ export async function runSentinelScan(env: Env): Promise<{ scanned: number; aler
       let securityTrust = target.lastSecurityTrust;
       try {
         const sec = await auditSecurityOnEdge(target.domain);
-        // An unreachable site is not a trust drop: keep the last measured score.
+        // An unreachable site is not a trust drop: keep the last measured score. A site that stays
+        // down keeps that score; lastScanAt still moves, and the audit card shows the check as not measured.
         if (sec.measurementConfidence !== 'failed') securityTrust = sec.trustScore;
       } catch {
         // keep previous

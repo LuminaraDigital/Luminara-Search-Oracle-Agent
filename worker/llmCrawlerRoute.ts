@@ -19,8 +19,10 @@ const FETCH_MS = 5_000;
 const MAX_REDIRECTS = 3;
 const FOLLOW_REDIRECT = new Set([301, 302, 303, 307, 308]);
 
-/** Short plain-text error pages such as "404 Not Found", "Page not found" or "Cannot GET /llms.txt". */
-const NOT_FOUND_TEXT = /^(?:error\s*)?404\b|^not\s+found\b|^cannot\s+get\s+\/|\b(?:page|file|resource|document)\s+(?:was\s+)?not\s+found\b/i;
+/** Short plain-text error pages such as "404 Not Found", "Page not found" or "Cannot GET /llms.txt". A bare
+ * "404" counts, but a title that only starts with 404 ("404 Media") does not. */
+const NOT_FOUND_TEXT =
+  /^(?:error\s*)?404(?:\s*[-:|]?\s*(?:(?:page|file)\s+)?(?:not\s+found|error)\b|\s*$)|^not\s+found\b|^cannot\s+get\s+\/|\b(?:page|file|resource|document)\s+(?:was\s+)?not\s+found\b/i;
 const MAX_NOT_FOUND_TEXT = 300;
 
 /**
@@ -30,7 +32,7 @@ const MAX_NOT_FOUND_TEXT = 300;
  * with a tag or a JSON object. The body decides, not the content type: servers often
  * label real text files text/html.
  */
-export function servedWebPage(body: string): boolean {
+export function isSoft404Body(body: string): boolean {
   const text = body.trimStart().replace(/^(?:<!--[\s\S]*?-->\s*)+/, '');
   if (/^[<{]/.test(text)) return true;
   // Only a short body whose first line is the error counts; a real file opens with its title.
@@ -96,7 +98,7 @@ async function fetchOne(
       const body = await readCapped(res, MAX_BYTES);
       // A bot challenge stays as served, so readers report it as blocked. Any other web page is
       // recorded as a 404 so every reader, including the Android client, sees the file as missing.
-      if (!responseBlocked(res.status, body) && servedWebPage(body)) {
+      if (!responseBlocked(res.status, body) && isSoft404Body(body)) {
         return { status: 404, body: '' };
       }
       return { status: res.status, body };
