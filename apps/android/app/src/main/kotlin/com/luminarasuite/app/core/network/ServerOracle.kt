@@ -3,6 +3,8 @@ package com.luminarasuite.app.core.network
 import com.luminarasuite.app.core.model.OracleChatRequest
 import com.luminarasuite.app.core.model.OracleTurn
 import com.luminarasuite.app.core.model.TavilyResult
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import retrofit2.HttpException
 import java.io.IOException
 
@@ -49,6 +51,15 @@ internal fun buildOracleTurn(
     timestampMs = now,
 )
 
+/** The answer text without its labelled action line, which shows separately as the next action. */
+private fun answerWithoutAction(raw: String): String {
+    val clean = raw.withoutEmDash()
+    val lines = clean.lines().toMutableList()
+    val action = lines.indexOfFirst { ACTION_LABEL.containsMatchIn(it) }
+    if (action >= 0) lines.removeAt(action)
+    return lines.joinToString("\n").trim()
+}
+
 /**
  * The hosted Oracle at `/api/oracle/chat`, the route the web Oracle uses. [answer] returns true when
  * it produced the turn and false when nothing was streamed yet and the caller should use the relay.
@@ -58,6 +69,7 @@ internal class ServerOracle(
     private val api: LuminaraApi,
     private val clockMs: () -> Long,
 ) {
+    @Volatile
     private var skipUntilMs = 0L
 
     /** Forget the 403 memory, so a new account is tried again. */
@@ -84,9 +96,9 @@ internal class ServerOracle(
                         return false
                     }
                 }
-            } catch (_: IOException) {
-                return false
             }
+        // An IOException above is not caught here: the server may already be running the turn, so a
+        // relay answer could cost a second question. The repository shows the connection error.
         val answer = StringBuilder()
         val notes = mutableListOf<String>()
         var finished = false
@@ -95,7 +107,7 @@ internal class ServerOracle(
                 when (event) {
                     is OracleSseEvent.Token -> {
                         answer.append(event.text)
-                        emit(OracleEvent.Partial(streamingVerdict(answer.toString())))
+                        emit(OracleEvent.Partial(answerWithoutAction(answer.toString())))
                     }
                     is OracleSseEvent.Error -> throw IllegalStateException(event.message)
                     is OracleSseEvent.Done -> {
@@ -106,7 +118,8 @@ internal class ServerOracle(
                 }
             }
         } catch (_: IOException) {
-            if (answer.isEmpty()) return false
+            // Cancelling closes the body, which lands here. A cancel is not a failure.
+            currentCoroutineContext().ensureActive()
             throw IllegalStateException(CUT_OFF_COPY)
         }
         if (answer.isBlank()) throw IllegalStateException(NO_ANSWER_COPY)
@@ -126,7 +139,7 @@ internal class ServerOracle(
         val flagged = if (notes.isEmpty()) "" else "\n\nOracle check: ${notes.joinToString(" ").withoutEmDash()}"
         return buildOracleTurn(
             question = question,
-            verdict = clean + flagged,
+            verdict = answerWithoutAction(raw) + flagged,
             nextAction = labelledLine(clean, ACTION_LABEL) ?: DEFAULT_NEXT_ACTION,
             sources = emptyList(),
             modelLabel = "Suite hosted",

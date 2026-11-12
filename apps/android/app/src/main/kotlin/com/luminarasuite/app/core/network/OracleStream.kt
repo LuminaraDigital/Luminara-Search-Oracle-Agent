@@ -96,6 +96,10 @@ suspend fun readOracleStream(
             }
         }
         dispatch()
+    } catch (err: Exception) {
+        // Closing the body on cancel can surface as any read error. Report the cancel, not the error.
+        ensureActive()
+        throw err
     } finally {
         closer.cancel()
         body.close()

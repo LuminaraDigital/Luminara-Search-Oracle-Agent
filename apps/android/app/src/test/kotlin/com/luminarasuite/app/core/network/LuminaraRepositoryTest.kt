@@ -74,7 +74,14 @@ import com.luminarasuite.app.core.model.TavilySearchResponse
 import com.luminarasuite.app.core.model.WorkspacePutRequest
 import com.luminarasuite.app.core.model.WorkspacePutResponse
 import com.luminarasuite.app.core.model.WorkspaceResponse
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.toList
@@ -82,7 +89,12 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonObject
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.ResponseBody
+import okhttp3.ResponseBody.Companion.asResponseBody
 import okhttp3.ResponseBody.Companion.toResponseBody
+import okio.Buffer
+import okio.Source
+import okio.Timeout
+import okio.buffer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -91,6 +103,7 @@ import org.junit.Test
 import retrofit2.HttpException
 import retrofit2.Response
 import java.io.IOException
+import java.util.concurrent.CopyOnWriteArrayList
 
 class FakeLuminaraDao : LuminaraDao {
     private val historyState = MutableStateFlow<List<AuditHistoryEntity>>(emptyList())
@@ -157,6 +170,31 @@ class FakeLuminaraDao : LuminaraDao {
     override suspend fun clearFindings() {
         findingsState.value = emptyList()
     }
+}
+
+/** Serves its text once, then blocks like a quiet socket until closed, and fails the way a closed socket does. */
+class StalledSource(
+    private val text: String,
+) : Source {
+    private val closed = java.util.concurrent.CountDownLatch(1)
+    private var sent = false
+
+    override fun read(
+        sink: Buffer,
+        byteCount: Long,
+    ): Long {
+        if (!sent) {
+            sent = true
+            sink.writeUtf8(text)
+            return text.length.toLong()
+        }
+        closed.await()
+        throw IOException("Socket closed")
+    }
+
+    override fun timeout() = Timeout.NONE
+
+    override fun close() = closed.countDown()
 }
 
 class FakeLuminaraApi : LuminaraApi {
@@ -415,6 +453,7 @@ class FakeLuminaraApi : LuminaraApi {
     var oracleBody: String = ""
     var oracleErrorBody: String = "{}"
     var oracleFailure: IOException? = null
+    var oracleStreamBody: ResponseBody? = null
     var oracleCalls = 0
     var lastOracle: OracleChatRequest? = null
 
@@ -425,6 +464,7 @@ class FakeLuminaraApi : LuminaraApi {
         oracleCalls += 1
         lastOracle = body
         oracleFailure?.let { throw it }
+        oracleStreamBody?.let { return it }
         if (oracleStatus != 200) {
             throw HttpException(
                 Response.error<Unit>(oracleStatus, oracleErrorBody.toResponseBody("application/json".toMediaType())),
@@ -975,13 +1015,43 @@ class LuminaraRepositoryTest {
         }
 
     @Test
-    fun streamOracle_ioFailureBeforeTokensFallsBackToRelay() =
+    fun streamOracle_ioFailureBeforeTokensIsAConnectionErrorNotARelayAnswer() =
         runTest {
             val api = FakeLuminaraApi()
             api.oracleFailure = IOException("timeout")
-            val events = signedInRepo(api).streamOracle("Q", emptyList()).toList()
+            val result = runCatching { signedInRepo(api).streamOracle("Q", emptyList()).toList() }
 
-            assertEquals("Publish /llms.txt - now.", (events.last() as OracleEvent.Complete).turn.verdict)
+            assertEquals(NO_CONNECTION_COPY, result.exceptionOrNull()?.message)
+            assertNull(api.lastChat)
+        }
+
+    @Test
+    fun streamOracle_cancelMidStreamIsNotAnErrorAndNeverCallsRelay() =
+        runBlocking {
+            val api = FakeLuminaraApi()
+            api.oracleStatus = 200
+            api.oracleStreamBody =
+                StalledSource(oracleStream(tokenEvent("Half"))).buffer()
+                    .asResponseBody("text/event-stream".toMediaType())
+            val seen = CopyOnWriteArrayList<OracleEvent>()
+            val failures = CopyOnWriteArrayList<Throwable>()
+            val job =
+                launch(Dispatchers.Default) {
+                    try {
+                        signedInRepo(api).streamOracle("Q", emptyList()).collect { seen.add(it) }
+                    } catch (err: CancellationException) {
+                        throw err
+                    } catch (err: Throwable) {
+                        failures.add(err)
+                    }
+                }
+            withTimeout(5_000) { while (seen.none { it is OracleEvent.Partial }) delay(10) }
+            withTimeout(5_000) { job.cancelAndJoin() }
+
+            assertTrue(failures.isEmpty())
+            assertTrue(seen.none { it is OracleEvent.Complete })
+            assertNull(api.lastChat)
+            assertEquals(1, api.oracleCalls)
         }
 
     @Test
@@ -1020,7 +1090,7 @@ class LuminaraRepositoryTest {
         }
 
     @Test
-    fun streamOracle_multiParagraphAnswerIsKeptWhole() =
+    fun streamOracle_multiParagraphAnswerKeepsEveryParagraphAndMovesTheActionLine() =
         runTest {
             val turn =
                 askOracle(
@@ -1031,7 +1101,7 @@ class LuminaraRepositoryTest {
                     ),
                 )
 
-            assertEquals("First point.\n\nSecond point.\n\nNEXT_ACTION: Add the H1.", turn.verdict)
+            assertEquals("First point.\n\nSecond point.", turn.verdict)
             assertEquals("Add the H1.", turn.nextAction)
         }
 
