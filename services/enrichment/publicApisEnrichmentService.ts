@@ -378,7 +378,8 @@ export class PublicApisEnrichmentService {
 
     // Prefer Worker (full security headers) when available
     const fromWorker = await this.tryWorkerEnrichment(cleanDomain, cleanBrand);
-    if (fromWorker?.security) {
+    // A Worker check that reached nothing falls through to the browser probe.
+    if (fromWorker?.security && fromWorker.security.measurementConfidence !== 'failed') {
       this.cacheEnrichment(cleanDomain, fromWorker);
       return fromWorker;
     }
@@ -406,7 +407,7 @@ export class PublicApisEnrichmentService {
       timestamp: Date.now(),
     };
 
-    this.cacheEnrichment(cleanDomain, result);
+    if (security.measurementConfidence !== 'failed') this.cacheEnrichment(cleanDomain, result);
     return result;
   }
 

@@ -91,6 +91,8 @@ describe('crawler file detection', () => {
     expect(isSoft404Body('User-agent: *\nDisallow: /404\n')).toBe(false);
     expect(isSoft404Body('# Acme\n\n> We fix broken links when a page is not found.\n')).toBe(false);
     expect(isSoft404Body('File not found handling\n\nHow our CDN answers missing assets.\n')).toBe(false);
+    expect(isSoft404Body('File not found handling')).toBe(false);
+    expect(isSoft404Body('Sorry, the page was not found. Go back home.')).toBe(true);
     expect(isSoft404Body('Page not found\nSorry, that page is gone.')).toBe(true);
     expect(isSoft404Body('The page you requested was not found.\nGo home')).toBe(true);
     expect(isSoft404Body('﻿404 Not Found')).toBe(true);

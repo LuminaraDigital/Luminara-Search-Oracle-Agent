@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { auditSecurityOnEdge } from '../worker/sentinel';
+import { handleEntityEnrichment } from '../worker/enrichmentService';
+import type { Env } from '../worker/env';
 import { aeoTrustPackService } from '../services/audit/aeoTrustPackService';
 import { buildEnrichmentPromptSection } from '../services/audit/evidencePromptLabels';
 import type { EnrichedEntityIntelligence } from '../services/enrichment/publicApisEnrichmentService';
@@ -15,6 +17,23 @@ describe('a security check that cannot reach the site', () => {
     expect(posture.measurementConfidence).toBe('failed');
     expect(posture.trustScore).toBe(0);
     expect(posture.httpsEnforced).toBe(false);
+  });
+
+  it('does not cache the Worker enrichment when the security check reached nothing', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('cloudflare-dns.com')) {
+        const answer = url.includes('type=AAAA') ? [] : [{ type: 1, data: '104.21.8.8' }];
+        return new Response(JSON.stringify({ Status: 0, Answer: answer }), { status: 200 });
+      }
+      throw new TypeError('network down');
+    }));
+    const put = vi.fn(async () => undefined);
+    const env = { LUMINARA_KV: { get: async () => null, put } } as unknown as Env;
+    const res = await handleEntityEnrichment(new Request('https://luminarasuite.com/api/enrichment/entity?domain=example.com'), env);
+    const body = (await res.json()) as { data: EnrichedEntityIntelligence };
+    expect(body.data.security.measurementConfidence).toBe('failed');
+    expect(put).not.toHaveBeenCalled();
   });
 
   it('reports nothing measured for a host it refuses to probe', async () => {
