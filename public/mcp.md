@@ -9,7 +9,21 @@ Free MCP on every plan, for Claude, ChatGPT, Cursor, and Grok when that app can 
 - Growth and Agency: no daily MCP cap
 - Paid research needs Agency or your own DataForSEO login
 
+## Connect
+
+Add the endpoint and sign in with your Luminara account. Your app registers itself, you see who is asking on a Luminara consent page, and you press Allow. No API key is needed. Agents connected this way use the free tools only, and Settings lists every connection with a Disconnect button.
+
+- Grok: grok.com/connectors, New Connector, Custom, paste the endpoint.
+- Claude Code: `claude mcp add --transport http luminara https://luminarasuite.com/api/mcp`, then `/mcp` to sign in. Or install the plugin: `claude plugin marketplace add LuminaraDigital/Luminara-Search-Oracle-Agent`, then `claude plugin install luminara@luminara`.
+- Claude, ChatGPT: add a custom connector with the endpoint.
+- Antigravity: add `{ "mcpServers": { "luminara": { "serverUrl": "https://luminarasuite.com/api/mcp" } } }` to `mcp_config.json`, then Authenticate.
+- Cursor: add `{ "mcpServers": { "luminara": { "url": "https://luminarasuite.com/api/mcp" } } }` to `.cursor/mcp.json`.
+
 Send one tools/call per request. A JSON-RPC batch with more than one tools/call is refused.
+
+## API key (scripts and servers)
+
+For a script with no browser, send a Luminara API key instead:
 
 ```json
 {

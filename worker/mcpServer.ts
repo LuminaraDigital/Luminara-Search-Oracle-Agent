@@ -86,6 +86,36 @@ const MCP_CORS: Record<string, string> = {
   'Access-Control-Expose-Headers': 'mcp-session-id',
 };
 
+/** Newest first. The handler speaks plain JSON over POST, which every listed version allows. */
+export const MCP_PROTOCOL_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05'] as const;
+
+/** Echo the client's version when supported; otherwise offer the newest one (MCP lifecycle rule). */
+export function negotiateProtocolVersion(requested: unknown): string {
+  return typeof requested === 'string' && (MCP_PROTOCOL_VERSIONS as readonly string[]).includes(requested)
+    ? requested
+    : MCP_PROTOCOL_VERSIONS[0];
+}
+
+/** What a host shows for this server: the Luminara name, mark and site. */
+export function mcpServerInfo(origin: string) {
+  return {
+    name: 'luminara-mcp',
+    title: 'Luminara',
+    version: '1.1.0',
+    websiteUrl: origin,
+    icons: [{ src: `${origin}/favicon-192.png`, mimeType: 'image/png', sizes: ['192x192'] }],
+  };
+}
+
+/** Sent to the host's model on connect, so Luminara answers in its own voice wherever it is used. */
+export const MCP_INSTRUCTIONS = [
+  'You are connected to Luminara, the AI visibility and SEO suite at luminarasuite.com.',
+  'Luminara keeps each project\'s context, audits and reports. Call whoami, then list_projects, then get_project_context before any other tool.',
+  'Reply the Luminara way: lead with the verdict, give one next action, and link to the saved report instead of pasting it.',
+  'Never present a number Luminara did not return; say "not measured" instead.',
+  'Tools that change or spend may answer with an approval link. Give the user that link; do not retry until they approve.',
+].join(' ');
+
 function mcpJson(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
     status,
@@ -820,12 +850,18 @@ export async function handleMcpRequest(
     return new Response(null, { status: 204, headers: MCP_CORS });
   }
 
+  const origin = new URL(request.url).origin;
+
   if (request.method === 'GET') {
+    // Streamable HTTP clients GET with this Accept to open a server stream; we offer none.
+    if ((request.headers.get('accept') || '').includes('text/event-stream')) {
+      return new Response(null, { status: 405, headers: { Allow: 'POST', ...MCP_CORS } });
+    }
     return mcpJson({
       ok: true,
-      name: 'luminara-mcp',
-      version: '1.0.0',
-      protocolVersion: '2024-11-05',
+      ...mcpServerInfo(origin),
+      protocolVersion: MCP_PROTOCOL_VERSIONS[0],
+      protocolVersions: MCP_PROTOCOL_VERSIONS,
       tools: listMcpToolCatalogue(),
       typedContextKeys: TYPED_CONTEXT_KEYS,
     });
@@ -868,9 +904,10 @@ export async function handleMcpRequest(
     if (method === 'initialize') {
       responses.push(
         rpcResult(id, {
-          protocolVersion: '2024-11-05',
+          protocolVersion: negotiateProtocolVersion(m.params?.protocolVersion),
           capabilities: { tools: {} },
-          serverInfo: { name: 'luminara-mcp', version: '1.0.0' },
+          serverInfo: mcpServerInfo(origin),
+          instructions: MCP_INSTRUCTIONS,
         }),
       );
       continue;
