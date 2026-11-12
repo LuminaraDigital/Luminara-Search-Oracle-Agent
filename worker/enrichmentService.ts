@@ -1,7 +1,7 @@
 import type { Env } from './env';
 import { resolvesToPublicAddress, safePublicHostname } from './security';
 import { identify, json } from './workerUtils';
-import { auditSecurityOnEdge } from './sentinel';
+import { SECURITY_NOT_MEASURED, auditSecurityOnEdge } from './sentinel';
 import { pickWikidataHit, readWikidataSearch } from '../services/audit/entityMatch';
 
 /**
@@ -111,20 +111,7 @@ export async function handleEntityEnrichment(request: Request, env: Env): Promis
   const wikidata = wikidataRes.status === 'fulfilled' ? wikidataRes.value : null;
   const waybackRaw = waybackRes.status === 'fulfilled' ? waybackRes.value : null;
   const wayback = waybackRaw || { hasArchive: false, status: 'unindexed' as const };
-  const security =
-    securityRes.status === 'fulfilled'
-      ? securityRes.value
-      : {
-          httpsEnforced: true,
-          redirectsToHttps: false,
-          hstsEnabled: false,
-          cspDetected: false,
-          referrerPolicy: false,
-          xFrameOptions: false,
-          securityTxtPresent: false,
-          trustScore: 40,
-          measurementConfidence: 'failed' as const,
-        };
+  const security = securityRes.status === 'fulfilled' ? securityRes.value : { ...SECURITY_NOT_MEASURED };
   const metadata = microlinkRes.status === 'fulfilled' ? microlinkRes.value : null;
 
   const sameAsUrls: string[] = [];
