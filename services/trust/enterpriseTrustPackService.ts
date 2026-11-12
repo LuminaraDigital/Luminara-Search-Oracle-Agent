@@ -111,8 +111,8 @@ export function buildEnterpriseTrustPack(input: {
   const asOf = new Date().toISOString();
   const day = isoDay();
   const sec = input.enriched?.security;
-  // A failed security check measured nothing: HTTPS and HSTS are unknown, not passed or failed.
-  const secMeasured = sec?.measurementConfidence !== 'failed';
+  // No security data, or a failed check, measured nothing: HTTPS and HSTS are unknown, not passed or failed.
+  const secMeasured = sec !== undefined && sec.measurementConfidence !== 'failed';
   const httpsOk = secMeasured ? sec?.httpsEnforced === true || sec?.redirectsToHttps === true : undefined;
   const hstsOk = secMeasured ? !!sec?.hstsEnabled : undefined;
   const integrityOk = (input.trustPack?.citationIntegrity ?? 0) >= 70;

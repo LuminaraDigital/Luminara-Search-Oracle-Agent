@@ -239,6 +239,11 @@ export class PublicApisEnrichmentService {
       if (!res || !res.ok) {
         res = await fetch(testUrl, { method: 'GET', redirect: 'follow' }).catch(() => null);
       }
+      // Most sites send no CORS headers, so a readable fetch throws even when the site is up.
+      // An opaque no-cors answer still proves the origin answered (headers stay unread: cors_limited).
+      if (!res) {
+        res = await fetch(testUrl, { method: 'GET', mode: 'no-cors', redirect: 'follow' }).catch(() => null);
+      }
 
       if (res) {
         anyResponse = true;

@@ -267,6 +267,21 @@ describe('PublicApisEnrichmentService', () => {
       expect(posture.measurementConfidence).toBe('cors_limited');
       expect(posture.trustScore).toBeLessThanOrEqual(55);
     });
+
+    it('counts a CORS-blocked but healthy site as reached via an opaque no-cors answer', async () => {
+      // Readable fetches throw (no CORS headers); only the no-cors probe answers.
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (_input, init) => {
+        if (init?.mode === 'no-cors') {
+          return { ok: false, status: 0, type: 'opaque', url: '', headers: new Headers() } as unknown as Response;
+        }
+        throw new TypeError('Failed to fetch');
+      });
+
+      const posture = await publicApisEnrichmentService.auditSecurityPosture('https://cors-blocked-up.example');
+      expect(posture.measurementConfidence).toBe('cors_limited');
+      expect(posture.hstsEnabled).toBe(false);
+      expect(posture.trustScore).toBe(40);
+    });
   });
 
   describe('enrichAudit orchestration', () => {

@@ -158,3 +158,14 @@ describe('trust packs with an unreachable site', () => {
     expect(eeat?.veto).toBe(false);
   });
 });
+
+describe('enterprise trust pack with no security data', () => {
+  it('marks HTTPS unknown with no veto when enrichment is missing', async () => {
+    const { buildEnterpriseTrustPack } = await import('../services/trust/enterpriseTrustPackService');
+    const pack = buildEnterpriseTrustPack({ domain: 'acme.example' });
+    expect(pack.controls.find((c) => c.id === 'ctrl-target-https')?.status).toBe('unknown');
+    const eeat = pack.eeatSignals.find((s) => s.id === 'eeat-trust-https');
+    expect(eeat?.status).toBe('unknown');
+    expect(eeat?.veto).toBe(false);
+  });
+});
