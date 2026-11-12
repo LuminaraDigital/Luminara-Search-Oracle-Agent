@@ -12,6 +12,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.ResponseBody
+import java.io.IOException
 
 /** One event from the server Oracle stream at `/api/oracle/chat`. */
 sealed interface OracleSseEvent {
@@ -96,7 +97,7 @@ suspend fun readOracleStream(
             }
         }
         dispatch()
-    } catch (err: Exception) {
+    } catch (err: IOException) {
         // Closing the body on cancel can surface as any read error. Report the cancel, not the error.
         ensureActive()
         throw err

@@ -5,6 +5,7 @@ import com.luminarasuite.app.core.model.OracleTurn
 import com.luminarasuite.app.core.model.TavilyResult
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import okhttp3.ResponseBody
 import retrofit2.HttpException
 import java.io.IOException
 
@@ -87,34 +88,56 @@ internal class ServerOracle(
             try {
                 api.streamOracleChat(body = OracleChatRequest(message = question))
             } catch (err: HttpException) {
-                when (oracleFailure(err.code())) {
-                    OracleFailure.SESSION_ENDED -> throw IllegalStateException(SESSION_ENDED_COPY)
-                    OracleFailure.RATE_LIMITED -> throw IllegalStateException(RATE_LIMITED_COPY)
-                    OracleFailure.FAIL -> throw err
-                    OracleFailure.FALL_BACK -> {
-                        if (err.code() == 403) skipUntilMs = clockMs() + SKIP_AFTER_FORBIDDEN_MS
-                        return false
-                    }
-                }
+                val failure = oracleFailure(err.code())
+                if (failure != OracleFailure.FALL_BACK) throw failureException(failure, err)
+                if (err.code() == 403) skipUntilMs = clockMs() + SKIP_AFTER_FORBIDDEN_MS
+                return false
             }
         // An IOException above is not caught here: the server may already be running the turn, so a
         // relay answer could cost a second question. The repository shows the connection error.
+        val streamed = Streamed()
+        readAnswer(body, emit, streamed)
+        check(streamed.answer.isNotBlank()) { NO_ANSWER_COPY }
+        // The stream ended without its done event, so the answer may be cut off. Say so.
+        check(streamed.finished) { CUT_OFF_COPY }
+        emit(OracleEvent.Complete(serverTurn(question, streamed.answer.toString(), streamed.notes)))
+        return true
+    }
+
+    private class Streamed {
         val answer = StringBuilder()
         val notes = mutableListOf<String>()
         var finished = false
+    }
+
+    private fun failureException(
+        failure: OracleFailure,
+        err: HttpException,
+    ): Throwable =
+        when (failure) {
+            OracleFailure.SESSION_ENDED -> IllegalStateException(SESSION_ENDED_COPY)
+            OracleFailure.RATE_LIMITED -> IllegalStateException(RATE_LIMITED_COPY)
+            else -> err
+        }
+
+    private suspend fun readAnswer(
+        body: ResponseBody,
+        emit: suspend (OracleEvent) -> Unit,
+        into: Streamed,
+    ) {
         try {
             readOracleStream(body) { event ->
                 when (event) {
                     is OracleSseEvent.Token -> {
-                        answer.append(event.text)
-                        emit(OracleEvent.Partial(answerWithoutAction(answer.toString())))
+                        into.answer.append(event.text)
+                        emit(OracleEvent.Partial(answerWithoutAction(into.answer.toString())))
                     }
                     is OracleSseEvent.Error -> throw IllegalStateException(event.message)
                     is OracleSseEvent.Done -> {
-                        finished = event.ok
-                        if (!finished) throw IllegalStateException(NOT_FINISHED_COPY)
+                        check(event.ok) { NOT_FINISHED_COPY }
+                        into.finished = true
                     }
-                    is OracleSseEvent.Monitor -> notes.addAll(event.notes)
+                    is OracleSseEvent.Monitor -> into.notes.addAll(event.notes)
                 }
             }
         } catch (_: IOException) {
@@ -122,11 +145,6 @@ internal class ServerOracle(
             currentCoroutineContext().ensureActive()
             throw IllegalStateException(CUT_OFF_COPY)
         }
-        if (answer.isBlank()) throw IllegalStateException(NO_ANSWER_COPY)
-        // The stream ended without its done event, so the answer may be cut off. Say so.
-        check(finished) { CUT_OFF_COPY }
-        emit(OracleEvent.Complete(serverTurn(question, answer.toString(), notes)))
-        return true
     }
 
     /** The whole answer is the verdict, server warnings included. A labelled action line is the next step. */

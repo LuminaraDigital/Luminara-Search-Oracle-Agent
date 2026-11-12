@@ -29,12 +29,12 @@ import com.luminarasuite.app.core.model.GatewayExecuteRequest
 import com.luminarasuite.app.core.model.GatewayExecuteResponse
 import com.luminarasuite.app.core.model.GoogleSignInRequest
 import com.luminarasuite.app.core.model.GroqChatRequest
-import com.luminarasuite.app.core.model.OracleChatRequest
 import com.luminarasuite.app.core.model.GroqChatResponse
 import com.luminarasuite.app.core.model.IdeaCreateRequest
 import com.luminarasuite.app.core.model.IdeaCreateResponse
 import com.luminarasuite.app.core.model.IdeaDetailResponse
 import com.luminarasuite.app.core.model.IdeaListResponse
+import com.luminarasuite.app.core.model.OracleChatRequest
 import com.luminarasuite.app.core.model.PasswordResetRequest
 import com.luminarasuite.app.core.model.PasswordResetResponse
 import com.luminarasuite.app.core.model.PrivacyExportResponse
