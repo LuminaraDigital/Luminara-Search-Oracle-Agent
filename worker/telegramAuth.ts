@@ -21,7 +21,7 @@ export type ValidationResult =
 const enc = new TextEncoder();
 
 async function hmac(key: ArrayBuffer | Uint8Array, message: string): Promise<ArrayBuffer> {
-  const k = await crypto.subtle.importKey('raw', key, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const k = await crypto.subtle.importKey('raw', new Uint8Array(key), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
   return crypto.subtle.sign('HMAC', k, enc.encode(message));
 }
 

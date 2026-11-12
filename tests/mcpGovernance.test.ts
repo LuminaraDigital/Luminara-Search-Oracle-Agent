@@ -420,3 +420,72 @@ describe('mcp integration', () => {
     expect([401, 403]).toContain(res.status);
   });
 });
+
+describe('mcp protocol version', () => {
+  const user: HostedIdentity = { id: 'ver-user', source: 'firebase', accountId: 'acct_ver' };
+
+  function post(body: unknown, headers: Record<string, string> = {}) {
+    return handleMcpRequest(
+      new Request('https://luminarasuite.com/api/mcp', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...headers },
+        body: JSON.stringify(body),
+      }),
+      makeEnv(),
+      user,
+    );
+  }
+
+  it('echoes a supported protocolVersion and falls back to the newest', async () => {
+    for (const version of ['2025-06-18', '2025-03-26', '2024-11-05']) {
+      const res = await post({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: version } });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        result: { protocolVersion: string; serverInfo: { title: string; name: string } };
+      };
+      expect(body.result.protocolVersion).toBe(version);
+      expect(body.result.serverInfo).toMatchObject({ name: 'luminara-mcp', title: 'Luminara Suite' });
+    }
+
+    const unknown = await post({
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'initialize',
+      params: { protocolVersion: '2025-11-25' },
+    });
+    const unknownBody = (await unknown.json()) as { result: { protocolVersion: string } };
+    expect(unknownBody.result.protocolVersion).toBe('2025-06-18');
+  });
+
+  it('accepts a supported or missing MCP-Protocol-Version header and rejects the rest', async () => {
+    const supported = await post(
+      { jsonrpc: '2.0', id: 1, method: 'ping' },
+      { 'mcp-protocol-version': '2025-03-26' },
+    );
+    expect(supported.status).toBe(200);
+
+    const absent = await post({ jsonrpc: '2.0', id: 1, method: 'ping' });
+    expect(absent.status).toBe(200);
+    expect(await absent.json()).toEqual({ jsonrpc: '2.0', id: 1, result: {} });
+
+    const rejected = await post(
+      { jsonrpc: '2.0', id: 1, method: 'tools/list' },
+      { 'mcp-protocol-version': '1999-01-01' },
+    );
+    expect(rejected.status).toBe(400);
+    expect(await rejected.json()).toEqual({ error: 'Unsupported MCP-Protocol-Version' });
+
+    const info = await handleMcpRequest(new Request('https://luminarasuite.com/api/mcp'), makeEnv(), user);
+    expect(info.status).toBe(200);
+    const infoBody = (await info.json()) as { protocolVersion: string; supportedProtocolVersions: string[] };
+    expect(infoBody.protocolVersion).toBe('2025-06-18');
+    expect(infoBody.supportedProtocolVersions).toEqual(['2025-06-18', '2025-03-26', '2024-11-05']);
+
+    const infoRejected = await handleMcpRequest(
+      new Request('https://luminarasuite.com/api/mcp', { headers: { 'mcp-protocol-version': '2025-11-25' } }),
+      makeEnv(),
+      user,
+    );
+    expect(infoRejected.status).toBe(400);
+  });
+});
