@@ -97,7 +97,13 @@ Sentry (`@sentry/cloudflare` on the Worker, `@sentry/browser` in the client) sta
 Auth legend: `session` = Firebase/Telegram cookie or Bearer. When a Bearer is sent the
 cookie is not read, so a Bearer that fails verification never falls back to the cookie: it is
 a 401, unless valid Telegram initData on the same request identifies the Telegram user (the
-Mini App relies on that, and its client does not retry a 401 when initData is present). The
+Mini App relies on that, and its client does not retry a 401 when initData is present).
+Telegram initData counts for one hour (`TELEGRAM_INIT_DATA_TTL_SECONDS`). Signed initData past
+that window is not refused outright: the request's own session cookie or Bearer signs it in
+instead, but only when that session is the same Telegram user the initData names, and cookie
+writes then keep the cross-site Origin check. `/telegram/invoice` does the same, so a Mini App
+left open still buys Stars for its own user. `/telegram/auth` never mints a session from stale
+initData. Forged or malformed initData is always a 401. The
 web client drops a cached ID token under a minute from expiry, so the cookie answers instead;
 `apikey` = `lm_live_*` MCP key; `oauth` = `mcp_*` OAuth token; `habitat` = `lm_hab_*` scoped token;
 `admin` = `ADMIN_SECRET` header; `byok` = bring-your-own-key header.
