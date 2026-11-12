@@ -99,6 +99,31 @@ function oauthSecretOrNull(env: Env): string | null {
   return resolved.ok ? resolved.secret : null;
 }
 
+/** Form or JSON object of strings. Null when the body is not either of those. */
+async function readOAuthFields(request: Request): Promise<Record<string, string> | null> {
+  const contentType = request.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) {
+    const parsed: unknown = await request.json().catch(() => null);
+    if (parsed === null) return {};
+    if (typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    const body: Record<string, string> = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      if (typeof value === 'string') body[key] = value;
+    }
+    return body;
+  }
+  try {
+    const form = await request.formData();
+    const body: Record<string, string> = {};
+    form.forEach((value, key) => {
+      body[key] = String(value);
+    });
+    return body;
+  } catch {
+    return null;
+  }
+}
+
 async function sha256Base64Url(input: string): Promise<string> {
   const data = new TextEncoder().encode(input);
   const digest = await crypto.subtle.digest('SHA-256', data);
@@ -186,6 +211,9 @@ export async function handleMcpOAuthRoute(
   if (path === '/oauth/mcp/register' && request.method === 'POST') {
     return registerClient(request, env);
   }
+  if (path === '/oauth/mcp/revoke' && request.method === 'POST') {
+    return revokeToken(request, env);
+  }
   if (path === '/oauth/mcp/.well-known/oauth-authorization-server' && request.method === 'GET') {
     return json(authorizationServerMetadata(new URL(request.url).origin));
   }
@@ -198,6 +226,8 @@ function authorizationServerMetadata(origin: string) {
     authorization_endpoint: `${origin}/api/oauth/mcp/authorize`,
     token_endpoint: `${origin}/api/oauth/mcp/token`,
     registration_endpoint: `${origin}/api/oauth/mcp/register`,
+    revocation_endpoint: `${origin}/api/oauth/mcp/revoke`,
+    revocation_endpoint_auth_methods_supported: ['none'],
     response_types_supported: ['code'],
     grant_types_supported: ['authorization_code'],
     token_endpoint_auth_methods_supported: ['none'],
@@ -500,19 +530,9 @@ async function token(request: Request, env: Env): Promise<Response> {
     );
   }
 
-  const contentType = request.headers.get('content-type') || '';
-  let body: Record<string, string> = {};
-  if (contentType.includes('application/json')) {
-    body = ((await request.json().catch(() => null)) || {}) as Record<string, string>;
-  } else {
-    try {
-      const form = await request.formData();
-      form.forEach((v, k) => {
-        body[k] = String(v);
-      });
-    } catch {
-      return json({ error: 'invalid_request', error_description: 'Body must be form-encoded or JSON.' }, 400);
-    }
+  const body = await readOAuthFields(request);
+  if (!body) {
+    return json({ error: 'invalid_request', error_description: 'Body must be form-encoded or JSON.' }, 400);
   }
 
   if (body.grant_type !== 'authorization_code') {
@@ -567,6 +587,46 @@ async function token(request: Request, env: Env): Promise<Response> {
     expires_in: TOKEN_TTL_SECONDS,
     scope: record.scope,
   });
+}
+
+/**
+ * RFC 7009. Public clients send the token they hold. client_id and token_type_hint
+ * are optional: this server stores one token type and does not authenticate the client.
+ * Unknown tokens still return 200.
+ */
+async function revokeToken(request: Request, env: Env): Promise<Response> {
+  if (!env.LUMINARA_KV) return json({ error: 'server_error', error_description: 'KV unavailable' }, 503);
+
+  const body = await readOAuthFields(request);
+  if (!body) {
+    return json({ error: 'invalid_request', error_description: 'Body must be form-encoded or JSON.' }, 400);
+  }
+
+  const token = body.token || '';
+  if (!token) return json({ error: 'invalid_request', error_description: 'token is required.' }, 400);
+  await revokePresentedToken(env, token);
+  return new Response(null, { status: 200 });
+}
+
+/** Delete the hashed record, the legacy raw-token record, and the connection row for this bearer. */
+async function revokePresentedToken(env: Env, token: string): Promise<void> {
+  if (!token.startsWith('mcp_') || !env.LUMINARA_KV) return;
+  const tokenHash = await sha256Hex(token);
+  const hashedKey = await tokenKvKey(token);
+  const legacyKey = `${TOKENS_KV_PREFIX}${token}`;
+  const hashedRaw = await env.LUMINARA_KV.get(hashedKey);
+  const legacyRaw = legacyKey === hashedKey ? null : await env.LUMINARA_KV.get(legacyKey);
+  const accountIds = new Set<string>();
+  for (const raw of [hashedRaw, legacyRaw]) {
+    if (!raw) continue;
+    const parsed = parseTokenRecord(raw);
+    if (parsed?.user.accountId) accountIds.add(parsed.user.accountId);
+  }
+  await env.LUMINARA_KV.delete(hashedKey);
+  if (legacyKey !== hashedKey) await env.LUMINARA_KV.delete(legacyKey);
+  for (const accountId of accountIds) {
+    await env.LUMINARA_KV.delete(await connectionKvKey(accountId, tokenHash));
+  }
 }
 
 /** A live OAuth token as its owner sees it. `id` is the token's hash, so it cannot be used as one. */

@@ -86,21 +86,11 @@ const MCP_CORS: Record<string, string> = {
   'Access-Control-Expose-Headers': 'mcp-session-id',
 };
 
-/** Newest first. The handler speaks plain JSON over POST, which every listed version allows. */
-export const MCP_PROTOCOL_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05'] as const;
-
-/** Echo the client's version when supported; otherwise offer the newest one (MCP lifecycle rule). */
-export function negotiateProtocolVersion(requested: unknown): string {
-  return typeof requested === 'string' && (MCP_PROTOCOL_VERSIONS as readonly string[]).includes(requested)
-    ? requested
-    : MCP_PROTOCOL_VERSIONS[0];
-}
-
 /** What a host shows for this server: the Luminara name, mark and site. */
 export function mcpServerInfo(origin: string) {
   return {
     name: 'luminara-mcp',
-    title: 'Luminara',
+    title: 'Luminara Suite',
     version: '1.1.0',
     websiteUrl: origin,
     icons: [{ src: `${origin}/favicon-192.png`, mimeType: 'image/png', sizes: ['192x192'] }],
@@ -829,6 +819,32 @@ async function callTool(
 /** One request may carry at most this many JSON-RPC messages. */
 const MAX_MCP_BATCH = 20;
 
+/**
+ * Newest first. 2025-11-25 stays off this list: that revision requires HTTP 403
+ * when Origin is present and invalid, and this server does not check Origin.
+ */
+const MCP_PROTOCOL_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'] as const;
+/** Assumed when the client omits MCP-Protocol-Version. */
+const MCP_PROTOCOL_VERSION_DEFAULT = '2025-03-26' satisfies (typeof MCP_PROTOCOL_VERSIONS)[number];
+
+function isSupportedProtocolVersion(version: string): version is (typeof MCP_PROTOCOL_VERSIONS)[number] {
+  return (MCP_PROTOCOL_VERSIONS as readonly string[]).includes(version);
+}
+
+function negotiateProtocolVersion(requested: unknown): (typeof MCP_PROTOCOL_VERSIONS)[number] {
+  return typeof requested === 'string' && isSupportedProtocolVersion(requested)
+    ? requested
+    : MCP_PROTOCOL_VERSIONS[0];
+}
+
+/** Absent header assumes 2025-03-26. An explicit unsupported version is HTTP 400. */
+function rejectUnsupportedProtocolHeader(request: Request): Response | null {
+  const raw = request.headers.get('mcp-protocol-version');
+  const version = raw === null ? MCP_PROTOCOL_VERSION_DEFAULT : raw.trim();
+  if (isSupportedProtocolVersion(version)) return null;
+  return mcpJson({ error: 'Unsupported MCP-Protocol-Version' }, 400);
+}
+
 function rpcResult(id: unknown, result: unknown) {
   return { jsonrpc: '2.0', id: id ?? null, result };
 }
@@ -851,6 +867,8 @@ export async function handleMcpRequest(
   }
 
   const origin = new URL(request.url).origin;
+  const headerRejection = rejectUnsupportedProtocolHeader(request);
+  if (headerRejection) return headerRejection;
 
   if (request.method === 'GET') {
     // Streamable HTTP clients GET with this Accept to open a server stream; we offer none.
@@ -861,7 +879,7 @@ export async function handleMcpRequest(
       ok: true,
       ...mcpServerInfo(origin),
       protocolVersion: MCP_PROTOCOL_VERSIONS[0],
-      protocolVersions: MCP_PROTOCOL_VERSIONS,
+      supportedProtocolVersions: [...MCP_PROTOCOL_VERSIONS],
       tools: listMcpToolCatalogue(),
       typedContextKeys: TYPED_CONTEXT_KEYS,
     });

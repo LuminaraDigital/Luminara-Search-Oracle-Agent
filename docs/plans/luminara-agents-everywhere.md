@@ -112,7 +112,7 @@ Slice A needs nothing from Track SW and can start now. Slice B rides on SW.
 | AE-11 | Routines from a host: set or pause the scheduled audit | `worker/mcpServer.ts`; SW decision 22 | Pausing from Grok stops the next run |
 | AE-12 | Optional MCP Apps card for hosts that render it | `ui://` resource | The text card is unchanged when the host does not render it |
 
-**Slice A status (branch `feat/agents-everywhere-slice-a`):** AE-1 to AE-6 done. AE-1 negotiates the handshake versions 2024-11-05 to 2025-11-25 and refuses a server stream with 405. The MCP spec's current revision, 2026-07-28, drops the handshake and adds `server/discover`. That is not served yet; add it once a host is seen using it. AE-7 waits on the live test.
+**Slice A status (branch `feat/agents-everywhere-slice-a`):** AE-1 to AE-6 done. AE-1 uses the negotiation that landed on staging in `3184301` (2024-11-05 to 2025-06-18, and a 400 for an unsupported `MCP-Protocol-Version` header). 2025-11-25 stays off until the server checks `Origin`, which that revision requires. Slice A adds a 405 when a client asks for a server stream. The MCP spec's current revision, 2026-07-28, drops the handshake and adds `server/discover`. That is not served yet; add it once a host is seen using it. AE-7 waits on the live test.
 
 Slice A: AE-1 to AE-7. Slice B: AE-8 to AE-12, each after the SW task that makes its agent real (Auditor after SW1a, Fixer and Coach after SW1-15 and SW1-18, approvals after SW2-5).
 

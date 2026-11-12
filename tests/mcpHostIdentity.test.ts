@@ -4,12 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import worker from '../worker/index';
 import type { Env } from '../worker/env';
-import {
-  handleMcpRequest,
-  MCP_INSTRUCTIONS,
-  MCP_PROTOCOL_VERSIONS,
-  negotiateProtocolVersion,
-} from '../worker/mcpServer';
+import { handleMcpRequest, MCP_INSTRUCTIONS } from '../worker/mcpServer';
 import type { HostedIdentity } from '../worker/userTypes';
 import { createSqliteD1 } from './helpers/sqliteD1';
 
@@ -46,30 +41,25 @@ function initialize(protocolVersion: unknown) {
 }
 
 describe('protocol version negotiation', () => {
-  it('echoes every supported version', () => {
-    for (const v of MCP_PROTOCOL_VERSIONS) expect(negotiateProtocolVersion(v)).toBe(v);
-  });
-
-  it('offers the newest version for an unknown or missing one', () => {
-    expect(negotiateProtocolVersion('1900-01-01')).toBe('2025-11-25');
-    expect(negotiateProtocolVersion(undefined)).toBe('2025-11-25');
-    expect(negotiateProtocolVersion(42)).toBe('2025-11-25');
-  });
-
   it('answers a 2025-06-18 client with 2025-06-18', async () => {
     const body = (await (await initialize('2025-06-18')).json()) as { result: { protocolVersion: string } };
+    expect(body.result.protocolVersion).toBe('2025-06-18');
+  });
+
+  it('offers the newest supported version for an unknown one', async () => {
+    const body = (await (await initialize('1900-01-01')).json()) as { result: { protocolVersion: string } };
     expect(body.result.protocolVersion).toBe('2025-06-18');
   });
 });
 
 describe('brand identity on initialize', () => {
   it('names Luminara with its mark, site and instructions', async () => {
-    const body = (await (await initialize('2025-11-25')).json()) as {
+    const body = (await (await initialize('2025-06-18')).json()) as {
       result: { serverInfo: Record<string, unknown>; instructions: string; capabilities: unknown };
     };
     expect(body.result.serverInfo).toEqual({
       name: 'luminara-mcp',
-      title: 'Luminara',
+      title: 'Luminara Suite',
       version: '1.1.0',
       websiteUrl: 'https://luminarasuite.com',
       icons: [{ src: 'https://luminarasuite.com/favicon-192.png', mimeType: 'image/png', sizes: ['192x192'] }],
@@ -95,7 +85,7 @@ describe('streamable HTTP details', () => {
     const res = await handleMcpRequest(new Request('https://luminarasuite.com/api/mcp'), makeEnv(), user);
     expect(res.status).toBe(200);
     const body = (await res.json()) as Record<string, unknown>;
-    expect(body).toMatchObject({ ok: true, title: 'Luminara', protocolVersion: '2025-11-25' });
+    expect(body).toMatchObject({ ok: true, title: 'Luminara Suite', protocolVersion: '2025-06-18' });
   });
 
   it('answers a lone initialized notification with 202 and no body', async () => {
