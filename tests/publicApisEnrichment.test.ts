@@ -238,17 +238,19 @@ describe('PublicApisEnrichmentService', () => {
       expect(posture.trustScore).toBe(100);
     });
 
-    it('never invents HSTS when CORS/network blocks header reads', async () => {
+    it('reports not measured, never a score, when every request fails', async () => {
+      // No response at all: the site was not reached or blocked every read. HTTPS is not credited
+      // from the URL scheme alone, so the card shows "Not measured" instead of 40/100.
       vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Failed to fetch'));
 
       const posture = await publicApisEnrichmentService.auditSecurityPosture('https://cors-blocked.example');
-      expect(posture.httpsEnforced).toBe(true);
+      expect(posture.httpsEnforced).toBe(false);
       expect(posture.hstsEnabled).toBe(false);
       expect(posture.cspDetected).toBe(false);
       expect(posture.referrerPolicy).toBe(false);
       expect(posture.xFrameOptions).toBe(false);
-      expect(posture.measurementConfidence).toBe('cors_limited');
-      expect(posture.trustScore).toBe(40);
+      expect(posture.measurementConfidence).toBe('failed');
+      expect(posture.trustScore).toBe(0);
     });
 
     it('treats opaque responses as cors_limited without fake HSTS', async () => {

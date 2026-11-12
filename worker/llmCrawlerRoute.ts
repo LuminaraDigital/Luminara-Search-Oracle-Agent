@@ -19,10 +19,12 @@ const FETCH_MS = 5_000;
 const MAX_REDIRECTS = 3;
 const FOLLOW_REDIRECT = new Set([301, 302, 303, 307, 308]);
 
-/** Short plain-text error pages such as "404 Not Found", "Page not found" or "Cannot GET /llms.txt". A bare
- * "404" counts, but a title that only starts with 404 ("404 Media") does not. */
-const NOT_FOUND_TEXT =
-  /^(?:error\s*)?404(?:\s*[-:|]?\s*(?:(?:page|file)\s+)?(?:not\s+found|error)\b|\s*$)|^not\s+found\b|^cannot\s+get\s+\/|\b(?:page|file|resource|document)\s+(?:was\s+)?not\s+found\b/i;
+/** A first line that opens as an error: "404", "404 Not Found", "Not Found - nginx", "Cannot GET /llms.txt".
+ * A title that only starts with 404 ("404 Media") does not. */
+const NOT_FOUND_START =
+  /^(?:error\s*)?404(?:\s*[-:|]?\s*(?:(?:page|file)\s+)?(?:not\s+found|error)\b|\s*$)|^not\s+found\b|^cannot\s+get\s+\//i;
+/** A one-line message such as "The requested file was not found on this server." */
+const NOT_FOUND_PHRASE = /\b(?:page|file|resource|document)\s+(?:was\s+)?not\s+found\b/i;
 const MAX_NOT_FOUND_TEXT = 300;
 
 /**
@@ -35,10 +37,13 @@ const MAX_NOT_FOUND_TEXT = 300;
 export function isSoft404Body(body: string): boolean {
   const text = body.trimStart().replace(/^(?:<!--[\s\S]*?-->\s*)+/, '');
   if (/^[<{]/.test(text)) return true;
-  // Only a short body whose first line is the error counts; a real file opens with its title.
+  // Only a short body that reads as the error counts; a real file opens with its title, and a
+  // "not found" phrase counts only when it is the whole one-line body.
   const trimmed = text.trim();
+  if (trimmed.length > MAX_NOT_FOUND_TEXT) return false;
   const firstLine = trimmed.split('\n', 1)[0];
-  return trimmed.length <= MAX_NOT_FOUND_TEXT && !firstLine.startsWith('#') && NOT_FOUND_TEXT.test(firstLine);
+  if (firstLine.startsWith('#')) return false;
+  return NOT_FOUND_START.test(firstLine) || (!trimmed.includes('\n') && NOT_FOUND_PHRASE.test(trimmed));
 }
 
 async function fetchOne(

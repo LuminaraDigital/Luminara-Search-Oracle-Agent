@@ -90,6 +90,8 @@ describe('crawler file detection', () => {
     expect(isSoft404Body(`${LLMS}\n## Help\n- [Page not found help](https://example.com/help): what to do\n`)).toBe(false);
     expect(isSoft404Body('User-agent: *\nDisallow: /404\n')).toBe(false);
     expect(isSoft404Body('# Acme\n\n> We fix broken links when a page is not found.\n')).toBe(false);
+    expect(isSoft404Body('File not found handling\n\nHow our CDN answers missing assets.\n')).toBe(false);
+    expect(isSoft404Body('﻿404 Not Found')).toBe(true);
   });
 
   it('keeps a bot challenge as not measured, not missing', async () => {
