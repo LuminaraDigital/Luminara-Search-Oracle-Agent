@@ -73,6 +73,15 @@ describe('identify() with stale Mini App initData', () => {
     expect(who.error).toBe(INIT_DATA_EXPIRED_REASON);
   });
 
+  it('refuses stale initData for one user with a session for another', async () => {
+    const env = makeEnv();
+    const who = await identify(new Request(`${ORIGIN}/api/auth/session`, {
+      headers: { 'x-telegram-init-data': signInitData(77005, TWO_HOURS), cookie: await sessionCookie(env, 77006) },
+    }), env);
+    expect(who.user).toBeNull();
+    expect(who.error).toBe(INIT_DATA_EXPIRED_REASON);
+  });
+
   it('refuses forged initData even with a valid session', async () => {
     const env = makeEnv();
     const who = await identify(new Request(`${ORIGIN}/api/auth/session`, {
@@ -139,6 +148,14 @@ describe('POST /api/telegram/invoice with stale initData', () => {
     expect(calls.some((c) => c.includes('/createInvoiceLink') && c.includes('starter:77010'))).toBe(true);
   });
 
+  it('refuses an invoice when the stale initData names a different user than the session', async () => {
+    const env = makeEnv();
+    const calls = stubTelegram();
+    const res = await worker.fetch(invoiceRequest(signInitData(77013, TWO_HOURS), await sessionCookie(env, 77014)), env, ctx);
+    expect(res.status).toBe(401);
+    expect(calls.some((c) => c.includes('/createInvoiceLink'))).toBe(false);
+  });
+
   it('still refuses stale initData with no session', async () => {
     const env = makeEnv();
     stubTelegram();
@@ -156,5 +173,16 @@ describe('POST /api/telegram/invoice with stale initData', () => {
       body: JSON.stringify({ initData: signInitData(77012, TWO_HOURS) }),
     }), env, ctx);
     expect(res.status).toBe(401);
+  });
+});
+
+describe('validateInitData on stale initData', () => {
+  it('names the signed user only when the signature is valid', async () => {
+    const { validateInitData } = await import('../worker/telegramAuth');
+    const stale = await validateInitData(signInitData(77020, TWO_HOURS), botToken);
+    expect(stale).toEqual({ ok: false, reason: INIT_DATA_EXPIRED_REASON, staleUserId: 77020 });
+    const forged = await validateInitData(signInitData(77020, TWO_HOURS, '999:WRONG_BOT'), botToken);
+    expect(forged.ok).toBe(false);
+    expect(forged).not.toHaveProperty('staleUserId');
   });
 });

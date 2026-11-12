@@ -154,9 +154,10 @@ export async function identify(request: Request, env: Env): Promise<{
 
   let telegramUser: HostedIdentity | null = null;
   let firebaseUser: HostedIdentity | null = null;
-  // Set when the Mini App's initData is genuine but past its 1h window. The session the app
-  // already holds (cookie or bearer) can still sign the request in; this error is the answer if not.
-  let staleInitDataError: string | null = null;
+  // Set when the Mini App's initData is signed by Telegram but past its 1h window. The session
+  // the app already holds (cookie or Bearer) signs the request in instead, and only when it is the
+  // same Telegram user; otherwise `error` is the answer.
+  let staleInitData: { error: string; userId: string | null } | null = null;
 
   if (initData) {
     if (!env.BOT_TOKEN) return pack({ user: null, error: 'Server has no BOT_TOKEN configured' });
@@ -169,7 +170,7 @@ export async function identify(request: Request, env: Env): Promise<{
         name: [tg.first_name, tg.last_name].filter(Boolean).join(' ') || tg.username,
       };
     } else if (result.reason === INIT_DATA_EXPIRED_REASON) {
-      staleInitDataError = result.reason;
+      staleInitData = { error: result.reason, userId: result.staleUserId === undefined ? null : String(result.staleUserId) };
     } else {
       return pack({ user: null, error: result.reason });
     }
@@ -200,8 +201,8 @@ export async function identify(request: Request, env: Env): Promise<{
           name: sess.name,
         };
       }
-    } else if (!initData || staleInitDataError) {
-      return pack({ user: null, error: staleInitDataError || 'Session expired or revoked' });
+    } else if (!initData || staleInitData) {
+      return pack({ user: null, error: staleInitData?.error || 'Session expired or revoked' });
     }
   }
 
@@ -220,6 +221,11 @@ export async function identify(request: Request, env: Env): Promise<{
           tgVerified.user.username,
       };
     }
+  }
+
+  // Stale initData stands in only for a session of the user Telegram signed, never another one.
+  if (staleInitData && telegramUser && telegramUser.id !== staleInitData.userId) {
+    return pack({ user: null, error: staleInitData.error });
   }
 
   // Authorization Bearer, or legacy cookie that still holds a raw Firebase JWT (migration window).
@@ -279,7 +285,7 @@ export async function identify(request: Request, env: Env): Promise<{
     }
   }
 
-  if (staleInitDataError) return pack({ user: null, error: staleInitDataError });
+  if (staleInitData) return pack({ user: null, error: staleInitData.error });
 
   if (env.REQUIRE_TG_AUTH === 'true') {
     const hint = env.FIREBASE_PROJECT_ID
@@ -288,6 +294,13 @@ export async function identify(request: Request, env: Env): Promise<{
     return pack({ user: null, error: hint });
   }
   return pack({ user: null });
+}
+
+/** True when the request's own session (cookie or Bearer) is this Telegram user. */
+export async function sessionIsTelegramUser(request: Request, env: Env, telegramUserId: number | undefined): Promise<boolean> {
+  if (telegramUserId === undefined) return false;
+  const who = await identify(request, env);
+  return who.user?.source === 'telegram' && who.user.id === String(telegramUserId);
 }
 
 export async function fetchWithTimeout(input: string, init: RequestInit, ms: number): Promise<Response> {

@@ -16,7 +16,7 @@ export interface TelegramUser {
 
 export type ValidationResult =
   | { ok: true; user: TelegramUser; authDate: number; startParam?: string }
-  | { ok: false; reason: string };
+  | { ok: false; reason: string; staleUserId?: number };
 
 const enc = new TextEncoder();
 
@@ -91,16 +91,23 @@ export async function validateInitData(
   const authDate = Number(params.get('auth_date') || 0);
   if (!authDate) return { ok: false, reason: 'initData missing auth_date' };
   if (authDate > nowSec + 60) return { ok: false, reason: 'initData auth_date is in the future' };
-  if (nowSec - authDate > ttlSeconds) return { ok: false, reason: INIT_DATA_EXPIRED_REASON };
+  const expired = nowSec - authDate > ttlSeconds;
 
   const userRaw = params.get('user');
-  if (!userRaw) return { ok: false, reason: 'initData has no user' };
-  let user: TelegramUser;
+  let user: TelegramUser | null = null;
   try {
-    user = JSON.parse(userRaw);
+    user = userRaw ? JSON.parse(userRaw) : null;
   } catch {
-    return { ok: false, reason: 'user field is not JSON' };
+    user = null;
   }
+  // Signed but stale: name the user Telegram signed, so a caller can match it to a session.
+  if (expired) {
+    return typeof user?.id === 'number'
+      ? { ok: false, reason: INIT_DATA_EXPIRED_REASON, staleUserId: user.id }
+      : { ok: false, reason: INIT_DATA_EXPIRED_REASON };
+  }
+  if (!userRaw) return { ok: false, reason: 'initData has no user' };
+  if (!user) return { ok: false, reason: 'user field is not JSON' };
   if (typeof user.id !== 'number') return { ok: false, reason: 'user.id missing' };
 
   return { ok: true, user, authDate, startParam: params.get('start_param') || undefined };
