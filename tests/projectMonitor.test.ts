@@ -129,9 +129,11 @@ describe('project monitor', () => {
     const owned = await createProject(env, 'acct_a', { domain: 'harbour.example', name: 'Harbour' });
     const other = await createProject(env, 'acct_b', { domain: 'other.example', name: 'Other' });
     if (!owned.ok || !other.ok) throw new Error('project');
-    const monday = Date.UTC(2026, 0, 5);
-    await saveProjectMonitor(env, 'acct_a', owned.project.id, { enabled: true, cadence: 'monthly', emailOptIn: true }, monday);
-    await saveProjectMonitor(env, 'acct_b', other.project.id, { enabled: true, cadence: 'monthly', emailOptIn: true }, monday);
+    const sunday = Date.UTC(2026, 0, 4, 8, 0, 0);
+    const monday = Date.UTC(2026, 0, 5, 8, 0, 0);
+    await saveProjectMonitor(env, 'acct_a', owned.project.id, { enabled: true, cadence: 'monthly', emailOptIn: true }, sunday);
+    await saveProjectMonitor(env, 'acct_b', other.project.id, { enabled: true, cadence: 'monthly', emailOptIn: true }, sunday);
+    await runProjectMonitorTick(env, { now: sunday, scheduledAt: sunday, read: async () => ({ status: 200, html: RICH }) });
     const bodies: string[] = [];
     vi.stubGlobal('fetch', async (_url: string, init?: RequestInit) => {
       bodies.push(String(init?.body || ''));
@@ -278,6 +280,75 @@ describe('project monitor', () => {
     expect(row).toEqual({ cadence: 'daily', nextRunAt: start });
   });
 
+  it('sends the Monday regression and the weekly report as two emails', async () => {
+    const store = new Map<string, string>();
+    store.set('sub:acct_a', JSON.stringify({ plan: 'agency', expiresAt: Date.now() + 40 * 86_400_000 }));
+    const env = envFor({ LUMINARA_KV: mockKv(store) });
+    await addUser(env, 'acct_a', 'ada@example.com', 'd'.repeat(43));
+    const owned = await createProject(env, 'acct_a', { domain: 'harbour.example', name: 'Harbour' });
+    if (!owned.ok) throw new Error(owned.error);
+    const sunday = Date.UTC(2026, 0, 4, 8, 0, 0);
+    const monday = Date.UTC(2026, 0, 5, 8, 0, 0);
+    const schemaPage = '<!DOCTYPE html><html><head><title>Harbour</title><script type="application/ld+json">{"@type":"RealEstateAgent","name":"Harbour and Co"}</script></head><body><p>Harbour and Co</p></body></html>';
+    await saveProjectMonitor(env, 'acct_a', owned.project.id, { enabled: true, cadence: 'daily', emailOptIn: true }, sunday);
+    await runProjectMonitorTick(env, { now: sunday, scheduledAt: sunday, read: async () => ({ status: 200, html: schemaPage }) });
+    const keys: string[] = [];
+    const bodies: string[] = [];
+    vi.stubGlobal('fetch', async (_url: string, init?: RequestInit) => {
+      keys.push(new Headers(init?.headers).get('Idempotency-Key') || '');
+      bodies.push(String(init?.body || ''));
+      return new Response('{"id":"em_1"}', { status: 200 });
+    });
+    await runProjectMonitorTick(env, {
+      now: monday,
+      scheduledAt: monday,
+      read: async () => ({ status: 200, html: THIN }),
+    });
+    expect(keys).toHaveLength(2);
+    expect(keys[0]).not.toBe(keys[1]);
+    expect(keys.some((key) => key.includes('regression'))).toBe(true);
+    expect(keys.some((key) => key.includes('weekly'))).toBe(true);
+    expect(keys.every((key) => key.includes('2026-W02'))).toBe(true);
+    expect(bodies.some((body) => body.includes('Real estate coverage fell'))).toBe(true);
+    expect(bodies.some((body) => body.includes('Weekly project check'))).toBe(true);
+  });
+
+  it('checks a later due monitor when the first batch was skipped', async () => {
+    const store = new Map<string, string>();
+    const base = mockKv(store);
+    const kv = {
+      ...base,
+      get: async (key: string, type?: string) => {
+        if (String(key).startsWith('sub:skip')) throw new Error('kv down');
+        return base.get(key, type);
+      },
+    } as KVNamespace;
+    const env = envFor({ LUMINARA_KV: kv });
+    const start = Date.UTC(2026, 0, 6, 8, 0, 0);
+    for (let i = 0; i < 8; i += 1) {
+      const skipped = await createProject(env, 'skip', { domain: `skip${i}.example`, name: `Skip ${i}` });
+      if (!skipped.ok) throw new Error(skipped.error);
+      await env.DB!.prepare(
+        `INSERT INTO project_monitors
+          (id, account_id, project_id, enabled, cadence, email_opt_in, query_list_json, next_run_at, created_at, updated_at)
+         VALUES (?, 'skip', ?, 1, 'daily', 0, '[]', ?, ?, ?)`,
+      ).bind(`skip${i}`, skipped.project.id, start, start, start).run();
+    }
+    const owned = await createProject(env, 'acct_ok', { domain: 'ok.example', name: 'Ok' });
+    if (!owned.ok) throw new Error(owned.error);
+    await saveProjectMonitor(env, 'acct_ok', owned.project.id, { enabled: true, cadence: 'monthly', emailOptIn: false }, start + 1);
+    const result = await runProjectMonitorTick(env, {
+      now: start + 1_000,
+      scheduledAt: start,
+      read: async () => ({ status: 200, html: THIN }),
+    });
+    expect(result.checked).toBe(1);
+    const skippedRow = await env.DB!.prepare(
+      `SELECT cadence, next_run_at AS nextRunAt FROM project_monitors WHERE id = 'skip0'`,
+    ).first<{ cadence: string; nextRunAt: number }>();
+    expect(skippedRow).toEqual({ cadence: 'daily', nextRunAt: start });
+  });
+
   it('does not email an unverified Firebase address', async () => {
     const env = envFor();
     await env.DB!.prepare(
@@ -286,8 +357,10 @@ describe('project monitor', () => {
     ).bind('c'.repeat(43)).run();
     const owned = await createProject(env, 'acct_a', { domain: 'harbour.example', name: 'Harbour' });
     if (!owned.ok) throw new Error(owned.error);
+    const sunday = Date.UTC(2026, 0, 4, 8, 0, 0);
     const monday = Date.UTC(2026, 0, 5, 8, 0, 0);
-    await saveProjectMonitor(env, 'acct_a', owned.project.id, { enabled: true, cadence: 'monthly', emailOptIn: true }, monday);
+    await saveProjectMonitor(env, 'acct_a', owned.project.id, { enabled: true, cadence: 'monthly', emailOptIn: true }, sunday);
+    await runProjectMonitorTick(env, { now: sunday, scheduledAt: sunday, read: async () => ({ status: 200, html: RICH }) });
     const bodies: string[] = [];
     vi.stubGlobal('fetch', async (_url: string, init?: RequestInit) => {
       bodies.push(String(init?.body || ''));

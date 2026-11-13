@@ -37,6 +37,10 @@ import {
 const BATCH = 8;
 const CONCURRENCY = 4;
 const BUDGET_MS = 8 * 60 * 1000;
+/** Stop the page-read loop here so the other 08:00 jobs keep CPU. wrangler limits.cpu_ms is 120000. */
+export const MONITOR_TICK_CAP = 40;
+const WEEKLY_PAGE = 25;
+const WEEKLY_BUDGET_MS = 60 * 1000;
 const ID_RE = /^[A-Za-z0-9_-]{1,80}$/;
 const MONITOR_TOOLS = new Set(['get_project_monitor', 'set_project_monitor', 'list_project_alerts', 'ack_project_alert']);
 
@@ -292,12 +296,18 @@ async function insertAlert(
   return Number(result.meta?.changes ?? 0) === 1;
 }
 
+function emailIdempotencyKey(accountId: string, snapshotId: string, kind: string, weekKey: string): string {
+  return `monitor-${accountId}-${kind}-${weekKey}-${snapshotId}`.replace(/[^A-Za-z0-9_-]/g, '-').slice(0, 256);
+}
+
 async function sendAlertEmail(
   env: Env,
   accountId: string,
   domain: string,
   lines: string[],
   snapshotId: string,
+  kind: string,
+  weekKey: string,
 ): Promise<void> {
   if (!env.DB || !env.RESEND_API_KEY || lines.length === 0) return;
   const user = await env.DB.prepare(
@@ -331,7 +341,7 @@ async function sendAlertEmail(
       headers: {
         Authorization: `Bearer ${env.RESEND_API_KEY}`,
         'Content-Type': 'application/json',
-        'Idempotency-Key': `monitor-${accountId}-${snapshotId}`.replace(/[^A-Za-z0-9_-]/g, '-').slice(0, 256),
+        'Idempotency-Key': emailIdempotencyKey(accountId, snapshotId, kind, weekKey),
       },
       body: JSON.stringify({
         from: WELCOME_FROM,
@@ -421,38 +431,47 @@ async function runOne(
     ? `Real estate coverage fell. ${deltaSentence(delta.earlierScore, delta.laterScore, delta.scoreDelta)}`
     : `Real estate coverage rose. ${deltaSentence(delta.earlierScore, delta.laterScore, delta.scoreDelta)}`;
   if (await insertAlert(env, row, kind, sentence, saved.id, '', now) && row.email_opt_in === 1) {
-    await sendAlertEmail(env, row.account_id, project.domain, [sentence], saved.id);
+    await sendAlertEmail(env, row.account_id, project.domain, [sentence], saved.id, kind, isoWeekKey(new Date(scheduledAt)));
   }
   return true;
 }
 
-async function writeWeeklyReports(env: Env, scheduledAt: number, now: number): Promise<void> {
+async function writeWeeklyReports(env: Env, scheduledAt: number, now: number, budgetMs: number): Promise<void> {
   if (new Date(scheduledAt).getUTCDay() !== 1 || !env.DB) return;
   const weekKey = isoWeekKey(new Date(scheduledAt));
-  const due = await env.DB.prepare(
-    `SELECT id, account_id, project_id, email_opt_in, query_list_json
-     FROM project_monitors WHERE enabled = 1`,
-  ).all<{ id: string; account_id: string; project_id: string; email_opt_in: number; query_list_json: string }>();
-  for (const row of due.results || []) {
-    const history = await getProjectHistory(env, row.account_id, row.project_id, 20);
-    const point = history?.snapshots.find((item) => item.signals.metric === 're_coverage' && item.signals.score !== null);
-    if (!point) continue;
-    const trend = history?.trends.find((item) => item.metric === 're_coverage' && item.subject === point.signals.subject);
-    const prompts = parsePrompts(row.query_list_json);
-    const summary = [
-      `Weekly project check. Real estate checks found: ${point.signals.score}.`,
-      trend?.latestDelta
-        ? deltaSentence(trend.latestDelta.earlierScore, trend.latestDelta.laterScore, trend.latestDelta.scoreDelta)
-        : 'Too little data to measure lift.',
-      prompts.length
-        ? `Prompts from the pages we read, not sent to an answer engine: ${prompts.join('; ')}.`
-        : 'No agency name or suburb was on the pages we read, so no prompt was built.',
-    ].join(' ');
-    const inserted = await insertAlert(env, { id: row.id, account_id: row.account_id, project_id: row.project_id }, 'weekly', summary, point.id, weekKey, now);
-    if (!inserted || row.email_opt_in !== 1) continue;
-    const project = await getProject(env, row.account_id, row.project_id);
-    if (!project) continue;
-    await sendAlertEmail(env, row.account_id, project.domain, [summary], point.id);
+  const started = Date.now();
+  let afterId = '';
+  while (Date.now() - started < budgetMs) {
+    const page = await env.DB.prepare(
+      `SELECT id, account_id, project_id, email_opt_in, query_list_json
+       FROM project_monitors WHERE enabled = 1 AND id > ?
+       ORDER BY id ASC LIMIT ?`,
+    ).bind(afterId, WEEKLY_PAGE).all<{ id: string; account_id: string; project_id: string; email_opt_in: number; query_list_json: string }>();
+    const rows = page.results || [];
+    if (rows.length === 0) return;
+    afterId = rows[rows.length - 1]?.id || afterId;
+    for (const row of rows) {
+      const history = await getProjectHistory(env, row.account_id, row.project_id, 20);
+      const point = history?.snapshots.find((item) => item.signals.metric === 're_coverage' && item.signals.score !== null);
+      if (!point) continue;
+      const trend = history?.trends.find((item) => item.metric === 're_coverage' && item.subject === point.signals.subject);
+      const prompts = parsePrompts(row.query_list_json);
+      const summary = [
+        `Weekly project check. Real estate checks found: ${point.signals.score}.`,
+        trend?.latestDelta
+          ? deltaSentence(trend.latestDelta.earlierScore, trend.latestDelta.laterScore, trend.latestDelta.scoreDelta)
+          : 'Too little data to measure lift.',
+        prompts.length
+          ? `Prompts from the pages we read, not sent to an answer engine: ${prompts.join('; ')}.`
+          : 'No agency name or suburb was on the pages we read, so no prompt was built.',
+      ].join(' ');
+      const inserted = await insertAlert(env, { id: row.id, account_id: row.account_id, project_id: row.project_id }, 'weekly', summary, point.id, weekKey, now);
+      if (!inserted || row.email_opt_in !== 1) continue;
+      const project = await getProject(env, row.account_id, row.project_id);
+      if (!project) continue;
+      await sendAlertEmail(env, row.account_id, project.domain, [summary], point.id, 'weekly', weekKey);
+    }
+    if (rows.length < WEEKLY_PAGE) return;
   }
 }
 
@@ -484,22 +503,24 @@ export async function runProjectMonitorTick(
   const read = deps.read ?? defaultRead;
   const started = deps.startedAt ?? Date.now();
   const budget = deps.budgetMs ?? BUDGET_MS;
+  await writeWeeklyReports(env, scheduledAt, now, WEEKLY_BUDGET_MS);
   let checked = 0;
-  const seen = new Set<string>();
+  const seen: string[] = [];
   let first = true;
-  while (first || Date.now() - started < budget) {
+  while ((first || Date.now() - started < budget) && checked < MONITOR_TICK_CAP) {
     first = false;
+    const exclude = seen.length > 0 ? ` AND id NOT IN (${seen.map(() => '?').join(', ')})` : '';
     const due = await env.DB.prepare(
       `SELECT id, account_id, project_id, cadence, email_opt_in, next_run_at
-       FROM project_monitors WHERE enabled = 1 AND next_run_at <= ?
-       ORDER BY next_run_at ASC LIMIT ?`,
-    ).bind(now, BATCH).all<DueRow>();
-    const fresh = (due.results || []).filter((row) => !seen.has(row.id));
+       FROM project_monitors WHERE enabled = 1 AND next_run_at <= ?${exclude}
+       ORDER BY next_run_at ASC, id ASC LIMIT ?`,
+    ).bind(...(seen.length > 0 ? [now, ...seen, BATCH] : [now, BATCH])).all<DueRow>();
+    const fresh = due.results || [];
     if (fresh.length === 0) break;
-    for (const row of fresh) seen.add(row.id);
-    checked += await runPool(fresh, (row) => runOne(env, row, now, scheduledAt, read));
+    const room = fresh.slice(0, MONITOR_TICK_CAP - checked);
+    seen.push(...room.map((row) => row.id));
+    checked += await runPool(room, (row) => runOne(env, row, now, scheduledAt, read));
   }
-  await writeWeeklyReports(env, scheduledAt, now);
   return { checked, skipped: null };
 }
 

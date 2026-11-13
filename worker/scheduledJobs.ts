@@ -44,7 +44,10 @@ export const ALL_SCHEDULED_JOBS: readonly ScheduledJobName[] = [
  * Stars charge sweep (settles charges a webhook left undecided and retries refunds), and the TON
  * pending-order sweep (re-checks unpaid orders inside their 48 hours), the payment support
  * sweep, the weekly decision digest, the weekly visibility email, the RSI jobs, Citation Watch,
- * and the project check schedule. Project checks email only accounts that opted in, and only when RESEND_API_KEY is set.
+ * and the project check schedule. That job checks at most 40 projects per fire (MONITOR_TICK_CAP in
+ * worker/projectMonitor.ts) and pages the Monday weekly report on its own one-minute budget.
+ * wrangler.jsonc sets limits.cpu_ms to 120000 because the platform default is 30 seconds for the
+ * whole scheduled invocation. Project checks email only accounts that opted in, and only when RESEND_API_KEY is set.
  * The visibility email sends only to accounts that opted in, and only when RESEND_API_KEY is set.
  * Citation Watch writes runs only when CITATION_WATCH_LIVE is "true".
  * The RSI jobs are owned by this expression so the account does not gain a cron trigger.
