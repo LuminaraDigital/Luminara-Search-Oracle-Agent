@@ -415,7 +415,9 @@ export class PublicApisEnrichmentService {
     if (typeof window === 'undefined') return null;
     try {
       const all = JSON.parse(localStorage.getItem(STORAGE_KEY_ENRICHMENT) || '{}');
-      return all[domain] || null;
+      const hit: EnrichedEntityIntelligence | undefined = all[domain];
+      // Older builds cached checks that reached nothing; those are measured again, not reused.
+      return hit && hit.security?.measurementConfidence !== 'failed' ? hit : null;
     } catch {
       return null;
     }

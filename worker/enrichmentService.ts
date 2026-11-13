@@ -25,8 +25,11 @@ export async function handleEntityEnrichment(request: Request, env: Env): Promis
   const cacheKey = `enrich:${cleanDomain}`;
 
   try {
-    const cached = env.LUMINARA_KV ? await env.LUMINARA_KV.get(cacheKey, 'json') : null;
-    if (cached) {
+    const cached = env.LUMINARA_KV
+      ? await env.LUMINARA_KV.get<{ security?: { measurementConfidence?: string } }>(cacheKey, 'json')
+      : null;
+    // Older deploys cached checks that reached nothing for 7 days; those are measured again.
+    if (cached && cached.security?.measurementConfidence !== 'failed') {
       return json({ ok: true, cached: true, data: cached });
     }
   } catch {

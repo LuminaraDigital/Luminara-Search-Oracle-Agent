@@ -81,6 +81,15 @@ describe('crawler file detection', () => {
     expect(isSoft404Body('The requested file was not found on this server.')).toBe(true);
   });
 
+  it('treats a not-found message that names the missing path as a soft 404', () => {
+    expect(isSoft404Body('File not found on this server: /llms.txt')).toBe(true);
+    expect(isSoft404Body('The requested file was not found on this server: /llms.txt.')).toBe(true);
+    expect(isSoft404Body('The requested URL /llms.txt was not found on this server.')).toBe(true);
+    expect(isSoft404Body('File not found: /ai.txt\nTry the homepage.')).toBe(true);
+    expect(isSoft404Body('File not found: what our CDN does')).toBe(false);
+    expect(isSoft404Body('# Acme\n\n> The requested URL /old was not found on this server, so we redirect.\n')).toBe(false);
+  });
+
   it('keeps a real file that mentions not found', () => {
     expect(isSoft404Body('404 Media\n\n> Independent tech journalism.\n')).toBe(false);
     expect(isSoft404Body('404\n')).toBe(true);
