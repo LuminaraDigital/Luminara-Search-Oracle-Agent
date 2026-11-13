@@ -81,7 +81,9 @@ export function buildEnrichmentPromptSection(entity: EnrichedEntityIntelligence 
   const secDetail =
     sec.measurementConfidence === 'failed'
       ? 'the security check could not reach the site, so HTTPS and security headers are unknown'
-      : `HTTPS ${sec.httpsEnforced ? 'enforced' : 'missing'}, forces secure HTTPS connections (HSTS): ${sec.hstsEnabled ? 'active' : 'missing'}, controls which scripts the site can load (CSP): ${sec.cspDetected ? 'present' : 'missing'}, public security contact file (security.txt): ${sec.securityTxtPresent ? 'present' : 'missing'}, Measurement: ${sec.measurementConfidence}`;
+      : sec.measurementConfidence !== 'full'
+        ? `HTTPS ${sec.httpsEnforced ? 'enforced' : 'missing'}, security headers (HSTS, CSP) could not be read by this check, so they are unknown, not missing, public security contact file (security.txt): ${sec.securityTxtPresent ? 'present' : 'missing'}, Measurement: ${sec.measurementConfidence}`
+        : `HTTPS ${sec.httpsEnforced ? 'enforced' : 'missing'}, forces secure HTTPS connections (HSTS): ${sec.hstsEnabled ? 'active' : 'missing'}, controls which scripts the site can load (CSP): ${sec.cspDetected ? 'present' : 'missing'}, public security contact file (security.txt): ${sec.securityTxtPresent ? 'present' : 'missing'}, Measurement: ${sec.measurementConfidence}`;
   parts.push(`Security posture (${secLabel}): ${secDetail}`);
   if (entity.sameAsUrls.length > 0) {
     parts.push(`sameAs Graph URIs: ${entity.sameAsUrls.join(', ')}`);
