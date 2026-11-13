@@ -7,7 +7,7 @@
  *    transitions to `approved` and records `agent_approved_booking` in the Outcomes Ledger.
  */
 
-import { notifyAgent, signoffMessage } from './pushNotifyService';
+import { dismissalOf, notifyAgent, signoffMessage } from './pushNotifyService';
 import type { Env } from './env';
 import { recordOutcomeStageEvent } from './outcomesLedgerService';
 import { safeJsonParse } from '../services/llm/safeJsonParse';
@@ -255,6 +255,7 @@ export async function decideBookingAppointment(
     )
       .bind(now, row.enquiry_id, args.accountId)
       .run();
+    await notifyAgent(env, args.accountId, dismissalOf('signoff', row.enquiry_id));
 
     return {
       ok: true,
@@ -337,6 +338,7 @@ export async function decideBookingAppointment(
     recordedBy: args.actorUserId,
     now,
   });
+  await notifyAgent(env, args.accountId, dismissalOf('signoff', row.enquiry_id));
 
   return {
     ok: true,

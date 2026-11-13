@@ -8,7 +8,7 @@
  * 4. Evidence-Bound Opportunity Brief generation, 6-Stage Outcomes Ledger recording, and Twenty CRM sync.
  */
 
-import { callbackMessage, notifyAgent } from './pushNotifyService';
+import { callbackMessage, dismissalOf, notifyAgent } from './pushNotifyService';
 import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
 import { billingId, json } from './workerUtils';
@@ -412,6 +412,8 @@ export async function appendEnquiryTurn(
     )
       .bind(JSON.stringify(conversation), now, existing.id, args.accountId)
       .run();
+    // The agent has replied, so the call-back is done on every phone.
+    await notifyAgent(env, args.accountId, dismissalOf('callback', existing.id));
 
     return {
       ok: true,

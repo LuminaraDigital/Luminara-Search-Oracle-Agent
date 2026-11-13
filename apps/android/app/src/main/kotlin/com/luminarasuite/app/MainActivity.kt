@@ -129,20 +129,26 @@ private const val KEY_WELCOMED = "welcomed"
 const val EXTRA_OPEN = "open"
 const val OPEN_TODAY = "today"
 
+/** The enquiry an alert was about, so Today can bring it into view. Same key as the alert's data. */
+const val EXTRA_ENQUIRY_ID = "enquiryId"
+
 class MainActivity : ComponentActivity() {
     private val sharedLink = MutableStateFlow<ShareLink?>(null)
     private val openToday = MutableStateFlow(false)
+    private val focusEnquiry = MutableStateFlow<String?>(null)
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         sharedLink.value = ShareLink.parse(intent.dataString)
         openToday.value = intent.getStringExtra(EXTRA_OPEN) == OPEN_TODAY
+        focusEnquiry.value = intent.getStringExtra(EXTRA_ENQUIRY_ID)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         sharedLink.value = ShareLink.parse(intent?.dataString)
         openToday.value = intent?.getStringExtra(EXTRA_OPEN) == OPEN_TODAY
+        focusEnquiry.value = intent?.getStringExtra(EXTRA_ENQUIRY_ID)
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.dark(Color.Transparent.toArgb()),
             navigationBarStyle = SystemBarStyle.dark(Color.Transparent.toArgb()),
@@ -160,6 +166,7 @@ class MainActivity : ComponentActivity() {
                     initialAgentMode = prefs.getBoolean(AgentPush.KEY_AGENT_MODE, false),
                     onAgentModeChange = { prefs.edit().putBoolean(AgentPush.KEY_AGENT_MODE, it).apply() },
                     openTodayRequests = openToday,
+                    focusEnquiryRequests = focusEnquiry,
                 )
             }
         }
@@ -176,6 +183,7 @@ fun LuminaraWorkbenchApp(
     initialAgentMode: Boolean = false,
     onAgentModeChange: (Boolean) -> Unit = {},
     openTodayRequests: MutableStateFlow<Boolean> = MutableStateFlow(false),
+    focusEnquiryRequests: MutableStateFlow<String?> = MutableStateFlow(null),
 ) {
     var welcome by rememberSaveable { mutableStateOf(showWelcome) }
     var agentMode by rememberSaveable { mutableStateOf(initialAgentMode) }
@@ -210,6 +218,7 @@ fun LuminaraWorkbenchApp(
         if (vault.isSignedIn && agentMode) AgentPush.register(context, workspace)
     }
     val todayRequested by openTodayRequests.collectAsState()
+    val focusEnquiryId by focusEnquiryRequests.collectAsState()
     LaunchedEffect(todayRequested) {
         if (todayRequested) {
             welcome = false
@@ -328,6 +337,8 @@ fun LuminaraWorkbenchApp(
                                 signedIn = vault.isSignedIn,
                                 onSignIn = { overlay = Overlay.SETTINGS },
                                 onOpenEnquiries = { overlay = Overlay.ENQUIRIES },
+                                focusEnquiryId = focusEnquiryId,
+                                onFocused = { focusEnquiryRequests.value = null },
                             )
                         LuminaraTab.ASK.name ->
                             AskScreen(

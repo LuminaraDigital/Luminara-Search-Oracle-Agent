@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createBookingProposal } from '../worker/bookingApprovalService';
 import { ingestInboundEnquiry } from '../worker/enquiryDeskService';
 import { StubGcpTokenProvider } from '../worker/gcpToken';
-import { handlePushRoute, sendAgentPush, signoffMessage } from '../worker/pushNotifyService';
+import { dismissalOf, handlePushRoute, sendAgentPush, signoffMessage } from '../worker/pushNotifyService';
 import { createSqliteD1 } from './helpers/sqliteD1';
 import type { Env } from '../worker/env';
 import type { HostedIdentity } from '../worker/userTypes';
@@ -85,9 +85,29 @@ describe('sendAgentPush', () => {
     expect((init.headers as Record<string, string>).authorization).toBe('Bearer tok');
     const sent = JSON.parse(String(init.body)).message;
     expect(sent.notification).toEqual({ title: 'Needs your sign-off', body: 'Sam wants an appraisal. Tap to approve a time.' });
-    expect(sent.data).toEqual({ kind: 'signoff', enquiryId: 'enq_1', appointmentId: 'appt_1', open: 'today' });
-    expect(sent.android).toEqual({ notification: { channel_id: 'agent_signoff' } });
+    expect(sent.data).toEqual({
+      kind: 'signoff',
+      enquiryId: 'enq_1',
+      appointmentId: 'appt_1',
+      open: 'today',
+      tag: 'signoff:enq_1',
+    });
+    expect(sent.android).toEqual({ notification: { channel_id: 'agent_signoff', tag: 'signoff:enq_1' } });
     expect(String(init.body)).not.toContain('Owner');
+  });
+
+  it('a dismissal is data only, so no phone shows text for it', async () => {
+    const env = await seeded();
+    const fetchImpl = vi.fn(async () => new Response('{}', { status: 200 }));
+    await sendAgentPush(env, AGENT.id, dismissalOf('signoff', 'enq_1'), {
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      tokenProvider: new StubGcpTokenProvider('tok'),
+    });
+    const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    const sent = JSON.parse(String(init.body)).message;
+    expect(sent.data).toEqual({ kind: 'dismiss', tag: 'signoff:enq_1' });
+    expect(sent.notification).toBeUndefined();
+    expect(sent.android).toBeUndefined();
   });
 
   it('deletes tokens FCM reports as unregistered and keeps others with last_error', async () => {

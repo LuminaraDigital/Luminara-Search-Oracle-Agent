@@ -9,6 +9,7 @@ import androidx.core.app.NotificationCompat
 import com.google.firebase.messaging.FirebaseMessaging
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
+import com.luminarasuite.app.EXTRA_ENQUIRY_ID
 import com.luminarasuite.app.EXTRA_OPEN
 import com.luminarasuite.app.LuminaraApplication
 import com.luminarasuite.app.MainActivity
@@ -32,7 +33,10 @@ object AgentPush {
 
     fun isAgentMode(context: Context): Boolean =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_AGENT_MODE, false)
-    private const val NOTIFICATION_ID = 11
+
+    // Android shows a tagged FCM notification under id 0. Alerts posted here use it too,
+    // so one cancel covers both.
+    private const val TAGGED_NOTIFICATION_ID = 0
 
     suspend fun register(
         context: Context,
@@ -69,19 +73,23 @@ object AgentPush {
         )
     }
 
+    /** [tag] names the item, so a repeat replaces the earlier alert and [dismiss] can remove it. */
     fun post(
         context: Context,
         title: String,
         body: String,
+        tag: String?,
+        enquiryId: String?,
     ) {
         if (NextFixReminder.needsPermission(context)) return
         createChannel(context)
         val open =
             PendingIntent.getActivity(
                 context,
-                NOTIFICATION_ID,
+                tag.hashCode(),
                 Intent(context, MainActivity::class.java)
                     .putExtra(EXTRA_OPEN, OPEN_TODAY)
+                    .putExtra(EXTRA_ENQUIRY_ID, enquiryId)
                     .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
             )
@@ -93,7 +101,15 @@ object AgentPush {
                 .setContentIntent(open)
                 .setAutoCancel(true)
                 .build()
-        context.getSystemService(NotificationManager::class.java)?.notify(NOTIFICATION_ID, notification)
+        context.getSystemService(NotificationManager::class.java)?.notify(tag, TAGGED_NOTIFICATION_ID, notification)
+    }
+
+    /** The item was handled somewhere else, so its alert leaves this phone. */
+    fun dismiss(
+        context: Context,
+        tag: String,
+    ) {
+        context.getSystemService(NotificationManager::class.java)?.cancel(tag, TAGGED_NOTIFICATION_ID)
     }
 }
 
@@ -108,9 +124,15 @@ class AgentMessagingService : FirebaseMessagingService() {
         }
     }
 
-    // Runs when the app is open. In the background Android shows the notification itself.
+    // Alerts arrive here only when the app is open; in the background Android shows them itself.
+    // A dismissal is data only, so it arrives here either way.
     override fun onMessageReceived(message: RemoteMessage) {
+        val data = message.data
+        if (data["kind"] == "dismiss") {
+            data["tag"]?.let { AgentPush.dismiss(this, it) }
+            return
+        }
         val title = message.notification?.title ?: return
-        AgentPush.post(this, title, message.notification?.body.orEmpty())
+        AgentPush.post(this, title, message.notification?.body.orEmpty(), data["tag"], data["enquiryId"])
     }
 }

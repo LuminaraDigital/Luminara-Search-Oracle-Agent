@@ -17,6 +17,8 @@ const FCM_TOKEN_PATTERN = /^[A-Za-z0-9_:.-]{20,4096}$/;
 
 export type PushKind = 'signoff' | 'callback';
 export type PushMessage = { title: string; body: string; kind: PushKind; enquiryId: string; appointmentId?: string };
+/** Sent when the item was handled somewhere else, so the alert leaves every phone. Carries no text. */
+export type PushDismissal = { kind: 'dismiss'; of: PushKind; enquiryId: string };
 export type PushDeps = { fetchImpl?: typeof fetch; tokenProvider?: GcpTokenProvider | null };
 
 let cachedProvider: { key: string; provider: GcpTokenProvider | null } | null = null;
@@ -35,6 +37,30 @@ export function firstNameOf(fullName: string | null | undefined): string {
   const first = String(fullName ?? '').trim().split(/\s+/)[0] ?? '';
   const clean = first.replace(/[^\p{L}'-]/gu, '').slice(0, 30);
   return clean || 'A contact';
+}
+
+/** One alert per item: a repeat replaces the earlier one, and a dismissal removes it. */
+export function pushTag(kind: PushKind, enquiryId: string): string {
+  return `${kind}:${enquiryId}`;
+}
+
+export function dismissalOf(of: PushKind, enquiryId: string): PushDismissal {
+  return { kind: 'dismiss', of, enquiryId };
+}
+
+/** The FCM message without its device token. A dismissal is data only, so Android shows nothing for it. */
+function fcmBody(message: PushMessage | PushDismissal): Record<string, unknown> {
+  if (message.kind === 'dismiss') {
+    return { data: { kind: 'dismiss', tag: pushTag(message.of, message.enquiryId) } };
+  }
+  const tag = pushTag(message.kind, message.enquiryId);
+  const data: Record<string, string> = { kind: message.kind, enquiryId: message.enquiryId, open: 'today', tag };
+  if (message.appointmentId) data.appointmentId = message.appointmentId;
+  return {
+    notification: { title: message.title, body: message.body },
+    data,
+    android: { notification: { channel_id: PUSH_CHANNEL_ID, tag } },
+  };
 }
 
 export function signoffMessage(contactName: string | null | undefined, enquiryId: string, appointmentId: string): PushMessage {
@@ -57,7 +83,12 @@ export function callbackMessage(contactName: string | null | undefined, enquiryI
 }
 
 /** Never throws. Fans out to every registered device for the account. */
-export async function sendAgentPush(env: Env, accountId: string, message: PushMessage, deps: PushDeps = {}): Promise<void> {
+export async function sendAgentPush(
+  env: Env,
+  accountId: string,
+  message: PushMessage | PushDismissal,
+  deps: PushDeps = {},
+): Promise<void> {
   try {
     const projectId = env.FCM_PROJECT_ID?.trim();
     const db = env.DB;
@@ -75,22 +106,14 @@ export async function sendAgentPush(env: Env, accountId: string, message: PushMe
     const accessToken = await provider.getAccessToken();
     const fetchImpl = deps.fetchImpl ?? fetch;
     const url = `https://fcm.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/messages:send`;
-    const data: Record<string, string> = { kind: message.kind, enquiryId: message.enquiryId, open: 'today' };
-    if (message.appointmentId) data.appointmentId = message.appointmentId;
+    const body = fcmBody(message);
     // Parallel, each bounded, so every send finishes or aborts inside the caller's wait.
     await Promise.allSettled(rows.map(async (device) => {
       const res = await fetchImpl(url, {
         method: 'POST',
         signal: AbortSignal.timeout(PUSH_SEND_TIMEOUT_MS),
         headers: { 'content-type': 'application/json', authorization: `Bearer ${accessToken}` },
-        body: JSON.stringify({
-          message: {
-            token: device.token,
-            notification: { title: message.title, body: message.body },
-            data,
-            android: { notification: { channel_id: PUSH_CHANNEL_ID } },
-          },
-        }),
+        body: JSON.stringify({ message: { token: device.token, ...body } }),
       });
       if (res.ok) return;
       const text = await res.text().catch(() => '');
@@ -109,7 +132,12 @@ export async function sendAgentPush(env: Env, accountId: string, message: PushMe
 }
 
 /** Awaitable but bounded: a slow FCM never holds up the caller for more than a few seconds. */
-export async function notifyAgent(env: Env, accountId: string, message: PushMessage, deps: PushDeps = {}): Promise<void> {
+export async function notifyAgent(
+  env: Env,
+  accountId: string,
+  message: PushMessage | PushDismissal,
+  deps: PushDeps = {},
+): Promise<void> {
   if (!env.FCM_PROJECT_ID?.trim()) return;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<void>((resolve) => {

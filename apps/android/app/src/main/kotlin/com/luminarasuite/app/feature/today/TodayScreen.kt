@@ -13,12 +13,17 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -104,11 +109,26 @@ fun TodayScreen(
     signedIn: Boolean,
     onSignIn: () -> Unit,
     onOpenEnquiries: () -> Unit,
+    focusEnquiryId: String? = null,
+    onFocused: () -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsState()
     // Every return to the app reloads, so tapping an alert always shows the new request.
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { if (signedIn) viewModel.load() }
     val context = LocalContext.current
+
+    // An alert tap names one enquiry. Its card scrolls into view once the reloaded day contains it.
+    val focusRequester = remember { BringIntoViewRequester() }
+    val focusModifier = { item: TodayPerson ->
+        if (item.enquiryId == focusEnquiryId) Modifier.bringIntoViewRequester(focusRequester) else Modifier
+    }
+    LaunchedEffect(focusEnquiryId, state.today) {
+        val today = state.today ?: return@LaunchedEffect
+        if ((today.needsSignOff + today.callBack).none { it.enquiryId == focusEnquiryId }) return@LaunchedEffect
+        withFrameNanos { } // the card is laid out one frame after it is composed
+        focusRequester.bringIntoView()
+        onFocused()
+    }
 
     Column(
         modifier =
@@ -144,7 +164,7 @@ fun TodayScreen(
         EyebrowKicker("Needs your sign-off")
         if (today.needsSignOff.isEmpty()) Text(text = "Nothing waiting for you.", style = LuminaraTextStyles.Body)
         today.needsSignOff.forEach { item ->
-            WorkbenchCard(emphasized = true) {
+            WorkbenchCard(modifier = focusModifier(item), emphasized = true) {
                 PersonHeader(item)
                 Text(text = "Pick a time to approve the appraisal:", style = LuminaraTextStyles.Body)
                 item.slots.forEach { slot ->
@@ -163,7 +183,7 @@ fun TodayScreen(
         EyebrowKicker("Call back")
         if (today.callBack.isEmpty()) Text(text = "No one is waiting on a call.", style = LuminaraTextStyles.Body)
         today.callBack.forEach { item ->
-            WorkbenchCard(railColor = LuminaraColors.GoldAccent) {
+            WorkbenchCard(modifier = focusModifier(item), railColor = LuminaraColors.GoldAccent) {
                 PersonHeader(item)
                 Text(text = item.reason, style = LuminaraTextStyles.Body)
                 ContactButtons(context, item)

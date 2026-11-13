@@ -64,6 +64,9 @@ describe('Agent Today regressions', () => {
 
     await appendEnquiryTurn(env, { accountId: AGENT.id, enquiryId: buyer.enquiry.id, sender: 'agent', text: 'Calling you now.', actorUserId: AGENT.id });
     expect((await today(env)).callBack).toEqual([]);
+    // The reply also takes the call-back alert off every phone.
+    expect(notified.at(-1)).toBe(`dismiss:${buyer.enquiry.id}`);
+    notified.pop();
 
     // A fresh legal question after the agent replied is a new call-back, so it alerts again.
     await appendEnquiryTurn(env, { accountId: AGENT.id, enquiryId: buyer.enquiry.id, sender: 'prospect', text: SECTION_32, actorUserId: AGENT.id });
