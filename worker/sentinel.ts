@@ -30,8 +30,7 @@ export interface SentinelTarget {
   lastCompetitorHits?: Record<string, boolean>;
 }
 
-/** Edge security audit without CORS limits. Score: https40+redir15+hsts15+csp10+ref5+xfo5+sectxt10. */
-export async function auditSecurityOnEdge(domain: string): Promise<{
+export interface EdgeSecurityPosture {
   httpsEnforced: boolean;
   redirectsToHttps: boolean;
   hstsEnabled: boolean;
@@ -41,7 +40,23 @@ export async function auditSecurityOnEdge(domain: string): Promise<{
   securityTxtPresent: boolean;
   trustScore: number;
   measurementConfidence: 'full' | 'cors_limited' | 'failed';
-}> {
+}
+
+/** The site could not be reached over HTTPS: every signal is unknown and the score is 0, not a guess. */
+export const SECURITY_NOT_MEASURED: Readonly<EdgeSecurityPosture> = Object.freeze({
+  httpsEnforced: false,
+  redirectsToHttps: false,
+  hstsEnabled: false,
+  cspDetected: false,
+  referrerPolicy: false,
+  xFrameOptions: false,
+  securityTxtPresent: false,
+  trustScore: 0,
+  measurementConfidence: 'failed',
+});
+
+/** Edge security audit without CORS limits. Score: https40+redir15+hsts15+csp10+ref5+xfo5+sectxt10. */
+export async function auditSecurityOnEdge(domain: string): Promise<EdgeSecurityPosture> {
   const clean = safePublicHostname(domain);
   const httpsUrl = clean ? `https://${clean}` : '';
   let hsts = false;
@@ -52,19 +67,7 @@ export async function auditSecurityOnEdge(domain: string): Promise<{
   let securityTxtPresent = false;
   let fetchWorked = false;
 
-  if (!clean || !httpsUrl) {
-    return {
-      httpsEnforced: true,
-      redirectsToHttps: false,
-      hstsEnabled: false,
-      cspDetected: false,
-      referrerPolicy: false,
-      xFrameOptions: false,
-      securityTxtPresent: false,
-      trustScore: 40,
-      measurementConfidence: 'failed',
-    };
-  }
+  if (!clean || !httpsUrl) return { ...SECURITY_NOT_MEASURED };
 
   try {
     let head = await fetchPublicUrl(httpsUrl, { method: 'HEAD' });
@@ -93,8 +96,9 @@ export async function auditSecurityOnEdge(domain: string): Promise<{
     // leave defaults
   }
 
-  const measurementConfidence = fetchWorked ? 'full' : 'failed';
-  let trustScore = 40; // https assumed for edge probe target
+  // No HTTPS response means nothing was measured: report that, never a base score.
+  if (!fetchWorked) return { ...SECURITY_NOT_MEASURED };
+  let trustScore = 40; // the HTTPS fetch above succeeded
   if (redirectsToHttps) trustScore += 15;
   if (hsts) trustScore += 15;
   if (csp) trustScore += 10;
@@ -111,7 +115,7 @@ export async function auditSecurityOnEdge(domain: string): Promise<{
     xFrameOptions,
     securityTxtPresent,
     trustScore: Math.min(100, trustScore),
-    measurementConfidence,
+    measurementConfidence: 'full',
   };
 }
 
@@ -181,7 +185,9 @@ export async function runSentinelScan(env: Env): Promise<{ scanned: number; aler
       let securityTrust = target.lastSecurityTrust;
       try {
         const sec = await auditSecurityOnEdge(target.domain);
-        securityTrust = sec.trustScore;
+        // An unreachable site is not a trust drop: keep the last measured score. A site that stays
+        // down keeps that score; lastScanAt still moves, and the audit card shows the check as not measured.
+        if (sec.measurementConfidence !== 'failed') securityTrust = sec.trustScore;
       } catch {
         // keep previous
       }
