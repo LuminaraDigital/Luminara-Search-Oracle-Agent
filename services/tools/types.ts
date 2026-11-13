@@ -1,6 +1,8 @@
 /**
  * Shared tool types for MCP, Oracle tool loop, and audit consumer.
  */
+import type { MeasuredSnapshot } from '../history/snapshotCapture';
+
 export type McpCreditClass = 'free' | 'paid';
 
 export type MeasurementStatus = 'measured' | 'estimated' | 'not_measured';
@@ -53,4 +55,6 @@ export type PaidToolRuntime = {
   pagespeedApiKey?: string | null;
   /** Optional OpenRouter chat completion for visibility LLM probes. */
   llmGenerate?: (prompt: string, model?: string) => Promise<string>;
+  /** Persist a measured check on the project. Failures must not change the tool result. */
+  onMeasured?: (event: MeasuredSnapshot) => Promise<void>;
 };

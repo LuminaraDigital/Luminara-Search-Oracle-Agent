@@ -56,6 +56,7 @@ import { getPendingDreamEvents } from './dreamingQueue';
 import { evaluateWakeGate } from './dreamingWakeGate';
 import { ACCOUNT_MCP_TOOLS } from './mcpAccountTools';
 import { CONVERSION_SPINE_MCP_TOOLS } from './mcpConversionTools';
+import { PROJECT_HISTORY_MCP_TOOLS } from './mcpProjectHistoryTools';
 import { FIX_DRAFT_MCP_TOOLS } from './fixDraftRoute';
 import { enforceHabitatScope, SELF_DRIVING_MCP_TOOLS } from './selfDrivingHabitat';
 import { mcpDeclaredCostsEnabled, toolCostAnnotationFor } from '../services/mcp/toolCosts';
@@ -179,6 +180,37 @@ function dailySpendRefusal(
 function requireString(args: Record<string, unknown>, key: string): string | null {
   const v = args[key];
   return typeof v === 'string' && v.trim() ? v.trim() : null;
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** A required argument the handler would reject before doing work. */
+function missingRequiredInput(schema: Record<string, unknown>, args: Record<string, unknown>): McpToolResult | null {
+  if (!Array.isArray(schema.required)) return null;
+  const properties = isPlainRecord(schema.properties) ? schema.properties : {};
+  const missing: string[] = [];
+  for (const key of schema.required) {
+    if (typeof key !== 'string') continue;
+    const spec = isPlainRecord(properties[key]) ? properties[key] : {};
+    if (!requiredArgPresent(spec, args[key])) missing.push(key);
+  }
+  if (missing.length === 0) return null;
+  return textResult(`${missing.join(', ')} required`, { code: 'BAD_INPUT' }, true);
+}
+
+function requiredArgPresent(spec: Record<string, unknown>, value: unknown): boolean {
+  const type = typeof spec.type === 'string' ? spec.type : '';
+  if (type === 'string') return typeof value === 'string' && value.trim().length > 0;
+  if (type === 'boolean') return typeof value === 'boolean';
+  if (type === 'number' || type === 'integer') return typeof value === 'number' && Number.isFinite(value);
+  if (type === 'object') return isPlainRecord(value);
+  if (type !== 'array') return value !== undefined && value !== null && value !== '';
+  if (!Array.isArray(value) || value.length === 0) return false;
+  const items = isPlainRecord(spec.items) ? spec.items : null;
+  if (items?.type !== 'string') return true;
+  return value.some((item) => typeof item === 'string' && item.trim().length > 0);
 }
 
 async function buildCtx(
@@ -418,6 +450,7 @@ const TOOLS: McpToolDef[] = [
   },
   ...FIX_DRAFT_MCP_TOOLS,
   ...CONVERSION_SPINE_MCP_TOOLS,
+  ...PROJECT_HISTORY_MCP_TOOLS,
   ...SELF_DRIVING_MCP_TOOLS,
   ...PAID_TOOL_CATALOGUE.map((meta) => ({
     name: meta.name,
@@ -548,11 +581,8 @@ async function callTool(
       true,
     );
   }
-  const meter = await spendMcpDailyCall(ctx.env, ctx.accountId, mcpDailyCallLimit);
-  ctx.dailyUsage = meter.usage;
-  if (!meter.ok) return dailySpendRefusal(ctx, meter, 'MCP_DAILY_LIMIT', mcpDailyCallLimit);
 
-  // Paid gates run before the approval below, so a call they refuse does not spend it.
+  // Scope, plan, and project gates run before approval. A refusal spends no approval and no daily counter.
   // Scope gate: hosted paid research needs mcp:research on the credential. BYOK
   // calls spend the caller's own DataForSEO account, so mcp:free is enough.
   if (creditClass === 'paid' && !ctx.dataForSeoCredential && !credentialAllowsResearch(ctx.credential)) {
@@ -619,7 +649,12 @@ async function callTool(
   }
 
   if (!tool) return textResult(`Unknown tool: ${name}`, { code: 'TOOL_NOT_FOUND' }, true);
-  // A missing project, a scope refusal, or an approval hold must not burn the ceiling.
+  const inputError = missingRequiredInput(tool.inputSchema, args);
+  if (inputError) return inputError;
+  // Daily caps increment only after the gates above allow a known tool with usable input.
+  const meter = await spendMcpDailyCall(ctx.env, ctx.accountId, mcpDailyCallLimit);
+  ctx.dailyUsage = meter.usage;
+  if (!meter.ok) return dailySpendRefusal(ctx, meter, 'MCP_DAILY_LIMIT', mcpDailyCallLimit);
   if (creditClass === 'paid' && !ctx.dataForSeoCredential) {
     const paid = await spendMcpDailyCall(ctx.env, ctx.accountId, MCP_HOSTED_PAID_DAILY, 'mcp_paid', 'hosted paid MCP call');
     if (!paid.ok) return dailySpendRefusal(ctx, paid, 'MCP_PAID_DAILY_LIMIT', MCP_HOSTED_PAID_DAILY);

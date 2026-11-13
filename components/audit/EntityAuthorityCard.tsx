@@ -12,6 +12,8 @@ export const EntityAuthorityCard: React.FC<EntityAuthorityCardProps> = ({ enrich
   const { wikidata, wayback, security, sameAsUrls, domain, brandName } = enriched;
   // A failed security check measured nothing: show that instead of a score or a SECURE badge.
   const securityMeasured = security.measurementConfidence !== 'failed';
+  // Headers are read only in a full check; a browser-limited one leaves HSTS and CSP unknown.
+  const headersMeasured = security.measurementConfidence === 'full';
 
   return (
     <div className="my-6 glass-morphism rounded-2xl border border-gold/40 p-5 bg-gradient-to-br from-black via-black/90 to-black/80 shadow-2xl">
@@ -186,14 +188,14 @@ export const EntityAuthorityCard: React.FC<EntityAuthorityCardProps> = ({ enrich
               </div>
               <div className="flex items-center justify-between">
                 <span>Forces secure HTTPS (HSTS):</span>
-                <span className={`font-mono ${security.hstsEnabled ? 'text-success-400' : 'text-warning-400'}`}>
-                  {security.hstsEnabled ? 'Active' : 'Missing'}
+                <span className={`font-mono ${!headersMeasured ? 'text-gray-400' : security.hstsEnabled ? 'text-success-400' : 'text-warning-400'}`}>
+                  {!headersMeasured ? 'Not measured' : security.hstsEnabled ? 'Active' : 'Missing'}
                 </span>
               </div>
               <div className="flex items-center justify-between">
                 <span>Controls which scripts load (CSP):</span>
-                <span className={`font-mono ${security.cspDetected ? 'text-success-400' : 'text-gray-500'}`}>
-                  {security.cspDetected ? 'Detected' : 'Standard'}
+                <span className={`font-mono ${headersMeasured && security.cspDetected ? 'text-success-400' : 'text-gray-500'}`}>
+                  {!headersMeasured ? 'Not measured' : security.cspDetected ? 'Detected' : 'Standard'}
                 </span>
               </div>
               <div className="flex items-center justify-between">

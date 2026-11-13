@@ -4,7 +4,8 @@ import {
   RESEARCH_LOG_REUSE_MS,
   researchLogHitResult,
 } from '../services/tools/researchLogGate';
-import { researchKeywords } from '../services/tools/paidResearch';
+import { getDomainOverview, researchKeywords } from '../services/tools/paidResearch';
+import type { MeasuredSnapshot } from '../services/history/snapshotCapture';
 import type { PaidToolRuntime } from '../services/tools/types';
 import { isDataForSeoPathAllowed } from '../worker/dataForSeoClient';
 import { isPathAllowed, PROVIDERS } from '../worker/providerRelay';
@@ -173,5 +174,72 @@ describe('researchKeywords live mapping', () => {
     const result = await researchKeywords({ projectId: 'proj_1', seeds: ['shoes'] }, rt);
     expect(result.structuredContent?.measurementStatus).toBe('not_measured');
     expect(logs.length).toBe(0);
+  });
+
+  it('stores keyword volumes as notes and not as a lift score', async () => {
+    const seen: MeasuredSnapshot[] = [];
+    const rt: PaidToolRuntime = {
+      accountId: 'acc',
+      canUsePaid: true,
+      dataForSeoCredential: 'user:pass',
+      getProject: async () => ({ id: 'proj_1', domain: 'example.com' }),
+      getResearchLog: async () => [],
+      appendResearchLog: async () => {},
+      onMeasured: async (event) => {
+        seen.push(event);
+      },
+      dfsPost: async () => ({
+        ok: true,
+        status: 200,
+        body: {
+          tasks: [{ result: [{ keyword_data: { keyword: 'shoes', keyword_info: { search_volume: 1200 } } }] }],
+        },
+      }),
+    };
+    await researchKeywords({ projectId: 'proj_1', seeds: ['shoes'] }, rt);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.signals.score).toBeNull();
+    expect(seen[0]?.signals.notes.join(' ')).toContain('shoes vol 1200');
+  });
+});
+
+describe('domain overview history', () => {
+  function overviewRuntime(domain: string, onMeasured?: PaidToolRuntime['onMeasured']): PaidToolRuntime {
+    return {
+      accountId: 'acc',
+      canUsePaid: true,
+      dataForSeoCredential: 'user:pass',
+      getProject: async () => ({ id: 'proj_1', domain }),
+      getResearchLog: async () => [],
+      appendResearchLog: async () => {},
+      onMeasured,
+      dfsPost: async () => ({
+        ok: true,
+        status: 200,
+        body: { tasks: [{ result: { metrics: { organic: { count: 42, etv: 10 } } } }] },
+      }),
+    };
+  }
+
+  it('does not store a competitor domain as the project organic count', async () => {
+    const seen: MeasuredSnapshot[] = [];
+    await getDomainOverview(
+      { projectId: 'proj_1', domain: 'rival.com' },
+      overviewRuntime('example.com', async (event) => {
+        seen.push(event);
+      }),
+    );
+    expect(seen).toEqual([]);
+  });
+
+  it('stores the project domain organic count', async () => {
+    const seen: MeasuredSnapshot[] = [];
+    await getDomainOverview(
+      { projectId: 'proj_1', domain: 'www.example.com' },
+      overviewRuntime('example.com', async (event) => {
+        seen.push(event);
+      }),
+    );
+    expect(seen[0]?.signals).toMatchObject({ metric: 'organic_count', score: 42, measurementStatus: 'measured' });
   });
 });
