@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { apiBase, workerFetchWithAuthRetry } from '../../services/apiClient';
+import { mcpApprovalId } from '../../services/auth/mcpApproval';
 import { Button } from '../ui/Button';
 
 interface ActionRequest {
@@ -7,6 +8,8 @@ interface ActionRequest {
   toolName: string;
   domain: string | null;
   args: string;
+  /** The details were too long to show in full, so the request can only be denied. */
+  argsTruncated: boolean;
   consequence: string;
   status: 'pending' | 'approved' | 'denied' | 'consumed';
   expiresAt: number;
@@ -61,6 +64,10 @@ export const McpApprovalDialog: React.FC<{ requestId: string; onClose: () => voi
   const [deciding, setDeciding] = useState(false);
   const [outcome, setOutcome] = useState<Outcome>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
+  // Refs, so a re-render of the parent neither re-runs the focus effect nor lets a second click slip through.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  const inFlight = useRef(false);
   const titleId = useId();
   const path = `/mcp-action-requests/${encodeURIComponent(requestId)}`;
 
@@ -80,19 +87,21 @@ export const McpApprovalDialog: React.FC<{ requestId: string; onClose: () => voi
     void fetchRequest();
   }, [fetchRequest]);
 
-  const decide = async (decision: 'approve' | 'deny', domain: string | null) => {
-    if (deciding) return;
+  const decide = async (decision: 'approve' | 'deny') => {
+    if (inFlight.current) return;
+    inFlight.current = true;
     setDeciding(true);
     try {
       const res = await call(`${path}/${decision}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(decision === 'deny' ? { reason: '', domain } : {}),
+        body: '{}',
       });
       setOutcome(res.ok ? (decision === 'approve' ? 'approved' : 'denied') : res.status === 409 ? 'conflict' : 'error');
     } catch {
       setOutcome('error');
     } finally {
+      inFlight.current = false;
       setDeciding(false);
     }
   };
@@ -105,7 +114,7 @@ export const McpApprovalDialog: React.FC<{ requestId: string; onClose: () => voi
       if (e.key === 'Escape') {
         e.stopImmediatePropagation();
         e.preventDefault();
-        onClose();
+        onCloseRef.current();
       } else if (e.key === 'Tab' && dialogRef.current) {
         const nodes = Array.from(dialogRef.current.querySelectorAll<HTMLElement>(FOCUSABLE));
         const first = nodes[0];
@@ -126,7 +135,7 @@ export const McpApprovalDialog: React.FC<{ requestId: string; onClose: () => voi
       window.removeEventListener('keydown', onKey, true);
       previous?.focus?.();
     };
-  }, [onClose]);
+  }, []);
 
   const message = statusMessage(load, outcome);
   const request = load.kind === 'ready' && !message ? load.request : null;
@@ -162,7 +171,11 @@ export const McpApprovalDialog: React.FC<{ requestId: string; onClose: () => voi
               </dl>
               <span className="block mb-1 text-gray-400">Details the agent sent</span>
               <pre className="mb-3 max-h-48 overflow-auto rounded-lg border border-white/10 bg-black/60 p-2 font-mono text-[11px] whitespace-pre-wrap break-all">{prettyArgs(request.args)}</pre>
-              <p>Approve only if you asked an agent to do this. This allows it once.</p>
+              <p>
+                {request.argsTruncated
+                  ? 'These details are too long to show in full, so this request can only be denied. Ask the agent to send a shorter request.'
+                  : 'Approve only if you asked an agent to do this. This allows it once.'}
+              </p>
             </>
           ) : (
             <p>{message}</p>
@@ -172,8 +185,10 @@ export const McpApprovalDialog: React.FC<{ requestId: string; onClose: () => voi
           {request ? (
             <>
               <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={deciding}>Close</Button>
-              <Button type="button" variant="secondary" size="sm" onClick={() => void decide('deny', request.domain)} disabled={deciding}>Deny</Button>
-              <Button type="button" variant="primary" size="sm" onClick={() => void decide('approve', request.domain)} disabled={deciding}>Approve once</Button>
+              <Button type="button" variant="secondary" size="sm" onClick={() => void decide('deny')} disabled={deciding}>Deny</Button>
+              {!request.argsTruncated && (
+                <Button type="button" variant="primary" size="sm" onClick={() => void decide('approve')} disabled={deciding}>Approve once</Button>
+              )}
             </>
           ) : (
             <>
@@ -186,3 +201,32 @@ export const McpApprovalDialog: React.FC<{ requestId: string; onClose: () => voi
     </div>
   );
 };
+
+/**
+ * An agent sent the owner a link to approve one action (?mcp_approval=<id>). The id is read once and dropped
+ * from the address bar. Sign-in is a popup, not a redirect, so the id survives it in state. Called from App,
+ * which outlives the switch from the marketing shell to the app shell.
+ */
+export function useMcpApproval(
+  auth: { loading: boolean; authenticated: boolean },
+  askToSignIn: () => void,
+): React.ReactNode {
+  const [requestId, setRequestId] = useState<string | null>(() => mcpApprovalId(window.location.search));
+  const close = useCallback(() => setRequestId(null), []);
+  const signedOut = !auth.loading && !auth.authenticated;
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has('mcp_approval')) return;
+    url.searchParams.delete('mcp_approval');
+    window.history.replaceState(null, '', url.pathname + url.search + url.hash);
+  }, []);
+
+  useEffect(() => {
+    if (requestId && signedOut) askToSignIn();
+    // askToSignIn is a fresh function each render; only the sign-in state should re-trigger it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestId, signedOut]);
+
+  return requestId && auth.authenticated && !auth.loading ? <McpApprovalDialog requestId={requestId} onClose={close} /> : null;
+}

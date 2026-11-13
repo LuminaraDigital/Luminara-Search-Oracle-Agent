@@ -14,7 +14,7 @@ import {
   approveActionRequest,
   denyActionRequest,
   consumeApprovedRequest,
-  getActionRequestById,
+  getOwnedToolRequest,
 } from '../worker/mcpGovernance';
 import { redactSensitive } from '../worker/logRedaction';
 import { handleMcpRequest } from '../worker/mcpServer';
@@ -307,7 +307,7 @@ describe('mcp integration', () => {
     const body = (await res.json()) as { result?: { isError?: boolean; structuredContent?: { code?: string } } };
     expect(body.result?.isError).toBe(true);
     expect(body.result?.structuredContent?.code).toBe('PAID_TOOL_FORBIDDEN');
-    expect((await getActionRequestById(env, id))?.status).toBe('approved');
+    expect((await getOwnedToolRequest(env, id, 'acct_gov'))?.status).toBe('approved');
   });
 
   it('free-credit write tool without subscription passes governance', async () => {

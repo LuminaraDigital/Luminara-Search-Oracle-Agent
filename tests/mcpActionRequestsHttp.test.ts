@@ -322,7 +322,25 @@ describe('mcp-action-requests HTTP', () => {
     expect(String(body.request.consequence)).toContain('hosted browser');
     expect(String(body.request.args)).toContain('Open pricing');
     expect(String(body.request.args)).not.toContain('secretsecret');
+    expect(body.request.argsTruncated).toBe(false);
     expect(body.request).not.toHaveProperty('user_id');
+  });
+
+  it('flags a request whose details are too long to show in full', async () => {
+    const env = makeEnv();
+    const created = await createActionRequest(env, {
+      userId: '88001',
+      toolName: 'browse_goal',
+      args: { goal: `${'x'.repeat(5000)} then delete everything` },
+    });
+    const res = await worker.fetch(
+      req(`/api/mcp-action-requests/${created.id}`, { headers: { 'x-telegram-init-data': signInitData(88001, 'Owner') } }),
+      env,
+      ctx,
+    );
+    const body = (await res.json()) as { request: { args: string; argsTruncated: boolean } };
+    expect(body.request.argsTruncated).toBe(true);
+    expect(body.request.args).toHaveLength(4000);
   });
 
   it("answers a missing request and another account's request identically", async () => {

@@ -30,7 +30,9 @@ Nothing here runs a model, crawls a site or writes a row. Each tool reads rows L
 
 Every answer has the same shape: agent name and domain, verdict, one next action, and a luminarasuite.com link. The structured content carries the same facts as fields. Text comes from stored rows and fixed sentences only; the only numbers are counts of stored rows and values a row holds.
 
-**The Auditor never reads as a fresh check.** Every Auditor answer carries the date of the stored data and the sentence "Luminara has not re-checked the site since."
+**The Auditor never reads as a fresh check.** Every Auditor answer carries the date of the stored data and the sentence "Luminara has not re-checked the site since." A site whose findings are all resolved still gets the date of its last saved audit, not a claim that it was never audited.
+
+**A count that hit a row cap says so.** Lists are capped (200 findings, 100 drafts). At the cap the answer says "at least 200", never a bare total.
 
 **With nothing stored, all three give the same single action.** No free MCP tool writes findings; only the web app's Instant Audit does. So an empty answer links to `luminarasuite.com/?startapp=audit_<domain>`, which opens the Instant Audit with the domain filled in, and says to ask again afterwards.
 
@@ -61,6 +63,8 @@ When a destructive tool needs approval, the answer becomes a card:
 The structured content adds `approvalUrl` and `expiresAt`.
 
 The web app reads `mcp_approval` on load. Signed out, it asks for sign-in first (the same pattern as `agent_connect`). Signed in, it shows one dialog: tool, project, the stored (already redacted) arguments, time left, and **Approve once** and **Deny**. It also shows a fixed sentence per tool saying what approving does; that sentence never comes from the agent's arguments. It uses the existing approve and deny routes, plus one new read route, `GET /api/mcp-action-requests/:id`. The dialog handles four other states: not found, another account's request, already decided, and expired.
+
+The owner must see everything they approve. If the stored arguments are too long to show in full, the page says so and offers Deny only.
 
 Another account's request and a missing request get the same 404, on the new read route and on approve and deny (which used to answer 403 and so confirmed the id existed). Only a signed-in Luminara session can approve: connector tokens and API keys are not accepted on these routes, so an agent cannot approve its own request. The link id is removed from the address bar as soon as the page reads it.
 

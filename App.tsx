@@ -37,8 +37,7 @@ import { productTelemetry } from './services/analytics/productTelemetry';
 import { draftPersistenceService, DRAFT_KEYS } from './services/state/draftPersistenceService';
 import { apiBase, getCurrentQuotaSync, setAccountSignedIn, streamOracleChat } from './services/apiClient';
 import { agentConnectTarget, resumeAgentConnect } from './services/auth/agentConnect';
-import { mcpApprovalId } from './services/auth/mcpApproval';
-import { McpApprovalDialog } from './components/settings/McpApprovalDialog';
+import { useMcpApproval } from './components/settings/McpApprovalDialog';
 import { entitlementsFor } from './services/plans/planEntitlements';
 import { hasPersistedAuthSession } from './services/auth/firebaseIdToken';
 import type { AuditHandoff } from './services/activation/auditHandoff';
@@ -439,22 +438,7 @@ const App: React.FC = () => {
     else setLoginWallMode('signin');
   }, [appAuth.loading, appAuth.authenticated]);
 
-  // An agent sent the owner a link to approve one action. Read once, drop it from the address bar, show it after sign-in.
-  // Sign-in is a popup, not a redirect, so the id survives in state.
-  const [mcpApproval, setMcpApproval] = useState<string | null>(() => mcpApprovalId(window.location.search));
-  useEffect(() => {
-    const url = new URL(window.location.href);
-    if (!url.searchParams.has('mcp_approval')) return;
-    url.searchParams.delete('mcp_approval');
-    window.history.replaceState(null, '', url.pathname + url.search + url.hash);
-  }, []);
-  useEffect(() => {
-    if (mcpApproval && !appAuth.loading && !appAuth.authenticated) setLoginWallMode('signin');
-  }, [mcpApproval, appAuth.loading, appAuth.authenticated]);
-  const mcpApprovalDialog =
-    mcpApproval && !appAuth.loading && appAuth.authenticated ? (
-      <McpApprovalDialog requestId={mcpApproval} onClose={() => setMcpApproval(null)} />
-    ) : null;
+  const mcpApprovalDialog = useMcpApproval(appAuth, () => setLoginWallMode('signin'));
 
   // Before child effects, so a signed-out Instant Audit does not call /api/auth/quota.
   setAccountSignedIn(appAuth.loading ? null : appAuth.authenticated);

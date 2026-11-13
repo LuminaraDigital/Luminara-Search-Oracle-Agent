@@ -1929,6 +1929,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     }
 
     // The page behind an agent's approval link (spec 0031) reads one request, for its owner only.
+    const APPROVAL_ARGS_SHOWN = 4000;
     const oneMatch = path.match(/^\/mcp-action-requests\/([^/]+)$/);
     if (oneMatch && request.method === 'GET') {
       const row = await getOwnedToolRequest(env, oneMatch[1], accountId);
@@ -1943,8 +1944,10 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
             id: row.id,
             toolName: row.tool_name,
             domain: project?.domain ?? null,
-            // Stored already redacted; capped so a huge argument cannot fill the dialog.
-            args: row.args_json.length > 4000 ? `${row.args_json.slice(0, 4000)} [truncated]` : row.args_json,
+            // Stored already redacted. The owner must see everything they approve, so a request
+            // too long to show in full says so and the page offers Deny only.
+            args: row.args_json.slice(0, APPROVAL_ARGS_SHOWN),
+            argsTruncated: row.args_json.length > APPROVAL_ARGS_SHOWN,
             consequence: approvalConsequence(row.tool_name),
             status: row.status,
             expiresAt: row.expires_at,
