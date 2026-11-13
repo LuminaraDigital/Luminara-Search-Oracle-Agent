@@ -441,6 +441,8 @@ async function softDeleteAccount(env: Env, accountId: string, deps?: DataPlaneDe
   await drop('project_competitors', `DELETE FROM project_competitors WHERE project_id IN (SELECT id FROM projects WHERE account_id = ?)`);
   await drop('project_key_pages', `DELETE FROM project_key_pages WHERE project_id IN (SELECT id FROM projects WHERE account_id = ?)`);
   await drop('project_research_log', `DELETE FROM project_research_log WHERE project_id IN (SELECT id FROM projects WHERE account_id = ?)`);
+  await drop('project_measurement_snapshots', `DELETE FROM project_measurement_snapshots WHERE account_id = ?`);
+  await drop('project_action_outcomes', `DELETE FROM project_action_outcomes WHERE account_id = ?`);
   await drop('agent_reports', `DELETE FROM agent_reports WHERE account_id = ?`);
   await drop('projects', `DELETE FROM projects WHERE account_id = ?`);
   await drop('win_shares', `DELETE FROM win_shares WHERE owner_id = ?`);

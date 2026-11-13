@@ -49,6 +49,7 @@ import {
 import { getPendingDreamEvents } from './dreamingQueue';
 import { evaluateWakeGate } from './dreamingWakeGate';
 import { CONVERSION_SPINE_MCP_TOOLS } from './mcpConversionTools';
+import { PROJECT_HISTORY_MCP_TOOLS } from './mcpProjectHistoryTools';
 import { FIX_DRAFT_MCP_TOOLS } from './fixDraftRoute';
 import { enforceHabitatScope, SELF_DRIVING_MCP_TOOLS } from './selfDrivingHabitat';
 
@@ -550,6 +551,7 @@ const TOOLS: McpToolDef[] = [
   },
   ...FIX_DRAFT_MCP_TOOLS,
   ...CONVERSION_SPINE_MCP_TOOLS,
+  ...PROJECT_HISTORY_MCP_TOOLS,
   ...SELF_DRIVING_MCP_TOOLS,
   ...PAID_TOOL_CATALOGUE.map((meta) => ({
     name: meta.name,
@@ -585,6 +587,7 @@ function toolsListPayload() {
           t.name.startsWith('get_') ||
           t.name.startsWith('list_') ||
           t.name === 'whoami' ||
+          t.name === 'compare_snapshots' ||
           t.name === 'dream_status' ||
           t.name === 'classify_cms_remediation',
       },

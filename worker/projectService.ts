@@ -42,6 +42,23 @@ export async function listProjects(env: Env, accountId: string): Promise<SeoProj
   return (res.results || []).map(rowToProject);
 }
 
+export async function findProjectByDomain(
+  env: Env,
+  accountId: string,
+  domain: string,
+): Promise<SeoProject | null> {
+  if (!env.DB) return null;
+  const host = normalizeProjectDomain(domain);
+  if (!host) return null;
+  const row = await env.DB.prepare(
+    `SELECT id, account_id, client_id, domain, name, default_location_code, default_language_code, created_at, updated_at
+     FROM projects WHERE account_id = ? AND domain = ? ORDER BY updated_at DESC LIMIT 1`,
+  )
+    .bind(accountId, host)
+    .first<ProjectRow>();
+  return row ? rowToProject(row) : null;
+}
+
 export async function getProject(
   env: Env,
   accountId: string,

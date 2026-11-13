@@ -21,6 +21,8 @@ import { sha256HexOf, canonicalJson } from '../services/trust/receiptCrypto';
 import { entitlementsFor } from '../services/plans/planEntitlements';
 import { getActiveSubscription } from './quotaMiddleware';
 import { billingId, json } from './workerUtils';
+import { mirrorSnapshotForDomain } from './projectHistoryService';
+import { citationWatchSnapshot } from '../services/history/snapshotCapture';
 import { MAX_SMALL_BODY_BYTES, readBody, safePublicHostname } from './security';
 import { envHasDataForSeo } from '../services/config/runtimeKeys';
 import { dataForSeoPost, dfsFirstResult } from './dataForSeoClient';
@@ -226,6 +228,17 @@ async function recordRun(env: Env, row: WatchRow, prompts: string[], deps: Citat
   });
   const ranAt = nowMs(deps);
   const id = await insertRun(env, row.id, row.account_id, row.engine, ranAt, measurement, classified);
+  await mirrorSnapshotForDomain(env, row.account_id, row.domain, (projectId) =>
+    citationWatchSnapshot({
+      projectId,
+      runId: id,
+      measuredAt: ranAt,
+      engine: row.engine,
+      measured: measurement.status === 'measured',
+      citedCount: classified.citedCount,
+      share: classified.share,
+    }),
+  );
   return {
     id,
     verdict: classified.verdict,
