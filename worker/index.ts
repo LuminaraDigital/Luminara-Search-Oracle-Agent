@@ -146,6 +146,7 @@ import {
 import { handleAuditScoutRun } from './auditScoutRun';
 import { dispatchQueueBatch } from './queueDispatch';
 import { MCP_OAUTH_PUBLIC_CORS, handleMcpOAuthRoute, handleMcpRegistryAuth, handleOAuthDiscovery, listAgentConnections, revokeAgentConnection } from './mcpOAuth';
+import { pruneMcpOAuthRefreshRows } from './mcpOAuthRefresh';
 import { enforceMcpOauthIpLimit, MCP_OAUTH_REGISTER_PER_MIN, MCP_OAUTH_TOKEN_PER_MIN } from './mcpLimits';
 import { executeOracleGatewayTask, type OracleGatewayRequest } from './oracleGateway';
 import { createMemoryFact, listMemoryFacts } from './memoryService';
@@ -2701,6 +2702,13 @@ const handler = {
         runProjectMonitorTick(env, { scheduledAt })
           .then(() => undefined)
           .catch((err) => console.error('[Monitor] sweep failed', err)),
+      );
+    }
+    if (jobs.includes('mcp_oauth_refresh_prune')) {
+      ctx.waitUntil(
+        pruneMcpOAuthRefreshRows(env)
+          .then(() => undefined)
+          .catch((err) => console.error('[mcp-oauth] refresh prune failed', err)),
       );
     }
   },

@@ -645,6 +645,10 @@ function refreshAccessStore(env: Env): RefreshAccessStore {
       await env.LUMINARA_KV.delete(`${TOKENS_KV_PREFIX}${accessHash}`);
       await env.LUMINARA_KV.delete(await connectionKvKey(accountId, accessHash));
     },
+    deleteFamilyConnection: async (accountId, familyId) => {
+      if (!env.LUMINARA_KV) return;
+      await env.LUMINARA_KV.delete(await connectionKvKey(accountId, familyId));
+    },
   };
 }
 
@@ -680,12 +684,13 @@ async function writeAccessToken(
   await env.LUMINARA_KV.put(await tokenKvKey(input.accessToken), JSON.stringify(tokenRecord), {
     expirationTtl: tokenTtl,
   });
-  const id = await sha256Hex(input.accessToken);
+  const id = input.familyId ?? (await sha256Hex(input.accessToken));
   const connection: AgentConnection = {
     id,
     name: input.clientName || 'MCP client',
     scope: input.scope,
     createdAt: input.createdAt,
+    ...(input.familyId ? { familyId: input.familyId } : {}),
   };
   await env.LUMINARA_KV.put(await connectionKvKey(input.accountId, id), '1', {
     expirationTtl: input.connectionTtl ?? tokenTtl,
@@ -703,13 +708,7 @@ async function token(request: Request, env: Env): Promise<Response> {
 
 async function tokenGrant(request: Request, env: Env): Promise<Response> {
   if (!oauthSecretOrNull(env)) {
-    return json(
-      {
-        error: 'server_error',
-        error_description: 'MCP OAuth is not configured. Set MCP_OAUTH_SECRET.',
-      },
-      503,
-    );
+    return json({ error: 'server_error', error_description: 'MCP OAuth is not configured. Set MCP_OAUTH_SECRET.' }, 503);
   }
 
   const body = await readOAuthFields(request);
@@ -748,7 +747,11 @@ async function exchangeRefreshToken(env: Env, body: Record<string, string>): Pro
     { refreshToken, clientId, requestedScope: body.scope ?? null },
     refreshAccessStore(env),
   );
-  if (result.kind === 'issued') await touchRegisteredClient(env, client);
+  if (result.kind === 'issued') {
+    await env.LUMINARA_KV.put(`${CLIENTS_KV_PREFIX}${client.clientId}`, JSON.stringify(client), {
+      expirationTtl: CLIENT_TTL_SECONDS,
+    });
+  }
   const http = refreshGrantResponse(result);
   return json(http.body, http.status);
 }
@@ -830,17 +833,6 @@ async function issueRefreshToken(
   return created ?? undefined;
 }
 
-async function touchRegisteredClient(env: Env, client: RegisteredClient): Promise<void> {
-  await env.LUMINARA_KV?.put(`${CLIENTS_KV_PREFIX}${client.clientId}`, JSON.stringify(client), {
-    expirationTtl: CLIENT_TTL_SECONDS,
-  });
-}
-
-/**
- * RFC 7009. Public clients send the token they hold. client_id and token_type_hint
- * are optional. A refresh token revokes its family, including the access tokens
- * from that consent. Unknown tokens still return 200.
- */
 async function revokeToken(request: Request, env: Env): Promise<Response> {
   if (!env.LUMINARA_KV) return json({ error: 'server_error', error_description: 'KV unavailable' }, 503);
 
@@ -883,8 +875,7 @@ async function revokePresentedToken(env: Env, token: string): Promise<void> {
   }
 }
 
-/** A live OAuth token as its owner sees it. `id` is the token's hash, so it cannot be used as one. */
-export type AgentConnection = { id: string; name: string; scope: string; createdAt: number };
+export type AgentConnection = { id: string; name: string; scope: string; createdAt: number; familyId?: string };
 
 /** The account id is hashed so one account's prefix can never match another's keys. */
 async function connectionKvKey(accountId: string, tokenHash = ''): Promise<string> {
@@ -893,19 +884,41 @@ async function connectionKvKey(accountId: string, tokenHash = ''): Promise<strin
 
 export async function listAgentConnections(env: Env, accountId: string): Promise<AgentConnection[]> {
   if (!env.LUMINARA_KV) return [];
-  const listed = await env.LUMINARA_KV.list<AgentConnection>({ prefix: await connectionKvKey(accountId) });
-  return listed.keys.flatMap((key) => (key.metadata ? [key.metadata] : [])).sort((a, b) => b.createdAt - a.createdAt);
+  const prefix = await connectionKvKey(accountId);
+  const found: AgentConnection[] = [];
+  let cursor: string | undefined;
+  for (let page = 0; page < 20; page += 1) {
+    const listed = await env.LUMINARA_KV.list<AgentConnection>({ prefix, cursor });
+    for (const key of listed.keys) {
+      if (key.metadata) found.push(key.metadata);
+    }
+    if (listed.list_complete || !listed.cursor || listed.cursor === cursor) break;
+    cursor = listed.cursor;
+  }
+  return found.sort((a, b) => b.createdAt - a.createdAt);
 }
 
+const FAMILY_CONNECTION_ID = /^fam_[a-f0-9]+$/;
+
 /** False when the account has no such connection, so one account cannot revoke another's token. */
-export async function revokeAgentConnection(env: Env, accountId: string, tokenHash: string): Promise<boolean> {
-  if (!env.LUMINARA_KV || !/^[a-f0-9]{64}$/.test(tokenHash)) return false;
-  const key = await connectionKvKey(accountId, tokenHash);
+export async function revokeAgentConnection(env: Env, accountId: string, connectionId: string): Promise<boolean> {
+  if (!env.LUMINARA_KV) return false;
+  const legacyHash = /^[a-f0-9]{64}$/.test(connectionId);
+  if (!legacyHash && !FAMILY_CONNECTION_ID.test(connectionId)) return false;
+  const key = await connectionKvKey(accountId, connectionId);
   if (!(await env.LUMINARA_KV.get(key))) return false;
-  const raw = await env.LUMINARA_KV.get(`${TOKENS_KV_PREFIX}${tokenHash}`);
+  if (FAMILY_CONNECTION_ID.test(connectionId)) {
+    const revoked = await revokeRefreshFamily(env, connectionId, refreshAccessStore(env), accountId);
+    await env.LUMINARA_KV.delete(key);
+    return revoked;
+  }
+  const raw = await env.LUMINARA_KV.get(`${TOKENS_KV_PREFIX}${connectionId}`);
   const familyId = familyIdFromAccessRecord(raw);
-  if (familyId && (await revokeRefreshFamily(env, familyId, refreshAccessStore(env), accountId))) return true;
-  await env.LUMINARA_KV.delete(`${TOKENS_KV_PREFIX}${tokenHash}`);
+  if (familyId && (await revokeRefreshFamily(env, familyId, refreshAccessStore(env), accountId))) {
+    await env.LUMINARA_KV.delete(key);
+    return true;
+  }
+  await env.LUMINARA_KV.delete(`${TOKENS_KV_PREFIX}${connectionId}`);
   await env.LUMINARA_KV.delete(key);
   return true;
 }
@@ -939,29 +952,21 @@ export async function identifyMcpOAuthToken(
 ): Promise<McpOAuthIdentity | null> {
   if (!token.startsWith('mcp_') || !env.LUMINARA_KV) return null;
 
-  // Primary path: hashed record.
   const raw = await env.LUMINARA_KV.get(await tokenKvKey(token));
   if (raw) return acceptAccessToken(env, token, raw);
 
-  // Legacy migration: records written before hashing keyed KV by the raw token.
-  // On a valid hit, copy to the hashed key (same metadata + a fresh 30-day TTL)
-  // and delete the plaintext original so existing live sessions survive the cutover.
   const legacyKey = `${TOKENS_KV_PREFIX}${token}`;
   const legacyRaw = await env.LUMINARA_KV.get(legacyKey);
-  if (!legacyRaw) return null;
-  const parsed = parseTokenRecord(legacyRaw);
-  if (!parsed) return null;
+  if (!legacyRaw || !parseTokenRecord(legacyRaw)) return null;
   try {
     await env.LUMINARA_KV.put(await tokenKvKey(token), legacyRaw, { expirationTtl: TOKEN_TTL_SECONDS });
     await env.LUMINARA_KV.delete(legacyKey);
   } catch (err) {
-    // Migration is best-effort; the plaintext record keeps working until KV recovers.
     console.error('[mcp-oauth] legacy token migration failed (read path still served):', err instanceof Error ? err.message : err);
   }
   return acceptAccessToken(env, token, legacyRaw);
 }
 
-/** A token that names a family is usable only while that family lists its hash and is not revoked. */
 async function acceptAccessToken(env: Env, token: string, raw: string): Promise<McpOAuthIdentity | null> {
   const parsed = parseTokenRecord(raw);
   if (!parsed) return null;

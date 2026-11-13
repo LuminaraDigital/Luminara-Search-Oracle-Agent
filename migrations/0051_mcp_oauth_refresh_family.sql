@@ -1,7 +1,9 @@
 -- MCP OAuth refresh families. One conditional update moves current_refresh_hash,
 -- so two refreshes of the same token cannot both leave a live access token behind.
--- successor_enc is AES-GCM ciphertext of the new pair, kept only for the reuse grace window.
+-- successor_enc is AES-GCM ciphertext of the new pair for the RFC 9700 retry window.
+-- The next family read, access check, or daily prune clears it once grace_until has passed.
 -- Access and retired refresh hashes are stored, never the raw tokens.
+-- issued_at and retired_at let the daily prune drop rows the live tokens no longer need.
 
 CREATE TABLE mcp_oauth_refresh_family (
   family_id TEXT PRIMARY KEY,
@@ -20,12 +22,14 @@ CREATE TABLE mcp_oauth_refresh_family (
 
 CREATE TABLE mcp_oauth_refresh_access (
   access_hash TEXT PRIMARY KEY,
-  family_id TEXT NOT NULL
+  family_id TEXT NOT NULL,
+  issued_at INTEGER NOT NULL
 );
 
 CREATE INDEX idx_mcp_oauth_refresh_access_family ON mcp_oauth_refresh_access (family_id);
 
 CREATE TABLE mcp_oauth_refresh_retired (
   refresh_hash TEXT PRIMARY KEY,
-  family_id TEXT NOT NULL
+  family_id TEXT NOT NULL,
+  retired_at INTEGER NOT NULL
 );

@@ -2,7 +2,8 @@ import { createHmac } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import worker from '../worker/index';
 import type { Env } from '../worker/index';
-import { identifyMcpOAuthToken } from '../worker/mcpOAuth';
+import { identifyMcpOAuthToken, listAgentConnections } from '../worker/mcpOAuth';
+import { pruneMcpOAuthRefreshRows } from '../worker/mcpOAuthRefresh';
 import { sha256Hex } from '../worker/workerUtils';
 import { createSqliteD1 } from './helpers/sqliteD1';
 
@@ -427,6 +428,101 @@ describe('refresh family atomicity', () => {
     expect(recovered.status).toBe(200);
     expect(((await recovered.json()) as TokenBody).scope).toBe('mcp:free mcp:research');
     expect(putTtls.get(`mcp_oauth_client:${clientId}`)).toBe(60 * 60 * 24 * 90);
+  });
+});
+
+describe('one connection per family', () => {
+  it('keeps one row across refreshes and revokes the family after the access token is gone', async () => {
+    const { env, store } = makeEnv();
+    const issued = await connect(env);
+    const rotated = (await (await refresh(env, issued.token.refresh_token ?? '', issued.clientId)).json()) as TokenBody;
+    const listed = (await (await call(env, '/api/agent-connections', {}, 77001)).json()) as {
+      connections: Array<{ id: string; familyId?: string; name: string }>;
+    };
+    expect(listed.connections).toHaveLength(1);
+    expect(listed.connections[0]?.id.startsWith('fam_')).toBe(true);
+    expect(listed.connections[0]?.familyId).toBe(listed.connections[0]?.id);
+    for (const key of [...store.keys()]) {
+      if (key.startsWith('mcp_oauth_token:')) store.delete(key);
+    }
+    const revoked = await call(env, `/api/agent-connections/${listed.connections[0]?.id}`, { method: 'DELETE' }, 77001);
+    expect(revoked.status).toBe(200);
+    const again = await refresh(env, rotated.refresh_token ?? '', issued.clientId);
+    expect(again.status).toBe(400);
+    expect(((await again.json()) as TokenBody).error).toBe('invalid_grant');
+    const family = await env.DB!.prepare(`SELECT revoked FROM mcp_oauth_refresh_family`).first<{ revoked: number }>();
+    expect(family?.revoked).toBe(1);
+  });
+
+  it('reads every KV list page', async () => {
+    const pages = [
+      {
+        keys: [{ name: 'a', metadata: { id: 'fam_aa', name: 'A', scope: 'mcp:free', createdAt: 2, familyId: 'fam_aa' } }],
+        list_complete: false,
+        cursor: 'next',
+      },
+      {
+        keys: [{ name: 'b', metadata: { id: 'fam_bb', name: 'B', scope: 'mcp:free', createdAt: 1, familyId: 'fam_bb' } }],
+        list_complete: true,
+        cursor: '',
+      },
+    ];
+    let calls = 0;
+    const env = {
+      LUMINARA_KV: {
+        list: async () => pages[calls++] ?? pages[1],
+      },
+    } as unknown as Env;
+    const listed = await listAgentConnections(env, '77001');
+    expect(calls).toBe(2);
+    expect(listed.map((row) => row.name)).toEqual(['A', 'B']);
+  });
+});
+
+describe('refresh table prune', () => {
+  it('drops access rows older than an hour, retired rows older than 90 days, and expired grace ciphertext', async () => {
+    const { env } = makeEnv();
+    await connect(env);
+    const now = Date.now();
+    await env.DB!.prepare(`UPDATE mcp_oauth_refresh_access SET issued_at = ?`).bind(now - 2 * 60 * 60 * 1000).run();
+    await env.DB!.prepare(
+      `INSERT INTO mcp_oauth_refresh_access (access_hash, family_id, issued_at)
+       SELECT 'recenthash', family_id, ? FROM mcp_oauth_refresh_family`,
+    )
+      .bind(now)
+      .run();
+    await env.DB!.prepare(
+      `INSERT INTO mcp_oauth_refresh_retired (refresh_hash, family_id, retired_at)
+       SELECT 'oldretired', family_id, ? FROM mcp_oauth_refresh_family`,
+    )
+      .bind(now - 100 * 24 * 60 * 60 * 1000)
+      .run();
+    await env.DB!.prepare(
+      `INSERT INTO mcp_oauth_refresh_retired (refresh_hash, family_id, retired_at)
+       SELECT 'newretired', family_id, ? FROM mcp_oauth_refresh_family`,
+    )
+      .bind(now)
+      .run();
+    await env.DB!.prepare(`UPDATE mcp_oauth_refresh_family SET successor_enc = 'cipher', grace_until = ?`)
+      .bind(now - 1000)
+      .run();
+    const pruned = await pruneMcpOAuthRefreshRows(env, now);
+    expect(pruned).toEqual({ access: 1, retired: 1, successors: 1 });
+    const access = await env.DB!.prepare(`SELECT access_hash FROM mcp_oauth_refresh_access`).all<{ access_hash: string }>();
+    expect(access.results?.map((row) => row.access_hash)).toEqual(['recenthash']);
+    const retired = await env.DB!.prepare(`SELECT refresh_hash FROM mcp_oauth_refresh_retired`).all<{ refresh_hash: string }>();
+    expect(retired.results?.map((row) => row.refresh_hash)).toEqual(['newretired']);
+    const family = await env.DB!.prepare(`SELECT successor_enc FROM mcp_oauth_refresh_family`).first<{ successor_enc: string | null }>();
+    expect(family?.successor_enc).toBeNull();
+  });
+
+  it('refuses to seal a successor with the bot token when MCP_OAUTH_SECRET is empty', async () => {
+    const { env } = makeEnv();
+    const issued = await connect(env);
+    (env as { MCP_OAUTH_SECRET?: string }).MCP_OAUTH_SECRET = '';
+    const refused = await refresh(env, issued.token.refresh_token ?? '', issued.clientId);
+    expect(refused.status).toBe(503);
+    expect(((await refused.json()) as TokenBody).error).toBe('temporarily_unavailable');
   });
 });
 

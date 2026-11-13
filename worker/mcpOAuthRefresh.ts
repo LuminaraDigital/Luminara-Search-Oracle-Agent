@@ -3,7 +3,8 @@
  * The family row moves with one conditional D1 update:
  * UPDATE ... WHERE family_id=? AND current_refresh_hash=? AND revoked=0.
  * A second writer sees zero rows changed and, inside the grace window, receives
- * the winner's tokens. Raw tokens are not stored. The grace copy is AES-GCM.
+ * the winner's tokens. Raw tokens are not stored. The grace copy is AES-GCM
+ * under a key derived from MCP_OAUTH_SECRET only.
  */
 import type { Env } from './env';
 import { sha256Hex } from './workerUtils';
@@ -11,8 +12,6 @@ import { randomId } from '../services/projects/projectUtils';
 import { planCapsFor } from './telegramBot';
 import { isErasedSubject } from './accountMirror';
 import { isSessionRevokedUser } from './opaqueSession';
-import { decryptGscToken, encryptGscToken } from './gscOAuth';
-import { resolveOAuthSigningSecret } from './securityHardening';
 
 export const SUPPORTED_GRANT_TYPES = ['authorization_code', 'refresh_token'] as const;
 export type OAuthGrantType = (typeof SUPPORTED_GRANT_TYPES)[number];
@@ -23,7 +22,11 @@ export const REFRESH_TTL_SECONDS = 60 * 60 * 24 * 90;
 /** Access token lifetime once a refresh token exists. Clients without refresh stay on 30 days. */
 export const REFRESH_ACCESS_TTL_SECONDS = 60 * 60;
 
-/** A retry of the refresh token just rotated returns the same successor instead of revoking the family. */
+/**
+ * RFC 9700 rotates refresh tokens and treats reuse as theft. This 30 second grace
+ * returns the same successor so a client that lost the response can retry once
+ * without the server revoking the family.
+ */
 const REUSE_GRACE_MS = 30_000;
 
 const REFRESH_PREFIX = 'mcr_';
@@ -43,6 +46,7 @@ export type RefreshAccessStore = {
     expiresIn: number;
   }): Promise<void>;
   deleteHash(accountId: string, accessHash: string): Promise<void>;
+  deleteFamilyConnection(accountId: string, familyId: string): Promise<void>;
 };
 
 type FamilyRow = {
@@ -211,11 +215,22 @@ function parseFamilyRow(value: unknown): FamilyRow | null {
   };
 }
 
+async function forgetExpiredSuccessor(env: Env, row: FamilyRow | null): Promise<FamilyRow | null> {
+  if (!row?.successorEnc || row.graceUntil === null || row.graceUntil > Date.now()) return row;
+  await env.DB!.prepare(
+    `UPDATE mcp_oauth_refresh_family SET successor_enc = NULL
+     WHERE family_id = ? AND grace_until IS NOT NULL AND grace_until <= ?`,
+  )
+    .bind(row.familyId, Date.now())
+    .run();
+  return { ...row, successorEnc: null };
+}
+
 async function readFamilyById(env: Env, familyId: string): Promise<FamilyRow | null> {
   const row: unknown = await env.DB!.prepare(`SELECT ${FAMILY_COLUMNS} FROM mcp_oauth_refresh_family WHERE family_id = ?`)
     .bind(familyId)
     .first();
-  return parseFamilyRow(row);
+  return forgetExpiredSuccessor(env, parseFamilyRow(row));
 }
 
 async function findFamily(env: Env, refreshHash: string): Promise<FamilyRow | null> {
@@ -224,12 +239,12 @@ async function findFamily(env: Env, refreshHash: string): Promise<FamilyRow | nu
     .prepare(`SELECT ${FAMILY_COLUMNS} FROM mcp_oauth_refresh_family WHERE current_refresh_hash = ?`)
     .bind(refreshHash)
     .first();
-  if (current) return parseFamilyRow(current);
+  if (current) return forgetExpiredSuccessor(env, parseFamilyRow(current));
   const retiredCol: unknown = await db
     .prepare(`SELECT ${FAMILY_COLUMNS} FROM mcp_oauth_refresh_family WHERE retired_refresh_hash = ?`)
     .bind(refreshHash)
     .first();
-  if (retiredCol) return parseFamilyRow(retiredCol);
+  if (retiredCol) return forgetExpiredSuccessor(env, parseFamilyRow(retiredCol));
   const link = await db
     .prepare(`SELECT family_id FROM mcp_oauth_refresh_retired WHERE refresh_hash = ?`)
     .bind(refreshHash)
@@ -284,17 +299,19 @@ async function readEntitlement(env: Env, family: FamilyRow): Promise<Entitlement
   return { kind: 'active', plan: planRead.plan, allowed };
 }
 
-async function accessHashes(env: Env, familyId: string): Promise<string[]> {
-  const listed = await env.DB!.prepare(`SELECT access_hash FROM mcp_oauth_refresh_access WHERE family_id = ?`)
-    .bind(familyId)
-    .all<{ access_hash: string }>();
-  return (listed.results ?? []).map((row) => row.access_hash).filter((hash) => typeof hash === 'string');
-}
-
 async function deleteAccessTokens(env: Env, family: FamilyRow, store: RefreshAccessStore): Promise<void> {
-  for (const hash of await accessHashes(env, family.familyId)) {
-    await store.deleteHash(family.accountId, hash);
+  const cutoff = Date.now() - REFRESH_ACCESS_TTL_SECONDS * 1000;
+  const listed = await env.DB!.prepare(
+    `SELECT access_hash FROM mcp_oauth_refresh_access WHERE family_id = ? AND issued_at >= ?`,
+  )
+    .bind(family.familyId, cutoff)
+    .all<{ access_hash: string }>();
+  for (const row of listed.results ?? []) {
+    if (typeof row.access_hash === 'string') await store.deleteHash(family.accountId, row.access_hash);
   }
+  await store.deleteFamilyConnection(family.accountId, family.familyId);
+  await env.DB!.prepare(`DELETE FROM mcp_oauth_refresh_access WHERE family_id = ?`).bind(family.familyId).run();
+  await env.DB!.prepare(`DELETE FROM mcp_oauth_refresh_retired WHERE family_id = ?`).bind(family.familyId).run();
 }
 
 /** Marks the family revoked and deletes the access tokens it lists. Idempotent. */
@@ -335,6 +352,12 @@ export async function revokeRefreshByToken(env: Env, token: string, store: Refre
 export async function refreshFamilyAllowsAccess(env: Env, familyId: string, accessHash: string): Promise<boolean> {
   if (!env.DB) return false;
   try {
+    await env.DB.prepare(
+      `UPDATE mcp_oauth_refresh_family SET successor_enc = NULL
+       WHERE family_id = ? AND successor_enc IS NOT NULL AND grace_until IS NOT NULL AND grace_until <= ?`,
+    )
+      .bind(familyId, Date.now())
+      .run();
     const row = await env.DB.prepare(
       `SELECT f.revoked AS revoked
        FROM mcp_oauth_refresh_family f
@@ -382,8 +405,8 @@ export async function createRefreshFamily(
         now,
       )
       .run();
-    await env.DB.prepare(`INSERT INTO mcp_oauth_refresh_access (access_hash, family_id) VALUES (?, ?)`)
-      .bind(await sha256Hex(input.accessToken), familyId)
+    await env.DB.prepare(`INSERT INTO mcp_oauth_refresh_access (access_hash, family_id, issued_at) VALUES (?, ?, ?)`)
+      .bind(await sha256Hex(input.accessToken), familyId, now)
       .run();
   } catch (err) {
     if (missingTable(err)) return null;
@@ -392,18 +415,72 @@ export async function createRefreshFamily(
   return { refreshToken, familyId };
 }
 
+/** MCP_OAUTH_SECRET only. AUTH_WEBHOOK_SECRET and BOT_TOKEN are not accepted here. */
 function signingSecret(env: Env): string | null {
-  const resolved = resolveOAuthSigningSecret(env);
-  return resolved.ok ? resolved.secret : null;
+  const secret = (env.MCP_OAUTH_SECRET || '').trim();
+  return secret || null;
+}
+
+async function successorKey(secret: string): Promise<CryptoKey> {
+  const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), 'HKDF', false, ['deriveKey']);
+  return crypto.subtle.deriveKey(
+    {
+      name: 'HKDF',
+      hash: 'SHA-256',
+      salt: new Uint8Array(32),
+      info: new TextEncoder().encode('mcp-refresh-successor'),
+    },
+    base,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt'],
+  );
+}
+
+function b64url(bytes: Uint8Array): string {
+  let bin = '';
+  for (const byte of bytes) bin += String.fromCharCode(byte);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function fromB64url(value: string): Uint8Array | null {
+  try {
+    const padded = value.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((value.length + 3) % 4);
+    const binary = atob(padded);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+  } catch {
+    return null;
+  }
 }
 
 async function sealSuccessor(secret: string, successor: Successor): Promise<string> {
-  return encryptGscToken(secret, JSON.stringify(successor));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const cipher = new Uint8Array(
+    await crypto.subtle.encrypt(
+      { name: 'AES-GCM', iv },
+      await successorKey(secret),
+      new TextEncoder().encode(JSON.stringify(successor)),
+    ),
+  );
+  return `v1:${b64url(iv)}:${b64url(cipher)}`;
 }
 
 async function openSuccessor(secret: string, stored: string | null): Promise<Successor | null> {
   if (!stored) return null;
-  const plain = await decryptGscToken(secret, stored);
+  const [version, ivPart, cipherPart] = stored.split(':');
+  if (version !== 'v1' || !ivPart || !cipherPart) return null;
+  const iv = fromB64url(ivPart);
+  const cipher = fromB64url(cipherPart);
+  if (!iv || !cipher) return null;
+  let plain: string;
+  try {
+    const decoded = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, await successorKey(secret), cipher);
+    plain = new TextDecoder().decode(decoded);
+  } catch {
+    return null;
+  }
   if (!plain) return null;
   let value: unknown;
   try {
@@ -435,8 +512,10 @@ async function replaySuccessor(
 ): Promise<RefreshGrantResult> {
   const successor = await openSuccessor(secret, family.successorEnc);
   if (!successor) return { kind: 'unavailable' };
-  await env.DB!.prepare(`INSERT OR IGNORE INTO mcp_oauth_refresh_access (access_hash, family_id) VALUES (?, ?)`)
-    .bind(await sha256Hex(successor.accessToken), family.familyId)
+  await env.DB!.prepare(
+    `INSERT OR IGNORE INTO mcp_oauth_refresh_access (access_hash, family_id, issued_at) VALUES (?, ?, ?)`,
+  )
+    .bind(await sha256Hex(successor.accessToken), family.familyId, Date.now())
     .run();
   await store.put({
     accessToken: successor.accessToken,
@@ -512,14 +591,26 @@ export async function rotateRefreshGrant(
   const successorEnc = await sealSuccessor(secret, successor);
   const newHash = await sha256Hex(refreshToken);
   const accessHash = await sha256Hex(accessToken);
-  const updated = await env.DB.prepare(
-    `UPDATE mcp_oauth_refresh_family
-     SET current_refresh_hash = ?, retired_refresh_hash = ?, grace_until = ?, successor_enc = ?, updated_at = ?
-     WHERE family_id = ? AND current_refresh_hash = ? AND revoked = 0`,
-  )
-    .bind(newHash, refreshHash, now + REUSE_GRACE_MS, successorEnc, now, family.familyId, refreshHash)
-    .run();
-  if (Number(updated.meta?.changes ?? 0) !== 1) {
+  const [updated] = await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE mcp_oauth_refresh_family
+       SET current_refresh_hash = ?, retired_refresh_hash = ?, grace_until = ?, successor_enc = ?, updated_at = ?
+       WHERE family_id = ? AND current_refresh_hash = ? AND revoked = 0`,
+    ).bind(newHash, refreshHash, now + REUSE_GRACE_MS, successorEnc, now, family.familyId, refreshHash),
+    env.DB.prepare(
+      `INSERT OR IGNORE INTO mcp_oauth_refresh_access (access_hash, family_id, issued_at)
+       SELECT ?, ?, ? WHERE EXISTS (
+         SELECT 1 FROM mcp_oauth_refresh_family WHERE family_id = ? AND current_refresh_hash = ? AND revoked = 0
+       )`,
+    ).bind(accessHash, family.familyId, now, family.familyId, newHash),
+    env.DB.prepare(
+      `INSERT OR IGNORE INTO mcp_oauth_refresh_retired (refresh_hash, family_id, retired_at)
+       SELECT ?, ?, ? WHERE EXISTS (
+         SELECT 1 FROM mcp_oauth_refresh_family WHERE family_id = ? AND current_refresh_hash = ? AND revoked = 0
+       )`,
+    ).bind(refreshHash, family.familyId, now, family.familyId, newHash),
+  ]);
+  if (Number(updated?.meta?.changes ?? 0) !== 1) {
     const again = await findFamily(env, refreshHash);
     if (again && again.clientId === input.clientId && inGrace(again, refreshHash, Date.now())) {
       return replaySuccessor(env, again, secret, store, entitlement.plan);
@@ -529,12 +620,6 @@ export async function rotateRefreshGrant(
     }
     return { kind: 'invalid_grant' };
   }
-  await env.DB.prepare(`INSERT OR IGNORE INTO mcp_oauth_refresh_access (access_hash, family_id) VALUES (?, ?)`)
-    .bind(accessHash, family.familyId)
-    .run();
-  await env.DB.prepare(`INSERT OR IGNORE INTO mcp_oauth_refresh_retired (refresh_hash, family_id) VALUES (?, ?)`)
-    .bind(refreshHash, family.familyId)
-    .run();
   await store.put({
     accessToken,
     accountId: family.accountId,
@@ -547,4 +632,34 @@ export async function rotateRefreshGrant(
     expiresIn: REFRESH_ACCESS_TTL_SECONDS,
   });
   return { kind: 'issued', accessToken, refreshToken, scope, expiresIn: REFRESH_ACCESS_TTL_SECONDS };
+}
+
+/** Daily sweep. Access rows older than the access token, retired hashes older than the refresh token, and expired grace ciphertext. */
+export async function pruneMcpOAuthRefreshRows(
+  env: Env,
+  now = Date.now(),
+): Promise<{ access: number; retired: number; successors: number }> {
+  if (!env.DB) return { access: 0, retired: 0, successors: 0 };
+  try {
+    const access = await env.DB.prepare(`DELETE FROM mcp_oauth_refresh_access WHERE issued_at < ?`)
+      .bind(now - REFRESH_ACCESS_TTL_SECONDS * 1000)
+      .run();
+    const retired = await env.DB.prepare(`DELETE FROM mcp_oauth_refresh_retired WHERE retired_at < ?`)
+      .bind(now - REFRESH_TTL_SECONDS * 1000)
+      .run();
+    const successors = await env.DB.prepare(
+      `UPDATE mcp_oauth_refresh_family SET successor_enc = NULL
+       WHERE successor_enc IS NOT NULL AND grace_until IS NOT NULL AND grace_until <= ?`,
+    )
+      .bind(now)
+      .run();
+    return {
+      access: Number(access.meta?.changes ?? 0),
+      retired: Number(retired.meta?.changes ?? 0),
+      successors: Number(successors.meta?.changes ?? 0),
+    };
+  } catch (err) {
+    if (missingTable(err)) return { access: 0, retired: 0, successors: 0 };
+    throw err;
+  }
 }
