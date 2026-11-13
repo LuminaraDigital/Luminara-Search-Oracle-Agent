@@ -32,7 +32,7 @@ Free MCP on every plan, for Claude, ChatGPT, Cursor, and Grok when that app can 
 
 Setup: https://www.luminarasuite.com/docs/mcp.html
 
-Endpoint: https://luminarasuite.com/api/mcp
+Endpoint: https://www.luminarasuite.com/api/mcp
 
 ## Common questions
 
