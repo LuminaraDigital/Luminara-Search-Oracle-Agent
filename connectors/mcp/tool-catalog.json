@@ -1022,6 +1022,78 @@
     }
   },
   {
+    "name": "ask_auditor",
+    "title": "Luminara Auditor",
+    "description": "Uses no credits. Luminara Auditor. Reports what Luminara last recorded as wrong with a site: stored findings, the date of the last audit on record, and the latest saved report. Reads stored records only: it does not crawl, re-check or change anything.",
+    "creditClass": "free",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "description": "Project id from list_projects."
+        }
+      },
+      "required": [
+        "projectId"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Luminara Auditor",
+      "readOnlyHint": true,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "ask_fixer",
+    "title": "Luminara Fixer",
+    "description": "Uses no credits. Luminara Fixer. Lists the fix drafts Luminara has stored for a site and the open findings that have none. Reads stored records only: it does not crawl, re-check or change anything.",
+    "creditClass": "free",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "description": "Project id from list_projects."
+        }
+      },
+      "required": [
+        "projectId"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Luminara Fixer",
+      "readOnlyHint": true,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "ask_coach",
+    "title": "Luminara Coach",
+    "description": "Uses no credits. Luminara Coach. Shows the decision set for this week in Luminara, or a candidate from the stored findings when none is set. Reads stored records only: it does not crawl, re-check or change anything.",
+    "creditClass": "free",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "description": "Project id from list_projects."
+        }
+      },
+      "required": [
+        "projectId"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Luminara Coach",
+      "readOnlyHint": true,
+      "destructiveHint": false
+    }
+  },
+  {
     "name": "research_keywords",
     "title": "Research keywords",
     "description": "Uses paid DataForSEO credits unless BYOK. Discover keyword ideas from up to 5 seed topics. Returns at most 20 rows. Check the research log first. This is a sample, not a full export.",

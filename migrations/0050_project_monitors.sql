@@ -27,10 +27,20 @@ CREATE TABLE IF NOT EXISTS project_monitor_alerts (
   kind TEXT NOT NULL CHECK (kind IN ('regression', 'lift', 'weekly')),
   summary TEXT NOT NULL,
   snapshot_id TEXT,
+  week_key TEXT NOT NULL DEFAULT '',
   created_at INTEGER NOT NULL,
-  read_at INTEGER,
-  UNIQUE (account_id, snapshot_id, kind)
+  read_at INTEGER
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_project_monitor_alerts_snapshot
+  ON project_monitor_alerts(account_id, snapshot_id, kind)
+  WHERE kind != 'weekly';
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_project_monitor_alerts_week
+  ON project_monitor_alerts(account_id, monitor_id, week_key)
+  WHERE kind = 'weekly' AND week_key != '';
 
 CREATE INDEX IF NOT EXISTS idx_project_monitor_alerts_project
   ON project_monitor_alerts(account_id, project_id, created_at DESC);
+
+ALTER TABLE users ADD COLUMN email_verified INTEGER;
