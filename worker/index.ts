@@ -1970,6 +1970,12 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
           json({ ok: false, error: 'Already decided', code: 'ALREADY_DECIDED', status: row.status }, 409),
         );
       }
+      // The approval page cannot show these details in full, so nobody can have read what they would approve.
+      if (decision === 'approve' && row.args_json.length > APPROVAL_ARGS_SHOWN) {
+        return withCors(
+          json({ ok: false, error: 'This request is too long to review. Deny it and ask for a shorter one.', code: 'TOO_LONG_TO_REVIEW' }, 409),
+        );
+      }
       const ok =
         decision === 'approve'
           ? await approveActionRequest(env, requestId, who.user.id)

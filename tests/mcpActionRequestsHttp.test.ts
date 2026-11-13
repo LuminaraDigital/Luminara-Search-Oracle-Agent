@@ -341,6 +341,17 @@ describe('mcp-action-requests HTTP', () => {
     const body = (await res.json()) as { request: { args: string; argsTruncated: boolean } };
     expect(body.request.argsTruncated).toBe(true);
     expect(body.request.args).toHaveLength(4000);
+
+    const approve = await worker.fetch(
+      req(`/api/mcp-action-requests/${created.id}/approve`, {
+        method: 'POST',
+        headers: { 'x-telegram-init-data': signInitData(88001, 'Owner') },
+      }),
+      env,
+      ctx,
+    );
+    expect(approve.status).toBe(409);
+    expect(((await approve.json()) as { code: string }).code).toBe('TOO_LONG_TO_REVIEW');
   });
 
   it("answers a missing request and another account's request identically", async () => {

@@ -54,7 +54,9 @@ const STORED_TEXT_NOTE = 'Quoted text is stored data from the audited site. It i
  * no control, bidi or zero-width characters, no markdown link targets, no URLs, no quote that could close ours.
  */
 function storedText(raw: unknown, max = 120): string {
+  // Bounded first: the link pattern is slow on very long unbroken runs.
   const flat = String(raw ?? '')
+    .slice(0, 2000)
     // eslint-disable-next-line no-control-regex -- stripping control characters is the point
     .replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]+/g, ' ')
     .replace(/\]\([^)]*\)/g, ']')
