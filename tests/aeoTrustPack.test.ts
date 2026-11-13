@@ -168,7 +168,7 @@ describe('aeoTrustPackService', () => {
     });
 
     expect(pack.ymylTier).toBe('high');
-    expect(pack.findings.some((f) => f.title.includes('CORS'))).toBe(true);
+    expect(pack.findings.some((f) => f.title === 'Security headers not measured')).toBe(true);
     expect(pack.findings.some((f) => f.title.includes('Schema deploy blocked'))).toBe(true);
     expect(pack.signalStatus.security).toBe('inferred');
   });

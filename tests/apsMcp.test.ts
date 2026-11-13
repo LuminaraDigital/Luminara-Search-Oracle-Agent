@@ -328,9 +328,26 @@ describe('APS MCP + projects', () => {
     expect(browse?.structuredContent?.code).toBe('PAID_TOOL_FORBIDDEN');
 
     store.set(`mcp_calls:303:${new Date().toISOString().slice(0, 10)}`, '100');
-    const capped = await callTool('whoami', '10.20.4.3');
-    expect(capped?.isError).toBe(true);
-    expect(capped?.structuredContent?.code).toBe('MCP_DAILY_LIMIT');
+    const cappedRes = await worker.fetch(
+      new Request('https://luminarasuite.com/api/mcp', {
+        method: 'POST',
+        headers: tgHeaders(303, '10.20.4.3'),
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'whoami', arguments: {} } }),
+      }),
+      env,
+      ctx,
+    );
+    expect(cappedRes.status).toBe(200);
+    const cappedBody = (await cappedRes.json()) as {
+      error?: { message?: string; data?: { code?: string; resetAt?: number; remaining?: number } };
+    };
+    expect(cappedBody.error?.data?.code).toBe('MCP_DAILY_LIMIT');
+    expect(cappedBody.error?.data?.remaining).toBe(0);
+    expect(typeof cappedBody.error?.data?.resetAt).toBe('number');
+    expect(cappedBody.error?.message).toContain('Resets at');
+    expect(cappedRes.headers.get('X-RateLimit-Limit')).toBe('100');
+    expect(cappedRes.headers.get('X-RateLimit-Remaining')).toBe('0');
+    expect(cappedRes.headers.get('Retry-After')).toBeTruthy();
   });
 
   it('answers a malformed percent-encoded project id with 400, not 500', async () => {

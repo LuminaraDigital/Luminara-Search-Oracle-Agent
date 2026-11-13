@@ -4,6 +4,7 @@
 import type { Env } from '../../worker/env';
 import { dataForSeoPost } from '../../worker/dataForSeoClient';
 import { getProject } from '../../worker/projectService';
+import { mirrorProjectSnapshot } from '../../worker/projectHistoryService';
 import { getProjectContext, updateProjectContext } from '../../worker/projectContextService';
 import type { ContextAuthor } from '../projects/types';
 import {
@@ -112,6 +113,7 @@ export function buildPaidToolRuntime(opts: {
         author,
       );
     },
+    onMeasured: (event) => mirrorProjectSnapshot(env, accountId, event),
     dfsPost: (path, payload) =>
       dataForSeoPost(env, path, payload, { credential: dataForSeoCredential }),
   };

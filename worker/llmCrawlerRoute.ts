@@ -7,6 +7,8 @@
  */
 import type { Env } from './env';
 import { billingId, identify, json } from './workerUtils';
+import { mirrorSnapshotForDomain } from './projectHistoryService';
+import { crawlerFileSnapshot } from '../services/history/snapshotCapture';
 import { resolvesToPublicAddress, safePublicHostname, safePublicUrl, type DohFetch } from './security';
 import { sameSiteHost } from '../services/audit/sameSiteHost';
 import { mintScoutReceipt } from './referrals';
@@ -165,6 +167,19 @@ export async function handleLlmCrawlerRoute(request: Request, env: Env): Promise
     (text) => typeof text === 'string' && text.trim().length > 0,
   );
   const host = safePublicHostname(target);
+  if (host && who.user) {
+    const measuredAt = Date.now();
+    await mirrorSnapshotForDomain(env, billingId(who.user), host, (projectId) =>
+      crawlerFileSnapshot({
+        projectId,
+        host,
+        measuredAt,
+        robotsHttpStatus: loaded.snapshot.robotsHttpStatus,
+        llmsHttpStatus: loaded.snapshot.llmsHttpStatus,
+        aiHttpStatus: loaded.snapshot.aiHttpStatus ?? null,
+      }),
+    );
+  }
   let receipt: string | null = null;
   if (sawFile && host && who.user) {
     try {
