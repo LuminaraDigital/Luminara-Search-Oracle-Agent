@@ -20,13 +20,16 @@ const MAX_REDIRECTS = 3;
 const FOLLOW_REDIRECT = new Set([301, 302, 303, 307, 308]);
 
 /** A first line that is an error: "404", "404 Not Found", "Not Found - nginx", "Cannot GET /llms.txt",
- * or a whole line such as "Page not found." or "The page you requested was not found". A title that only
+ * or a whole line such as "Page not found." or "File not found: /llms.txt". A title that only
  * starts with 404 ("404 Media") or that goes on after the phrase ("File not found handling") does not. */
 const NOT_FOUND_START =
-  /^(?:error\s*)?404(?:\s*[-:|]?\s*(?:(?:page|file)\s+)?(?:not\s+found|error)\b|\s*$)|^not\s+found\b|^cannot\s+get\s+\/|^(?:the\s+)?(?:requested\s+)?(?:page|file|resource|document)(?:\s+you\s+requested)?\s+(?:was\s+)?not\s+found[.!]?$/i;
-/** A one-line message such as "The requested file was not found on this server." The phrase must
- * end a sentence, so a one-line title such as "File not found handling" is not a 404. */
-const NOT_FOUND_PHRASE = /\b(?:page|file|resource|document)\s+(?:was\s+)?not\s+found(?:\s+on\s+this\s+server)?(?:[.!]|\s*$)/i;
+  /^(?:error\s*)?404(?:\s*[-:|]?\s*(?:(?:page|file)\s+)?(?:not\s+found|error)\b|\s*$)|^not\s+found\b|^cannot\s+get\s+\/|^(?:the\s+)?(?:requested\s+)?(?:page|file|resource|document|url)(?:\s+you\s+requested)?(?:\s+\/\S*)?\s+(?:was\s+)?not\s+found(?:\s+on\s+this\s+server)?(?::\s*\/\S*)?[.!]?$/i;
+/** A one-line message such as "The requested file was not found on this server.", "The requested URL
+ * /llms.txt was not found on this server." or "File not found on this server: /llms.txt". The phrase
+ * must end a sentence or end with the missing path, so a one-line title such as "File not found
+ * handling" is not a 404. */
+const NOT_FOUND_PHRASE =
+  /\b(?:page|file|resource|document|url)(?:\s+\/\S*)?\s+(?:was\s+)?not\s+found(?:\s+on\s+this\s+server)?(?::\s*\/\S*)?(?:[.!]|\s*$)/i;
 const MAX_NOT_FOUND_TEXT = 300;
 
 /**
