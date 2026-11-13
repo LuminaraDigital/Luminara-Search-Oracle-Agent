@@ -507,13 +507,95 @@ describe('refresh table prune', () => {
       .bind(now - 1000)
       .run();
     const pruned = await pruneMcpOAuthRefreshRows(env, now);
-    expect(pruned).toEqual({ access: 1, retired: 1, successors: 1 });
+    expect(pruned).toEqual({ access: 1, retired: 0, successors: 1, families: 0 });
     const access = await env.DB!.prepare(`SELECT access_hash FROM mcp_oauth_refresh_access`).all<{ access_hash: string }>();
-    expect(access.results?.map((row) => row.access_hash)).toEqual(['recenthash']);
-    const retired = await env.DB!.prepare(`SELECT refresh_hash FROM mcp_oauth_refresh_retired`).all<{ refresh_hash: string }>();
-    expect(retired.results?.map((row) => row.refresh_hash)).toEqual(['newretired']);
+    expect(access.results?.map((row) => row.access_hash).sort()).toEqual(['recenthash']);
+    const retired = await env.DB!.prepare(`SELECT refresh_hash FROM mcp_oauth_refresh_retired ORDER BY refresh_hash`).all<{
+      refresh_hash: string;
+    }>();
+    expect(retired.results?.map((row) => row.refresh_hash)).toEqual(['newretired', 'oldretired']);
     const family = await env.DB!.prepare(`SELECT successor_enc FROM mcp_oauth_refresh_family`).first<{ successor_enc: string | null }>();
     expect(family?.successor_enc).toBeNull();
+  });
+
+  it('refuses a refresh whose family has not rotated for 90 days, and the daily prune ends idle families', async () => {
+    const { env } = makeEnv();
+    const issued = await connect(env);
+    const refreshToken = issued.token.refresh_token ?? '';
+    const stale = Date.now() - 91 * 24 * 60 * 60 * 1000;
+    await env.DB!.prepare(`UPDATE mcp_oauth_refresh_family SET updated_at = ?`).bind(stale).run();
+    await env.DB!.prepare(
+      `INSERT INTO mcp_oauth_refresh_retired (refresh_hash, family_id, retired_at)
+       SELECT 'stolen', family_id, ? FROM mcp_oauth_refresh_family`,
+    )
+      .bind(stale)
+      .run();
+    const refused = await refresh(env, refreshToken, issued.clientId);
+    expect(refused.status).toBe(400);
+    expect(((await refused.json()) as TokenBody).error).toBe('invalid_grant');
+    const revoked = await env.DB!.prepare(`SELECT revoked FROM mcp_oauth_refresh_family`).first<{ revoked: number }>();
+    expect(revoked?.revoked).toBe(1);
+    expect(await identifyMcpOAuthToken(env, issued.token.access_token ?? '')).toBeNull();
+
+    const { env: sweepEnv, store: sweepStore } = makeEnv();
+    await connect(sweepEnv);
+    const now = Date.now();
+    await sweepEnv.DB!.prepare(`UPDATE mcp_oauth_refresh_family SET updated_at = ?`).bind(now - 91 * 24 * 60 * 60 * 1000).run();
+    const familyId = (
+      await sweepEnv.DB!.prepare(`SELECT family_id FROM mcp_oauth_refresh_family`).first<{ family_id: string }>()
+    )?.family_id;
+    await sweepEnv.DB!.prepare(`INSERT INTO mcp_oauth_refresh_retired (refresh_hash, family_id, retired_at) VALUES ('old', ?, ?)`)
+      .bind(familyId, now - 10 * 24 * 60 * 60 * 1000)
+      .run();
+    const connectionKey = `mcp_oauth_connection:${await sha256Hex('77001')}:${familyId}`;
+    sweepStore.set(connectionKey, '1');
+    const pruned = await pruneMcpOAuthRefreshRows(sweepEnv, now);
+    expect(sweepStore.has(connectionKey)).toBe(false);
+    expect(pruned.families).toBe(1);
+    const leftRetired = await sweepEnv.DB!.prepare(`SELECT COUNT(*) AS n FROM mcp_oauth_refresh_retired`).first<{ n: number }>();
+    expect(leftRetired?.n).toBe(0);
+    const leftFamily = await sweepEnv.DB!.prepare(`SELECT revoked FROM mcp_oauth_refresh_family`).first<{ revoked: number }>();
+    expect(leftFamily?.revoked).toBe(1);
+  });
+
+  it('does not write D1 on an access check unless expired grace ciphertext is present', async () => {
+    const { env } = makeEnv();
+    const issued = await connect(env);
+    const db = env.DB!;
+    const prepare = db.prepare.bind(db);
+    let updates = 0;
+    db.prepare = (sql: string) => {
+      if (/^\s*UPDATE/i.test(sql)) updates += 1;
+      return prepare(sql);
+    };
+    expect(await identifyMcpOAuthToken(env, issued.token.access_token ?? '')).toMatchObject({ scope: 'mcp:free' });
+    expect(updates).toBe(0);
+    await prepare(`UPDATE mcp_oauth_refresh_family SET successor_enc = 'cipher', grace_until = ?`)
+      .bind(Date.now() - 1000)
+      .run();
+    updates = 0;
+    expect(await identifyMcpOAuthToken(env, issued.token.access_token ?? '')).toMatchObject({ scope: 'mcp:free' });
+    expect(updates).toBe(1);
+    const cleared = await prepare(`SELECT successor_enc FROM mcp_oauth_refresh_family`).first<{ successor_enc: string | null }>();
+    expect(cleared?.successor_enc).toBeNull();
+  });
+
+  it('keeps the connection createdAt and records lastRefreshedAt', async () => {
+    const { env, store } = makeEnv();
+    const issued = await connect(env);
+    for (const [key, value] of store) {
+      if (!key.startsWith('mcp_oauth_connection:') || value === '1') continue;
+      const parsed = JSON.parse(value) as { createdAt: number };
+      parsed.createdAt = 111;
+      store.set(key, JSON.stringify(parsed));
+    }
+    await refresh(env, issued.token.refresh_token ?? '', issued.clientId);
+    const listed = (await (await call(env, '/api/agent-connections', {}, 77001)).json()) as {
+      connections: Array<{ createdAt: number; lastRefreshedAt?: number }>;
+    };
+    expect(listed.connections).toHaveLength(1);
+    expect(listed.connections[0]?.createdAt).toBe(111);
+    expect(listed.connections[0]?.lastRefreshedAt).toBeGreaterThan(111);
   });
 
   it('refuses to seal a successor with the bot token when MCP_OAUTH_SECRET is empty', async () => {

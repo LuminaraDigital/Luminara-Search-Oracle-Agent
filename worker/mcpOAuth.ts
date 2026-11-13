@@ -15,6 +15,7 @@ import { resolveOAuthSigningSecret } from './securityHardening';
 import {
   createRefreshFamily,
   familyIdFromAccessRecord,
+  keptConnectionCreatedAt,
   grantsFromStoredClient,
   parseRegisteredGrantTypes,
   REFRESH_ACCESS_TTL_SECONDS,
@@ -185,7 +186,6 @@ type ConsentRecord = {
   state: string;
 };
 
-/** KV refuses a get with cacheTtl under 30 seconds, so 30 is the shortest edge cache it allows. */
 const SHORTEST_KV_CACHE_TTL_SECONDS = 30;
 
 /**
@@ -685,14 +685,18 @@ async function writeAccessToken(
     expirationTtl: tokenTtl,
   });
   const id = input.familyId ?? (await sha256Hex(input.accessToken));
+  const key = await connectionKvKey(input.accountId, id);
+  const createdAt = input.familyId
+    ? keptConnectionCreatedAt(await env.LUMINARA_KV.get(key), input.createdAt)
+    : input.createdAt;
   const connection: AgentConnection = {
     id,
     name: input.clientName || 'MCP client',
     scope: input.scope,
-    createdAt: input.createdAt,
-    ...(input.familyId ? { familyId: input.familyId } : {}),
+    createdAt,
+    ...(input.familyId ? { familyId: input.familyId, lastRefreshedAt: input.createdAt } : {}),
   };
-  await env.LUMINARA_KV.put(await connectionKvKey(input.accountId, id), '1', {
+  await env.LUMINARA_KV.put(key, JSON.stringify(connection), {
     expirationTtl: input.connectionTtl ?? tokenTtl,
     metadata: connection,
   });
@@ -763,7 +767,6 @@ async function exchangeAuthorizationCode(env: Env, body: Record<string, string>)
   if (!code || !redirectUri || !verifier) {
     return json({ error: 'invalid_request' }, 400);
   }
-  // RFC 7636. Checked before the code is consumed so a short verifier does not burn it.
   if (!/^[A-Za-z0-9._~-]{43,128}$/.test(verifier)) {
     return json(
       { error: 'invalid_request', error_description: 'code_verifier must be 43 to 128 unreserved characters.' },
@@ -847,7 +850,6 @@ async function revokeToken(request: Request, env: Env): Promise<Response> {
   return new Response(null, { status: 200 });
 }
 
-/** Delete the hashed record, the legacy raw-token record, and the connection row for this bearer. */
 async function revokePresentedToken(env: Env, token: string): Promise<void> {
   if (!env.LUMINARA_KV) return;
   if (token.startsWith('mcr_')) {
@@ -875,9 +877,8 @@ async function revokePresentedToken(env: Env, token: string): Promise<void> {
   }
 }
 
-export type AgentConnection = { id: string; name: string; scope: string; createdAt: number; familyId?: string };
+export type AgentConnection = { id: string; name: string; scope: string; createdAt: number; familyId?: string; lastRefreshedAt?: number };
 
-/** The account id is hashed so one account's prefix can never match another's keys. */
 async function connectionKvKey(accountId: string, tokenHash = ''): Promise<string> {
   return `${CONNECTIONS_KV_PREFIX}${await sha256Hex(accountId)}:${tokenHash}`;
 }
@@ -900,7 +901,6 @@ export async function listAgentConnections(env: Env, accountId: string): Promise
 
 const FAMILY_CONNECTION_ID = /^fam_[a-f0-9]+$/;
 
-/** False when the account has no such connection, so one account cannot revoke another's token. */
 export async function revokeAgentConnection(env: Env, accountId: string, connectionId: string): Promise<boolean> {
   if (!env.LUMINARA_KV) return false;
   const legacyHash = /^[a-f0-9]{64}$/.test(connectionId);

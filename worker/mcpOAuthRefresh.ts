@@ -31,7 +31,7 @@ const REUSE_GRACE_MS = 30_000;
 
 const REFRESH_PREFIX = 'mcr_';
 const FAMILY_COLUMNS = `family_id, account_id, user_id, client_id, client_name, granted_scope,
-  current_refresh_hash, revoked, retired_refresh_hash, grace_until, successor_enc`;
+  current_refresh_hash, revoked, retired_refresh_hash, grace_until, successor_enc, updated_at`;
 
 export type RefreshAccessStore = {
   put(input: {
@@ -61,6 +61,7 @@ type FamilyRow = {
   retiredRefreshHash: string | null;
   graceUntil: number | null;
   successorEnc: string | null;
+  updatedAt: number;
 };
 
 type Successor = { accessToken: string; refreshToken: string; scope: string };
@@ -185,6 +186,7 @@ function parseFamilyRow(value: unknown): FamilyRow | null {
   const retired = value.retired_refresh_hash;
   const grace = value.grace_until;
   const successor = value.successor_enc;
+  const updatedAt = value.updated_at;
   if (
     typeof value.family_id !== 'string' ||
     typeof value.account_id !== 'string' ||
@@ -196,7 +198,8 @@ function parseFamilyRow(value: unknown): FamilyRow | null {
     (clientName !== null && typeof clientName !== 'string') ||
     (retired !== null && typeof retired !== 'string') ||
     (grace !== null && typeof grace !== 'number') ||
-    (successor !== null && typeof successor !== 'string')
+    (successor !== null && typeof successor !== 'string') ||
+    typeof updatedAt !== 'number'
   ) {
     return null;
   }
@@ -212,7 +215,24 @@ function parseFamilyRow(value: unknown): FamilyRow | null {
     retiredRefreshHash: retired,
     graceUntil: grace,
     successorEnc: successor,
+    updatedAt,
   };
+}
+
+function familyIsIdle(family: FamilyRow, now: number): boolean {
+  return now - family.updatedAt >= REFRESH_TTL_SECONDS * 1000;
+}
+
+/** First connection time stays put when a later refresh overwrites the row. */
+export function keptConnectionCreatedAt(raw: string | null, fallback: number): number {
+  if (!raw || raw === '1') return fallback;
+  try {
+    const value: unknown = JSON.parse(raw);
+    if (isRecord(value) && typeof value.createdAt === 'number') return value.createdAt;
+  } catch {
+    /* a corrupt value keeps the new timestamp */
+  }
+  return fallback;
 }
 
 async function forgetExpiredSuccessor(env: Env, row: FamilyRow | null): Promise<FamilyRow | null> {
@@ -348,25 +368,28 @@ export async function revokeRefreshByToken(env: Env, token: string, store: Refre
   }
 }
 
-/** True only when this access hash is listed on a family that is still active. */
+/** True only when this access hash is listed on a family that is still active. A write happens only when expired grace ciphertext is present. */
 export async function refreshFamilyAllowsAccess(env: Env, familyId: string, accessHash: string): Promise<boolean> {
   if (!env.DB) return false;
   try {
-    await env.DB.prepare(
-      `UPDATE mcp_oauth_refresh_family SET successor_enc = NULL
-       WHERE family_id = ? AND successor_enc IS NOT NULL AND grace_until IS NOT NULL AND grace_until <= ?`,
-    )
-      .bind(familyId, Date.now())
-      .run();
     const row = await env.DB.prepare(
-      `SELECT f.revoked AS revoked
+      `SELECT f.revoked AS revoked, f.successor_enc AS successor_enc, f.grace_until AS grace_until
        FROM mcp_oauth_refresh_family f
        JOIN mcp_oauth_refresh_access a ON a.family_id = f.family_id
        WHERE f.family_id = ? AND a.access_hash = ?`,
     )
       .bind(familyId, accessHash)
-      .first<{ revoked: number }>();
-    return row?.revoked === 0;
+      .first<{ revoked: number; successor_enc: string | null; grace_until: number | null }>();
+    if (!row) return false;
+    if (typeof row.successor_enc === 'string' && row.successor_enc && typeof row.grace_until === 'number' && row.grace_until <= Date.now()) {
+      await env.DB.prepare(
+        `UPDATE mcp_oauth_refresh_family SET successor_enc = NULL
+         WHERE family_id = ? AND successor_enc IS NOT NULL AND grace_until IS NOT NULL AND grace_until <= ?`,
+      )
+        .bind(familyId, Date.now())
+        .run();
+    }
+    return row.revoked === 0;
   } catch (err) {
     console.error('[mcp-oauth] family access check failed:', dbErrorMessage(err));
     return false;
@@ -562,6 +585,10 @@ export async function rotateRefreshGrant(
   if (family.clientId !== input.clientId) return { kind: 'invalid_grant' };
 
   const now = Date.now();
+  if (familyIsIdle(family, now)) {
+    await revokeRefreshFamily(env, family.familyId, store);
+    return { kind: 'invalid_grant' };
+  }
   if (inGrace(family, refreshHash, now)) {
     const entitlement = await readEntitlement(env, family);
     if (entitlement.kind === 'unavailable') return { kind: 'unavailable' };
@@ -634,19 +661,47 @@ export async function rotateRefreshGrant(
   return { kind: 'issued', accessToken, refreshToken, scope, expiresIn: REFRESH_ACCESS_TTL_SECONDS };
 }
 
-/** Daily sweep. Access rows older than the access token, retired hashes older than the refresh token, and expired grace ciphertext. */
+/**
+ * Daily sweep. Idle families (no rotation for 90 days) are revoked so a dormant
+ * grant cannot refresh forever. Retired hashes of a live family stay, so pruning
+ * cannot hide reuse of an old refresh token. Expired access rows and grace ciphertext go.
+ */
 export async function pruneMcpOAuthRefreshRows(
   env: Env,
   now = Date.now(),
-): Promise<{ access: number; retired: number; successors: number }> {
-  if (!env.DB) return { access: 0, retired: 0, successors: 0 };
+): Promise<{ access: number; retired: number; successors: number; families: number }> {
+  const empty = { access: 0, retired: 0, successors: 0, families: 0 };
+  if (!env.DB) return empty;
   try {
+    const idleCutoff = now - REFRESH_TTL_SECONDS * 1000;
+    const idle = await env.DB.prepare(
+      `SELECT family_id, account_id FROM mcp_oauth_refresh_family WHERE revoked = 0 AND updated_at < ?`,
+    )
+      .bind(idleCutoff)
+      .all<{ family_id: string; account_id: string }>();
+    let families = 0;
+    for (const row of idle.results ?? []) {
+      if (typeof row.family_id !== 'string' || typeof row.account_id !== 'string') continue;
+      await env.DB.prepare(
+        `UPDATE mcp_oauth_refresh_family
+         SET revoked = 1, successor_enc = NULL, retired_refresh_hash = NULL, grace_until = NULL, updated_at = ?
+         WHERE family_id = ? AND revoked = 0`,
+      )
+        .bind(now, row.family_id)
+        .run();
+      await env.DB.prepare(`DELETE FROM mcp_oauth_refresh_access WHERE family_id = ?`).bind(row.family_id).run();
+      await env.DB.prepare(`DELETE FROM mcp_oauth_refresh_retired WHERE family_id = ?`).bind(row.family_id).run();
+      const connectionKey = `mcp_oauth_connection:${await sha256Hex(row.account_id)}:${row.family_id}`;
+      await env.LUMINARA_KV?.delete(connectionKey);
+      families += 1;
+    }
     const access = await env.DB.prepare(`DELETE FROM mcp_oauth_refresh_access WHERE issued_at < ?`)
       .bind(now - REFRESH_ACCESS_TTL_SECONDS * 1000)
       .run();
-    const retired = await env.DB.prepare(`DELETE FROM mcp_oauth_refresh_retired WHERE retired_at < ?`)
-      .bind(now - REFRESH_TTL_SECONDS * 1000)
-      .run();
+    const retired = await env.DB.prepare(
+      `DELETE FROM mcp_oauth_refresh_retired
+       WHERE family_id IN (SELECT family_id FROM mcp_oauth_refresh_family WHERE revoked = 1)`,
+    ).run();
     const successors = await env.DB.prepare(
       `UPDATE mcp_oauth_refresh_family SET successor_enc = NULL
        WHERE successor_enc IS NOT NULL AND grace_until IS NOT NULL AND grace_until <= ?`,
@@ -657,9 +712,10 @@ export async function pruneMcpOAuthRefreshRows(
       access: Number(access.meta?.changes ?? 0),
       retired: Number(retired.meta?.changes ?? 0),
       successors: Number(successors.meta?.changes ?? 0),
+      families,
     };
   } catch (err) {
-    if (missingTable(err)) return { access: 0, retired: 0, successors: 0 };
+    if (missingTable(err)) return empty;
     throw err;
   }
 }
