@@ -17,6 +17,10 @@ import {
   familyIdFromAccessRecord,
   grantsFromStoredClient,
   parseRegisteredGrantTypes,
+  REFRESH_ACCESS_TTL_SECONDS,
+  REFRESH_TTL_SECONDS,
+  refreshFamilyAllowsAccess,
+  refreshGrantResponse,
   revokeRefreshByToken,
   revokeRefreshFamily,
   rotateRefreshGrant,
@@ -633,6 +637,8 @@ function refreshAccessStore(env: Env): RefreshAccessStore {
         clientName: input.clientName ?? undefined,
         familyId: input.familyId,
         createdAt: Date.now(),
+        tokenTtl: input.expiresIn,
+        connectionTtl: REFRESH_TTL_SECONDS,
       }),
     deleteHash: async (accountId, accessHash) => {
       if (!env.LUMINARA_KV) return;
@@ -654,9 +660,12 @@ async function writeAccessToken(
     clientName?: string;
     familyId?: string;
     createdAt: number;
+    tokenTtl?: number;
+    connectionTtl?: number;
   },
 ): Promise<void> {
   if (!env.LUMINARA_KV) return;
+  const tokenTtl = input.tokenTtl ?? TOKEN_TTL_SECONDS;
   const tokenRecord: StoredTokenRecord = {
     accountId: input.accountId,
     userId: input.userId,
@@ -669,7 +678,7 @@ async function writeAccessToken(
   if (input.clientId) tokenRecord.clientId = input.clientId;
   if (input.familyId) tokenRecord.familyId = input.familyId;
   await env.LUMINARA_KV.put(await tokenKvKey(input.accessToken), JSON.stringify(tokenRecord), {
-    expirationTtl: TOKEN_TTL_SECONDS,
+    expirationTtl: tokenTtl,
   });
   const id = await sha256Hex(input.accessToken);
   const connection: AgentConnection = {
@@ -679,12 +688,20 @@ async function writeAccessToken(
     createdAt: input.createdAt,
   };
   await env.LUMINARA_KV.put(await connectionKvKey(input.accountId, id), '1', {
-    expirationTtl: TOKEN_TTL_SECONDS,
+    expirationTtl: input.connectionTtl ?? tokenTtl,
     metadata: connection,
   });
 }
 
 async function token(request: Request, env: Env): Promise<Response> {
+  const response = await tokenGrant(request, env);
+  const headers = new Headers(response.headers);
+  headers.set('Cache-Control', 'no-store');
+  headers.set('Pragma', 'no-cache');
+  return new Response(response.body, { status: response.status, headers });
+}
+
+async function tokenGrant(request: Request, env: Env): Promise<Response> {
   if (!oauthSecretOrNull(env)) {
     return json(
       {
@@ -731,32 +748,9 @@ async function exchangeRefreshToken(env: Env, body: Record<string, string>): Pro
     { refreshToken, clientId, requestedScope: body.scope ?? null },
     refreshAccessStore(env),
   );
-  switch (result.kind) {
-    case 'issued':
-      return json({
-        access_token: result.accessToken,
-        refresh_token: result.refreshToken,
-        token_type: 'Bearer',
-        expires_in: TOKEN_TTL_SECONDS,
-        scope: result.scope,
-      });
-    case 'invalid_scope':
-      return json(
-        {
-          error: 'invalid_scope',
-          error_description: 'Scope cannot widen past the original grant or the current plan.',
-        },
-        400,
-      );
-    case 'unavailable':
-      return json({ error: 'server_error', error_description: 'Could not check the account. Try again.' }, 503);
-    case 'invalid_grant':
-      return json({ error: 'invalid_grant' }, 400);
-    default: {
-      const unreachable: never = result;
-      return unreachable;
-    }
-  }
+  if (result.kind === 'issued') await touchRegisteredClient(env, client);
+  const http = refreshGrantResponse(result);
+  return json(http.body, http.status);
 }
 
 async function exchangeAuthorizationCode(env: Env, body: Record<string, string>): Promise<Response> {
@@ -787,25 +781,33 @@ async function exchangeAuthorizationCode(env: Env, body: Record<string, string>)
 
   const accessToken = `mcp_${randomId('tok', 20)}`;
   const createdAt = Date.now();
-  const issued = {
-    accessToken,
-    accountId: record.accountId,
-    userId: record.userId,
-    plan: record.plan,
-    scope: record.scope,
-    clientId: record.clientId,
-    clientName: record.clientName,
-    createdAt,
-  };
-  await writeAccessToken(env, issued);
-  const refreshToken = await issueRefreshToken(env, record, accessToken, createdAt);
+  const refresh = await issueRefreshToken(env, record, accessToken);
+  const tokenTtl = refresh ? REFRESH_ACCESS_TTL_SECONDS : TOKEN_TTL_SECONDS;
+  try {
+    await writeAccessToken(env, {
+      accessToken,
+      accountId: record.accountId,
+      userId: record.userId,
+      plan: record.plan,
+      scope: record.scope,
+      clientId: record.clientId,
+      clientName: record.clientName,
+      familyId: refresh?.familyId,
+      createdAt,
+      tokenTtl,
+      connectionTtl: refresh ? REFRESH_TTL_SECONDS : TOKEN_TTL_SECONDS,
+    });
+  } catch (err) {
+    if (refresh) await revokeRefreshFamily(env, refresh.familyId, refreshAccessStore(env)).catch(() => undefined);
+    throw err;
+  }
 
   return json({
     access_token: accessToken,
     token_type: 'Bearer',
-    expires_in: TOKEN_TTL_SECONDS,
+    expires_in: tokenTtl,
     scope: record.scope,
-    ...(refreshToken ? { refresh_token: refreshToken } : {}),
+    ...(refresh ? { refresh_token: refresh.refreshToken } : {}),
   });
 }
 
@@ -813,8 +815,7 @@ async function issueRefreshToken(
   env: Env,
   record: AuthCodeRecord,
   accessToken: string,
-  createdAt: number,
-): Promise<string | undefined> {
+): Promise<{ refreshToken: string; familyId: string } | undefined> {
   if (!record.clientId) return undefined;
   const client = await loadClient(env, record.clientId);
   if (!client?.grantTypes.includes('refresh_token')) return undefined;
@@ -826,25 +827,13 @@ async function issueRefreshToken(
     grantedScope: record.scope,
     accessToken,
   });
-  if (!created) return undefined;
-  try {
-    await writeAccessToken(env, {
-      accessToken,
-      accountId: record.accountId,
-      userId: record.userId,
-      plan: record.plan,
-      scope: record.scope,
-      clientId: record.clientId,
-      clientName: record.clientName,
-      familyId: created.familyId,
-      createdAt,
-    });
-  } catch (err) {
-    console.error('[mcp-oauth] refresh link failed:', err instanceof Error ? err.message : err);
-    await revokeRefreshFamily(env, created.familyId, refreshAccessStore(env)).catch(() => undefined);
-    return undefined;
-  }
-  return created.refreshToken;
+  return created ?? undefined;
+}
+
+async function touchRegisteredClient(env: Env, client: RegisteredClient): Promise<void> {
+  await env.LUMINARA_KV?.put(`${CLIENTS_KV_PREFIX}${client.clientId}`, JSON.stringify(client), {
+    expirationTtl: CLIENT_TTL_SECONDS,
+  });
 }
 
 /**
@@ -952,7 +941,7 @@ export async function identifyMcpOAuthToken(
 
   // Primary path: hashed record.
   const raw = await env.LUMINARA_KV.get(await tokenKvKey(token));
-  if (raw) return parseTokenRecord(raw);
+  if (raw) return acceptAccessToken(env, token, raw);
 
   // Legacy migration: records written before hashing keyed KV by the raw token.
   // On a valid hit, copy to the hashed key (same metadata + a fresh 30-day TTL)
@@ -969,7 +958,17 @@ export async function identifyMcpOAuthToken(
     // Migration is best-effort; the plaintext record keeps working until KV recovers.
     console.error('[mcp-oauth] legacy token migration failed (read path still served):', err instanceof Error ? err.message : err);
   }
-  return parsed;
+  return acceptAccessToken(env, token, legacyRaw);
+}
+
+/** A token that names a family is usable only while that family lists its hash and is not revoked. */
+async function acceptAccessToken(env: Env, token: string, raw: string): Promise<McpOAuthIdentity | null> {
+  const parsed = parseTokenRecord(raw);
+  if (!parsed) return null;
+  const familyId = familyIdFromAccessRecord(raw);
+  if (!familyId) return parsed;
+  const allowed = await refreshFamilyAllowsAccess(env, familyId, await sha256Hex(token));
+  return allowed ? parsed : null;
 }
 
 function parseTokenRecord(raw: string): McpOAuthIdentity | null {

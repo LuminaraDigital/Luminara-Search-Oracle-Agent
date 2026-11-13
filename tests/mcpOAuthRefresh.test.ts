@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import worker from '../worker/index';
 import type { Env } from '../worker/index';
 import { identifyMcpOAuthToken } from '../worker/mcpOAuth';
+import { sha256Hex } from '../worker/workerUtils';
 import { createSqliteD1 } from './helpers/sqliteD1';
 
 const botToken = '123456:REFRESH_TEST';
@@ -39,14 +40,16 @@ function makeEnv(plan = 'growth') {
     ['sub:77001', JSON.stringify({ plan, expiresAt: Date.now() + 86400_000 })],
   ]);
   const metadata = new Map<string, unknown>();
+  const putTtls = new Map<string, number>();
   const LUMINARA_KV = {
     get: async (key: string, type?: unknown) => {
       const value = store.get(key) ?? null;
       return value && type === 'json' ? JSON.parse(value) : value;
     },
-    put: async (key: string, value: string, options?: { metadata?: unknown }) => {
+    put: async (key: string, value: string, options?: { metadata?: unknown; expirationTtl?: number }) => {
       store.set(key, value);
       if (options?.metadata) metadata.set(key, options.metadata);
+      if (typeof options?.expirationTtl === 'number') putTtls.set(key, options.expirationTtl);
     },
     delete: async (key: string) => void store.delete(key),
     list: async ({ prefix }: { prefix: string }) => ({
@@ -66,7 +69,7 @@ function makeEnv(plan = 'growth') {
     ALLOWED_ORIGINS: 'https://luminarasuite.com',
     MCP_OAUTH_SECRET: 'test-oauth-secret',
   } as unknown as Env;
-  return { env, store };
+  return { env, store, putTtls };
 }
 
 let ipCounter = 0;
@@ -165,9 +168,9 @@ describe('refresh token registration and metadata', () => {
     const registered = await register(env, ['authorization_code', 'refresh_token']);
     expect(registered.res.status).toBe(201);
     expect(registered.body.grant_types).toEqual(['authorization_code', 'refresh_token']);
-    const refused = await register(env, ['authorization_code', 'client_credentials']);
-    expect(refused.res.status).toBe(400);
-    expect(refused.body.error).toBe('invalid_client_metadata');
+    const extra = await register(env, ['authorization_code', 'client_credentials', 'refresh_token']);
+    expect(extra.res.status).toBe(201);
+    expect(extra.body.grant_types).toEqual(['authorization_code', 'refresh_token']);
     const codeOnly = await register(env, ['authorization_code']);
     expect(codeOnly.body.grant_types).toEqual(['authorization_code']);
   });
@@ -177,12 +180,15 @@ describe('refresh token registration and metadata', () => {
     const withDefault = await connect(omitted.env);
     expect(withDefault.tokenRes.status).toBe(200);
     expect(withDefault.token.refresh_token?.startsWith('mcr_')).toBe(true);
-    expect(withDefault.token.expires_in).toBe(60 * 60 * 24 * 30);
+    expect(withDefault.token.expires_in).toBe(60 * 60);
+    expect(withDefault.tokenRes.headers.get('cache-control')).toBe('no-store');
+    expect(withDefault.tokenRes.headers.get('pragma')).toBe('no-cache');
 
     const { env } = makeEnv();
     const issued = await connect(env, ['authorization_code']);
     expect(issued.token.access_token?.startsWith('mcp_')).toBe(true);
     expect(issued.token.refresh_token).toBeUndefined();
+    expect(issued.token.expires_in).toBe(60 * 60 * 24 * 30);
     const denied = await refresh(env, 'mcr_not-issued', issued.clientId);
     expect(denied.status).toBe(400);
     expect(((await denied.json()) as TokenBody).error).toBe('unauthorized_client');
@@ -211,10 +217,17 @@ describe('refresh token rotation', () => {
     expect(await identifyMcpOAuthToken(env, access)).toMatchObject({ scope: 'mcp:free' });
     expect(await identifyMcpOAuthToken(env, next.access_token ?? '')).toMatchObject({ scope: 'mcp:free' });
     expect([...store.keys()].some((key) => key.startsWith('mcp_calls:'))).toBe(false);
+    expect(rotated.headers.get('cache-control')).toBe('no-store');
+    expect(rotated.headers.get('pragma')).toBe('no-cache');
+    const row = await env.DB!.prepare(`SELECT successor_enc FROM mcp_oauth_refresh_family`).first<{ successor_enc: string }>();
+    expect(JSON.stringify(row)).not.toContain(next.access_token ?? '');
+    expect(JSON.stringify(row)).not.toContain(next.refresh_token ?? '');
 
-    const spent = await refresh(env, refreshToken, issued.clientId);
-    expect(spent.status).toBe(400);
-    expect(((await spent.json()) as TokenBody).error).toBe('invalid_grant');
+    const replay = await refresh(env, refreshToken, issued.clientId);
+    expect(replay.status).toBe(200);
+    const same = (await replay.json()) as TokenBody;
+    expect(same.access_token).toBe(next.access_token);
+    expect(same.refresh_token).toBe(next.refresh_token);
   });
 
   it('revokes the family when a rotated refresh token is presented again', async () => {
@@ -223,6 +236,7 @@ describe('refresh token rotation', () => {
     const firstAccess = issued.token.access_token ?? '';
     const firstRefresh = issued.token.refresh_token ?? '';
     const rotated = (await (await refresh(env, firstRefresh, issued.clientId)).json()) as TokenBody;
+    await env.DB!.prepare(`UPDATE mcp_oauth_refresh_family SET grace_until = 1`).run();
     const reused = await refresh(env, firstRefresh, issued.clientId);
     expect(reused.status).toBe(400);
     expect(((await reused.json()) as TokenBody).error).toBe('invalid_grant');
@@ -301,6 +315,118 @@ describe('refresh token rotation', () => {
       scope: 'mcp:free mcp:research',
       plan: 'agency',
     });
+  });
+});
+
+describe('refresh family atomicity', () => {
+  it('returns the same successor when the same refresh token is used twice at once', async () => {
+    const { env } = makeEnv();
+    const issued = await connect(env);
+    const [first, second] = await Promise.all([
+      refresh(env, issued.token.refresh_token ?? '', issued.clientId),
+      refresh(env, issued.token.refresh_token ?? '', issued.clientId),
+    ]);
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    const a = (await first.json()) as TokenBody;
+    const b = (await second.json()) as TokenBody;
+    expect(a.access_token).toBe(b.access_token);
+    expect(a.refresh_token).toBe(b.refresh_token);
+    expect(await identifyMcpOAuthToken(env, a.access_token ?? '')).toMatchObject({ scope: 'mcp:free' });
+    const listed = await env.DB!.prepare(`SELECT COUNT(*) AS n FROM mcp_oauth_refresh_access`).first<{ n: number }>();
+    expect(listed?.n).toBe(2);
+  });
+
+  it('replays the same tokens for 30 seconds, then a later reuse revokes the family', async () => {
+    const { env } = makeEnv();
+    const issued = await connect(env);
+    const firstAccess = issued.token.access_token ?? '';
+    const rotated = (await (await refresh(env, issued.token.refresh_token ?? '', issued.clientId)).json()) as TokenBody;
+    const replay = await refresh(env, issued.token.refresh_token ?? '', issued.clientId);
+    expect(replay.status).toBe(200);
+    const again = (await replay.json()) as TokenBody;
+    expect(again.access_token).toBe(rotated.access_token);
+    expect(again.refresh_token).toBe(rotated.refresh_token);
+    expect(await identifyMcpOAuthToken(env, firstAccess)).toMatchObject({ scope: 'mcp:free' });
+
+    await env.DB!.prepare(`UPDATE mcp_oauth_refresh_family SET grace_until = 1`).run();
+    const late = await refresh(env, issued.token.refresh_token ?? '', issued.clientId);
+    expect(late.status).toBe(400);
+    expect(late.headers.get('cache-control')).toBe('no-store');
+    expect(((await late.json()) as TokenBody).error).toBe('invalid_grant');
+    expect(await identifyMcpOAuthToken(env, firstAccess)).toBeNull();
+    expect(await identifyMcpOAuthToken(env, rotated.access_token ?? '')).toBeNull();
+  });
+
+  it('refuses an access token whose family is missing, revoked, or does not list it', async () => {
+    const missing = makeEnv();
+    const dropped = await connect(missing.env);
+    const droppedToken = dropped.token.access_token ?? '';
+    await missing.env.DB!.prepare(`DELETE FROM mcp_oauth_refresh_family`).run();
+    expect(await identifyMcpOAuthToken(missing.env, droppedToken)).toBeNull();
+
+    const revoked = makeEnv();
+    const cut = await connect(revoked.env);
+    await revoked.env.DB!.prepare(`UPDATE mcp_oauth_refresh_family SET revoked = 1`).run();
+    expect(await identifyMcpOAuthToken(revoked.env, cut.token.access_token ?? '')).toBeNull();
+
+    const unlisted = makeEnv();
+    const lone = await connect(unlisted.env);
+    const loneToken = lone.token.access_token ?? '';
+    await unlisted.env.DB!.prepare(`DELETE FROM mcp_oauth_refresh_access WHERE access_hash = ?`)
+      .bind(await sha256Hex(loneToken))
+      .run();
+    expect(await identifyMcpOAuthToken(unlisted.env, loneToken)).toBeNull();
+  });
+
+  it('does not narrow scope when the plan read fails, and slides the client registration', async () => {
+    const { env, putTtls } = makeEnv('agency');
+    const registered = await register(env);
+    const clientId = registered.body.client_id ?? '';
+    const code = 'oc_plan_read_failure';
+    const kv = env.LUMINARA_KV!;
+    await kv.put(
+      `mcp_oauth_code:${code}`,
+      JSON.stringify({
+        accountId: '77001',
+        userId: '77001',
+        plan: 'agency',
+        redirectUri: callback,
+        codeChallenge: await challenge(verifier),
+        scope: 'mcp:free mcp:research',
+        createdAt: Date.now(),
+        clientId,
+        clientName: 'Agency agent',
+      }),
+    );
+    const tokenRes = await call(env, '/api/oauth/mcp/token', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: callback,
+        code_verifier: verifier,
+        client_id: clientId,
+      }),
+    });
+    const issued = (await tokenRes.json()) as TokenBody;
+    expect(issued.scope).toBe('mcp:free mcp:research');
+    const originalGet = kv.get.bind(kv);
+    kv.get = async (key: string, type?: unknown) => {
+      if (key.startsWith('sub:')) throw new Error('kv down');
+      return originalGet(key, type);
+    };
+    const failed = await refresh(env, issued.refresh_token ?? '', clientId);
+    expect(failed.status).toBe(503);
+    expect(((await failed.json()) as TokenBody).error).toBe('temporarily_unavailable');
+    expect(failed.headers.get('pragma')).toBe('no-cache');
+    putTtls.delete(`mcp_oauth_client:${clientId}`);
+    kv.get = originalGet;
+    const recovered = await refresh(env, issued.refresh_token ?? '', clientId);
+    expect(recovered.status).toBe(200);
+    expect(((await recovered.json()) as TokenBody).scope).toBe('mcp:free mcp:research');
+    expect(putTtls.get(`mcp_oauth_client:${clientId}`)).toBe(60 * 60 * 24 * 90);
   });
 });
 

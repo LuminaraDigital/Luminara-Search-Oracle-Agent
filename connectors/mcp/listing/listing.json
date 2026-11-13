@@ -22,7 +22,8 @@
     "revocationEndpoint": "https://www.luminarasuite.com/api/oauth/mcp/revoke",
     "refreshToken": {
       "expiresInDays": 90,
-      "accessTokenExpiresInDays": 30,
+      "accessTokenExpiresInHours": 1,
+      "accessTokenExpiresInDaysWithoutRefresh": 30,
       "rotation": "Each refresh returns a new refresh token. The one you sent stops working.",
       "reuse": "Sending a refresh token that already rotated revokes that family, including its access tokens.",
       "scope": "The scope cannot grow. The account plan is checked again, and a scope the plan no longer allows is dropped.",
