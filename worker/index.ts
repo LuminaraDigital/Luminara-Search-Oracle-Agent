@@ -194,6 +194,7 @@ import { handleEmailUnsubscribe, runWithWaitUntil } from './welcomeEmail';
 
 export { DailyQuota } from './dailyQuota';
 import { createProject, listProjects, getProject } from './projectService';
+import { handleProjectHistoryRoute } from './projectHistoryRoute';
 import { getProjectContext, updateProjectContext, seedContextFromDna } from './projectContextService';
 import { getAgentReport, listAgentReports, saveAgentReport, getAgentReportHtmlForAccount } from './agentReportService';
 import { createApiKey, listApiKeys, revokeApiKey } from './apiKeyService';
@@ -2029,6 +2030,8 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       return withCors(json({ ok: false, error: who.error || 'Unauthorized', code: 'AUTH_REQUIRED' }, 401));
     }
     const accountId = billingId(who.user);
+    const historyResponse = await handleProjectHistoryRoute(request, env, path, accountId);
+    if (historyResponse) return withCors(historyResponse);
 
     if (path === '/projects' && request.method === 'GET') {
       const projects = await listProjects(env, accountId);

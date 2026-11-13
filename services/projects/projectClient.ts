@@ -3,6 +3,7 @@
  */
 import { apiBase, workerFetchWithAuthRetry } from '../apiClient';
 import type { BusinessDNA } from '../../types';
+import type { SnapshotSignals } from '../history/snapshotCompare';
 import type {
   AgentReportSummary,
   ProjectContextBundle,
@@ -119,4 +120,64 @@ export async function listProjectReports(projectId: string): Promise<AgentReport
   const data = (await r.json()) as { reports?: AgentReportSummary[]; error?: string };
   if (!r.ok) throw new Error(data.error || `list reports failed (${r.status})`);
   return data.reports || [];
+}
+
+export type ProjectHistorySnapshot = {
+  id: string;
+  kind: string;
+  measuredAt: number;
+  signals: SnapshotSignals;
+};
+
+export type ProjectHistoryPayload = {
+  projectId: string;
+  retentionNote: string;
+  snapshots: ProjectHistorySnapshot[];
+  trends: Array<{
+    kind: string;
+    metric: string;
+    subject: string;
+    latestScore: number | null;
+    latestDelta: {
+      scoreDelta: number | null;
+      label: string;
+      droppedEngines: string[];
+      gainedEngines: string[];
+    } | null;
+  }>;
+};
+
+export type ProjectOutcomePayload = {
+  id: string;
+  title: string;
+  kind: string;
+  status: string;
+  beforeValue: number | null;
+  afterValue: number | null;
+  lift: number | null;
+  dataLabel: string;
+};
+
+export async function fetchProjectHistory(projectId: string): Promise<ProjectHistoryPayload> {
+  const r = await workerFetchWithAuthRetry(`${apiBase()}/api/projects/${encodeURIComponent(projectId)}/history`);
+  const data = (await r.json()) as { history?: ProjectHistoryPayload; error?: string };
+  if (!r.ok || !data.history) throw new Error(data.error || `history failed (${r.status})`);
+  return data.history;
+}
+
+export async function fetchProjectOutcomes(projectId: string): Promise<ProjectOutcomePayload[]> {
+  const r = await workerFetchWithAuthRetry(`${apiBase()}/api/projects/${encodeURIComponent(projectId)}/outcomes`);
+  const data = (await r.json()) as { outcomes?: ProjectOutcomePayload[]; error?: string };
+  if (!r.ok || !data.outcomes) throw new Error(data.error || `outcomes failed (${r.status})`);
+  return data.outcomes;
+}
+
+export async function markProjectActionDone(projectId: string, actionId: string): Promise<ProjectOutcomePayload> {
+  const r = await workerFetchWithAuthRetry(
+    `${apiBase()}/api/projects/${encodeURIComponent(projectId)}/outcomes/${encodeURIComponent(actionId)}/done`,
+    { method: 'POST' },
+  );
+  const data = (await r.json()) as { outcome?: ProjectOutcomePayload; error?: string };
+  if (!r.ok || !data.outcome) throw new Error(data.error || `mark done failed (${r.status})`);
+  return data.outcome;
 }

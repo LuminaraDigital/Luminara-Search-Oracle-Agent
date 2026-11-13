@@ -376,7 +376,7 @@ describe('MCP tool catalogue', () => {
 
   it('annotations follow governance and every tool has a real title', () => {
     const tools = listMcpToolCatalogue();
-    expect(tools).toHaveLength(33);
+    expect(tools).toHaveLength(37);
     expect(Object.keys(TOOL_GOVERNANCE).sort()).toEqual(tools.map((tool) => tool.name).sort());
     for (const tool of tools) {
       const risk = TOOL_GOVERNANCE[tool.name].risk;
