@@ -89,7 +89,7 @@ import { getOrCreateUserOrg, hasPermission } from './enterpriseStore';
 import { auditOrgIdFor, recordAuditLog, getAuditLogs, recordAuditLogBestEffort, getAuditChainEntries, verifyAuditChain } from './auditLog';
 import { isAdminAuthorized } from './adminAuth';
 
-import { applyCorsHeaders, corsHeaders, getSessionCookieToken, identify, json, secretEquals, billingId, sha256Hex } from './workerUtils';
+import { applyCorsHeaders, corsHeaders, getSessionCookieToken, identify, json, secretEquals, billingId, sha256Hex, sessionIsTelegramUser } from './workerUtils';
 import { getActiveSubscription, mapHostedEntitlement, readQuotaSnapshot } from './quotaMiddleware';
 import { handleReferralRoute } from './referrals';
 import { handleIdeaScoutRoute } from './ideaScout';
@@ -1058,9 +1058,17 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     if (typeof initData !== 'string' || !initData) return withCors(json({ error: 'initData required' }, 400));
     if (!env.BOT_TOKEN) return withCors(json({ error: 'BOT_TOKEN not configured' }, 503));
     const v = await validateInitData(initData, env.BOT_TOKEN);
-    if (!v.ok) return withCors(json({ error: v.reason }, 401));
+    // Stars from a Mini App open over an hour: the initData is stale but Telegram's signature still
+    // names the buyer, so the session the app holds may stand in when it is that same user.
+    // Signing in again (/telegram/auth) stays strict.
+    const buyerId = v.ok
+      ? v.user.id
+      : path === '/telegram/invoice' && (await sessionIsTelegramUser(request, env, v.staleUserId))
+        ? (v.staleUserId as number)
+        : null;
+    if (!v.ok && buyerId === null) return withCors(json({ error: v.reason }, 401));
 
-    if (path === '/telegram/auth') {
+    if (path === '/telegram/auth' && v.ok) {
       const csrf = refuseCrossSiteSessionWrite(request, env);
       if (csrf) return withCors(csrf);
       const tgIdentity: HostedIdentity = { id: String(v.user.id), source: 'telegram' };
@@ -1080,8 +1088,8 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       );
       return withCors(res);
     }
-    if (typeof plan !== 'string' || !plan) return withCors(json({ error: 'initData and plan required' }, 400));
-    const link = await createInvoiceLink(env, v.user.id, normalizePlanId(plan));
+    if (typeof plan !== 'string' || !plan || buyerId === null) return withCors(json({ error: 'initData and plan required' }, 400));
+    const link = await createInvoiceLink(env, buyerId, normalizePlanId(plan));
     return withCors(link.ok ? json({ ok: true, url: link.url }) : json({ error: link.error }, 400));
   }
 

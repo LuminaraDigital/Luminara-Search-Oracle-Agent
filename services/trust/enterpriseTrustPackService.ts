@@ -111,8 +111,10 @@ export function buildEnterpriseTrustPack(input: {
   const asOf = new Date().toISOString();
   const day = isoDay();
   const sec = input.enriched?.security;
-  const httpsOk = sec?.httpsEnforced === true || sec?.redirectsToHttps === true;
-  const hstsOk = !!sec?.hstsEnabled;
+  // No security data, or a failed check, measured nothing: HTTPS and HSTS are unknown, not passed or failed.
+  const secMeasured = sec !== undefined && sec.measurementConfidence !== 'failed';
+  const httpsOk = secMeasured ? sec?.httpsEnforced === true || sec?.redirectsToHttps === true : undefined;
+  const hstsOk = secMeasured ? !!sec?.hstsEnabled : undefined;
   const integrityOk = (input.trustPack?.citationIntegrity ?? 0) >= 70;
   const citeOk = (input.trustPack?.citeWorthiness ?? 0) >= 60;
 
@@ -161,25 +163,31 @@ export function buildEnterpriseTrustPack(input: {
       id: 'ctrl-target-https',
       criterion: 'security',
       title: 'Audited site HTTPS posture',
-      status: statusFromBool(httpsOk),
+      status: statusFromBool(httpsOk, false),
       evidenceRefs: ['services/enrichment/publicApisEnrichmentService.ts'],
       owner: 'Customer site',
       period: 'point_in_time',
-      detail: httpsOk
-        ? 'HTTPS (or redirect) measured on the audited origin.'
-        : 'HTTPS not confirmed for the audited origin in this run.',
+      detail:
+        httpsOk === undefined
+          ? 'The security check could not reach the audited origin, so HTTPS was not measured in this run.'
+          : httpsOk
+            ? 'HTTPS (or redirect) measured on the audited origin.'
+            : 'HTTPS not confirmed for the audited origin in this run.',
     },
     {
       id: 'ctrl-hsts',
       criterion: 'availability',
       title: 'Forces secure HTTPS connections (HSTS)',
-      status: statusFromBool(hstsOk),
+      status: statusFromBool(hstsOk, false),
       evidenceRefs: ['enriched.security.hstsEnabled'],
       owner: 'Customer site',
       period: 'point_in_time',
-      detail: hstsOk
-        ? 'The header that forces secure HTTPS connections (HSTS) was observed.'
-        : 'That header was not observed, so readiness for enterprise buyers is partial.',
+      detail:
+        hstsOk === undefined
+          ? 'The security check could not reach the audited origin, so this header was not measured in this run.'
+          : hstsOk
+            ? 'The header that forces secure HTTPS connections (HSTS) was observed.'
+            : 'That header was not observed, so readiness for enterprise buyers is partial.',
     },
     {
       id: 'ctrl-citation-integrity',
@@ -366,9 +374,9 @@ export function buildEnterpriseTrustPack(input: {
       id: 'eeat-trust-https',
       system: 'trust',
       itemCode: 'TRUST-HTTPS',
-      status: httpsOk ? 'pass' : 'fail',
+      status: httpsOk === undefined ? 'unknown' : httpsOk ? 'pass' : 'fail',
       evidenceRefs: ['enriched.security'],
-      veto: !httpsOk,
+      veto: httpsOk === false,
       detail: 'HTTPS is a hard trust veto for enterprise buyers when missing.',
     },
   ];
