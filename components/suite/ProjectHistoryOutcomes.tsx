@@ -1,10 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import {
+  ackProjectAlert,
+  fetchProjectAlerts,
   fetchProjectHistory,
+  fetchProjectMonitor,
   fetchProjectOutcomes,
   listSeoProjects,
   markProjectActionDone,
+  saveProjectMonitor,
+  type ProjectAlertPayload,
   type ProjectHistoryPayload,
+  type ProjectMonitorPayload,
   type ProjectOutcomePayload,
 } from '../../services/projects/projectClient';
 import type { SnapshotSignals } from '../../services/history/snapshotCompare';
@@ -24,6 +30,7 @@ const METRIC_LABEL: Record<string, string> = {
   organic_count: 'organic pages',
   keyword_volume: 'keyword volume',
   crawler_status: 'crawler files',
+  re_coverage: 'real estate checks found',
 };
 
 function kindLabel(kind: string): string {
@@ -37,7 +44,8 @@ function dayLabel(measuredAt: number): string {
 function trendTitle(kind: string, metric: string | undefined, subject: string | undefined): string {
   const metricLabel = metric ? METRIC_LABEL[metric] : '';
   const base = metricLabel ? `${kindLabel(kind)}, ${metricLabel}` : kindLabel(kind);
-  return subject ? `${base} (${subject})` : base;
+  if (!subject || subject === 'real estate checks') return base;
+  return `${base} (${subject})`;
 }
 
 function recordedText(signals: SnapshotSignals): string {
@@ -58,8 +66,12 @@ export function ProjectHistoryOutcomes({ signedIn }: { signedIn: boolean }) {
   const [projectId, setProjectId] = useState('');
   const [history, setHistory] = useState<ProjectHistoryPayload | null>(null);
   const [outcomes, setOutcomes] = useState<ProjectOutcomePayload[] | null>(null);
+  const [monitor, setMonitor] = useState<ProjectMonitorPayload | null>(null);
+  const [planCadence, setPlanCadence] = useState<ProjectMonitorPayload['cadence']>('monthly');
+  const [alerts, setAlerts] = useState<ProjectAlertPayload[]>([]);
   const [error, setError] = useState('');
   const [busyId, setBusyId] = useState('');
+  const [monitorBusy, setMonitorBusy] = useState(false);
 
   useEffect(() => {
     if (!signedIn) return;
@@ -88,11 +100,21 @@ export function ProjectHistoryOutcomes({ signedIn }: { signedIn: boolean }) {
     setError('');
     setHistory(null);
     setOutcomes(null);
-    Promise.all([fetchProjectHistory(projectId), fetchProjectOutcomes(projectId)])
-      .then(([nextHistory, nextOutcomes]) => {
+    setMonitor(null);
+    setAlerts([]);
+    Promise.all([
+      fetchProjectHistory(projectId),
+      fetchProjectOutcomes(projectId),
+      fetchProjectMonitor(projectId),
+      fetchProjectAlerts(projectId),
+    ])
+      .then(([nextHistory, nextOutcomes, nextMonitor, nextAlerts]) => {
         if (cancelled) return;
         setHistory(nextHistory);
         setOutcomes(nextOutcomes);
+        setMonitor(nextMonitor.monitor);
+        setPlanCadence(nextMonitor.planCadence);
+        setAlerts(nextAlerts);
       })
       .catch(() => {
         if (!cancelled) setError('Could not load project history.');
@@ -116,6 +138,34 @@ export function ProjectHistoryOutcomes({ signedIn }: { signedIn: boolean }) {
       setBusyId('');
     }
   }
+
+  async function onMonitor(next: { enabled: boolean; cadence: ProjectMonitorPayload['cadence']; emailOptIn: boolean }) {
+    setMonitorBusy(true);
+    setError('');
+    try {
+      setMonitor(await saveProjectMonitor(projectId, next));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save the check schedule.');
+    } finally {
+      setMonitorBusy(false);
+    }
+  }
+
+  async function onReadAlert(alertId: string) {
+    setBusyId(alertId);
+    setError('');
+    try {
+      const saved = await ackProjectAlert(projectId, alertId);
+      setAlerts((current) => current.map((row) => (row.id === saved.id ? saved : row)));
+    } catch {
+      setError('Could not mark that alert read.');
+    } finally {
+      setBusyId('');
+    }
+  }
+
+  const cadenceRank = { monthly: 0, weekly: 1, daily: 2 } as const;
+  const cadenceChoices = (['monthly', 'weekly', 'daily'] as const).filter((cadence) => cadenceRank[cadence] <= cadenceRank[planCadence]);
 
   return (
     <section className="mb-10 mkt-chassis p-6" aria-labelledby="project-history-heading">
@@ -201,6 +251,78 @@ export function ProjectHistoryOutcomes({ signedIn }: { signedIn: boolean }) {
             ))}
           </ul>
         </div>
+      )}
+
+      <h3 className="mt-6 text-xs font-mono uppercase tracking-[0.14em] text-[var(--color-accent)]">Scheduled checks</h3>
+      <p className="text-sm text-[var(--color-ink-2)] mt-2">
+        The fastest check on this plan is {planCadence}. Each check reads public pages and saves the result on the project. It does not ask an AI answer engine.
+      </p>
+      <div className="mt-3 flex flex-col sm:flex-row sm:items-end gap-3">
+        <label className="text-xs text-[var(--color-ink-2)] flex flex-col gap-1">
+          Cadence
+          <select
+            className="bg-black/60 border border-[var(--color-rule)] text-[var(--color-ink)] text-sm px-2 py-2 min-h-11"
+            value={monitor?.cadence || planCadence}
+            disabled={monitorBusy}
+            onChange={(event) => {
+              const cadence = event.target.value === 'weekly' || event.target.value === 'daily' ? event.target.value : 'monthly';
+              void onMonitor({ enabled: monitor?.enabled ?? true, cadence, emailOptIn: monitor?.emailOptIn ?? false });
+            }}
+          >
+            {cadenceChoices.map((cadence) => (
+              <option key={cadence} value={cadence}>{cadence}</option>
+            ))}
+          </select>
+        </label>
+        <button
+          type="button"
+          className="mkt-cta-secondary !min-h-11 !py-2 !px-4 !text-xs"
+          disabled={monitorBusy}
+          onClick={() => void onMonitor({
+            enabled: !(monitor?.enabled ?? false),
+            cadence: monitor?.cadence || planCadence,
+            emailOptIn: monitor?.emailOptIn ?? false,
+          })}
+        >
+          {monitorBusy ? 'Saving' : monitor?.enabled ? 'Stop checks' : 'Start checks'}
+        </button>
+        <label className="text-sm text-[var(--color-ink)] flex items-center gap-2 min-h-11">
+          <input
+            type="checkbox"
+            checked={monitor?.emailOptIn ?? false}
+            disabled={monitorBusy}
+            onChange={(event) => void onMonitor({
+              enabled: monitor?.enabled ?? true,
+              cadence: monitor?.cadence || planCadence,
+              emailOptIn: event.target.checked,
+            })}
+          />
+          Email me when a stored score moves
+        </label>
+      </div>
+      {monitor?.prompts.length ? (
+        <p className="text-sm text-[var(--color-ink-2)] mt-3">
+          Prompts from the last page read, not sent to an answer engine: {monitor.prompts.join('; ')}.
+        </p>
+      ) : null}
+      {alerts.length > 0 && (
+        <ul className="mt-3 space-y-3">
+          {alerts.map((alert) => (
+            <li key={alert.id} className="border border-[var(--color-rule)] p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+              <p className="text-sm text-[var(--color-ink)] flex-1">{alert.summary}</p>
+              {alert.readAt === null && (
+                <button
+                  type="button"
+                  className="mkt-cta-secondary !min-h-11 !py-2 !px-4 !text-xs"
+                  disabled={busyId === alert.id}
+                  onClick={() => void onReadAlert(alert.id)}
+                >
+                  {busyId === alert.id ? 'Saving' : 'Mark read'}
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
       )}
 
       <h3 className="mt-6 text-xs font-mono uppercase tracking-[0.14em] text-[var(--color-accent)]">Outcomes</h3>

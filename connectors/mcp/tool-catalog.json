@@ -803,6 +803,119 @@
     }
   },
   {
+    "name": "get_project_monitor",
+    "title": "Project check schedule",
+    "description": "Uses no credits. Returns the check schedule for one project: cadence, whether email is on, and the answer prompts built from the last page read. Prompts are not a measurement of AI answers.",
+    "creditClass": "free",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "projectId"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Project check schedule",
+      "readOnlyHint": true,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "set_project_monitor",
+    "title": "Set the check schedule",
+    "description": "Uses no credits. Turns the project check schedule on or off. Cadence cannot be faster than the plan. emailOptIn must be true before any email is sent. Free and Starter stay on monthly.",
+    "creditClass": "free",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "cadence": {
+          "type": "string",
+          "enum": [
+            "monthly",
+            "weekly",
+            "daily"
+          ]
+        },
+        "emailOptIn": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "projectId",
+        "enabled",
+        "cadence",
+        "emailOptIn"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Set the check schedule",
+      "readOnlyHint": false,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "list_project_alerts",
+    "title": "Project check alerts",
+    "description": "Uses no credits. Lists check alerts for one project. A lift or a drop is included only when two stored snapshots share the same check series.",
+    "creditClass": "free",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "projectId"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Project check alerts",
+      "readOnlyHint": true,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "ack_project_alert",
+    "title": "Mark an alert read",
+    "description": "Uses no credits. Marks one project check alert as read.",
+    "creditClass": "free",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "alertId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "projectId",
+        "alertId"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Mark an alert read",
+      "readOnlyHint": false,
+      "destructiveHint": false
+    }
+  },
+  {
     "name": "create_dev_ticket_from_finding",
     "title": "Create a dev ticket",
     "description": "Uses no credits. Builds a PR bundle (llms.txt, Organization JSON-LD and a deterministic pre-flight receipt), a front-desk brief, and a 14-day retest schedule from an audit finding.",

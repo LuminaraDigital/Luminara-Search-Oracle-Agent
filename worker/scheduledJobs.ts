@@ -19,7 +19,8 @@ export type ScheduledJobName =
   | 'rsi_skill_curator'
   | 'rsi_posting_reflection'
   | 'citation_watch'
-  | 'recovery_campaign_sweep';
+  | 'recovery_campaign_sweep'
+  | 'project_monitor';
 
 export const ALL_SCHEDULED_JOBS: readonly ScheduledJobName[] = [
   'sentinel',
@@ -34,6 +35,7 @@ export const ALL_SCHEDULED_JOBS: readonly ScheduledJobName[] = [
   'rsi_posting_reflection',
   'citation_watch',
   'recovery_campaign_sweep',
+  'project_monitor',
 ];
 
 /**
@@ -41,7 +43,8 @@ export const ALL_SCHEDULED_JOBS: readonly ScheduledJobName[] = [
  * Trust Network domain re-check (each verified domain is re-checked every 7 days), and the
  * Stars charge sweep (settles charges a webhook left undecided and retries refunds), and the TON
  * pending-order sweep (re-checks unpaid orders inside their 48 hours), the payment support
- * sweep, the weekly decision digest, the weekly visibility email, the RSI jobs, and Citation Watch.
+ * sweep, the weekly decision digest, the weekly visibility email, the RSI jobs, Citation Watch,
+ * and the project check schedule. Project checks email only accounts that opted in, and only when RESEND_API_KEY is set.
  * The visibility email sends only to accounts that opted in, and only when RESEND_API_KEY is set.
  * Citation Watch writes runs only when CITATION_WATCH_LIVE is "true".
  * The RSI jobs are owned by this expression so the account does not gain a cron trigger.
@@ -65,6 +68,7 @@ const CRON_JOBS: Record<string, readonly ScheduledJobName[]> = {
     'rsi_posting_reflection',
     'citation_watch',
     'recovery_campaign_sweep',
+    'project_monitor',
   ],
 };
 

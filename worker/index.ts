@@ -195,6 +195,7 @@ import { handleEmailUnsubscribe, runWithWaitUntil } from './welcomeEmail';
 export { DailyQuota } from './dailyQuota';
 import { createProject, listProjects, getProject } from './projectService';
 import { handleProjectHistoryRoute } from './projectHistoryRoute';
+import { handleProjectMonitorRoute, runProjectMonitorTick } from './projectMonitor';
 import { getProjectContext, updateProjectContext, seedContextFromDna } from './projectContextService';
 import { getAgentReport, listAgentReports, saveAgentReport, getAgentReportHtmlForAccount } from './agentReportService';
 import { createApiKey, listApiKeys, revokeApiKey } from './apiKeyService';
@@ -2032,6 +2033,8 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     const accountId = billingId(who.user);
     const historyResponse = await handleProjectHistoryRoute(request, env, path, accountId);
     if (historyResponse) return withCors(historyResponse);
+    const monitorResponse = await handleProjectMonitorRoute(request, env, path, accountId);
+    if (monitorResponse) return withCors(monitorResponse);
 
     if (path === '/projects' && request.method === 'GET') {
       const projects = await listProjects(env, accountId);
@@ -2645,6 +2648,14 @@ const handler = {
         sweepDueRecoveryRuns(env)
           .then(() => undefined)
           .catch((err) => console.error('[Recovery] scheduled sweep failed', err)),
+      );
+    }
+    if (jobs.includes('project_monitor')) {
+      const scheduledAt = controller.scheduledTime;
+      ctx.waitUntil(
+        runProjectMonitorTick(env, { scheduledAt })
+          .then(() => undefined)
+          .catch((err) => console.error('[Monitor] sweep failed', err)),
       );
     }
   },

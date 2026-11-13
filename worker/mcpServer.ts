@@ -57,6 +57,7 @@ import { evaluateWakeGate } from './dreamingWakeGate';
 import { ACCOUNT_MCP_TOOLS } from './mcpAccountTools';
 import { CONVERSION_SPINE_MCP_TOOLS } from './mcpConversionTools';
 import { PROJECT_HISTORY_MCP_TOOLS } from './mcpProjectHistoryTools';
+import { PROJECT_MONITOR_MCP_TOOLS } from './mcpProjectMonitorTools';
 import { FIX_DRAFT_MCP_TOOLS } from './fixDraftRoute';
 import { enforceHabitatScope, SELF_DRIVING_MCP_TOOLS } from './selfDrivingHabitat';
 
@@ -450,6 +451,7 @@ const TOOLS: McpToolDef[] = [
   ...FIX_DRAFT_MCP_TOOLS,
   ...CONVERSION_SPINE_MCP_TOOLS,
   ...PROJECT_HISTORY_MCP_TOOLS,
+  ...PROJECT_MONITOR_MCP_TOOLS,
   ...SELF_DRIVING_MCP_TOOLS,
   ...PAID_TOOL_CATALOGUE.map((meta) => ({
     name: meta.name,
