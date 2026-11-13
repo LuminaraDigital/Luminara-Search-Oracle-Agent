@@ -751,11 +751,13 @@ async function callTool(
       args,
     });
     const approvalUrl = `${webappOrigin(ctx.env)}/?mcp_approval=${req.id}`;
+    // A repeated call reuses the pending request, so the time left can be well under the full window.
+    const minutesLeft = Math.max(1, Math.ceil((req.expiresAt - Date.now()) / 60000));
     return textResult(
       [
         `Luminara needs the account owner's approval before running ${name}.`,
         `Approve or deny: ${approvalUrl}`,
-        'The link works for 30 minutes, for the signed-in account owner only. After approving, ask for the same action again with the same details.',
+        `The link works for ${minutesLeft} more ${minutesLeft === 1 ? 'minute' : 'minutes'}, for the signed-in account owner only. After approving, ask for the same action again with the same details.`,
       ].join('\n'),
       { requiresApproval: true, actionRequestId: req.id, approvalUrl, expiresAt: req.expiresAt },
     );

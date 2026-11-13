@@ -379,7 +379,42 @@ describe('mcp-action-requests HTTP', () => {
         env,
         ctx,
       );
-    expect((await post('approve')).status).toBe(409);
+    const approve = await post('approve');
+    expect(approve.status).toBe(409);
+    expect(((await approve.json()) as { code: string }).code).toBe('EXPIRED');
     expect((await post('deny')).status).toBe(200);
+  });
+
+  it('offers Deny only when part of the details was cut out before storing', async () => {
+    const env = makeEnv();
+    // Redaction replaces anything nested deeper than it walks with "[truncated]".
+    let nested: Record<string, unknown> = { goal: 'delete everything' };
+    for (let i = 0; i < 12; i++) nested = { inner: nested };
+    const created = await createActionRequest(env, { userId: '88001', toolName: 'browse_goal', args: nested });
+    const headers = { 'x-telegram-init-data': signInitData(88001, 'Owner') };
+    const read = await worker.fetch(req(`/api/mcp-action-requests/${created.id}`, { headers }), env, ctx);
+    const body = (await read.json()) as { request: { args: string; argsTruncated: boolean } };
+    expect(body.request.args).toContain('[truncated]');
+    expect(body.request.argsTruncated).toBe(true);
+    const approve = await worker.fetch(
+      req(`/api/mcp-action-requests/${created.id}/approve`, { method: 'POST', headers }),
+      env,
+      ctx,
+    );
+    expect(approve.status).toBe(409);
+    expect(((await approve.json()) as { code: string }).code).toBe('TOO_LONG_TO_REVIEW');
+  });
+
+  it('never cuts the shown details in the middle of a character', async () => {
+    const env = makeEnv();
+    const created = await createActionRequest(env, { userId: '88001', toolName: 'browse_goal', args: { goal: '\u{1F600}'.repeat(2100) } });
+    const read = await worker.fetch(
+      req(`/api/mcp-action-requests/${created.id}`, { headers: { 'x-telegram-init-data': signInitData(88001, 'Owner') } }),
+      env,
+      ctx,
+    );
+    const { request } = (await read.json()) as { request: { args: string } };
+    expect(request.args.length).toBeLessThanOrEqual(4000);
+    expect(request.args.isWellFormed()).toBe(true);
   });
 });

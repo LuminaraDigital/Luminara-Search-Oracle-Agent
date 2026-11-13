@@ -58,13 +58,13 @@ When a destructive tool needs approval, the answer becomes a card:
 
 - the tool name,
 - `https://luminarasuite.com/?mcp_approval=<request id>`,
-- "This link works for 30 minutes, for the account owner only. After approving, ask for the same action again."
+- "The link works for N more minutes, for the signed-in account owner only. After approving, ask for the same action again with the same details." N is the time left on the request, 30 at most."
 
 The structured content adds `approvalUrl` and `expiresAt`.
 
 The web app reads `mcp_approval` on load. Signed out, it asks for sign-in first (the same pattern as `agent_connect`). Signed in, it shows one dialog: tool, project, the stored (already redacted) arguments, time left, and **Approve once** and **Deny**. It also shows a fixed sentence per tool saying what approving does; that sentence never comes from the agent's arguments. It uses the existing approve and deny routes, plus one new read route, `GET /api/mcp-action-requests/:id`. The dialog handles four other states: not found, another account's request, already decided, and expired.
 
-The owner must see everything they approve. If the stored arguments are too long to show in full, the page says so and offers Deny only.
+The owner must see everything they approve. If the stored arguments are too long to show in full, or nested so deep that part was cut out before storing, the page says so and offers Deny only.
 
 Another account's request and a missing request get the same 404, on the new read route and on approve and deny (which used to answer 403 and so confirmed the id existed). Only a signed-in Luminara session can approve: connector tokens and API keys are not accepted on these routes, so an agent cannot approve its own request. The link id is removed from the address bar as soon as the page reads it.
 

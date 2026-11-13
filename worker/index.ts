@@ -1930,6 +1930,12 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
 
     // The page behind an agent's approval link (spec 0031) reads one request, for its owner only.
     const APPROVAL_ARGS_SHOWN = 4000;
+    // Too long to show, or nested so deep that redaction cut part of it out: either way the owner cannot read it all.
+    const cannotReview = (argsJson: string) =>
+      argsJson.length > APPROVAL_ARGS_SHOWN || argsJson.includes('"[truncated]"');
+    // Never ends on half of a character pair.
+    const shownArgs = (argsJson: string) =>
+      argsJson.slice(0, APPROVAL_ARGS_SHOWN).replace(/[\ud800-\udbff]$/, '');
     const oneMatch = path.match(/^\/mcp-action-requests\/([^/]+)$/);
     if (oneMatch && request.method === 'GET') {
       const row = await getOwnedToolRequest(env, oneMatch[1], accountId);
@@ -1945,9 +1951,9 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
             toolName: row.tool_name,
             domain: project?.domain ?? null,
             // Stored already redacted. The owner must see everything they approve, so a request
-            // too long to show in full says so and the page offers Deny only.
-            args: row.args_json.slice(0, APPROVAL_ARGS_SHOWN),
-            argsTruncated: row.args_json.length > APPROVAL_ARGS_SHOWN,
+            // that cannot be shown in full says so and the page offers Deny only.
+            args: shownArgs(row.args_json),
+            argsTruncated: cannotReview(row.args_json),
             consequence: approvalConsequence(row.tool_name),
             status: row.status,
             expiresAt: row.expires_at,
@@ -1970,8 +1976,11 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
           json({ ok: false, error: 'Already decided', code: 'ALREADY_DECIDED', status: row.status }, 409),
         );
       }
+      if (decision === 'approve' && row.expires_at <= Date.now()) {
+        return withCors(json({ ok: false, error: 'This request has expired. Ask the agent to try again.', code: 'EXPIRED' }, 409));
+      }
       // The approval page cannot show these details in full, so nobody can have read what they would approve.
-      if (decision === 'approve' && row.args_json.length > APPROVAL_ARGS_SHOWN) {
+      if (decision === 'approve' && cannotReview(row.args_json)) {
         return withCors(
           json({ ok: false, error: 'This request is too long to review. Deny it and ask for a shorter one.', code: 'TOO_LONG_TO_REVIEW' }, 409),
         );

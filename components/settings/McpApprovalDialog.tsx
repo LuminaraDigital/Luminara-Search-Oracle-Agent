@@ -19,9 +19,10 @@ type Load =
   | { kind: 'loading' }
   | { kind: 'ready'; request: ActionRequest }
   | { kind: 'notFound' }
+  | { kind: 'signedOut' }
   | { kind: 'error' };
 
-type Outcome = 'approved' | 'denied' | 'conflict' | 'error' | null;
+type Outcome = 'approved' | 'denied' | 'conflict' | 'signedOut' | 'error' | null;
 
 const FOCUSABLE = 'button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])';
 
@@ -45,6 +46,7 @@ function timeLeft(expiresAt: number): string {
 function statusMessage(load: Load, outcome: Outcome): string | null {
   if (load.kind === 'loading') return 'Loading the request.';
   if (load.kind === 'notFound') return 'This request was not found. It may belong to a different Luminara account, or the link is wrong.';
+  if (load.kind === 'signedOut' || outcome === 'signedOut') return 'Your sign-in has ended. Close this, sign in again, and open the link from your agent once more.';
   if (load.kind === 'error') return 'The request could not be loaded. Check your connection and try again.';
   if (outcome === 'approved') return 'Approved. Go back to your agent and ask it to continue.';
   if (outcome === 'denied') return 'Denied. Nothing was run.';
@@ -68,6 +70,12 @@ export const McpApprovalDialog: React.FC<{ requestId: string; onClose: () => voi
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const inFlight = useRef(false);
+  // Closing mid-decision would hide whether it went through.
+  const close = () => {
+    if (!inFlight.current) onCloseRef.current();
+  };
+  const closeRef = useRef(close);
+  closeRef.current = close;
   const titleId = useId();
   const path = `/mcp-action-requests/${encodeURIComponent(requestId)}`;
 
@@ -76,6 +84,7 @@ export const McpApprovalDialog: React.FC<{ requestId: string; onClose: () => voi
     try {
       const res = await call(path);
       if (res.status === 404) return setLoad({ kind: 'notFound' });
+      if (res.status === 401) return setLoad({ kind: 'signedOut' });
       const body = res.ok ? await res.json() : null;
       setLoad(body?.request ? { kind: 'ready', request: body.request as ActionRequest } : { kind: 'error' });
     } catch {
@@ -96,13 +105,22 @@ export const McpApprovalDialog: React.FC<{ requestId: string; onClose: () => voi
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: '{}',
+        // The dialog cannot be closed mid-decision, so a hung request must end by itself.
+        signal: AbortSignal.timeout(15000),
       });
-      setOutcome(res.ok ? (decision === 'approve' ? 'approved' : 'denied') : res.status === 409 ? 'conflict' : 'error');
+      setOutcome(
+        res.ok ? (decision === 'approve' ? 'approved' : 'denied')
+          : res.status === 409 || res.status === 404 ? 'conflict'
+          : res.status === 401 ? 'signedOut'
+          : 'error',
+      );
     } catch {
       setOutcome('error');
     } finally {
       inFlight.current = false;
       setDeciding(false);
+      // The button that had focus is gone or disabled; keep focus inside the dialog.
+      dialogRef.current?.focus();
     }
   };
 
@@ -114,7 +132,7 @@ export const McpApprovalDialog: React.FC<{ requestId: string; onClose: () => voi
       if (e.key === 'Escape') {
         e.stopImmediatePropagation();
         e.preventDefault();
-        onCloseRef.current();
+        closeRef.current();
       } else if (e.key === 'Tab' && dialogRef.current) {
         const nodes = Array.from(dialogRef.current.querySelectorAll<HTMLElement>(FOCUSABLE));
         const first = nodes[0];
@@ -145,7 +163,7 @@ export const McpApprovalDialog: React.FC<{ requestId: string; onClose: () => voi
   return (
     <div
       className="fixed inset-0 z-[200] overflow-y-auto flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md"
-      onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}
+      onMouseDown={e => { if (e.target === e.currentTarget) close(); }}
     >
       <div
         ref={dialogRef}
@@ -173,7 +191,7 @@ export const McpApprovalDialog: React.FC<{ requestId: string; onClose: () => voi
               <pre className="mb-3 max-h-48 overflow-auto rounded-lg border border-white/10 bg-black/60 p-2 font-mono text-[11px] whitespace-pre-wrap break-all">{prettyArgs(request.args)}</pre>
               <p>
                 {request.argsTruncated
-                  ? 'These details are too long to show in full, so this request can only be denied. Ask the agent to send a shorter request.'
+                  ? 'These details cannot be shown in full, so this request can only be denied. Ask the agent to send a shorter, simpler request.'
                   : 'Approve only if you asked an agent to do this. This allows it once.'}
               </p>
             </>
