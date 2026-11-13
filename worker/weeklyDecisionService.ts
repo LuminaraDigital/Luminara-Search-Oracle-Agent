@@ -4,8 +4,36 @@
 import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
 import { billingId, json } from './workerUtils';
+import { findProjectByDomain, getProject } from './projectService';
+import { recordRecommendedAction } from './projectHistoryService';
 import { enqueueDreamEvent } from './dreamingQueue';
 import { api } from './telegramBot';
+
+async function rememberWeeklyAction(
+  env: Env,
+  accountId: string,
+  projectId: string | null,
+  domain: string,
+  decisionId: string,
+  title: string,
+): Promise<void> {
+  try {
+    const project = projectId
+      ? await getProject(env, accountId, projectId)
+      : await findProjectByDomain(env, accountId, domain);
+    if (!project) return;
+    // shortcut: weekly decisions are scored on the next Instant Audit until a card names its metric.
+    await recordRecommendedAction(env, {
+      accountId,
+      projectId: project.id,
+      actionKey: `weekly:${decisionId}`,
+      title,
+      kind: 'instant_audit',
+    });
+  } catch (err) {
+    console.error('[project-history] recommendation failed', err instanceof Error ? err.name : 'error');
+  }
+}
 
 function isoWeekKey(d = new Date()): string {
   const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
@@ -107,6 +135,7 @@ export async function handleWeeklyDecisionsRoute(
       } catch {
         /* ignore dreaming queue failure */
       }
+      await rememberWeeklyAction(env, accountId, body.projectId || null, domain, existing.id, title);
       return json({ ok: true, decision: row });
     }
 
@@ -149,6 +178,7 @@ export async function handleWeeklyDecisionsRoute(
     } catch {
       /* ignore dreaming queue failure */
     }
+    await rememberWeeklyAction(env, accountId, body.projectId || null, domain, id, title);
     return json({ ok: true, decision: row });
   }
 

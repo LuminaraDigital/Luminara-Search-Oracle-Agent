@@ -59,7 +59,13 @@ function call(name = 'whoami', args: Record<string, unknown> = {}) {
 type Rpc = {
   result?: {
     isError?: boolean;
-    structuredContent?: { code?: string; callsUsedToday?: number; callsRemainingToday?: number | null; plan?: string };
+    structuredContent?: {
+      code?: string;
+      callsUsedToday?: number;
+      callsRemainingToday?: number | null;
+      plan?: string;
+      requiresApproval?: boolean;
+    };
     _meta?: { rateLimit?: { limit: number; remaining: number | null; reset: number } };
   };
   error?: { code?: number; message?: string; data?: { code?: string; resetAt?: number; remaining?: number; limit?: number } };
@@ -105,6 +111,42 @@ describe('MCP daily cap is per account', () => {
     expect(logged).not.toContain('Bearer');
     expect(logged).not.toContain('@');
     warn.mockRestore();
+  });
+
+  it('a refused paid call on Free leaves callsUsedToday unchanged, and an allowed call adds 1', async () => {
+    const env = makeEnv();
+    const token = cred('free-client');
+    const account = user('free-1');
+    const day = new Date().toISOString().slice(0, 10);
+    const key = `mcp_calls:free-1:${day}`;
+    const store = env.LUMINARA_KV!;
+
+    const refused = (await (await handleMcpRequest(
+      call('research_keywords', { projectId: 'proj-1', seeds: ['aeo'] }),
+      env,
+      account,
+      token,
+    )).json()) as Rpc;
+    expect(refused.result?.isError).toBe(true);
+    expect(refused.result?.structuredContent?.code).toBe('SCOPE_INSUFFICIENT');
+
+    const unknown = (await (await handleMcpRequest(call('not_a_tool'), env, account, token)).json()) as Rpc;
+    expect(unknown.result?.structuredContent?.code).toBe('TOOL_NOT_FOUND');
+
+    const held = (await (await handleMcpRequest(call('browse_close', { sessionId: 's0' }), env, account, token)).json()) as Rpc;
+    expect(held.result?.structuredContent?.requiresApproval).toBe(true);
+
+    const bad = (await (await handleMcpRequest(call('create_project', {}), env, account, token)).json()) as Rpc;
+    expect(bad.result?.isError).toBe(true);
+    expect(bad.result?.structuredContent?.code).toBe('BAD_INPUT');
+    expect(await store.get(key)).toBeNull();
+
+    const allowed = (await (await handleMcpRequest(call(), env, account, token)).json()) as Rpc;
+    expect(allowed.result?.structuredContent?.callsUsedToday).toBe(1);
+    expect(allowed.result?.structuredContent?.callsRemainingToday).toBe(99);
+
+    const second = (await (await handleMcpRequest(call(), env, account, token)).json()) as Rpc;
+    expect(second.result?.structuredContent?.callsUsedToday).toBe(2);
   });
 
   it('rejects the call when the daily counter cannot be stored', async () => {
@@ -161,6 +203,25 @@ describe('MCP burst limits', () => {
       more += 1;
     }
     expect(more).toBe(20);
+  });
+
+  it('counts a refused paid call toward the account burst limit and not the daily cap', async () => {
+    const store = new Map<string, string>();
+    const env = makeEnv(store);
+    const day = new Date().toISOString().slice(0, 10);
+    const account = user('burst-free');
+    const token = cred('burst-free-client');
+    for (let i = 0; i < MCP_ACCOUNT_BURST_PER_MIN; i += 1) {
+      const body = (await (
+        await handleMcpRequest(call('research_keywords', { projectId: 'proj-1', seeds: ['aeo'] }), env, account, token)
+      ).json()) as Rpc;
+      expect(body.result?.structuredContent?.code).toBe('SCOPE_INSUFFICIENT');
+    }
+    const blocked = (await (
+      await handleMcpRequest(call('research_keywords', { projectId: 'proj-1', seeds: ['aeo'] }), env, account, token)
+    ).json()) as Rpc;
+    expect(blocked.error?.data?.code).toBe('MCP_ACCOUNT_BURST');
+    expect(store.has(`mcp_calls:burst-free:${day}`)).toBe(false);
   });
 });
 
@@ -219,6 +280,7 @@ describe('hosted paid MCP quota', () => {
     expect(body.result?.isError).toBe(true);
     expect(body.result?.structuredContent?.code).toBe('CONTEXT_REQUIRED');
     expect([...store.keys()].some((key) => key.startsWith('mcp_paid:'))).toBe(false);
+    expect([...store.keys()].some((key) => key.startsWith('mcp_calls:'))).toBe(false);
   });
 });
 
@@ -376,7 +438,7 @@ describe('MCP tool catalogue', () => {
 
   it('annotations follow governance and every tool has a real title', () => {
     const tools = listMcpToolCatalogue();
-    expect(tools).toHaveLength(36);
+    expect(tools).toHaveLength(40);
     expect(Object.keys(TOOL_GOVERNANCE).sort()).toEqual(tools.map((tool) => tool.name).sort());
     for (const tool of tools) {
       const risk = TOOL_GOVERNANCE[tool.name].risk;

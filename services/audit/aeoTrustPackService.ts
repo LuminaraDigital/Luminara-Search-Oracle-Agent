@@ -140,13 +140,15 @@ export class AeoTrustPackService {
     if (input.security?.measurementConfidence === 'cors_limited') {
       findings.push({
         severity: 'medium',
-        title: 'Security headers CORS-limited',
-        detail: 'Browser could not read response headers. Prefer Worker enrichment for full measurement.',
+        title: 'Security headers not measured',
+        detail: 'The site answered, but this check could not read its security headers, so the header that forces secure HTTPS connections (HSTS) is unknown, not missing. Run the audit again to measure it.',
       });
     }
 
     // A failed check measured nothing, so it supports no finding about HTTPS or HSTS either way.
     const securityMeasured = Boolean(input.security) && input.security?.measurementConfidence !== 'failed';
+    // Headers are read only in a full check. A browser-limited one leaves HSTS unknown, not missing.
+    const headersMeasured = input.security?.measurementConfidence === 'full';
     if (input.security && !securityMeasured) {
       findings.push({
         severity: 'medium',
@@ -159,7 +161,7 @@ export class AeoTrustPackService {
         title: 'HTTPS not enforced',
         detail: 'Answer engines and browsers treat non-HTTPS origins as low trust.',
       });
-    } else if (input.security && !input.security.hstsEnabled) {
+    } else if (input.security && headersMeasured && !input.security.hstsEnabled) {
       findings.push({
         severity: ymylTier === 'high' ? 'critical' : 'high',
         title: 'Secure connection header missing',
@@ -202,7 +204,7 @@ export class AeoTrustPackService {
       });
     }
 
-    if (ymylTier === 'high' && input.security && securityMeasured && (!input.security.httpsEnforced || !input.security.hstsEnabled)) {
+    if (ymylTier === 'high' && input.security && securityMeasured && (!input.security.httpsEnforced || (headersMeasured && !input.security.hstsEnabled))) {
       findings.push({
         severity: 'critical',
         title: 'YMYL transport trust gap',
