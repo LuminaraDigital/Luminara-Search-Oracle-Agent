@@ -46,7 +46,8 @@ mcp_action_requests(
   user_id TEXT NOT NULL,      -- account id of the MCP caller
   project_id TEXT,            -- args.projectId when present, else NULL
   tool_name TEXT NOT NULL,
-  args_json TEXT NOT NULL,    -- redactSensitive'd arguments
+  args_json TEXT NOT NULL,    -- redactSensitive'd arguments, for display
+  args_hash TEXT,             -- SHA-256 of the unredacted arguments (migration 0049)
   status TEXT DEFAULT 'pending',
   decided_by TEXT, decided_at INTEGER,
   expires_at INTEGER NOT NULL, -- created_at + 30 minutes

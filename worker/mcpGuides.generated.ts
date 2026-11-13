@@ -10,7 +10,7 @@ export const MCP_GUIDES: readonly McpGuide[] = [
   {
     "topic": "luminara-audit",
     "description": "Audit a site via Luminara MCP and save a one-page report. Methodology depth lives in seo-audit references.",
-    "body": "# Luminara Audit\n\n1. `get_project_context`. Fill business_overview/current_goal if empty (minimal), else continue.\n2. Check research log for a recent audit.\n3. Prefer project domain. Use free tools first; paid tools only with entitlement/BYOK.\n4. Do not invent metrics. Label `not_measured` when tools return that status.\n5. Deliver through `luminara-report` with skill `luminara-audit`.\n6. For deep methodology, consult `.claude/skills/seo-audit` as reference only (no Python runtime)."
+    "body": "# Luminara Audit\n\n1. `get_project_context`. Fill business_overview/current_goal if empty (minimal), else continue.\n2. Check research log for a recent audit. `ask_auditor` returns the findings on record and the date of the last audit; it does not run a new one.\n3. Prefer project domain. Use free tools first; paid tools only with entitlement/BYOK.\n4. Do not invent metrics. Label `not_measured` when tools return that status.\n5. Deliver through `luminara-report` with skill `luminara-audit`.\n6. For deep methodology, consult `.claude/skills/seo-audit` as reference only (no Python runtime)."
   },
   {
     "topic": "luminara-browse",
@@ -20,7 +20,7 @@ export const MCP_GUIDES: readonly McpGuide[] = [
   {
     "topic": "luminara-coach",
     "description": "Friendly coach for Luminara MCP workflows. Orients users, checks project context, hands off to product skills.",
-    "body": "# Luminara Coach\n\n## Goal\n\nOrient the user. Prefer free tools. Do not dump novels into chat.\n\n## Flow\n\n1. `whoami` then `list_projects` (or ask which domain).\n2. `get_project_context`. If missing sections, suggest `luminara-project-setup`.\n3. Before paid tools, read research log. Reuse work younger than 30 days.\n4. Offer 2-4 next options: setup, audit, keyword research, visibility.\n5. Hand off to a product skill for deliverables. Those skills save via `luminara-report`.\n\n## Reply shape\n\n- Lead with the answer or one next step.\n- End with one question or a numbered list of 2-4 choices (not both).\n- Never paste full HTML reports into chat."
+    "body": "# Luminara Coach\n\n## Goal\n\nOrient the user. Prefer free tools. Do not dump novels into chat.\n\n## Flow\n\n1. `whoami` then `list_projects` (or ask which domain).\n2. `get_project_context`. If missing sections, suggest `luminara-project-setup`.\n3. `ask_coach` for the project: it returns this week's decision, or a candidate. A candidate is not a decision; say so.\n4. Before paid tools, read research log. Reuse work younger than 30 days.\n5. Offer 2-4 next options: setup, audit, keyword research, visibility.\n6. Hand off to a product skill for deliverables. Those skills save via `luminara-report`.\n\n## Reply shape\n\n- Lead with the answer or one next step.\n- End with one question or a numbered list of 2-4 choices (not both).\n- Never paste full HTML reports into chat."
   },
   {
     "topic": "luminara-competitor-analysis",
