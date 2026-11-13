@@ -129,6 +129,17 @@ web client drops a cached ID token under a minute from expiry, so the cookie ans
   Oracle chats and `get_project_context`; a rule with neither reaches all of them. Rules
   reach the model fenced as data, so they can narrow a reply and never grant a permission.
   Habitat tokens and OAuth connectors cannot write rules. Rules stay out of memory search. Deleting a rule retires the fact, closes its edge and removes its `writing_preferences` line.
+- **Daily MCP cap is per account.** The KV key is `mcp_calls:<accountId>:<UTC day>`.
+  A new OAuth token or API key does not reset it. Free is 100, Starter is 300, Growth
+  and Agency have no daily cap (`limit` 0) but the counter still increments. A denied
+  call is JSON-RPC error `-32000` with `resetAt` and `X-RateLimit-*` headers.
+  Tool calls also stop at 30 per minute per account and 30 per minute per OAuth `client_id`.
+  Register is 10 per minute per IP. Token exchange is 30 per minute per IP. The IP is
+  stored as a hash. Hosted paid research on Agency stops at 200 calls per UTC day
+  (`mcp_paid:<accountId>:<day>`). BYOK is not counted. List tools return at most 50 rows.
+- **Unknown `mcp_*` bearers.** A missing, revoked, or expired MCP token is HTTP 401
+  `invalid_token` with `WWW-Authenticate` pointing at the protected-resource metadata.
+  It does not fall through to Firebase verification.
 - **Scope gate.** Hosted paid MCP tools require `mcp:research` on the credential
   (`SCOPE_INSUFFICIENT` otherwise). BYOK calls pass with `mcp:free`. OAuth tokens
   minted before enforcement lack `scopeEnforced` and stay unrestricted until their

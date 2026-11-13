@@ -141,6 +141,11 @@ describe('agent connector discovery', () => {
       revocation_endpoint: 'https://luminarasuite.com/api/oauth/mcp/revoke',
       revocation_endpoint_auth_methods_supported: ['none'],
     });
+    expect(resource.headers.get('access-control-allow-origin')).toBe('*');
+    const preflight = await call(prod, '/.well-known/oauth-authorization-server', { method: 'OPTIONS' });
+    expect(preflight.status).toBe(204);
+    expect(preflight.headers.get('access-control-allow-origin')).toBe('*');
+    expect(preflight.headers.get('access-control-allow-methods')).toContain('GET');
   });
 });
 
@@ -152,6 +157,9 @@ describe('agent connector registration', () => {
     expect((await register(env, [])).status).toBe(400);
     expect(isAllowedConnectorRedirectUri('https://user:pw@grok.example/cb')).toBe(false);
     expect(isAllowedConnectorRedirectUri('https://grok.example/cb#x')).toBe(false);
+    const hosted = await register(env, ['https://mcp-host.example/oauth/callback']);
+    expect(hosted.status).toBe(201);
+    expect(await hosted.json()).toMatchObject({ redirect_uris: ['https://mcp-host.example/oauth/callback'] });
   });
 
   it('never redirects to a callback the client did not register', async () => {
@@ -185,6 +193,36 @@ async function connect(env: Env) {
   });
   return ((await res.json()) as { access_token: string }).access_token;
 }
+
+describe('streamable HTTP without a session', () => {
+  it('answers two posts with no mcp-session-id', async () => {
+    const { env } = makeEnv();
+    const post = (body: unknown) =>
+      call(
+        env,
+        '/api/mcp',
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'mcp-protocol-version': '2025-06-18' },
+          body: JSON.stringify(body),
+        },
+        77001,
+      );
+    const init = await post({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'hosted', version: '0' } },
+    });
+    expect(init.status).toBe(200);
+    expect(init.headers.get('mcp-session-id')).toBeNull();
+    const listed = await post({ jsonrpc: '2.0', id: 2, method: 'tools/list' });
+    expect(listed.status).toBe(200);
+    expect(listed.headers.get('mcp-session-id')).toBeNull();
+    const body = (await listed.json()) as { result?: { tools?: Array<{ name?: string }> } };
+    expect(body.result?.tools?.some((tool) => tool.name === 'whoami')).toBe(true);
+  });
+});
 
 describe('connected agents', () => {
   type Listed = { connections: Array<{ id: string; name: string }> };

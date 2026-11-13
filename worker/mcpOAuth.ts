@@ -245,11 +245,20 @@ export function mcpResourceMetadataUrl(request: Request): string {
  * RFC 9728 and RFC 8414 discovery. Lives outside /api because clients derive these paths from the
  * server URL, and it answers on every host so the www redirect cannot move the issuer.
  */
+const DISCOVERY_CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, OPTIONS',
+  'Access-Control-Allow-Headers': 'content-type, authorization, mcp-protocol-version',
+};
+
 export function handleOAuthDiscovery(request: Request): Response | null {
-  if (request.method !== 'GET') return null;
   const url = new URL(request.url);
-  const cors = { 'Access-Control-Allow-Origin': '*' };
-  if (url.pathname.startsWith('/.well-known/oauth-protected-resource')) {
+  const resource = url.pathname.startsWith('/.well-known/oauth-protected-resource');
+  const authorization = url.pathname.startsWith('/.well-known/oauth-authorization-server');
+  if (!resource && !authorization) return null;
+  if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: DISCOVERY_CORS });
+  if (request.method !== 'GET') return null;
+  if (resource) {
     return json(
       {
         resource: `${url.origin}/api/mcp`,
@@ -259,13 +268,24 @@ export function handleOAuthDiscovery(request: Request): Response | null {
         bearer_methods_supported: ['header'],
       },
       200,
-      cors,
+      DISCOVERY_CORS,
     );
   }
-  if (url.pathname.startsWith('/.well-known/oauth-authorization-server')) {
-    return json(authorizationServerMetadata(url.origin), 200, cors);
-  }
-  return null;
+  return json(authorizationServerMetadata(url.origin), 200, DISCOVERY_CORS);
+}
+
+/**
+ * HTTP proof for the MCP Registry domain namespace. The owner sets
+ * MCP_REGISTRY_AUTH_TOKEN to the challenge from `mcp-publisher`. Absent means 404.
+ */
+export function handleMcpRegistryAuth(request: Request, env: Env): Response | null {
+  if (new URL(request.url).pathname !== '/.well-known/mcp-registry-auth') return null;
+  const token = env.MCP_REGISTRY_AUTH_TOKEN?.trim();
+  if (!token) return new Response('not found', { status: 404 });
+  return new Response(token, {
+    status: 200,
+    headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' },
+  });
 }
 
 /** RFC 7591 registration for public clients. Open by design: approval happens per user at consent. */
@@ -565,6 +585,7 @@ async function token(request: Request, env: Env): Promise<Response> {
     scopeEnforced: true,
     createdAt: Date.now(),
     clientName: record.clientName,
+    clientId: record.clientId,
   };
   // Store under the SHA-256 hex of the token so the raw bearer value never lands in KV.
   await env.LUMINARA_KV.put(await tokenKvKey(accessToken), JSON.stringify(tokenRecord), {
@@ -662,9 +683,16 @@ type StoredTokenRecord = {
   scopeEnforced?: boolean;
   createdAt?: number;
   clientName?: string;
+  clientId?: string;
 };
 
-export type McpOAuthIdentity = { user: HostedIdentity; plan: string; scope: string; scopeEnforced: boolean };
+export type McpOAuthIdentity = {
+  user: HostedIdentity;
+  plan: string;
+  scope: string;
+  scopeEnforced: boolean;
+  clientId: string | null;
+};
 
 /** Resolve Bearer mcp_* OAuth token to a HostedIdentity-like identity. */
 export async function identifyMcpOAuthToken(
@@ -705,7 +733,13 @@ function parseTokenRecord(raw: string): McpOAuthIdentity | null {
       accountId: record.accountId,
       name: record.clientName || 'MCP OAuth',
     };
-    return { user, plan: record.plan, scope: record.scope, scopeEnforced: record.scopeEnforced === true };
+    return {
+      user,
+      plan: record.plan,
+      scope: record.scope,
+      scopeEnforced: record.scopeEnforced === true,
+      clientId: typeof record.clientId === 'string' && record.clientId ? record.clientId : null,
+    };
   } catch {
     return null;
   }

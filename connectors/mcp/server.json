@@ -1,0 +1,18 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
+  "name": "com.luminarasuite/suite",
+  "title": "Luminara Suite",
+  "description": "Projects, context, and reports for Luminara Suite. Free MCP on every plan, with a daily cap on Free and Starter. Paid research needs Agency or your own DataForSEO login.",
+  "version": "1.0.0",
+  "websiteUrl": "https://www.luminarasuite.com/mcp.md",
+  "repository": {
+    "url": "https://github.com/LuminaraDigital/Luminara-Search-Oracle-Agent",
+    "source": "github"
+  },
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://www.luminarasuite.com/api/mcp"
+    }
+  ]
+}

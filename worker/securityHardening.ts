@@ -405,9 +405,25 @@ export async function putCounterBestEffort(env: Env, key: string, value: string,
   }
 }
 
+/** Next UTC midnight, unix seconds. Daily MCP and share caps reset then. */
+export function utcDayResetEpoch(now = Date.now()): number {
+  const day = new Date(now);
+  return Math.floor(Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate() + 1) / 1000);
+}
+
+export type DailyUseMeter = {
+  used: number;
+  limit: number;
+  remaining: number | null;
+  resetAt: number;
+};
+
 /**
  * Counts one use against a per-account UTC-day cap in KV. A limit of 0 is unlimited.
  * Without KV the cap fails open, except where REQUIRE_TG_AUTH marks a production Worker.
+ * shortcut: two isolates can both read the same count and both admit. The key stays
+ * per account and UTC day. Move the counter onto DailyQuota only when that object
+ * can adopt the existing key without zeroing a live day.
  */
 export async function meterDailyUse(
   env: Env,
@@ -415,22 +431,33 @@ export async function meterDailyUse(
   accountId: string,
   limit: number,
   label: string,
-): Promise<{ ok: true } | { ok: false; error: string }> {
-  if (limit <= 0) return { ok: true };
+  countWhenUnlimited = false,
+): Promise<({ ok: true } & DailyUseMeter) | ({ ok: false; error: string } & DailyUseMeter)> {
+  const resetAt = utcDayResetEpoch();
+  const view = (used: number): DailyUseMeter => ({
+    used,
+    limit,
+    remaining: limit <= 0 ? null : Math.max(0, limit - used),
+    resetAt,
+  });
+  if (limit <= 0 && !countWhenUnlimited) return { ok: true, ...view(0) };
   if (!env.LUMINARA_KV) {
     if (env.REQUIRE_TG_AUTH === 'true') {
-      return { ok: false, error: `${label} quota store unavailable. Try again later.` };
+      return { ok: false, error: `${label} quota store unavailable. Try again later.`, ...view(0) };
     }
-    return { ok: true };
+    return { ok: true, ...view(0) };
   }
   const day = new Date().toISOString().slice(0, 10);
   const key = `${prefix}:${accountId}:${day}`;
-  const used = Number((await env.LUMINARA_KV.get(key)) || 0);
-  if (used >= limit) {
-    return { ok: false, error: `Daily ${label.toLowerCase()} limit of ${limit} reached.` };
+  const read = Number((await env.LUMINARA_KV.get(key)) || 0);
+  const used = Number.isFinite(read) ? read : 0;
+  const ceiling = limit <= 0 ? Number.MAX_SAFE_INTEGER : limit;
+  if (used >= ceiling) {
+    return { ok: false, error: `Daily ${label.toLowerCase()} limit of ${limit} reached.`, ...view(used) };
   }
-  await putCounterBestEffort(env, key, String(used + 1), 2 * 86400);
-  return { ok: true };
+  const next = used + 1;
+  await putCounterBestEffort(env, key, String(next), 2 * 86400);
+  return { ok: true, ...view(next) };
 }
 
 // ---- Sliding-window / burst / outbound budget (toll-fraud defense) ----------------------------
@@ -462,6 +489,8 @@ export async function enforceKvSlidingWindow(
     maxRequests: number;
     windowSeconds: number;
     failClosedWithoutKv?: boolean;
+    /** False checks the window without writing. Callers that need two buckets peek both, then record. */
+    record?: boolean;
   },
 ): Promise<DualRateLimitResult> {
   const windowSec = Math.max(1, opts.windowSeconds);
@@ -508,6 +537,17 @@ export async function enforceKvSlidingWindow(
           remaining: 0,
           retryAfterSec,
           code: 'RATE_LIMITED',
+        }),
+      };
+    }
+
+    if (opts.record === false) {
+      return {
+        ok: true,
+        headers: rateLimitHeaders({
+          limit,
+          remaining: Math.max(0, limit - prior.length),
+          windowSec,
         }),
       };
     }

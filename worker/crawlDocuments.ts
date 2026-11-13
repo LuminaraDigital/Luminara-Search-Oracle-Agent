@@ -11,6 +11,7 @@ import { HUB_PAGES, HUB_REVIEWED } from '../services/marketing/seoHubPages';
 import { FREE_TOOLS, FREE_TOOLS_PATH } from '../services/marketing/freeTools';
 import { COMPANY_SERVICES_URL, COMPANY_SITE_URL } from '../services/legal/consumerTerms';
 import { PLAN_ENTITLEMENTS } from '../services/plans/planEntitlements';
+import { MCP_PUBLIC_URL } from '../services/mcp/publicServer';
 
 export const ROBOTS_TXT = `# Luminara Suite crawl policy
 # Public marketing pages, /llms.txt, /llm.txt, /ai.txt, and redacted /share/teaser/ cards are meant to be cited.
@@ -233,8 +234,8 @@ ${llmsPaidPlanBlock()}
 ## MCP
 
 - Docs: https://www.luminarasuite.com/docs/mcp.html
-- Endpoint: https://luminarasuite.com/api/mcp
-- MCP is on every plan: ${PLAN_ENTITLEMENTS.free.mcpDailyCallLimit} calls a day on Free, no daily cap on Growth and Agency. Paid research needs Agency or your own DataForSEO login.
+- Endpoint: ${MCP_PUBLIC_URL}
+- MCP is on every plan. Free: ${PLAN_ENTITLEMENTS.free.mcpDailyCallLimit} calls a day. Starter: ${PLAN_ENTITLEMENTS.starter.mcpDailyCallLimit} calls a day. Growth and Agency have no daily cap. Paid research needs Agency or your own DataForSEO login. The daily count is per account. A new token does not reset it.
 
 ## Telegram Mini App
 
