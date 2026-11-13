@@ -114,7 +114,8 @@ export function buildEnterpriseTrustPack(input: {
   // No security data, or a failed check, measured nothing: HTTPS and HSTS are unknown, not passed or failed.
   const secMeasured = sec !== undefined && sec.measurementConfidence !== 'failed';
   const httpsOk = secMeasured ? sec?.httpsEnforced === true || sec?.redirectsToHttps === true : undefined;
-  const hstsOk = secMeasured ? !!sec?.hstsEnabled : undefined;
+  // Headers are read only in a full check; a browser-limited one leaves HSTS unknown.
+  const hstsOk = sec?.measurementConfidence === 'full' ? !!sec.hstsEnabled : undefined;
   const integrityOk = (input.trustPack?.citationIntegrity ?? 0) >= 70;
   const citeOk = (input.trustPack?.citeWorthiness ?? 0) >= 60;
 
@@ -184,7 +185,7 @@ export function buildEnterpriseTrustPack(input: {
       period: 'point_in_time',
       detail:
         hstsOk === undefined
-          ? 'The security check could not reach the audited origin, so this header was not measured in this run.'
+          ? 'The security check could not read this header on the audited origin, so it was not measured in this run.'
           : hstsOk
             ? 'The header that forces secure HTTPS connections (HSTS) was observed.'
             : 'That header was not observed, so readiness for enterprise buyers is partial.',

@@ -99,6 +99,18 @@ Brand is performing well.
     expect(alpaca.every((r) => !r.input.includes('corslimited.com'))).toBe(true);
   });
 
+  it('marks records whose security check reached nothing trainEligible=false', () => {
+    aeoCorpusService.ingestAudit('unreached.com', '# Report\nbody', 60, undefined, {
+      securityTrust: 0,
+      citeWorthiness: 30,
+      measurementConfidence: 'failed',
+    });
+    const records = aeoCorpusService.getCorpusRecords().filter((r) => r.domain === 'unreached.com');
+    expect(records).toHaveLength(3);
+    expect(records.every((r) => r.trainEligible === false)).toBe(true);
+    expect(aeoCorpusService.exportAlpacaDataset().every((r) => !r.input.includes('unreached.com'))).toBe(true);
+  });
+
   it('exports OpenAI-style tool trajectories with get_project_context first', () => {
     aeoCorpusService.ingestAudit('tooltraj.com', '# Tool Trajectory Report\nSaaS audit', 88);
     const rows = aeoCorpusService.exportOpenAiToolTrajectories();
