@@ -22,6 +22,9 @@ export const PREPROD_GATED_FLAGS = [
   'REQUEST_SIGNING_REQUIRED',
   'GSC_OAUTH_ENABLED',
   'HERO_AB_ENABLED',
+  'EPISTEMIC_AB_ENABLED',
+  'ORACLE_LOOP_GUARDS_ENABLED',
+  'MCP_DECLARED_COSTS_ENABLED',
 ] as const satisfies readonly (keyof Env)[];
 
 export type PreprodGatedFlag = (typeof PREPROD_GATED_FLAGS)[number];

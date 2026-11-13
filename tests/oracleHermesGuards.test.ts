@@ -375,7 +375,7 @@ describe('Phase 4: Tool Loop Guardrails, Empty Response Guard, Frozen Memory & V
     );
     expect(allowedRes.status).toBe(200);
 
-    // Reasoning-only SSE stream must not trigger a wasteful retry on EmptyResponseGuard.
+    // Reasoning-only SSE stream with zero visible content retries once on fallback (max_tokens=4096) and returns 502 rather than emitting a blank assistant bubble; non-retryable content_filter fails immediately without retry.
     let reasoningFetches = 0;
     const reasoningEncoder = new TextEncoder();
     const reasoningFetcher: typeof fetch = async () => {
@@ -405,8 +405,38 @@ describe('Phase 4: Tool Loop Guardrails, Empty Response Guard, Frozen Memory & V
       onDelta: async () => {},
       fetcher: reasoningFetcher,
     });
-    expect(reasoningOut).toEqual({ ok: true, fullText: '', retriedEmpty: false });
-    expect(reasoningFetches).toBe(1);
+    expect(reasoningOut).toMatchObject({ ok: false, status: 502 });
+    expect(reasoningFetches).toBe(2);
+
+    let filterFetches = 0;
+    const filteredOut = await streamGroqChatWithEmptyGuard({
+      env: {
+        GROQ_API_KEY: 'gsk_primary',
+        GROQ_API_KEY_FALLBACK: 'gsk_backup',
+        ORACLE_LOOP_GUARDS_ENABLED: 'true',
+      } as Env,
+      model: 'openai/gpt-oss-120b',
+      messages: [{ role: 'user', content: 'Filtered' }],
+      onDelta: async () => {},
+      fetcher: async () => {
+        filterFetches += 1;
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start(c) {
+              c.enqueue(
+                reasoningEncoder.encode(
+                  `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'content_filter' }] })}\n\ndata: [DONE]\n\n`,
+                ),
+              );
+              c.close();
+            },
+          }),
+          { status: 200, headers: { 'content-type': 'text/event-stream' } },
+        );
+      },
+    });
+    expect(filteredOut).toMatchObject({ ok: false, status: 502 });
+    expect(filterFetches).toBe(1);
 
     // GroundedCitationLedger captures tool output URLs and flags hallucinated [99] markers.
     const groundedLedger = new GroundedCitationLedger();
@@ -547,7 +577,7 @@ describe('Phase 4: Tool Loop Guardrails, Empty Response Guard, Frozen Memory & V
     expect(thirdTurnSameTool.effectiveToolText).toContain('[Loop guard:');
 
     // streamGroqChatWithEmptyGuard switches openai/gpt-oss-120b -> openai/gpt-oss-20b via groqModelCandidates and returns 502 if both are empty.
-    const seenModels: string[] = [];
+    const seenCalls: Array<{ model: string; maxTokens: number }> = [];
     const bothEmptyRes = await streamGroqChatWithEmptyGuard({
       env: {
         GROQ_API_KEY: 'gsk_primary',
@@ -558,13 +588,57 @@ describe('Phase 4: Tool Loop Guardrails, Empty Response Guard, Frozen Memory & V
       messages: [{ role: 'user', content: 'Hello' }],
       onDelta: async () => {},
       fetcher: async (_input, init) => {
-        const parsed = JSON.parse(String(init?.body || '{}')) as { model?: string };
-        seenModels.push(parsed.model || '');
+        const parsed = JSON.parse(String(init?.body || '{}')) as { model?: string; max_tokens?: number };
+        seenCalls.push({ model: parsed.model || '', maxTokens: parsed.max_tokens || 0 });
         return makeSseResponse([]);
       },
     });
-    expect(seenModels).toEqual(['openai/gpt-oss-120b', 'openai/gpt-oss-20b']);
+    expect(seenCalls).toEqual([
+      { model: 'openai/gpt-oss-120b', maxTokens: 2048 },
+      { model: 'openai/gpt-oss-20b', maxTokens: 4096 },
+    ]);
     expect(bothEmptyRes).toMatchObject({ ok: false, status: 502 });
+
+    // Reasoning-exhausted primary stream (finish_reason='length', reasoning_tokens>0, content='') retries on fallback model with max_tokens=4096 instead of emitting a blank assistant reply.
+    const encoder = new TextEncoder();
+    const reasoningOnlySse = () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(c) {
+            c.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({
+                  choices: [{ delta: { reasoning: 'Thinking deeply...' }, finish_reason: 'length' }],
+                  usage: { completion_tokens: 2048, completion_tokens_details: { reasoning_tokens: 2048 } },
+                })}\n\ndata: [DONE]\n\n`,
+              ),
+            );
+            c.close();
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'text/event-stream' } },
+      );
+
+    let rAttempt = 0;
+    const reasoningRecovered = await streamGroqChatWithEmptyGuard({
+      env: {
+        GROQ_API_KEY: 'gsk_primary',
+        GROQ_API_KEY_FALLBACK: 'gsk_backup',
+        ORACLE_LOOP_GUARDS_ENABLED: 'true',
+      } as Env,
+      model: 'openai/gpt-oss-120b',
+      messages: [{ role: 'user', content: 'Complex multi-page schema plan' }],
+      onDelta: async () => {},
+      fetcher: async () => {
+        rAttempt += 1;
+        return rAttempt === 1 ? reasoningOnlySse() : makeSseResponse(['Actionable schema plan.']);
+      },
+    });
+    expect(reasoningRecovered).toEqual({
+      ok: true,
+      fullText: 'Actionable schema plan.',
+      retriedEmpty: true,
+    });
 
     // Real OracleSession DO isolates internal keys from 32-bucket exhaustion, unfiltered GET /state, and Plane-1 events.
     const storageMap = new Map<string, unknown>();

@@ -202,16 +202,31 @@ function buildCompiledByScope(): Record<ThreatScope, PatternSpec[]> {
 const COMPILED = buildCompiledByScope();
 
 const EMOJI_NEIGHBOUR_CP_RANGES: ReadonlyArray<readonly [number, number]> = [
-  [0x1f000, 0x1ffff],
-  [0x2600, 0x27bf],
-  [0x2300, 0x23ff],
-  [0x1f1e6, 0x1f1ff],
+  [0x00a9, 0x00a9],
+  [0x00ae, 0x00ae],
+  [0x203c, 0x2049],
   [0x20e3, 0x20e3],
+  [0x2122, 0x2139],
+  [0x2194, 0x21aa],
+  [0x2300, 0x23ff],
+  [0x24c2, 0x24c2],
+  [0x25aa, 0x25fe],
+  [0x2600, 0x27bf],
+  [0x2934, 0x2935],
+  [0x2b05, 0x2b55],
+  [0x3030, 0x303d],
+  [0x3297, 0x3299],
+  [0x1f1e6, 0x1f1ff],
+  [0x1f000, 0x1ffff],
 ];
 const VARIATION_SELECTOR_CP = 0xfe0f;
 
 function isEmojiNeighbourCodepoint(cp: number): boolean {
   return EMOJI_NEIGHBOUR_CP_RANGES.some(([lo, hi]) => cp >= lo && cp <= hi);
+}
+
+function isKeycapBaseCodepoint(cp: number): boolean {
+  return cp === 0x23 || cp === 0x2a || (cp >= 0x30 && cp <= 0x39);
 }
 
 /**
@@ -249,9 +264,16 @@ export function stripInvisibleUnicode(text: string): { cleaned: string; removed:
       kept.push(ch);
       continue;
     }
-    if ((cp === 0xfe0e || cp === 0xfe0f) && idx > 0 && isEmojiNeighbourCodepoint(cps[idx - 1].codePointAt(0) ?? 0)) {
-      kept.push(ch);
-      continue;
+    if (cp === 0xfe0e || cp === 0xfe0f) {
+      const prevCp = idx > 0 ? (cps[idx - 1].codePointAt(0) ?? 0) : 0;
+      const nextCh = idx + 1 < cps.length ? cps[idx + 1] : '';
+      if (
+        idx > 0 &&
+        (isEmojiNeighbourCodepoint(prevCp) || (isKeycapBaseCodepoint(prevCp) && nextCh === '\u20e3'))
+      ) {
+        kept.push(ch);
+        continue;
+      }
     }
     if (INVISIBLE_CHARS.has(ch) || isVariationSelectorCp(cp) || isUnicodeTagCp(cp)) {
       removed.add(formatCodepoint(ch));

@@ -22,7 +22,18 @@ export interface FrozenMemorySnapshot {
 }
 
 export const MEMORY_SNAPSHOT_STATE_KEY = 'memory_snapshot';
+export const TOOL_GUARD_STATE_KEY = 'tool_guard_history';
 export const SNAPSHOT_TTL_MS = 30 * 60 * 1000;
+
+export const RESERVED_ORACLE_STATE_KEYS = new Set<string>([
+  MEMORY_SNAPSHOT_STATE_KEY,
+  TOOL_GUARD_STATE_KEY,
+]);
+
+export function isReservedOracleStateKey(keyRaw: unknown): boolean {
+  const stateKey = String(keyRaw || 'default').slice(0, 64);
+  return RESERVED_ORACLE_STATE_KEYS.has(stateKey);
+}
 
 function isValidFrozenSnapshot(doc: unknown): doc is FrozenMemorySnapshot {
   if (!doc || typeof doc !== 'object' || Array.isArray(doc)) return false;

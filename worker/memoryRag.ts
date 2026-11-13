@@ -7,8 +7,7 @@ import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
 import { billingId, json } from './workerUtils';
 import { wrapUntrustedContent } from '../utils/untrustedContent';
-import { evaluateStrictWriteGate } from '../services/trust/threatPatterns';
-import { recordServerProductEvent } from './productAnalytics';
+import { checkStrictWriteThreat } from './threatWriteGate';
 
 export type VectorProvider = 'vectorize' | 'azure' | 'gcp' | 'none';
 
@@ -323,22 +322,14 @@ export async function extractFactsFromChat(
   const ids: string[] = [];
   const now = Date.now();
   for (const c of candidates) {
-    const threatGate = evaluateStrictWriteGate(env, `${c.text}\n${c.scanSource}`);
-    if (threatGate.findings.length > 0) {
-      await recordServerProductEvent(env.DB, {
-        accountId,
-        sessionId: opts.sessionId || null,
-        type: 'threat_scan_triggered',
-        path: '/api/memory/extract',
-        data: {
-          surface: 'memory_chat_extract',
-          mode: threatGate.mode,
-          blocked: threatGate.blocked,
-          patternId: threatGate.findings[0],
-        },
-      });
-      if (threatGate.blocked) continue;
-    }
+    const threatGate = await checkStrictWriteThreat(env, {
+      accountId,
+      sessionId: opts.sessionId || null,
+      path: '/api/memory/extract',
+      surface: 'memory_chat_extract',
+      content: `${c.text}\n${c.scanSource}`,
+    });
+    if (threatGate.blocked) continue;
     const id = crypto.randomUUID();
     let memoryFactId: string | null = null;
     let status: 'pending' | 'stored' = 'pending';

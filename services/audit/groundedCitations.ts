@@ -80,13 +80,18 @@ const CITATION_ID_RE = /\[(\d+)\]/g;
 const UNVERIFIED_SENTENCE_RE = /\[unverified\]|\bnot_measured\b|\bnot\s+measured\b/i;
 const SOURCES_HEADING_RE = /^(?:##\s+Sources|Sources:)\s*$/im;
 
-function extractCitedIds(text: string): number[] {
+function extractCitedIds(text: string, maxRegisteredId?: number): number[] {
+  const withoutCode = text
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/`[^`\n]+`/g, ' ');
   const seen = new Set<number>();
   CITATION_ID_RE.lastIndex = 0;
   let match: RegExpExecArray | null;
-  while ((match = CITATION_ID_RE.exec(text)) !== null) {
+  while ((match = CITATION_ID_RE.exec(withoutCode)) !== null) {
     const id = Number(match[1]);
-    if (Number.isInteger(id) && id > 0) seen.add(id);
+    if (!Number.isInteger(id) || id <= 0) continue;
+    if ((maxRegisteredId ?? 0) < 100 && id >= 1900 && id <= 2100) continue;
+    seen.add(id);
   }
   return [...seen].sort((a, b) => a - b);
 }
@@ -227,7 +232,7 @@ export class GroundedCitationLedger {
     opts?: { requireEvidenceQuotes?: boolean; minCoverage?: number },
   ): GroundedVerificationResult {
     const { prosePart, sourcesPart } = splitSourcesSection(String(draft || ''));
-    const allCited = extractCitedIds(prosePart);
+    const allCited = extractCitedIds(prosePart, this.byId.size);
     const unknownIds = allCited.filter((id) => !this.byId.has(id));
     const knownCited = allCited.filter((id) => this.byId.has(id));
 
@@ -275,7 +280,7 @@ export class GroundedCitationLedger {
     let coveredCount = 0;
 
     for (const sentence of proseSentences) {
-      const citedIds = extractCitedIds(sentence);
+      const citedIds = extractCitedIds(sentence, this.byId.size);
       if (citedIds.length > 3) overCitedSentences.push(sentence);
       const markedUnverified = UNVERIFIED_SENTENCE_RE.test(sentence);
       const validCited = citedIds.filter((id) => this.byId.has(id));

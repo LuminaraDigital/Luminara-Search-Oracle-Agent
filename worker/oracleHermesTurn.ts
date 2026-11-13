@@ -31,6 +31,8 @@ import {
 import { GroundedCitationLedger } from '../services/audit/groundedCitations';
 import {
   MEMORY_SNAPSHOT_STATE_KEY,
+  TOOL_GUARD_STATE_KEY,
+  isReservedOracleStateKey,
   resolveSessionMemorySnapshot,
   type SessionStateStub,
 } from './oracleMemorySnapshot';
@@ -38,20 +40,10 @@ import { scanToolResultThreats } from './oracleInteractionGuard';
 import { resolveThreatScanMode } from '../services/trust/threatPatterns';
 import { recordServerProductEvent } from './productAnalytics';
 
-export const TOOL_GUARD_STATE_KEY = 'tool_guard_history';
+export { MEMORY_SNAPSHOT_STATE_KEY, TOOL_GUARD_STATE_KEY, isReservedOracleStateKey };
 const MAX_STORED_TOOL_GUARD_STEPS = 24;
 const MAX_REGISTERED_TOOL_URLS = 20;
 const TOOL_URL_RE = /https?:\/\/[^\s"'<>\\`{}[\]]+/g;
-
-const RESERVED_ORACLE_STATE_KEYS = new Set<string>([
-  MEMORY_SNAPSHOT_STATE_KEY,
-  TOOL_GUARD_STATE_KEY,
-]);
-
-export function isReservedOracleStateKey(keyRaw: unknown): boolean {
-  const stateKey = String(keyRaw || 'default').slice(0, 64);
-  return RESERVED_ORACLE_STATE_KEYS.has(stateKey);
-}
 
 function cleanExtractedUrl(raw: string): string {
   let cleaned = raw.replace(/[.,;:!?*_]+$/, '');
@@ -214,7 +206,7 @@ export async function guardOracleToolExecution(params: {
   );
   if (threatHit && threatHit.findings.length > 0) {
     await recordServerProductEvent(params.env.DB, {
-      accountId: params.accountId,
+      accountId: params.accountId !== 'guest' ? params.accountId : null,
       sessionId: params.sessionId,
       type: 'threat_scan_triggered',
       path: '/api/oracle/chat',
@@ -369,6 +361,7 @@ export async function streamGroqChatWithEmptyGuard(params: {
   while (true) {
     const activeKey = attempt === 0 ? primaryKey : fallbackKey;
     const activeModel = attempt === 0 ? params.model : fallbackModel;
+    const maxTokens = attempt === 0 ? 2048 : 4096;
     const llmRes = await fetcher('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -379,7 +372,7 @@ export async function streamGroqChatWithEmptyGuard(params: {
         model: activeModel,
         messages: params.messages,
         temperature: 0.5,
-        max_tokens: 2048,
+        max_tokens: maxTokens,
         stream: true,
       }),
     });
@@ -404,10 +397,12 @@ export async function streamGroqChatWithEmptyGuard(params: {
       content: fullText,
       reasoningTokens,
     });
-    if (!decision.isZeroOutputEmpty) {
+    if (fullText.trim().length > 0) {
       return { ok: true, fullText, retriedEmpty: attempt > 0 };
     }
-    if (!decision.shouldRetry || attempt >= 1) {
+    const canRetryEmpty =
+      attempt === 0 && (decision.shouldRetry || decision.reason === 'has_reasoning_tokens');
+    if (!canRetryEmpty) {
       return {
         ok: false,
         status: 502,

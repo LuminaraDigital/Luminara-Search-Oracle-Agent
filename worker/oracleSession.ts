@@ -27,6 +27,7 @@ import {
   type MessageDisposition,
   type MidTurnPolicy,
 } from '../services/agentCore/harnessProtocol';
+import { isReservedOracleStateKey } from './oracleMemorySnapshot';
 
 export interface QueuedTurnMessage {
   messageId: string;
@@ -682,10 +683,9 @@ export class OracleSession {
         const bucket = ownRecordGet(this.stateBuckets, stateKey) ?? { version: 0, doc: null };
         return Response.json({ ok: true, key: stateKey, ...bucket });
       }
-      const internalKeys = new Set(['memory_snapshot', 'tool_guard_history']);
       const publicStates: Record<string, { version: number; doc: JsonValue }> = {};
       for (const [k, v] of Object.entries(this.stateBuckets)) {
-        if (!internalKeys.has(k)) publicStates[k] = v;
+        if (!isReservedOracleStateKey(k)) publicStates[k] = v;
       }
       return Response.json({
         ok: true,
@@ -706,9 +706,8 @@ export class OracleSession {
       if (!isSafeRecordKey(stateKey)) {
         return Response.json({ ok: false, error: 'invalid state key', code: 'BAD_REQUEST' }, { status: 400 });
       }
-      const internalKeys = new Set(['memory_snapshot', 'tool_guard_history']);
-      const isInternalKey = internalKeys.has(stateKey);
-      const clientBucketCount = Object.keys(this.stateBuckets).filter((k) => !internalKeys.has(k)).length;
+      const isInternalKey = isReservedOracleStateKey(stateKey);
+      const clientBucketCount = Object.keys(this.stateBuckets).filter((k) => !isReservedOracleStateKey(k)).length;
       if (
         !isInternalKey &&
         !Object.hasOwn(this.stateBuckets, stateKey) &&

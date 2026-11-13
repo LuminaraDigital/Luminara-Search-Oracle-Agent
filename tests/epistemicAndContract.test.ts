@@ -430,5 +430,38 @@ describe('Epistemic Stance, 1-Retry JSON Contract & Dream Consolidation', () => 
     const formatted = formatCompactSummary(compacted);
     expect(formatted).toContain('### Unverified / Working Hypotheses');
     expect(formatted).toContain('UNVERIFIED: Bot block suspected - single probe timeout');
+
+    // Non-string items in unverifiedHypotheses trigger 1-retry contract repair in treatment, and fenced JSON parses in baseline.
+    let hypTurn = 0;
+    const hypRepair = await runDreamAgent(
+      env,
+      input,
+      async () => {
+        hypTurn += 1;
+        const content =
+          hypTurn === 1
+            ? JSON.stringify({ summary: 'Bad hyp types', unverifiedHypotheses: [123], proposals: [] })
+            : JSON.stringify({ summary: 'Clean', unverifiedHypotheses: ['UNVERIFIED: CDN timeout - single sample'], proposals: [] });
+        return new Response(JSON.stringify({ choices: [{ message: { content } }] }), { status: 200 });
+      },
+      { variant: 'treatment' },
+    );
+    expect(hypRepair.contractRetried).toBe(true);
+    expect(hypRepair.usedFallback).toBe(false);
+
+    const fencedBaseline = await runDreamAgent(
+      env,
+      input,
+      async () =>
+        new Response(
+          JSON.stringify({
+            choices: [{ message: { content: '```json\n{"summary":"Fenced baseline","proposals":[]}\n```' } }],
+          }),
+          { status: 200 },
+        ),
+      { variant: 'baseline' },
+    );
+    expect(fencedBaseline.usedFallback).toBeFalsy();
+    expect(fencedBaseline.summary).toBe('Fenced baseline');
   });
 });

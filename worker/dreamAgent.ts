@@ -18,6 +18,7 @@ import {
 } from '../services/trust/epistemicStance';
 import {
   appendOutputContract,
+  extractJsonCandidate,
   runWithSingleJsonRetry,
   type JsonContractValidator,
 } from '../services/oracle/jsonContract';
@@ -257,7 +258,11 @@ const validateDreamAgentJson: JsonContractValidator<{
       }
     });
   }
-  if (obj.unverifiedHypotheses !== undefined && !Array.isArray(obj.unverifiedHypotheses)) {
+  if (
+    obj.unverifiedHypotheses !== undefined &&
+    (!Array.isArray(obj.unverifiedHypotheses) ||
+      !obj.unverifiedHypotheses.every((h) => typeof h === 'string'))
+  ) {
     errors.push('"unverifiedHypotheses" must be an array of strings when provided.');
   }
   if (errors.length > 0) return { ok: false, errors };
@@ -420,7 +425,7 @@ Consolidate these into at most 5 verified memory mutation proposals. Output JSON
       if (!rawJson) {
         return { ...deterministicDreamConsolidator(input), contractRetried: false, usedFallback: true };
       }
-      const rawParsed = JSON.parse(rawJson) as DreamAgentOutput;
+      const rawParsed = JSON.parse(extractJsonCandidate(rawJson)) as DreamAgentOutput;
       if (!rawParsed || !Array.isArray(rawParsed.proposals)) {
         return { ...deterministicDreamConsolidator(input), contractRetried: false, usedFallback: true };
       }

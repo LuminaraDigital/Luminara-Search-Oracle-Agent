@@ -3,9 +3,8 @@
  */
 import type { Env } from './env';
 import { brandFactNudge, searchMemoryDocuments, type MemoryDocKind, type MemoryDocument } from '../services/rsi/memorySearch';
-import { evaluateStrictWriteGate } from '../services/trust/threatPatterns';
-import { recordServerProductEvent } from './productAnalytics';
 import { RsiUserError } from './rsiErrors';
+import { checkStrictWriteThreat } from './threatWriteGate';
 
 function requireDb(env: Env): D1Database {
   if (!env.DB) throw new RsiUserError('Database unavailable.', 503);
@@ -27,20 +26,13 @@ export async function indexMemoryDocument(
   const title = input.title.replace(/[\r\n]+/g, ' ').trim().slice(0, 200);
   const body = input.body.trim().slice(0, 8000);
   if (!title || body.length < 2) throw new RsiUserError('A title and a body are required.');
-  const threatGate = evaluateStrictWriteGate(env, `${title}\n${body}`);
-  if (threatGate.findings.length > 0) {
-    await recordServerProductEvent(db, {
-      accountId,
-      type: 'threat_scan_triggered',
-      path: '/api/rsi/memory/index',
-      data: {
-        surface: 'rsi_memory_document',
-        mode: threatGate.mode,
-        blocked: threatGate.blocked,
-        patternId: threatGate.findings[0],
-      },
-    });
-  }
+  const threatGate = await checkStrictWriteThreat(env, {
+    db,
+    accountId,
+    path: '/api/rsi/memory/index',
+    surface: 'rsi_memory_document',
+    content: `${title}\n${body}`,
+  });
   if (threatGate.blocked) throw new RsiUserError(threatGate.reason || 'Blocked by threat scanner.', 400);
   const id = crypto.randomUUID();
   const now = Date.now();

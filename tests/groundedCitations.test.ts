@@ -98,5 +98,19 @@ describe('Grounded Citations Ledger & Verbatim Quote Verifier', () => {
       evidenceNumbers: [58],
     });
     expect(allCheck.ok).toBe(false);
+
+    // Code spans, fenced code blocks, and [2026] year brackets are not misclassified as unknown [n] citations.
+    const codeAndYearDraft = [
+      'Homepage title length is 58 characters [1] per our [2026] audit.',
+      'Check `items[9]` in the schema array before deploying [2].',
+      '```json',
+      '{"items": [42]}',
+      '```',
+      '',
+      ledger.renderSourcesBlock({ onlyIds: [s1, s2] }),
+    ].join('\n');
+    const codeVerified = ledger.verifyDraft(codeAndYearDraft);
+    expect(codeVerified.ok).toBe(true);
+    expect(codeVerified.unknownIds).toEqual([]);
   });
 });

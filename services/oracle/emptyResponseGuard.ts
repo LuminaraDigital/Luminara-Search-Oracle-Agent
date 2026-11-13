@@ -30,6 +30,7 @@ export interface EmptyRetryDecision {
   reason:
     | 'has_output'
     | 'has_reasoning_tokens'
+    | 'content_filtered'
     | 'retry_allowed'
     | 'consecutive_tuple_fallback'
     | 'retry_budget_exhausted';
@@ -64,6 +65,21 @@ export class EmptyResponseGuard {
         effectiveMaxRetries: this.effectiveMaxRetries,
         consecutiveEmptyCount: 0,
         reason: 'has_output',
+      };
+    }
+
+    // Moderation/content-filter blocks should never burn retry quota on the same prompt.
+    if (String(obs.finishReason || '').trim().toLowerCase() === 'content_filter') {
+      this.consecutiveEmptyOnTuple = 0;
+      this.lastEmptyTuple = null;
+      return {
+        isZeroOutputEmpty: true,
+        shouldRetry: false,
+        shouldFallbackImmediately: false,
+        costCapped: this.costCapped,
+        effectiveMaxRetries: this.effectiveMaxRetries,
+        consecutiveEmptyCount: 0,
+        reason: 'content_filtered',
       };
     }
 
