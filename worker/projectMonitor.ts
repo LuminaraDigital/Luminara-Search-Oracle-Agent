@@ -9,7 +9,6 @@ import { MAX_SMALL_BODY_BYTES, fetchPublicUrl, readBody } from './security';
 import { readCapped } from './domainVerification';
 import { getProject } from './projectService';
 import { getProjectHistory, recordProjectSnapshot, recordRecommendedAction } from './projectHistoryService';
-import { getActiveSubscription } from './quotaMiddleware';
 import { randomId } from '../services/projects/projectUtils';
 import {
   measureRealEstate,
@@ -19,11 +18,12 @@ import {
   type RealEstatePageInput,
 } from '../services/audit/realEstateChecks';
 import { realEstateSnapshot } from '../services/history/snapshotCapture';
+import { isoWeekKey } from '../services/referrals/rules';
 import {
   isMonitorCadence,
   monitorAlertKind,
   monitorCadenceAllowed,
-  monitorIntervalMs,
+  nextMonitorRunAt,
   planMonitorCadence,
   type MonitorCadence,
 } from '../services/monitor/monitorRules';
@@ -35,7 +35,10 @@ import {
 } from './welcomeEmail';
 
 const BATCH = 8;
+const CONCURRENCY = 4;
+const BUDGET_MS = 8 * 60 * 1000;
 const ID_RE = /^[A-Za-z0-9_-]{1,80}$/;
+const MONITOR_TOOLS = new Set(['get_project_monitor', 'set_project_monitor', 'list_project_alerts', 'ack_project_alert']);
 
 export type ProjectMonitorView = {
   projectId: string;
@@ -114,10 +117,21 @@ function viewOf(row: MonitorRow, plan: string): ProjectMonitorView | null {
   };
 }
 
-async function accountPlan(env: Env, accountId: string): Promise<string> {
-  // shortcut: a missing KV reads as Free, so a paid cadence waits until billing storage answers.
-  const sub = await getActiveSubscription(env, { id: accountId, source: 'firebase', accountId });
-  return sub?.plan || 'free';
+type PlanRead = { known: true; plan: string } | { known: false };
+
+async function readAccountPlan(env: Env, accountId: string): Promise<PlanRead> {
+  if (!env.LUMINARA_KV) return { known: false };
+  try {
+    const sub = (await env.LUMINARA_KV.get(`sub:${accountId}`, 'json')) as { plan?: string; expiresAt?: number } | null;
+    if (!sub?.expiresAt || sub.expiresAt <= Date.now()) return { known: true, plan: 'free' };
+    return { known: true, plan: sub.plan || 'free' };
+  } catch {
+    return { known: false };
+  }
+}
+
+function planName(read: PlanRead): string {
+  return read.known ? read.plan : 'free';
 }
 
 async function readMonitor(env: Env, accountId: string, projectId: string): Promise<MonitorRow | null> {
@@ -133,7 +147,7 @@ export async function getProjectMonitor(env: Env, accountId: string, projectId: 
   if (!project) return null;
   const row = await readMonitor(env, accountId, projectId);
   if (!row) return null;
-  return viewOf(row, await accountPlan(env, accountId));
+  return viewOf(row, planName(await readAccountPlan(env, accountId)));
 }
 
 export async function saveProjectMonitor(
@@ -146,7 +160,7 @@ export async function saveProjectMonitor(
   if (!env.DB) return { ok: false, error: 'Database unavailable', status: 503 };
   const project = await getProject(env, accountId, projectId);
   if (!project) return { ok: false, error: 'Project not found', status: 404 };
-  const plan = await accountPlan(env, accountId);
+  const plan = planName(await readAccountPlan(env, accountId));
   if (!monitorCadenceAllowed(plan, input.cadence)) {
     return {
       ok: false,
@@ -176,6 +190,18 @@ export async function saveProjectMonitor(
   return { ok: true, monitor };
 }
 
+function alertFromRow(row: AlertRow): ProjectAlertView {
+  return {
+    id: row.id,
+    projectId: row.project_id,
+    kind: row.kind === 'lift' || row.kind === 'weekly' ? row.kind : 'regression',
+    summary: row.summary,
+    snapshotId: row.snapshot_id,
+    createdAt: row.created_at,
+    readAt: typeof row.read_at === 'number' ? row.read_at : null,
+  };
+}
+
 export async function listProjectAlerts(env: Env, accountId: string, projectId: string): Promise<ProjectAlertView[] | null> {
   if (!env.DB) return null;
   const project = await getProject(env, accountId, projectId);
@@ -185,15 +211,7 @@ export async function listProjectAlerts(env: Env, accountId: string, projectId: 
      FROM project_monitor_alerts WHERE account_id = ? AND project_id = ?
      ORDER BY created_at DESC LIMIT 50`,
   ).bind(accountId, projectId).all<AlertRow>();
-  return (res.results || []).map((row) => ({
-    id: row.id,
-    projectId: row.project_id,
-    kind: row.kind === 'lift' || row.kind === 'weekly' ? row.kind : 'regression',
-    summary: row.summary,
-    snapshotId: row.snapshot_id,
-    createdAt: row.created_at,
-    readAt: typeof row.read_at === 'number' ? row.read_at : null,
-  }));
+  return (res.results || []).map(alertFromRow);
 }
 
 export async function ackProjectAlert(
@@ -213,15 +231,7 @@ export async function ackProjectAlert(
      FROM project_monitor_alerts WHERE account_id = ? AND project_id = ? AND id = ?`,
   ).bind(accountId, projectId, alertId).first<AlertRow>();
   if (!row) return null;
-  return {
-    id: row.id,
-    projectId: row.project_id,
-    kind: row.kind === 'lift' || row.kind === 'weekly' ? row.kind : 'regression',
-    summary: row.summary,
-    snapshotId: row.snapshot_id,
-    createdAt: row.created_at,
-    readAt: typeof row.read_at === 'number' ? row.read_at : null,
-  };
+  return alertFromRow(row);
 }
 
 async function defaultRead(url: string): Promise<{ status: number; html: string }> {
@@ -263,18 +273,22 @@ function deltaSentence(earlier: number | null, later: number | null, delta: numb
 
 async function insertAlert(
   env: Env,
-  row: DueRow,
+  row: Pick<DueRow, 'id' | 'account_id' | 'project_id'>,
   kind: 'regression' | 'lift' | 'weekly',
   summary: string,
   snapshotId: string,
+  weekKey: string,
   now: number,
 ): Promise<boolean> {
+  const conflict = kind === 'weekly'
+    ? `ON CONFLICT(account_id, monitor_id, week_key) WHERE kind = 'weekly' AND week_key != '' DO NOTHING`
+    : `ON CONFLICT(account_id, snapshot_id, kind) WHERE kind != 'weekly' DO NOTHING`;
   const result = await env.DB!.prepare(
     `INSERT INTO project_monitor_alerts
-      (id, account_id, project_id, monitor_id, kind, summary, snapshot_id, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT(account_id, snapshot_id, kind) DO NOTHING`,
-  ).bind(randomId('alert'), row.account_id, row.project_id, row.id, kind, summary.slice(0, 500), snapshotId, now).run();
+      (id, account_id, project_id, monitor_id, kind, summary, snapshot_id, week_key, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ${conflict}`,
+  ).bind(randomId('alert'), row.account_id, row.project_id, row.id, kind, summary.slice(0, 500), snapshotId, weekKey, now).run();
   return Number(result.meta?.changes ?? 0) === 1;
 }
 
@@ -287,16 +301,20 @@ async function sendAlertEmail(
 ): Promise<void> {
   if (!env.DB || !env.RESEND_API_KEY || lines.length === 0) return;
   const user = await env.DB.prepare(
-    `SELECT id, email, email_unsub_token, email_opt_out_at
-     FROM users WHERE (account_id = ? OR id = ?) AND email IS NOT NULL
+    `SELECT id, email, email_unsub_token, email_opt_out_at, source, email_verified
+     FROM users WHERE (account_id = ? OR id = ?) AND email IS NOT NULL AND trim(email) != ''
      ORDER BY last_seen_at DESC LIMIT 1`,
   ).bind(accountId, accountId).first<{
     id: string;
     email: string;
     email_unsub_token: string | null;
     email_opt_out_at: number | null;
+    source: string;
+    email_verified: number | null;
   }>();
   if (!user?.email || user.email_opt_out_at != null) return;
+  if (user.source !== 'telegram' && user.source !== 'firebase') return;
+  if (user.email_verified !== 1) return;
   let token = user.email_unsub_token;
   if (!token) {
     token = newUnsubToken();
@@ -344,25 +362,26 @@ async function runOne(
   env: Env,
   row: DueRow,
   now: number,
-  monday: boolean,
+  scheduledAt: number,
   read: MonitorPageRead,
-): Promise<void> {
-  const plan = await accountPlan(env, row.account_id);
-  if (!monitorCadenceAllowed(plan, row.cadence)) {
-    const cadence = planMonitorCadence(plan);
+): Promise<boolean> {
+  const plan = await readAccountPlan(env, row.account_id);
+  if (!plan.known) return false;
+  if (!monitorCadenceAllowed(plan.plan, row.cadence)) {
+    const cadence = planMonitorCadence(plan.plan);
     await env.DB!.prepare(
       `UPDATE project_monitors SET cadence = ?, next_run_at = ?, updated_at = ? WHERE id = ? AND account_id = ?`,
-    ).bind(cadence, now + monitorIntervalMs(cadence), now, row.id, row.account_id).run();
-    return;
+    ).bind(cadence, nextMonitorRunAt(scheduledAt, cadence), now, row.id, row.account_id).run();
+    return false;
   }
-  if (!isMonitorCadence(row.cadence)) return;
+  if (!isMonitorCadence(row.cadence)) return false;
   const claimed = await env.DB!.prepare(
     `UPDATE project_monitors SET next_run_at = ?, last_run_at = ?, updated_at = ?
      WHERE id = ? AND account_id = ? AND enabled = 1 AND next_run_at <= ?`,
-  ).bind(now + monitorIntervalMs(row.cadence), now, now, row.id, row.account_id, now).run();
-  if (Number(claimed.meta?.changes ?? 0) !== 1) return;
+  ).bind(nextMonitorRunAt(scheduledAt, row.cadence), now, now, row.id, row.account_id, now).run();
+  if (Number(claimed.meta?.changes ?? 0) !== 1) return false;
   const project = await getProject(env, row.account_id, row.project_id);
-  if (!project) return;
+  if (!project) return false;
   const measured = measureRealEstate(await readSite(project.domain, read));
   const checks = measured.checks;
   const coverage = realEstateCoverage(checks);
@@ -377,11 +396,11 @@ async function runOne(
     score: coverage.score,
     notes: coverage.notes,
   }), now);
+  if (!saved) return true;
   await env.DB!.prepare(
     `UPDATE project_monitors SET query_list_json = ? WHERE id = ? AND account_id = ?`,
   ).bind(JSON.stringify(prompts), row.id, row.account_id).run();
-  if (!saved) return;
-  const missing = checks.filter((check) => check.hit === false).map((check) => check.label);
+  const missing = checks.filter((check) => check.id !== 'answer_prompts' && check.hit === false).map((check) => check.label);
   if (coverage.measurementStatus === 'measured' && missing.length > 0) {
     await recordRecommendedAction(env, {
       accountId: row.account_id,
@@ -397,49 +416,110 @@ async function runOne(
   const trend = history?.trends.find((item) => item.metric === 're_coverage' && item.subject === coverage.series);
   const delta = trend?.latestDelta ?? null;
   const kind = delta ? monitorAlertKind(delta) : null;
-  const lines: string[] = [];
-  if (kind && delta) {
-    const sentence = kind === 'regression'
-      ? `Real estate coverage fell. ${deltaSentence(delta.earlierScore, delta.laterScore, delta.scoreDelta)}`
-      : `Real estate coverage rose. ${deltaSentence(delta.earlierScore, delta.laterScore, delta.scoreDelta)}`;
-    if (await insertAlert(env, row, kind, sentence, saved.id, now)) lines.push(sentence);
+  if (!kind || !delta) return true;
+  const sentence = kind === 'regression'
+    ? `Real estate coverage fell. ${deltaSentence(delta.earlierScore, delta.laterScore, delta.scoreDelta)}`
+    : `Real estate coverage rose. ${deltaSentence(delta.earlierScore, delta.laterScore, delta.scoreDelta)}`;
+  if (await insertAlert(env, row, kind, sentence, saved.id, '', now) && row.email_opt_in === 1) {
+    await sendAlertEmail(env, row.account_id, project.domain, [sentence], saved.id);
   }
-  if (monday) {
-    const weekly = [
-      `Weekly project check. Real estate checks found: ${coverage.score === null ? 'not measured' : String(coverage.score)}.`,
-      delta ? deltaSentence(delta.earlierScore, delta.laterScore, delta.scoreDelta) : 'Too little data to measure lift.',
+  return true;
+}
+
+async function writeWeeklyReports(env: Env, scheduledAt: number, now: number): Promise<void> {
+  if (new Date(scheduledAt).getUTCDay() !== 1 || !env.DB) return;
+  const weekKey = isoWeekKey(new Date(scheduledAt));
+  const due = await env.DB.prepare(
+    `SELECT id, account_id, project_id, email_opt_in, query_list_json
+     FROM project_monitors WHERE enabled = 1`,
+  ).all<{ id: string; account_id: string; project_id: string; email_opt_in: number; query_list_json: string }>();
+  for (const row of due.results || []) {
+    const history = await getProjectHistory(env, row.account_id, row.project_id, 20);
+    const point = history?.snapshots.find((item) => item.signals.metric === 're_coverage' && item.signals.score !== null);
+    if (!point) continue;
+    const trend = history?.trends.find((item) => item.metric === 're_coverage' && item.subject === point.signals.subject);
+    const prompts = parsePrompts(row.query_list_json);
+    const summary = [
+      `Weekly project check. Real estate checks found: ${point.signals.score}.`,
+      trend?.latestDelta
+        ? deltaSentence(trend.latestDelta.earlierScore, trend.latestDelta.laterScore, trend.latestDelta.scoreDelta)
+        : 'Too little data to measure lift.',
       prompts.length
         ? `Prompts from the pages we read, not sent to an answer engine: ${prompts.join('; ')}.`
         : 'No agency name or suburb was on the pages we read, so no prompt was built.',
     ].join(' ');
-    if (await insertAlert(env, row, 'weekly', weekly, saved.id, now)) lines.push(weekly);
+    const inserted = await insertAlert(env, { id: row.id, account_id: row.account_id, project_id: row.project_id }, 'weekly', summary, point.id, weekKey, now);
+    if (!inserted || row.email_opt_in !== 1) continue;
+    const project = await getProject(env, row.account_id, row.project_id);
+    if (!project) continue;
+    await sendAlertEmail(env, row.account_id, project.domain, [summary], point.id);
   }
-  if (row.email_opt_in === 1 && lines.length > 0) {
-    await sendAlertEmail(env, row.account_id, project.domain, lines, saved.id);
-  }
+}
+
+async function runPool(rows: DueRow[], run: (row: DueRow) => Promise<boolean>): Promise<number> {
+  const queue = [...rows];
+  let ran = 0;
+  const workers = Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
+    for (;;) {
+      const row = queue.shift();
+      if (!row) return;
+      try {
+        if (await run(row)) ran += 1;
+      } catch (err) {
+        console.error('[Monitor] project failed', err instanceof Error ? err.name : 'error');
+      }
+    }
+  });
+  await Promise.all(workers);
+  return ran;
 }
 
 export async function runProjectMonitorTick(
   env: Env,
-  deps: { scheduledAt?: number; now?: number; read?: MonitorPageRead } = {},
+  deps: { scheduledAt?: number; now?: number; read?: MonitorPageRead; budgetMs?: number; startedAt?: number } = {},
 ): Promise<{ checked: number; skipped: 'no_db' | null }> {
   if (!env.DB) return { checked: 0, skipped: 'no_db' };
   const now = deps.now ?? Date.now();
-  const monday = new Date(deps.scheduledAt ?? now).getUTCDay() === 1;
-  const due = await env.DB.prepare(
-    `SELECT id, account_id, project_id, cadence, email_opt_in, next_run_at
-     FROM project_monitors WHERE enabled = 1 AND next_run_at <= ?
-     ORDER BY next_run_at ASC LIMIT ?`,
-  ).bind(now, BATCH).all<DueRow>();
-  const rows = due.results || [];
-  for (const row of rows) {
-    try {
-      await runOne(env, row, now, monday, deps.read ?? defaultRead);
-    } catch (err) {
-      console.error('[Monitor] project failed', err instanceof Error ? err.name : 'error');
-    }
+  const scheduledAt = deps.scheduledAt ?? now;
+  const read = deps.read ?? defaultRead;
+  const started = deps.startedAt ?? Date.now();
+  const budget = deps.budgetMs ?? BUDGET_MS;
+  let checked = 0;
+  const seen = new Set<string>();
+  let first = true;
+  while (first || Date.now() - started < budget) {
+    first = false;
+    const due = await env.DB.prepare(
+      `SELECT id, account_id, project_id, cadence, email_opt_in, next_run_at
+       FROM project_monitors WHERE enabled = 1 AND next_run_at <= ?
+       ORDER BY next_run_at ASC LIMIT ?`,
+    ).bind(now, BATCH).all<DueRow>();
+    const fresh = (due.results || []).filter((row) => !seen.has(row.id));
+    if (fresh.length === 0) break;
+    for (const row of fresh) seen.add(row.id);
+    checked += await runPool(fresh, (row) => runOne(env, row, now, scheduledAt, read));
   }
-  return { checked: rows.length, skipped: null };
+  await writeWeeklyReports(env, scheduledAt, now);
+  return { checked, skipped: null };
+}
+
+export async function refuseMonitorMeter(
+  env: Env,
+  accountId: string,
+  name: string,
+  args: Record<string, unknown>,
+): Promise<string | null> {
+  if (!MONITOR_TOOLS.has(name)) return null;
+  const projectId = typeof args.projectId === 'string' ? args.projectId.trim() : '';
+  if (!ID_RE.test(projectId)) return 'Project not found';
+  const project = await getProject(env, accountId, projectId);
+  if (!project) return 'Project not found';
+  if (name !== 'set_project_monitor' || typeof args.cadence !== 'string') return null;
+  const plan = planName(await readAccountPlan(env, accountId));
+  if (!monitorCadenceAllowed(plan, args.cadence)) {
+    return `This plan's fastest check is ${planMonitorCadence(plan)}.`;
+  }
+  return null;
 }
 
 function decodeId(value: string): string | null {
@@ -480,7 +560,7 @@ export async function handleProjectMonitorRoute(
     const project = await getProject(env, accountId, projectId);
     if (!project) return json({ ok: false, error: 'Project not found' }, 404);
     const monitor = await getProjectMonitor(env, accountId, projectId);
-    return json({ ok: true, monitor, planCadence: planMonitorCadence(await accountPlan(env, accountId)) });
+    return json({ ok: true, monitor, planCadence: planMonitorCadence(planName(await readAccountPlan(env, accountId))) });
   }
   if (request.method === 'PUT') {
     const body = await readBody(request, MAX_SMALL_BODY_BYTES);

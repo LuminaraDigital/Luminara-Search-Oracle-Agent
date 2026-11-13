@@ -594,6 +594,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
         source: 'firebase',
         email: verified.user.email,
         name: verified.user.name,
+        emailVerified: verified.user.emailVerified === true,
       };
       const stored = await withAccountId(env, fbIdentity);
       const { org, membership } = await getOrCreateUserOrg(env, stored);
@@ -749,11 +750,13 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       }
     } else if ((event === 'user.created' || event === 'user.updated') && (data.uid || data.id)) {
       const uid = String(data.uid || data.id).replace(/^fb:/, '');
+      const verifiedFlag = data.emailVerified ?? data.email_verified;
       const userObj: HostedIdentity = {
         id: `fb:${uid}`,
         source: 'firebase',
         email: data.email,
         name: data.displayName || data.name,
+        ...(typeof verifiedFlag === 'boolean' ? { emailVerified: verifiedFlag } : {}),
       };
       await withAccountId(env, userObj);
     }

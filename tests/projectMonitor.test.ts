@@ -12,7 +12,9 @@ import {
 } from '../worker/projectMonitor';
 import { PROJECT_MONITOR_MCP_TOOLS } from '../worker/mcpProjectMonitorTools';
 import { handleEmailUnsubscribe } from '../worker/welcomeEmail';
-import { monitorAlertKind, planMonitorCadence } from '../services/monitor/monitorRules';
+import { monitorAlertKind, nextMonitorRunAt, planMonitorCadence } from '../services/monitor/monitorRules';
+import { handleMcpRequest } from '../worker/mcpServer';
+import type { McpCredential } from '../worker/userTypes';
 import { SESSION_MCP_CREDENTIAL } from '../worker/userTypes';
 
 const RICH = `<!DOCTYPE html><html><head><title>Harbour and Co</title>
@@ -52,8 +54,8 @@ function envFor(extra: Partial<Env> = {}): Env {
 
 async function addUser(env: Env, id: string, email: string, token: string) {
   await env.DB!.prepare(
-    `INSERT INTO users (id, source, email, display_name, created_at, last_seen_at, account_id, email_unsub_token)
-     VALUES (?, 'firebase', ?, 'Ada', 1, 1, ?, ?)`,
+    `INSERT INTO users (id, source, email, display_name, created_at, last_seen_at, account_id, email_unsub_token, email_verified)
+     VALUES (?, 'firebase', ?, 'Ada', 1, 1, ?, ?, 1)`,
   ).bind(id, email, id, token).run();
 }
 
@@ -99,18 +101,22 @@ describe('project monitor', () => {
     expect(saved.monitor.cadence).toBe('monthly');
     expect(await getProjectMonitor(env, 'acct_b', owned.project.id)).toBe(null);
 
-    const read = vi.fn(async () => ({ status: 200, html: RICH }));
-    const first = await runProjectMonitorTick(env, { now: Date.UTC(2026, 0, 5), scheduledAt: Date.UTC(2026, 0, 5), read });
+    const schemaPage = '<!DOCTYPE html><html><head><title>Harbour</title><script type="application/ld+json">{"@type":"RealEstateAgent","name":"Harbour and Co"}</script></head><body><p>Harbour and Co</p></body></html>';
+    const plainPage = '<!DOCTYPE html><html><head><title>Hi</title></head><body><p>Hello</p></body></html>';
+    const read = vi.fn(async () => ({ status: 200, html: schemaPage }));
+    const start = Date.UTC(2026, 0, 6, 8, 0, 0);
+    const first = await runProjectMonitorTick(env, { now: start, scheduledAt: start, read });
     expect(first).toEqual({ checked: 1, skipped: null });
     const history = await getProjectHistory(env, 'acct_a', owned.project.id, 5);
-    expect(history?.trends.find((row) => row.metric === 're_coverage')?.latestScore).toBe(6);
+    expect(history?.trends.find((row) => row.metric === 're_coverage')?.latestScore).toBe(1);
 
-    read.mockResolvedValue({ status: 200, html: THIN });
-    const later = Date.UTC(2026, 0, 5) + 31 * 86_400_000;
+    read.mockResolvedValue({ status: 200, html: plainPage });
+    const later = nextMonitorRunAt(start, 'monthly') + 60_000;
     await runProjectMonitorTick(env, { now: later, scheduledAt: later, read });
     const alerts = await listProjectAlerts(env, 'acct_a', owned.project.id);
-    expect(alerts?.map((alert) => alert.kind)).toEqual(['regression', 'weekly']);
-    expect(alerts?.[0]?.summary).toBe('Real estate coverage fell. Change vs previous: -6 (6 to 0).');
+    expect(alerts?.find((alert) => alert.kind === 'regression')?.summary).toBe(
+      'Real estate coverage fell. Change vs previous: -1 (1 to 0).',
+    );
     expect(await listProjectAlerts(env, 'acct_b', owned.project.id)).toBe(null);
     expect(read).toHaveBeenCalled();
   });
@@ -177,5 +183,149 @@ describe('project monitor', () => {
     const loaded = await getTool?.handler({ projectId: owned.project.id }, ctx);
     expect(loaded?.text).toBe('On, monthly. Email off. Prompts: none built from the last page read.');
     expect(PROJECT_MONITOR_MCP_TOOLS.every((tool) => tool.creditClass === 'free')).toBe(true);
+  });
+
+  it('keeps the next daily tick due when this tick started late and the next one starts earlier', async () => {
+    const store = new Map<string, string>();
+    store.set('sub:acct_a', JSON.stringify({ plan: 'agency', expiresAt: Date.now() + 40 * 86_400_000 }));
+    const env = envFor({ LUMINARA_KV: mockKv(store) });
+    const owned = await createProject(env, 'acct_a', { domain: 'harbour.example', name: 'Harbour' });
+    if (!owned.ok) throw new Error(owned.error);
+    const start = Date.UTC(2026, 0, 6, 8, 0, 0);
+    await saveProjectMonitor(env, 'acct_a', owned.project.id, { enabled: true, cadence: 'daily', emailOptIn: false }, start);
+    const read = vi.fn(async () => ({ status: 200, html: THIN }));
+    await runProjectMonitorTick(env, { now: start + 40 * 60_000, scheduledAt: start, read });
+    const row = await env.DB!.prepare(`SELECT next_run_at AS nextRunAt FROM project_monitors WHERE account_id = ?`).bind('acct_a').first<{ nextRunAt: number }>();
+    expect(row?.nextRunAt).toBe(nextMonitorRunAt(start, 'daily'));
+    const nextFire = start + 86_400_000;
+    const second = await runProjectMonitorTick(env, { now: nextFire + 5 * 60_000, scheduledAt: nextFire, read });
+    expect(second.checked).toBe(1);
+  });
+
+  it('does not call a fetch failure a coverage drop', async () => {
+    const env = envFor();
+    const owned = await createProject(env, 'acct_a', { domain: 'harbour.example', name: 'Harbour' });
+    if (!owned.ok) throw new Error(owned.error);
+    const start = Date.UTC(2026, 0, 6, 8, 0, 0);
+    await saveProjectMonitor(env, 'acct_a', owned.project.id, { enabled: true, cadence: 'monthly', emailOptIn: false }, start);
+    const home = '<!DOCTYPE html><html><head><title>Harbour</title><script type="application/ld+json">{"@type":"RealEstateAgent","name":"Harbour and Co"}</script></head><body><a href="https://harbour.example/team/ada">Ada</a></body></html>';
+    const profile = '<!DOCTYPE html><html><head><script type="application/ld+json">{"@type":"Person","name":"Ada Harbour"}</script></head><body><p>Ada</p></body></html>';
+    let follow = true;
+    const read = vi.fn(async (url: string) => {
+      if (url.includes('/team/')) return follow ? { status: 200, html: profile } : { status: 500, html: '' };
+      return { status: 200, html: home };
+    });
+    await runProjectMonitorTick(env, { now: start, scheduledAt: start, read });
+    follow = false;
+    const later = nextMonitorRunAt(start, 'monthly') + 60_000;
+    await runProjectMonitorTick(env, { now: later, scheduledAt: later, read });
+    const alerts = await listProjectAlerts(env, 'acct_a', owned.project.id);
+    expect(alerts?.some((alert) => alert.kind === 'regression')).toBe(false);
+  });
+
+  it('writes the Monday weekly report for a weekly and a monthly monitor whose first check was Tuesday', async () => {
+    const store = new Map<string, string>();
+    store.set('sub:acct_a', JSON.stringify({ plan: 'growth', expiresAt: Date.now() + 40 * 86_400_000 }));
+    const env = envFor({ LUMINARA_KV: mockKv(store) });
+    const weekly = await createProject(env, 'acct_a', { domain: 'weekly.example', name: 'Weekly' });
+    const monthly = await createProject(env, 'acct_a', { domain: 'monthly.example', name: 'Monthly' });
+    if (!weekly.ok || !monthly.ok) throw new Error('project');
+    const tuesday = Date.UTC(2026, 0, 6, 8, 0, 0);
+    await saveProjectMonitor(env, 'acct_a', weekly.project.id, { enabled: true, cadence: 'weekly', emailOptIn: false }, tuesday);
+    await saveProjectMonitor(env, 'acct_a', monthly.project.id, { enabled: true, cadence: 'monthly', emailOptIn: false }, tuesday);
+    const read = vi.fn(async () => ({ status: 200, html: THIN }));
+    await runProjectMonitorTick(env, { now: tuesday, scheduledAt: tuesday, read });
+    expect((await listProjectAlerts(env, 'acct_a', weekly.project.id))?.some((alert) => alert.kind === 'weekly')).toBe(false);
+    const readsAfterTuesday = read.mock.calls.length;
+    const monday = Date.UTC(2026, 0, 12, 8, 0, 0);
+    await runProjectMonitorTick(env, { now: monday, scheduledAt: monday, read });
+    expect(read.mock.calls.length).toBe(readsAfterTuesday);
+    expect((await listProjectAlerts(env, 'acct_a', weekly.project.id))?.filter((alert) => alert.kind === 'weekly')).toHaveLength(1);
+    expect((await listProjectAlerts(env, 'acct_a', monthly.project.id))?.filter((alert) => alert.kind === 'weekly')).toHaveLength(1);
+  });
+
+  it('checks every due monitor in one tick, past the first batch of 8', async () => {
+    const env = envFor();
+    const start = Date.UTC(2026, 0, 6, 8, 0, 0);
+    for (let i = 0; i < 9; i += 1) {
+      const owned = await createProject(env, 'acct_a', { domain: `agency${i}.example`, name: `Agency ${i}` });
+      if (!owned.ok) throw new Error(owned.error);
+      await saveProjectMonitor(env, 'acct_a', owned.project.id, { enabled: true, cadence: 'monthly', emailOptIn: false }, start);
+    }
+    const result = await runProjectMonitorTick(env, {
+      now: start,
+      scheduledAt: start,
+      read: async () => ({ status: 200, html: THIN }),
+    });
+    expect(result.checked).toBe(9);
+  });
+
+  it('leaves a paid cadence in place when the plan store cannot be read', async () => {
+    const env = envFor({ LUMINARA_KV: undefined });
+    const owned = await createProject(env, 'acct_a', { domain: 'harbour.example', name: 'Harbour' });
+    if (!owned.ok) throw new Error(owned.error);
+    const start = Date.UTC(2026, 0, 6, 8, 0, 0);
+    await env.DB!.prepare(
+      `INSERT INTO project_monitors
+        (id, account_id, project_id, enabled, cadence, email_opt_in, query_list_json, next_run_at, created_at, updated_at)
+       VALUES ('mon_paid', 'acct_a', ?, 1, 'daily', 0, '[]', ?, ?, ?)`,
+    ).bind(owned.project.id, start, start, start).run();
+    const read = vi.fn(async () => ({ status: 200, html: THIN }));
+    const result = await runProjectMonitorTick(env, { now: start, scheduledAt: start, read });
+    expect(result.checked).toBe(0);
+    expect(read).not.toHaveBeenCalled();
+    const row = await env.DB!.prepare(`SELECT cadence, next_run_at AS nextRunAt FROM project_monitors WHERE id = 'mon_paid'`).first<{ cadence: string; nextRunAt: number }>();
+    expect(row).toEqual({ cadence: 'daily', nextRunAt: start });
+  });
+
+  it('does not email an unverified Firebase address', async () => {
+    const env = envFor();
+    await env.DB!.prepare(
+      `INSERT INTO users (id, source, email, display_name, created_at, last_seen_at, account_id, email_unsub_token, email_verified)
+       VALUES ('acct_a', 'firebase', 'ada@example.com', 'Ada', 1, 1, 'acct_a', ?, 0)`,
+    ).bind('c'.repeat(43)).run();
+    const owned = await createProject(env, 'acct_a', { domain: 'harbour.example', name: 'Harbour' });
+    if (!owned.ok) throw new Error(owned.error);
+    const monday = Date.UTC(2026, 0, 5, 8, 0, 0);
+    await saveProjectMonitor(env, 'acct_a', owned.project.id, { enabled: true, cadence: 'monthly', emailOptIn: true }, monday);
+    const bodies: string[] = [];
+    vi.stubGlobal('fetch', async (_url: string, init?: RequestInit) => {
+      bodies.push(String(init?.body || ''));
+      return new Response('{"id":"em_1"}', { status: 200 });
+    });
+    await runProjectMonitorTick(env, { now: monday, scheduledAt: monday, read: async () => ({ status: 200, html: RICH }) });
+    expect(bodies).toEqual([]);
+    expect((await listProjectAlerts(env, 'acct_a', owned.project.id))?.some((alert) => alert.kind === 'weekly')).toBe(true);
+  });
+
+  it('does not spend the MCP daily cap when the project is missing or the cadence is too fast', async () => {
+    const env = envFor();
+    const owned = await createProject(env, 'acct_a', { domain: 'harbour.example', name: 'Harbour' });
+    if (!owned.ok) throw new Error(owned.error);
+    const account = { id: 'acct_a', source: 'telegram' as const, accountId: 'acct_a' };
+    const credential: McpCredential = { kind: 'oauth', id: null, scopes: ['mcp:free'], clientId: 'client-a' };
+    const call = (name: string, args: Record<string, unknown>) => new Request('https://www.luminarasuite.com/api/mcp', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }),
+    });
+    const missing = await (await handleMcpRequest(
+      call('set_project_monitor', { projectId: 'missing_project', enabled: true, cadence: 'monthly', emailOptIn: false }),
+      env,
+      account,
+      credential,
+    )).json() as { result?: { isError?: boolean; structuredContent?: { callsUsedToday?: number } } };
+    expect(missing.result?.isError).toBe(true);
+    const refused = await (await handleMcpRequest(
+      call('set_project_monitor', { projectId: owned.project.id, enabled: true, cadence: 'daily', emailOptIn: false }),
+      env,
+      account,
+      credential,
+    )).json() as { result?: { isError?: boolean; text?: string; structuredContent?: { callsUsedToday?: number } } };
+    expect(refused.result?.isError).toBe(true);
+    const who = await (await handleMcpRequest(call('whoami', {}), env, account, credential)).json() as {
+      result?: { structuredContent?: { callsUsedToday?: number } };
+    };
+    expect(who.result?.structuredContent?.callsUsedToday).toBe(1);
   });
 });

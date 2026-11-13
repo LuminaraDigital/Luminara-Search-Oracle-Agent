@@ -2,6 +2,7 @@
  * Free MCP tools for a project's check schedule and the alerts that schedule raised.
  */
 import type { McpToolDef, McpToolResult } from './mcpServer';
+import { MCP_PROJECT_ID_RE, requireProjectId } from './mcpProjectArgs';
 import { getProject } from './projectService';
 import {
   ackProjectAlert,
@@ -14,13 +15,8 @@ function textResult(text: string, structured?: Record<string, unknown>, isError 
   return { text, structuredContent: structured, isError };
 }
 
-const ID_RE = /^[A-Za-z0-9_-]{1,80}$/;
-
 function requireProject(args: Record<string, unknown>, ctx: { credential: { projectId?: string | null } }): string | null {
-  const projectId = typeof args.projectId === 'string' ? args.projectId.trim() : '';
-  if (!ID_RE.test(projectId)) return null;
-  if (ctx.credential.projectId && ctx.credential.projectId !== projectId) return null;
-  return projectId;
+  return requireProjectId(args, ctx);
 }
 
 export const PROJECT_MONITOR_MCP_TOOLS: McpToolDef[] = [
@@ -118,7 +114,7 @@ export const PROJECT_MONITOR_MCP_TOOLS: McpToolDef[] = [
     handler: async (args, ctx) => {
       const projectId = requireProject(args, ctx);
       const alertId = typeof args.alertId === 'string' ? args.alertId.trim() : '';
-      if (!projectId || !ID_RE.test(alertId)) return textResult('Alert not found', undefined, true);
+      if (!projectId || !MCP_PROJECT_ID_RE.test(alertId)) return textResult('Alert not found', undefined, true);
       const alert = await ackProjectAlert(ctx.env, ctx.accountId, projectId, alertId);
       if (!alert) return textResult('Alert not found', undefined, true);
       return textResult(`Read. ${alert.summary}`, { alert });

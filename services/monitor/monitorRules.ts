@@ -33,6 +33,13 @@ export function monitorIntervalMs(cadence: MonitorCadence): number {
   return 30 * 86_400_000;
 }
 
+/** Cron start time moves. One hour of slack keeps the next 08:00 fire inside the due window. */
+export const MONITOR_TICK_SLACK_MS = 60 * 60 * 1000;
+
+export function nextMonitorRunAt(scheduledAt: number, cadence: MonitorCadence): number {
+  return scheduledAt + monitorIntervalMs(cadence) - MONITOR_TICK_SLACK_MS;
+}
+
 export function monitorAlertKind(delta: {
   label: CompareLabel;
   scoreDelta: number | null;

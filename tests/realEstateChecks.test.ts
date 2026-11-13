@@ -94,7 +94,7 @@ describe('real estate checks', () => {
 
   it('does not score a page that was not fetched', () => {
     expect(realEstateCoverage(evaluateRealEstateChecks([]))).toEqual({
-      series: 'real estate checks',
+      series: '',
       measurementStatus: 'not_measured',
       score: null,
       notes: [],

@@ -44,7 +44,7 @@ function dayLabel(measuredAt: number): string {
 function trendTitle(kind: string, metric: string | undefined, subject: string | undefined): string {
   const metricLabel = metric ? METRIC_LABEL[metric] : '';
   const base = metricLabel ? `${kindLabel(kind)}, ${metricLabel}` : kindLabel(kind);
-  if (!subject || subject === 'real estate checks') return base;
+  if (!subject || metric === 're_coverage') return base;
   return `${base} (${subject})`;
 }
 
@@ -266,7 +266,7 @@ export function ProjectHistoryOutcomes({ signedIn }: { signedIn: boolean }) {
             disabled={monitorBusy}
             onChange={(event) => {
               const cadence = event.target.value === 'weekly' || event.target.value === 'daily' ? event.target.value : 'monthly';
-              void onMonitor({ enabled: monitor?.enabled ?? true, cadence, emailOptIn: monitor?.emailOptIn ?? false });
+              void onMonitor({ enabled: monitor?.enabled ?? false, cadence, emailOptIn: monitor?.emailOptIn ?? false });
             }}
           >
             {cadenceChoices.map((cadence) => (
@@ -292,7 +292,7 @@ export function ProjectHistoryOutcomes({ signedIn }: { signedIn: boolean }) {
             checked={monitor?.emailOptIn ?? false}
             disabled={monitorBusy}
             onChange={(event) => void onMonitor({
-              enabled: monitor?.enabled ?? true,
+              enabled: monitor?.enabled ?? false,
               cadence: monitor?.cadence || planCadence,
               emailOptIn: event.target.checked,
             })}

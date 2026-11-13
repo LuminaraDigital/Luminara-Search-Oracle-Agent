@@ -58,6 +58,7 @@ import { ACCOUNT_MCP_TOOLS } from './mcpAccountTools';
 import { CONVERSION_SPINE_MCP_TOOLS } from './mcpConversionTools';
 import { PROJECT_HISTORY_MCP_TOOLS } from './mcpProjectHistoryTools';
 import { PROJECT_MONITOR_MCP_TOOLS } from './mcpProjectMonitorTools';
+import { refuseMonitorMeter } from './projectMonitor';
 import { FIX_DRAFT_MCP_TOOLS } from './fixDraftRoute';
 import { enforceHabitatScope, SELF_DRIVING_MCP_TOOLS } from './selfDrivingHabitat';
 import { AGENT_MCP_TOOLS, agentPromptGet, agentPromptsList } from './mcpAgents';
@@ -667,6 +668,8 @@ async function callTool(
   if (!tool) return textResult(`Unknown tool: ${name}`, { code: 'TOOL_NOT_FOUND' }, true);
   const inputError = missingRequiredInput(tool.inputSchema, args);
   if (inputError) return inputError;
+  const monitorRefusal = await refuseMonitorMeter(ctx.env, ctx.accountId, name, args);
+  if (monitorRefusal) return textResult(monitorRefusal, undefined, true);
   // Daily caps increment only after the gates above allow a known tool with usable input.
   const meter = await spendMcpDailyCall(ctx.env, ctx.accountId, mcpDailyCallLimit);
   ctx.dailyUsage = meter.usage;

@@ -329,16 +329,17 @@ export function realEstateCoverage(checks: readonly RealEstateCheck[]): {
   score: number | null;
   notes: string[];
 } {
-  if (!checks.some((check) => check.status === 'measured')) {
-    return { series: REAL_ESTATE_SERIES, measurementStatus: 'not_measured', score: null, notes: [] };
+  const scored = checks.filter((check) => check.id !== 'answer_prompts' && check.status === 'measured');
+  if (scored.length === 0) {
+    return { series: '', measurementStatus: 'not_measured', score: null, notes: [] };
   }
-  const notes = checks.filter((check) => check.hit === false).map((check) => `missing ${check.label}`).slice(0, 7);
+  const notes = scored.filter((check) => check.hit === false).map((check) => `missing ${check.label}`).slice(0, 7);
   const prompts = checks.find((check) => check.id === 'answer_prompts');
   if (prompts?.hit) notes.push(prompts.detail.slice(0, 160));
   return {
-    series: REAL_ESTATE_SERIES,
+    series: scored.map((check) => check.id).sort().join('|'),
     measurementStatus: 'measured',
-    score: checks.filter((check) => check.hit === true).length,
+    score: scored.filter((check) => check.hit === true).length,
     notes: notes.slice(0, 8),
   };
 }
