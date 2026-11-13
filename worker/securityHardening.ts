@@ -431,6 +431,7 @@ export async function meterDailyUse(
   limit: number,
   label: string,
   countWhenUnlimited = false,
+  failClosedOnWrite = false,
 ): Promise<({ ok: true } & DailyUseMeter) | ({ ok: false; error: string; reason: 'limit' | 'store' } & DailyUseMeter)> {
   const resetAt = utcDayResetEpoch();
   const view = (used: number): DailyUseMeter => ({
@@ -456,7 +457,7 @@ export async function meterDailyUse(
   }
   const next = used + 1;
   const wrote = await putCounterBestEffort(env, key, String(next), 2 * 86400);
-  if (!wrote && limit > 0) {
+  if (!wrote && limit > 0 && failClosedOnWrite) {
     return { ok: false, reason: 'store', error: `${label} quota store unavailable. Try again later.`, ...view(used) };
   }
   return { ok: true, ...view(wrote ? next : used) };

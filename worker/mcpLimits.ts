@@ -49,7 +49,7 @@ export async function spendMcpDailyCall(
   prefix = 'mcp_calls',
   label = 'MCP call',
 ): Promise<{ ok: true; usage: McpDailyUsage } | { ok: false; usage: McpDailyUsage; error: string; reason: 'limit' | 'store' }> {
-  const meter = await meterDailyUse(env, prefix, accountId, limit, label, true);
+  const meter = await meterDailyUse(env, prefix, accountId, limit, label, true, true);
   const usage = snapshot(meter);
   if (!meter.ok) return { ok: false, usage, error: meter.error, reason: meter.reason };
   return { ok: true, usage };
