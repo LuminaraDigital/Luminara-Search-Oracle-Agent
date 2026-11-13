@@ -423,5 +423,23 @@ describe('PublicApisEnrichmentService', () => {
       expect(result.security.measurementConfidence).toBe('failed');
       expect(JSON.parse(storage['luminara_entity_enrichment_cache'] || '{}')['unreachable-domain.com']).toBeUndefined();
     });
+
+    it('measures again instead of reusing a cached check that reached nothing', async () => {
+      storage['luminara_entity_enrichment_cache'] = JSON.stringify({
+        'stale-domain.com': {
+          domain: 'stale-domain.com',
+          brandName: 'Stale',
+          wikidata: null,
+          wayback: { hasArchive: false, earliestDate: null, archivedYearsAgo: 0, status: 'new_entity' },
+          metadata: null,
+          security: { httpsEnforced: false, trustScore: 0, measurementConfidence: 'failed' },
+          sameAsUrls: [],
+          timestamp: Date.now(),
+        },
+      });
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'));
+      await publicApisEnrichmentService.enrichAudit('stale-domain.com', 'Stale');
+      expect(fetchSpy).toHaveBeenCalled();
+    });
   });
 });
