@@ -5,7 +5,7 @@ import { createHmac } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import worker from '../worker/index';
 import type { Env } from '../worker/env';
-import { createActionRequest } from '../worker/mcpGovernance';
+import { consumeApprovedRequest, createActionRequest } from '../worker/mcpGovernance';
 import { createProject } from '../worker/projectService';
 import { listActiveConstraints } from '../worker/scopedMemory';
 import { createSqliteD1 } from './helpers/sqliteD1';
@@ -403,6 +403,36 @@ describe('mcp-action-requests HTTP', () => {
     );
     expect(approve.status).toBe(409);
     expect(((await approve.json()) as { code: string }).code).toBe('TOO_LONG_TO_REVIEW');
+  });
+
+  it('an approval given on the page covers only the exact call that asked for it', async () => {
+    const env = makeEnv();
+    const reviewed = { domain: 'www.acme.io', token: 'A' };
+    const created = await createActionRequest(env, { userId: '88001', toolName: 'prepare_cms_mcp_call', args: reviewed });
+    const headers = { 'x-telegram-init-data': signInitData(88001, 'Owner') };
+
+    // The owner reads the redacted copy; the hash that binds the approval is not sent to the browser.
+    const read = await worker.fetch(req(`/api/mcp-action-requests/${created.id}`, { headers }), env, ctx);
+    const readText = await read.text();
+    expect(readText).toContain('[redacted]');
+    expect(readText).not.toContain('args_hash');
+    const list = await worker.fetch(req('/api/mcp-action-requests', { headers }), env, ctx);
+    const listText = await list.text();
+    expect(listText).toContain(created.id);
+    expect(listText).not.toContain('args_hash');
+
+    const approve = await worker.fetch(
+      req(`/api/mcp-action-requests/${created.id}/approve`, { method: 'POST', headers }),
+      env,
+      ctx,
+    );
+    expect(approve.status).toBe(200);
+
+    // Same redacted text, different token: the approval stays unspent.
+    expect(await consumeApprovedRequest(env, '88001', 'prepare_cms_mcp_call', null, { domain: 'www.acme.io', token: 'B' })).toBe(false);
+    // Same call with its keys in another order: spent once, then gone.
+    expect(await consumeApprovedRequest(env, '88001', 'prepare_cms_mcp_call', null, { token: 'A', domain: 'www.acme.io' })).toBe(true);
+    expect(await consumeApprovedRequest(env, '88001', 'prepare_cms_mcp_call', null, reviewed)).toBe(false);
   });
 
   it('never cuts the shown details in the middle of a character', async () => {

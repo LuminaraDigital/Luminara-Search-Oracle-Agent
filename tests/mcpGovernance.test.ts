@@ -15,6 +15,7 @@ import {
   denyActionRequest,
   consumeApprovedRequest,
   getOwnedToolRequest,
+  hashToolArgs,
 } from '../worker/mcpGovernance';
 import { redactSensitive } from '../worker/logRedaction';
 import { handleMcpRequest } from '../worker/mcpServer';
@@ -223,6 +224,93 @@ describe('action request lifecycle', () => {
     await approveActionRequest(env, id, 'admin');
     expect(await consumeApprovedRequest(env, 'u1', 'browse_goal', null, { url: 'https://evil.test' })).toBe(false);
     expect(await consumeApprovedRequest(env, 'u1', 'browse_goal', null, { url: 'https://a.test' })).toBe(true);
+  });
+
+  it('an approval for one redacted value is not spent by a call with another', async () => {
+    const env = makeEnv();
+    const reviewed = { url: 'https://a.test', token: 'A', login: { username: 'alice', password: 'one' } };
+    const { id } = await createActionRequest(env, { userId: 'u1', toolName: 'browse_goal', args: reviewed });
+    await approveActionRequest(env, id, 'admin');
+
+    // Each of these stores the same redacted text as the reviewed call.
+    const swaps = [
+      { ...reviewed, token: 'B' },
+      { ...reviewed, login: { username: 'alice', password: 'two' } },
+      { ...reviewed, login: { username: 'adam', password: 'one' } },
+    ];
+    for (const args of swaps) {
+      expect(JSON.stringify(redactSensitive(args))).toBe(JSON.stringify(redactSensitive(reviewed)));
+      expect(await consumeApprovedRequest(env, 'u1', 'browse_goal', null, args)).toBe(false);
+    }
+    expect((await getOwnedToolRequest(env, id, 'u1'))?.status).toBe('approved');
+
+    expect(await consumeApprovedRequest(env, 'u1', 'browse_goal', null, reviewed)).toBe(true);
+    expect(await consumeApprovedRequest(env, 'u1', 'browse_goal', null, reviewed)).toBe(false);
+  });
+
+  it('a call that differs only in a redacted value opens its own request', async () => {
+    const env = makeEnv();
+    const a = await createActionRequest(env, { userId: 'u1', toolName: 'browse_goal', args: { url: 'https://a.test', token: 'A' } });
+    const same = await createActionRequest(env, { userId: 'u1', toolName: 'browse_goal', args: { url: 'https://a.test', token: 'A' } });
+    const b = await createActionRequest(env, { userId: 'u1', toolName: 'browse_goal', args: { url: 'https://a.test', token: 'B' } });
+    expect(same).toMatchObject({ id: a.id, existing: true });
+    expect(b.existing).toBe(false);
+    expect(b.id).not.toBe(a.id);
+
+    // Approving B's request leaves A's call waiting.
+    await approveActionRequest(env, b.id, 'admin');
+    expect(await consumeApprovedRequest(env, 'u1', 'browse_goal', null, { url: 'https://a.test', token: 'A' })).toBe(false);
+    expect(await consumeApprovedRequest(env, 'u1', 'browse_goal', null, { url: 'https://a.test', token: 'B' })).toBe(true);
+  });
+
+  it('key order does not change which call an approval covers', async () => {
+    const env = makeEnv();
+    const asked = { goal: 'tidy', checks: { textIncludes: 'Done', urlIncludes: '/ok' }, steps: [{ a: 1, b: 2 }] };
+    const reordered = { steps: [{ b: 2, a: 1 }], checks: { urlIncludes: '/ok', textIncludes: 'Done' }, goal: 'tidy' };
+    const first = await createActionRequest(env, { userId: 'u1', toolName: 'browse_goal', args: asked });
+    const second = await createActionRequest(env, { userId: 'u1', toolName: 'browse_goal', args: reordered });
+    expect(second).toMatchObject({ id: first.id, existing: true });
+    await approveActionRequest(env, first.id, 'admin');
+    // Array order is part of the call; object key order is not.
+    expect(await consumeApprovedRequest(env, 'u1', 'browse_goal', null, { ...asked, steps: [{ a: 2, b: 1 }] })).toBe(false);
+    expect(await consumeApprovedRequest(env, 'u1', 'browse_goal', null, reordered)).toBe(true);
+  });
+
+  it('stores the hash beside the redacted copy and never returns it', async () => {
+    const env = makeEnv();
+    const { id } = await createActionRequest(env, { userId: 'u1', toolName: 'browse_goal', args: { token: 'A' } });
+    const stored = await env.DB.prepare('SELECT args_json, args_hash FROM mcp_action_requests WHERE id = ?')
+      .bind(id)
+      .first<{ args_json: string; args_hash: string }>();
+    expect(stored?.args_json).toBe('{"token":"[redacted]"}');
+    expect(stored?.args_hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(stored?.args_hash).toBe(await hashToolArgs({ token: 'A' }));
+    expect((await listActionRequests(env, 'u1'))[0]).not.toHaveProperty('args_hash');
+    expect(await getOwnedToolRequest(env, id, 'u1')).not.toHaveProperty('args_hash');
+  });
+
+  it('refuses an approval stored without a hash (a row from before migration 0049)', async () => {
+    const env = makeEnv();
+    const args = { url: 'https://a.test' };
+    const { id } = await createActionRequest(env, { userId: 'u1', toolName: 'browse_goal', args });
+    await approveActionRequest(env, id, 'admin');
+    await env.DB.prepare('UPDATE mcp_action_requests SET args_hash = NULL WHERE id = ?').bind(id).run();
+    expect(await consumeApprovedRequest(env, 'u1', 'browse_goal', null, args)).toBe(false);
+    // The caller asks again and gets a fresh request, not the dead one.
+    const again = await createActionRequest(env, { userId: 'u1', toolName: 'browse_goal', args });
+    expect(again.existing).toBe(false);
+  });
+
+  it('never spends an approval for args nested too deep to hash', async () => {
+    const env = makeEnv();
+    let nested: Record<string, unknown> = { goal: 'x' };
+    for (let i = 0; i < 40; i++) nested = { inner: nested };
+    expect(await hashToolArgs(nested)).toBeNull();
+    const first = await createActionRequest(env, { userId: 'u1', toolName: 'browse_goal', args: nested });
+    const second = await createActionRequest(env, { userId: 'u1', toolName: 'browse_goal', args: nested });
+    expect(second).toMatchObject({ id: first.id, existing: true });
+    await approveActionRequest(env, first.id, 'admin');
+    expect(await consumeApprovedRequest(env, 'u1', 'browse_goal', null, nested)).toBe(false);
   });
 
   it('expired approvals never authorize', async () => {

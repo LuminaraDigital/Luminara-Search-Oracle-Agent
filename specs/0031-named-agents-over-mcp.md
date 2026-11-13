@@ -68,7 +68,7 @@ The owner must see everything they approve. If the stored arguments are too long
 
 Another account's request and a missing request get the same 404, on the new read route and on approve and deny (which used to answer 403 and so confirmed the id existed). Only a signed-in Luminara session can approve: connector tokens and API keys are not accepted on these routes, so an agent cannot approve its own request. The link id is removed from the address bar as soon as the page reads it.
 
-An approval still authorizes one call with the same arguments, exactly as today. The link carries no authority: opening it without the owner's session shows nothing, and the id is a random UUID.
+An approval authorizes one call with exactly the arguments it was requested with. The stored arguments are redacted for display, so they cannot be what the next call is compared against: two calls that differ only in a redacted value (a token, a password) store the same text. Each request therefore also stores a SHA-256 of the unredacted arguments, with object keys in a stable order, in `mcp_action_requests.args_hash` (migration `0049_mcp_action_request_args_hash.sql`). Reusing a pending request and spending an approval both match on that hash, so key order does not matter and a changed secret does. The hash stays in the worker; no route returns it. A request stored before the migration has no hash and cannot be spent; it would have expired within 30 minutes anyway, and the agent asks again. The link carries no authority: opening it without the owner's session shows nothing, and the id is a random UUID.
 
 Two existing gaps are closed on the way. A new request for the same tool and arguments reused a pending request even after it had expired, so the link would have been dead on arrival; an expired pending request is now ignored and a fresh one is created. And an expired request could still be approved (the approval could never be used); it can now only be denied.
 
@@ -85,4 +85,6 @@ Two existing gaps are closed on the way. A new request for the same tool and arg
 - MCP Apps cards (AE-12).
 - Showing which connection created an approval request. The request row does not record it; adding that needs a migration.
 - A cap on pending approval requests per account. Free and Starter are bounded by the daily call cap; Growth and Agency are not.
+- Showing the owner a redacted value. The page shows `[redacted]` where the call carries a secret, and the approval is bound to the real value by its hash, so the owner approves a value they cannot read. The agent cannot swap it afterwards.
+- A keyed hash. `args_hash` is a plain SHA-256, so someone who can read the table could test guesses for a short redacted value. Closing that needs a server secret (HMAC).
 - Analyst and Prospector.
