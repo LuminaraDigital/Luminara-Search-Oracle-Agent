@@ -1,0 +1,83 @@
+{
+  "name": "Luminara Suite",
+  "tagline": "Projects, context, and reports for one Luminara account.",
+  "description": "Luminara Suite lets an AI agent use the projects, context, and reports on a signed-in account. Free and Starter have a daily call cap. Growth and Agency do not. Paid research needs Agency or the caller's own DataForSEO login.",
+  "category": "Marketing",
+  "transport": "streamable-http",
+  "sessionStickiness": false,
+  "remoteUrl": "https://www.luminarasuite.com/api/mcp",
+  "logo": {
+    "svg": "logo.svg",
+    "png512": "logo-512.png",
+    "source": "public/brand/luminara-logo.png"
+  },
+  "oauth": {
+    "grantType": "authorization_code",
+    "codeChallengeMethod": "S256",
+    "tokenEndpointAuthMethod": "none",
+    "registrationEndpoint": "https://www.luminarasuite.com/api/oauth/mcp/register",
+    "authorizationEndpoint": "https://www.luminarasuite.com/api/oauth/mcp/authorize",
+    "tokenEndpoint": "https://www.luminarasuite.com/api/oauth/mcp/token",
+    "revocationEndpoint": "https://www.luminarasuite.com/api/oauth/mcp/revoke",
+    "protectedResourceMetadata": "https://www.luminarasuite.com/.well-known/oauth-protected-resource/api/mcp",
+    "authorizationServerMetadata": "https://www.luminarasuite.com/.well-known/oauth-authorization-server",
+    "scopes": [
+      {
+        "name": "mcp:free",
+        "description": "Projects, context, and reports. This is the scope a hosted OAuth client receives after Allow."
+      },
+      {
+        "name": "mcp:research",
+        "description": "Hosted paid research. Granted when an Agency plan authorizes outside the hosted connector screen. A hosted client can still pass its own DataForSEO login in x-provider-key."
+      }
+    ],
+    "redirectUris": {
+      "hostedHttps": "Any https URI with no userinfo and no fragment. The client must register it first. Authorize redirects only to a URI on that client's record.",
+      "loopback": "http or https on localhost, 127.0.0.1, or ::1. The port may differ from the registered URI. The path and query must match.",
+      "ideSchemes": ["cursor:", "vscode:", "vscode-insiders:"],
+      "rejected": ["javascript:", "data:", "http on a public host", "https with a username, password, or fragment"]
+    }
+  },
+  "limits": {
+    "freeCallsPerUtcDay": 100,
+    "starterCallsPerUtcDay": 300,
+    "growthDailyCap": "none",
+    "agencyDailyCap": "none",
+    "counter": "per account, not per token",
+    "toolCallsPerMinutePerAccount": 30,
+    "toolCallsPerMinutePerClientId": 30,
+    "registerPostsPerMinutePerIp": 10,
+    "tokenPostsPerMinutePerIp": 30,
+    "hostedPaidCallsPerUtcDayOnAgency": 200,
+    "listPageMax": 50
+  },
+  "privacyPolicyUrl": "https://www.luminarasuite.com/privacy",
+  "termsUrl": "https://www.luminarasuite.com/terms",
+  "supportContact": "support@luminarasuite.com",
+  "publisher": {
+    "name": "LUMINARA DIGITAL PTY LTD",
+    "abn": "90 693 125 281"
+  },
+  "examplePrompts": [
+    {
+      "prompt": "Who is this connection, and how many MCP calls are left today?",
+      "tool": "whoami"
+    },
+    {
+      "prompt": "List the projects on this account.",
+      "tool": "list_projects"
+    },
+    {
+      "prompt": "Read the project context for this project id before any research.",
+      "tool": "get_project_context"
+    },
+    {
+      "prompt": "List report summaries for that project. Do not fetch HTML.",
+      "tool": "list_reports"
+    },
+    {
+      "prompt": "Save this report for the project and give me the link.",
+      "tool": "save_report"
+    }
+  ]
+}

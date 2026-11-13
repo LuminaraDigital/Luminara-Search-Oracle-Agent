@@ -51,8 +51,8 @@ Each paid plan lasts 30 days and starts as soon as payment is confirmed. It does
 ## MCP
 
 - Docs: https://www.luminarasuite.com/docs/mcp.html
-- Endpoint: https://luminarasuite.com/api/mcp
-- MCP is on every plan: 100 calls a day on Free, no daily cap on Growth and Agency. Paid research needs Agency or your own DataForSEO login.
+- Endpoint: https://www.luminarasuite.com/api/mcp
+- MCP is on every plan. Free: 100 calls a day. Starter: 300 calls a day. Growth and Agency have no daily cap. Paid research needs Agency or your own DataForSEO login. The daily count is per account. A new token does not reset it.
 
 ## Telegram Mini App
 
