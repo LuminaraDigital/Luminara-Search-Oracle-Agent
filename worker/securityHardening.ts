@@ -397,11 +397,13 @@ export function withRateLimitHeaders(response: Response, headers: Record<string,
  * that must not turn a request whose work is already done into a 500 the client retries.
  * The log carries the key prefix only, never the account id or email hash in the key.
  */
-export async function putCounterBestEffort(env: Env, key: string, value: string, ttlSec: number): Promise<void> {
+export async function putCounterBestEffort(env: Env, key: string, value: string, ttlSec: number): Promise<boolean> {
   try {
     await env.LUMINARA_KV?.put(key, value, { expirationTtl: ttlSec });
+    return !!env.LUMINARA_KV;
   } catch {
     console.warn(JSON.stringify({ event: 'kv_counter_write_failed', prefix: key.split(':')[0] }));
+    return false;
   }
 }
 
@@ -429,7 +431,7 @@ export async function meterDailyUse(
   limit: number,
   label: string,
   countWhenUnlimited = false,
-): Promise<({ ok: true } & DailyUseMeter) | ({ ok: false; error: string } & DailyUseMeter)> {
+): Promise<({ ok: true } & DailyUseMeter) | ({ ok: false; error: string; reason: 'limit' | 'store' } & DailyUseMeter)> {
   const resetAt = utcDayResetEpoch();
   const view = (used: number): DailyUseMeter => ({
     used,
@@ -440,7 +442,7 @@ export async function meterDailyUse(
   if (limit <= 0 && !countWhenUnlimited) return { ok: true, ...view(0) };
   if (!env.LUMINARA_KV) {
     if (env.REQUIRE_TG_AUTH === 'true') {
-      return { ok: false, error: `${label} quota store unavailable. Try again later.`, ...view(0) };
+      return { ok: false, reason: 'store', error: `${label} quota store unavailable. Try again later.`, ...view(0) };
     }
     return { ok: true, ...view(0) };
   }
@@ -450,11 +452,14 @@ export async function meterDailyUse(
   const used = Number.isFinite(read) ? read : 0;
   const ceiling = limit <= 0 ? Number.MAX_SAFE_INTEGER : limit;
   if (used >= ceiling) {
-    return { ok: false, error: `Daily ${label.toLowerCase()} limit of ${limit} reached.`, ...view(used) };
+    return { ok: false, reason: 'limit', error: `Daily ${label.toLowerCase()} limit of ${limit} reached.`, ...view(used) };
   }
   const next = used + 1;
-  await putCounterBestEffort(env, key, String(next), 2 * 86400);
-  return { ok: true, ...view(next) };
+  const wrote = await putCounterBestEffort(env, key, String(next), 2 * 86400);
+  if (!wrote && limit > 0) {
+    return { ok: false, reason: 'store', error: `${label} quota store unavailable. Try again later.`, ...view(used) };
+  }
+  return { ok: true, ...view(wrote ? next : used) };
 }
 
 // ---- Sliding-window / burst / outbound budget (toll-fraud defense) ----------------------------
@@ -486,6 +491,7 @@ export async function enforceKvSlidingWindow(
     maxRequests: number;
     windowSeconds: number;
     failClosedWithoutKv?: boolean;
+    failClosedOnWriteError?: boolean;
     /** False checks the window without writing. Callers that need two buckets peek both, then record. */
     record?: boolean;
   },
@@ -564,6 +570,19 @@ export async function enforceKvSlidingWindow(
     };
   } catch {
     console.warn(JSON.stringify({ event: 'rate_limit_store_error' }));
+    if (opts.failClosedOnWriteError) {
+      return {
+        ok: false,
+        response: rateLimitedResponse({
+          limit,
+          windowSec,
+          remaining: 0,
+          retryAfterSec: 1,
+          code: 'RATE_STORE_UNAVAILABLE',
+          error: 'Rate limit store unavailable. Try again later.',
+        }),
+      };
+    }
     return {
       ok: true,
       headers: rateLimitHeaders({ limit, remaining: limit, windowSec }),

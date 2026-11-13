@@ -4,7 +4,7 @@ import worker from '../worker/index';
 import type { Env } from '../worker/env';
 import { handleMcpRequest, listMcpToolCatalogue } from '../worker/mcpServer';
 import { TOOL_GOVERNANCE } from '../worker/mcpGovernance';
-import { enforceMcpOauthIpLimit, MCP_ACCOUNT_BURST_PER_MIN, MCP_CLIENT_BURST_PER_MIN, MCP_HOSTED_PAID_DAILY } from '../worker/mcpLimits';
+import { enforceMcpOauthIpLimit, MCP_ACCOUNT_BURST_PER_MIN, MCP_CLIENT_BURST_PER_MIN, MCP_HOSTED_PAID_DAILY, spendMcpDailyCall } from '../worker/mcpLimits';
 import { pageList } from '../worker/mcpToolMeta';
 import { MCP_PUBLIC_URL } from '../services/mcp/publicServer';
 import type { HostedIdentity, McpCredential } from '../worker/userTypes';
@@ -57,7 +57,11 @@ function call(name = 'whoami') {
 }
 
 type Rpc = {
-  result?: { structuredContent?: { callsUsedToday?: number; callsRemainingToday?: number | null; plan?: string }; _meta?: { rateLimit?: { limit: number; remaining: number | null; reset: number } } };
+  result?: {
+    isError?: boolean;
+    structuredContent?: { code?: string; callsUsedToday?: number; callsRemainingToday?: number | null; plan?: string };
+    _meta?: { rateLimit?: { limit: number; remaining: number | null; reset: number } };
+  };
   error?: { code?: number; message?: string; data?: { code?: string; resetAt?: number; remaining?: number; limit?: number } };
 };
 
@@ -101,6 +105,20 @@ describe('MCP daily cap is per account', () => {
     expect(logged).not.toContain('Bearer');
     expect(logged).not.toContain('@');
     warn.mockRestore();
+  });
+
+  it('rejects the call when the daily counter cannot be stored', async () => {
+    const env = makeEnv();
+    env.LUMINARA_KV!.put = async () => {
+      throw new Error('KV put rejected');
+    };
+    const spent = await spendMcpDailyCall(env, 'acct-kv', 100);
+    expect(spent.ok).toBe(false);
+    if (!spent.ok) {
+      expect(spent.reason).toBe('store');
+      expect(spent.usage.used).toBe(0);
+      expect(spent.error).toContain('quota store unavailable');
+    }
   });
 });
 
@@ -152,12 +170,21 @@ describe('hosted paid MCP quota', () => {
     const store = new Map<string, string>([
       ['sub:agency-1', JSON.stringify({ plan: 'agency', expiresAt: Date.now() + 86_400_000 })],
       [`mcp_paid:agency-1:${day}`, String(MCP_HOSTED_PAID_DAILY)],
+      ['mcp:context_loaded:agency-1:proj-1', '1'],
     ]);
     const env = makeEnv(store);
     const research: McpCredential = { kind: 'oauth', id: null, scopes: ['mcp:free', 'mcp:research'], clientId: 'paid-client' };
-    const blocked = (await (
-      await handleMcpRequest(call('research_keywords'), env, user('agency-1'), research)
-    ).json()) as Rpc;
+    const blockedReq = new Request('https://www.luminarasuite.com/api/mcp', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: { name: 'research_keywords', arguments: { projectId: 'proj-1', seeds: ['aeo'] } },
+      }),
+    });
+    const blocked = (await (await handleMcpRequest(blockedReq, env, user('agency-1'), research)).json()) as Rpc;
     expect(blocked.error?.data?.code).toBe('MCP_PAID_DAILY_LIMIT');
     expect(blocked.error?.data?.limit).toBe(200);
 
@@ -174,6 +201,19 @@ describe('hosted paid MCP quota', () => {
     const skipped = (await (await handleMcpRequest(byok, env, user('agency-1'), research)).json()) as Rpc;
     expect(skipped.error?.data?.code).not.toBe('MCP_PAID_DAILY_LIMIT');
     expect(store.get(`mcp_paid:agency-1:${day}`)).toBe('200');
+  });
+
+  it('does not spend a hosted paid call when project context is missing', async () => {
+    const store = new Map<string, string>([
+      ['sub:agency-2', JSON.stringify({ plan: 'agency', expiresAt: Date.now() + 86_400_000 })],
+    ]);
+    const env = makeEnv(store);
+    const research: McpCredential = { kind: 'oauth', id: null, scopes: ['mcp:free', 'mcp:research'], clientId: 'paid-client-2' };
+    const res = await handleMcpRequest(call('research_keywords'), env, user('agency-2'), research);
+    const body = (await res.json()) as Rpc;
+    expect(body.result?.isError).toBe(true);
+    expect(body.result?.structuredContent?.code).toBe('CONTEXT_REQUIRED');
+    expect([...store.keys()].some((key) => key.startsWith('mcp_paid:'))).toBe(false);
   });
 });
 
@@ -251,6 +291,20 @@ describe('OAuth register and token IP limits', () => {
       execCtx,
     );
     expect(other.status).not.toBe(429);
+  });
+
+  it('does not admit a register when the rate-limit write fails', async () => {
+    const env = makeEnv();
+    env.LUMINARA_KV!.put = async () => {
+      throw new Error('KV put rejected');
+    };
+    const blocked = await enforceMcpOauthIpLimit(env, 'mcp_oauth_register', '203.0.113.77', 10);
+    expect(blocked.ok).toBe(false);
+    if (!blocked.ok) {
+      expect(blocked.response.status).toBe(429);
+      expect(((await blocked.response.json()) as { code?: string }).code).toBe('RATE_STORE_UNAVAILABLE');
+      expect(blocked.response.headers.get('Retry-After')).toBe('1');
+    }
   });
 });
 

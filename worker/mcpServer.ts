@@ -120,10 +120,50 @@ function capToolResult(result: McpToolResult): McpToolResult {
   return changed ? { ...result, text, structuredContent: structured } : result;
 }
 
-const DAILY_LIMIT_CODES = new Set(['MCP_DAILY_LIMIT', 'MCP_PAID_DAILY_LIMIT']);
+const DAILY_LIMIT_CODES = new Set(['MCP_DAILY_LIMIT', 'MCP_PAID_DAILY_LIMIT', 'MCP_QUOTA_STORE']);
 
 function textResult(text: string, structured?: Record<string, unknown>, isError = false): McpToolResult {
   return { text, structuredContent: structured, isError };
+}
+
+function dailySpendRefusal(
+  ctx: McpToolContext,
+  meter: { error: string; reason: 'limit' | 'store'; usage: McpDailyUsage },
+  limitCode: 'MCP_DAILY_LIMIT' | 'MCP_PAID_DAILY_LIMIT',
+  limit: number,
+): McpToolResult {
+  if (meter.reason === 'store') {
+    logMcpAbuse({
+      kind: 'MCP_QUOTA_STORE',
+      accountId: ctx.accountId,
+      clientId: ctx.credential.clientId ?? null,
+    });
+    return textResult(meter.error, { code: 'MCP_QUOTA_STORE', retryAfter: 1 }, true);
+  }
+  logMcpAbuse({
+    kind: limitCode,
+    accountId: ctx.accountId,
+    clientId: ctx.credential.clientId ?? null,
+    limit: meter.usage.limit,
+    used: meter.usage.used,
+  });
+  const resetIso = new Date(meter.usage.resetAt * 1000).toISOString();
+  const text =
+    limitCode === 'MCP_DAILY_LIMIT'
+      ? `Daily MCP call limit of ${limit} reached. Resets at ${resetIso}.`
+      : `Hosted paid MCP limit of ${limit} calls today reached. Resets at ${resetIso}. BYOK is not counted.`;
+  return textResult(
+    text,
+    {
+      code: limitCode,
+      ...(limitCode === 'MCP_DAILY_LIMIT' ? { requiredPlan: 'growth' } : {}),
+      limit: meter.usage.limit,
+      used: meter.usage.used,
+      remaining: 0,
+      resetAt: meter.usage.resetAt,
+    },
+    true,
+  );
 }
 
 function requireString(args: Record<string, unknown>, key: string): string | null {
@@ -494,28 +534,7 @@ async function callTool(
   }
   const meter = await spendMcpDailyCall(ctx.env, ctx.accountId, mcpDailyCallLimit);
   ctx.dailyUsage = meter.usage;
-  if (!meter.ok) {
-    logMcpAbuse({
-      kind: 'MCP_DAILY_LIMIT',
-      accountId: ctx.accountId,
-      clientId: ctx.credential.clientId ?? null,
-      limit: meter.usage.limit,
-      used: meter.usage.used,
-    });
-    const resetIso = new Date(meter.usage.resetAt * 1000).toISOString();
-    return textResult(
-      `Daily MCP call limit of ${mcpDailyCallLimit} reached. Resets at ${resetIso}.`,
-      {
-        code: 'MCP_DAILY_LIMIT',
-        requiredPlan: 'growth',
-        limit: meter.usage.limit,
-        used: meter.usage.used,
-        remaining: 0,
-        resetAt: meter.usage.resetAt,
-      },
-      true,
-    );
-  }
+  if (!meter.ok) return dailySpendRefusal(ctx, meter, 'MCP_DAILY_LIMIT', mcpDailyCallLimit);
 
   // Paid gates run before the approval below, so a call they refuse does not spend it.
   // Scope gate: hosted paid research needs mcp:research on the credential. BYOK
@@ -533,30 +552,6 @@ async function callTool(
       { code: 'PAID_TOOL_FORBIDDEN' },
       true,
     );
-  }
-  if (creditClass === 'paid' && !ctx.dataForSeoCredential) {
-    const paid = await spendMcpDailyCall(ctx.env, ctx.accountId, MCP_HOSTED_PAID_DAILY, 'mcp_paid', 'hosted paid MCP call');
-    if (!paid.ok) {
-      logMcpAbuse({
-        kind: 'MCP_PAID_DAILY_LIMIT',
-        accountId: ctx.accountId,
-        clientId: ctx.credential.clientId ?? null,
-        limit: paid.usage.limit,
-        used: paid.usage.used,
-      });
-      const resetIso = new Date(paid.usage.resetAt * 1000).toISOString();
-      return textResult(
-        `Hosted paid MCP limit of ${MCP_HOSTED_PAID_DAILY} calls today reached. Resets at ${resetIso}. BYOK is not counted.`,
-        {
-          code: 'MCP_PAID_DAILY_LIMIT',
-          limit: paid.usage.limit,
-          used: paid.usage.used,
-          remaining: 0,
-          resetAt: paid.usage.resetAt,
-        },
-        true,
-      );
-    }
   }
   if (creditClass === 'paid') {
     const contextGate = await requireProjectContextBeforePaid(ctx.env, ctx.accountId, projectId);
@@ -608,6 +603,10 @@ async function callTool(
   }
 
   if (!tool) return textResult(`Unknown tool: ${name}`, { code: 'TOOL_NOT_FOUND' }, true);
+  if (creditClass === 'paid' && !ctx.dataForSeoCredential) {
+    const paid = await spendMcpDailyCall(ctx.env, ctx.accountId, MCP_HOSTED_PAID_DAILY, 'mcp_paid', 'hosted paid MCP call');
+    if (!paid.ok) return dailySpendRefusal(ctx, paid, 'MCP_PAID_DAILY_LIMIT', MCP_HOSTED_PAID_DAILY);
+  }
   const result = capToolResult(await tool.handler(args || {}, ctx));
 
   // Cost ingestion: cost events land only after a successful PAID tool
@@ -826,7 +825,9 @@ export async function handleMcpRequest(
         throw err;
       }
       const limitCode = typeof result.structuredContent?.code === 'string' ? result.structuredContent.code : '';
-      if (limitCode === 'MCP_PAID_DAILY_LIMIT' && result.structuredContent) {
+      if (limitCode === 'MCP_QUOTA_STORE') {
+        rateHeaders = { 'Retry-After': '1' };
+      } else if (limitCode === 'MCP_PAID_DAILY_LIMIT' && result.structuredContent) {
         const paidUsage = result.structuredContent;
         rateHeaders = dailyRateHeaders(
           {

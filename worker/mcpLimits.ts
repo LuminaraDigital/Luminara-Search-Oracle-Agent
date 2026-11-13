@@ -48,18 +48,18 @@ export async function spendMcpDailyCall(
   limit: number,
   prefix = 'mcp_calls',
   label = 'MCP call',
-): Promise<{ ok: true; usage: McpDailyUsage } | { ok: false; usage: McpDailyUsage; error: string }> {
+): Promise<{ ok: true; usage: McpDailyUsage } | { ok: false; usage: McpDailyUsage; error: string; reason: 'limit' | 'store' }> {
   const meter = await meterDailyUse(env, prefix, accountId, limit, label, true);
   const usage = snapshot(meter);
-  if (!meter.ok) return { ok: false, usage, error: meter.error };
+  if (!meter.ok) return { ok: false, usage, error: meter.error, reason: meter.reason };
   return { ok: true, usage };
 }
 
 export function dailyRateHeaders(usage: McpDailyUsage, blocked = false): Record<string, string> {
   const headers: Record<string, string> = {
-    'X-RateLimit-Limit': String(usage.limit),
     'X-RateLimit-Reset': String(usage.resetAt),
   };
+  if (usage.limit > 0) headers['X-RateLimit-Limit'] = String(usage.limit);
   if (usage.remaining !== null) headers['X-RateLimit-Remaining'] = String(usage.remaining);
   if (blocked) {
     headers['Retry-After'] = String(Math.max(1, usage.resetAt - Math.floor(Date.now() / 1000)));
@@ -89,8 +89,11 @@ export function logMcpAbuse(fields: {
 }
 
 function resetFrom(headers: Headers): number {
+  const now = Math.floor(Date.now() / 1000);
+  const retry = Number(headers.get('Retry-After') || 0);
+  if (Number.isFinite(retry) && retry > 0) return now + retry;
   const raw = Number(headers.get('X-RateLimit-Reset') || 0);
-  return Number.isFinite(raw) ? raw : Math.floor(Date.now() / 1000) + 60;
+  return Number.isFinite(raw) && raw > 0 ? raw : now + 60;
 }
 
 async function sliding(
@@ -99,7 +102,13 @@ async function sliding(
   limit: number,
   record = true,
 ): Promise<{ ok: true } | { ok: false; headers: Record<string, string>; resetAt: number }> {
-  const result = await enforceKvSlidingWindow(env, { key, maxRequests: limit, windowSeconds: 60, record });
+  const result = await enforceKvSlidingWindow(env, {
+    key,
+    maxRequests: limit,
+    windowSeconds: 60,
+    record,
+    failClosedOnWriteError: true,
+  });
   if (result.ok) return { ok: true };
   const headers: Record<string, string> = {};
   for (const name of ['X-RateLimit-Limit', 'X-RateLimit-Remaining', 'X-RateLimit-Reset', 'Retry-After']) {
@@ -147,6 +156,17 @@ export async function enforceMcpBurst(
       return denyBurst('MCP_CLIENT_BURST', MCP_CLIENT_BURST_PER_MIN, client.resetAt, client.headers, accountId, clientId);
     }
   }
+  const recordedClient = clientKey ? await sliding(env, clientKey, MCP_CLIENT_BURST_PER_MIN, true) : null;
+  if (recordedClient && !recordedClient.ok) {
+    return denyBurst(
+      'MCP_CLIENT_BURST',
+      MCP_CLIENT_BURST_PER_MIN,
+      recordedClient.resetAt,
+      recordedClient.headers,
+      accountId,
+      clientId,
+    );
+  }
   const recordedAccount = await sliding(env, accountKey, MCP_ACCOUNT_BURST_PER_MIN, true);
   if (!recordedAccount.ok) {
     return denyBurst(
@@ -157,19 +177,6 @@ export async function enforceMcpBurst(
       accountId,
       clientId,
     );
-  }
-  if (clientKey) {
-    const recordedClient = await sliding(env, clientKey, MCP_CLIENT_BURST_PER_MIN, true);
-    if (!recordedClient.ok) {
-      return denyBurst(
-        'MCP_CLIENT_BURST',
-        MCP_CLIENT_BURST_PER_MIN,
-        recordedClient.resetAt,
-        recordedClient.headers,
-        accountId,
-        clientId,
-      );
-    }
   }
   return { ok: true };
 }
@@ -191,5 +198,6 @@ export async function enforceMcpOauthIpLimit(
     key: `rl:${action}:ip:${hashed}`,
     maxRequests: limit,
     windowSeconds: 60,
+    failClosedOnWriteError: true,
   });
 }
