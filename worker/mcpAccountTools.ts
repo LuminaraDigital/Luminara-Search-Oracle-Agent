@@ -1,7 +1,3 @@
-/**
- * Account MCP tools (whoami, projects, context, reports).
- * Split from mcpServer.ts so the JSON-RPC handler stays under 1000 lines.
- */
 import type { McpToolDef } from './mcpServer';
 import { markProjectContextLoaded } from './mcpServer';
 import { createProject, listProjects } from './projectService';

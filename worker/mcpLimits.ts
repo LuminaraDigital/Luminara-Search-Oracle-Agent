@@ -1,7 +1,3 @@
-/**
- * MCP abuse limits. The daily counter key is `mcp_calls:<accountId>:<UTC day>`,
- * shared by every token and API key on that account.
- */
 import type { Env } from './env';
 import { redactSensitive } from './logRedaction';
 import {
@@ -11,7 +7,6 @@ import {
   type DualRateLimitResult,
 } from './securityHardening';
 
-/** Tool calls per minute for one account. A working session fits. A scrape does not. */
 export const MCP_ACCOUNT_BURST_PER_MIN = 30;
 
 /** Tool calls per minute for one OAuth client_id. Sessions and API keys have no client_id. */
@@ -23,7 +18,7 @@ export const MCP_CLIENT_BURST_PER_MIN = 30;
  */
 export const MCP_HOSTED_PAID_DAILY = 200;
 
-/** Dynamic client registration posts per minute per IP. A client registers once. */
+/** Dynamic client registration posts per minute per IP. */
 export const MCP_OAUTH_REGISTER_PER_MIN = 10;
 
 /** Authorization-code exchanges per minute per IP. */

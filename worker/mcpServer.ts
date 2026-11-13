@@ -77,7 +77,6 @@ export type McpToolContext = {
   dataForSeoCredential: string | null;
   /** Which credential authenticated this call (api key, OAuth token, or cookie session). */
   credential: McpCredential;
-  /** Set after this call spends the daily counter. Null until then. */
   dailyUsage: McpDailyUsage | null;
 };
 

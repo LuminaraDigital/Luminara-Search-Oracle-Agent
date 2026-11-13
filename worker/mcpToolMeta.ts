@@ -1,7 +1,3 @@
-/**
- * Titles and hints for tools/list. Risk comes from TOOL_GOVERNANCE so a new
- * classification changes the hint without a second table.
- */
 import { governanceFor, type ToolRisk } from './mcpGovernance';
 
 export const MCP_LIST_PAGE_MAX = 50;

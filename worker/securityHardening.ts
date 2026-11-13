@@ -421,9 +421,6 @@ export type DailyUseMeter = {
 /**
  * Counts one use against a per-account UTC-day cap in KV. A limit of 0 is unlimited.
  * Without KV the cap fails open, except where REQUIRE_TG_AUTH marks a production Worker.
- * shortcut: two isolates can both read the same count and both admit. The key stays
- * per account and UTC day. Move the counter onto DailyQuota only when that object
- * can adopt the existing key without zeroing a live day.
  */
 export async function meterDailyUse(
   env: Env,
