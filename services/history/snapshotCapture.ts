@@ -25,6 +25,7 @@ function measured(input: {
   measuredAt: number;
   sourceRef: string;
   metric: SnapshotMetric;
+  subject?: string;
   score: number | null;
   engines: Array<{ engine: string; cited: boolean }>;
   notes: string[];
@@ -38,6 +39,7 @@ function measured(input: {
     signals: freezeSignals({
       measurementStatus: input.measurementStatus,
       metric: input.metric,
+      subject: input.subject,
       score: input.score,
       engines: input.engines,
       notes: input.notes,
@@ -94,6 +96,7 @@ export function visibilitySnapshot(input: {
   projectId: string;
   measuredAt: number;
   aggregateCitationRatePercent: number | null;
+  queries?: string[];
   engines: Array<{ engine: string; cited: boolean | null; measurementStatus: string }>;
 }): MeasuredSnapshot {
   const score =
@@ -103,12 +106,19 @@ export function visibilitySnapshot(input: {
   const engines = input.engines
     .filter((row) => row.measurementStatus === 'measured' && typeof row.cited === 'boolean')
     .map((row) => ({ engine: row.engine, cited: row.cited === true }));
+  const subject = (input.queries || [])
+    .map((query) => query.trim())
+    .filter((query) => query.length > 0)
+    .sort()
+    .join('|')
+    .slice(0, 80);
   return measured({
     projectId: input.projectId,
     kind: 'ai_visibility',
     measuredAt: input.measuredAt,
     sourceRef: `visibility:${input.projectId}:${input.measuredAt}`,
     metric: score === null ? 'none' : 'visibility_rate',
+    subject,
     score,
     engines: score === null ? [] : engines,
     notes: [],
@@ -155,6 +165,7 @@ export function citationWatchSnapshot(input: {
     measuredAt: input.measuredAt,
     sourceRef: input.runId,
     metric: input.measured ? 'watch_share' : 'none',
+    subject: input.engine.trim().slice(0, 40),
     score,
     engines:
       input.measured && input.citedCount !== null

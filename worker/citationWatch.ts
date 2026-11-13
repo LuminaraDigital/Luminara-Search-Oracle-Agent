@@ -228,16 +228,21 @@ async function recordRun(env: Env, row: WatchRow, prompts: string[], deps: Citat
   });
   const ranAt = nowMs(deps);
   const id = await insertRun(env, row.id, row.account_id, row.engine, ranAt, measurement, classified);
-  await mirrorSnapshotForDomain(env, row.account_id, row.domain, (projectId) =>
-    citationWatchSnapshot({
-      projectId,
-      runId: id,
-      measuredAt: ranAt,
-      engine: row.engine,
-      measured: measurement.status === 'measured',
-      citedCount: classified.citedCount,
-      share: classified.share,
-    }),
+  await mirrorSnapshotForDomain(
+    env,
+    row.account_id,
+    row.domain,
+    (projectId) =>
+      citationWatchSnapshot({
+        projectId,
+        runId: id,
+        measuredAt: ranAt,
+        engine: row.engine,
+        measured: measurement.status === 'measured',
+        citedCount: classified.citedCount,
+        share: classified.share,
+      }),
+    { clientId: row.client_id },
   );
   return {
     id,

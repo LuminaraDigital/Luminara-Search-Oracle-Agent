@@ -34,9 +34,10 @@ function dayLabel(measuredAt: number): string {
   return new Date(measuredAt).toISOString().slice(0, 10);
 }
 
-function trendTitle(kind: string, metric: string | undefined): string {
+function trendTitle(kind: string, metric: string | undefined, subject: string | undefined): string {
   const metricLabel = metric ? METRIC_LABEL[metric] : '';
-  return metricLabel ? `${kindLabel(kind)}, ${metricLabel}` : kindLabel(kind);
+  const base = metricLabel ? `${kindLabel(kind)}, ${metricLabel}` : kindLabel(kind);
+  return subject ? `${base} (${subject})` : base;
 }
 
 function recordedText(signals: SnapshotSignals): string {
@@ -173,8 +174,8 @@ export function ProjectHistoryOutcomes({ signedIn }: { signedIn: boolean }) {
               const delta = trend.latestDelta;
               const score = trend.latestScore;
               return (
-                <li key={`${trend.kind}:${trend.metric || 'none'}`} className="border border-[var(--color-rule)] bg-black/40 p-4">
-                  <div className="text-[11px] font-mono uppercase tracking-wider text-[var(--gold-light)]">{trendTitle(trend.kind, trend.metric)}</div>
+                <li key={`${trend.kind}:${trend.metric || 'none'}:${trend.subject || ''}`} className="border border-[var(--color-rule)] bg-black/40 p-4">
+                  <div className="text-[11px] font-mono uppercase tracking-wider text-[var(--gold-light)]">{trendTitle(trend.kind, trend.metric, trend.subject)}</div>
                   <p className="text-lg text-[var(--color-ink)] mt-1">
                     {score === null || score === undefined ? 'Not measured' : score}
                   </p>

@@ -128,6 +128,7 @@ export async function recordProjectSnapshot(
   accountId: string,
   event: MeasuredSnapshot,
   now = Date.now(),
+  options?: { replace?: boolean },
 ): Promise<{ id: string } | null> {
   const db = dbOf(env);
   if (!db) return null;
@@ -142,7 +143,19 @@ export async function recordProjectSnapshot(
     )
     .bind(accountId, event.projectId, event.kind, event.sourceRef)
     .first<{ id: string }>();
-  if (existing?.id) return { id: existing.id };
+  if (existing?.id) {
+    if (options?.replace) {
+      await db
+        .prepare(
+          `UPDATE project_measurement_snapshots
+           SET signals_json = ?
+           WHERE account_id = ? AND project_id = ? AND id = ?`,
+        )
+        .bind(JSON.stringify(signals), accountId, event.projectId, existing.id)
+        .run();
+    }
+    return { id: existing.id };
+  }
 
   const id = randomId('snap');
   const score = signals.score;
@@ -190,21 +203,15 @@ export async function recordProjectSnapshot(
                    data_label = CASE WHEN before_value IS NOT NULL THEN 'measured' ELSE 'too_little_data' END,
                    status = CASE WHEN before_value IS NOT NULL THEN 'detected' ELSE status END,
                    resolved_at = CASE WHEN before_value IS NOT NULL THEN ? ELSE resolved_at END
-               WHERE account_id = ? AND project_id = ? AND kind = ? AND metric = ? AND status = 'recommended'
+               WHERE account_id = ? AND project_id = ? AND kind = ? AND metric = ? AND subject = ? AND status = 'recommended'
                  AND before_snapshot_id IS NOT NULL
                  AND before_snapshot_id != ?
+                 AND recommended_at < ?
                  AND EXISTS (
                    SELECT 1 FROM project_measurement_snapshots AS saved
                    WHERE saved.id = ?
                      AND saved.account_id = project_action_outcomes.account_id
                      AND saved.project_id = project_action_outcomes.project_id
-                 )
-                 AND EXISTS (
-                   SELECT 1 FROM project_measurement_snapshots AS prior
-                   WHERE prior.id = project_action_outcomes.before_snapshot_id
-                     AND prior.account_id = project_action_outcomes.account_id
-                     AND prior.project_id = project_action_outcomes.project_id
-                     AND prior.measured_at < ?
                  )`,
             )
             .bind(
@@ -216,14 +223,15 @@ export async function recordProjectSnapshot(
               event.projectId,
               event.kind,
               signals.metric,
-              id,
+              signals.subject,
               id,
               event.measuredAt,
+              id,
             ),
           db
             .prepare(
               `UPDATE project_action_outcomes
-               SET before_snapshot_id = ?, before_value = ?
+               SET before_snapshot_id = ?, before_value = ?, subject = ?
                WHERE account_id = ? AND project_id = ? AND kind = ? AND metric = ? AND status = 'recommended'
                  AND before_snapshot_id IS NULL
                  AND EXISTS (
@@ -233,7 +241,7 @@ export async function recordProjectSnapshot(
                      AND saved.project_id = project_action_outcomes.project_id
                  )`,
             )
-            .bind(id, score, accountId, event.projectId, event.kind, signals.metric, id),
+            .bind(id, score, signals.subject, accountId, event.projectId, event.kind, signals.metric, id),
         ]
       : [insert, trim],
   );
@@ -265,11 +273,12 @@ export async function mirrorSnapshotForDomain(
   accountId: string,
   domain: string,
   build: (projectId: string) => MeasuredSnapshot,
+  options?: { clientId?: string | null; replace?: boolean },
 ): Promise<void> {
   try {
-    const project = await findProjectByDomain(env, accountId, domain);
+    const project = await findProjectByDomain(env, accountId, domain, options?.clientId);
     if (!project) return;
-    await recordProjectSnapshot(env, accountId, build(project.id));
+    await recordProjectSnapshot(env, accountId, build(project.id), Date.now(), { replace: options?.replace });
   } catch (err) {
     console.error('[project-history] snapshot failed', err instanceof Error ? err.name : 'error');
   }
@@ -341,7 +350,8 @@ async function latestScoredSnapshot(
   projectId: string,
   kind: SnapshotKind,
   metric: SnapshotMetric,
-): Promise<{ id: string; score: number } | null> {
+  subject?: string,
+): Promise<{ id: string; score: number; measuredAt: number; subject: string } | null> {
   const db = dbOf(env);
   if (!db) return null;
   const res = await db
@@ -350,14 +360,19 @@ async function latestScoredSnapshot(
        FROM project_measurement_snapshots
        WHERE account_id = ? AND project_id = ? AND kind = ?
        ORDER BY measured_at DESC
-       LIMIT 20`,
+       LIMIT ?`,
     )
-    .bind(accountId, projectId, kind)
+    .bind(accountId, projectId, kind, SNAPSHOT_CAP)
     .all<SnapshotRow>();
   for (const row of res.results || []) {
     const point = pointFromRow(row);
-    if (point && point.signals.metric === metric && point.signals.score !== null) {
-      return { id: point.id, score: point.signals.score };
+    if (
+      point &&
+      point.signals.metric === metric &&
+      point.signals.score !== null &&
+      (subject === undefined || point.signals.subject === subject)
+    ) {
+      return { id: point.id, score: point.signals.score, measuredAt: point.measuredAt, subject: point.signals.subject };
     }
   }
   return null;
@@ -399,11 +414,11 @@ export async function recordRecommendedAction(
     await db
       .prepare(
         `UPDATE project_action_outcomes
-         SET before_snapshot_id = ?, before_value = ?
+         SET before_snapshot_id = ?, before_value = ?, subject = ?
          WHERE account_id = ? AND project_id = ? AND action_key = ? AND status = 'recommended'
            AND before_snapshot_id IS NULL`,
       )
-      .bind(baseline.id, baseline.score, input.accountId, input.projectId, actionKey)
+      .bind(baseline.id, baseline.score, baseline.subject, input.accountId, input.projectId, actionKey)
       .run();
   }
   const row = await db
@@ -455,18 +470,18 @@ export async function markActionDone(
   const row = await db
     .prepare(
       `SELECT id, project_id, action_key, title, kind, metric, status, before_value, after_value, lift, data_label,
-              recommended_at, resolved_at, before_snapshot_id
+              recommended_at, resolved_at, before_snapshot_id, subject
        FROM project_action_outcomes
        WHERE account_id = ? AND project_id = ? AND id = ?`,
     )
     .bind(accountId, projectId, actionId)
-    .first<OutcomeRow & { before_snapshot_id: string | null }>();
+    .first<OutcomeRow & { before_snapshot_id: string | null; subject: string }>();
   if (!row || !isSnapshotKind(row.kind) || !isSnapshotMetric(row.metric)) return null;
   if (row.status === 'done' || row.status === 'detected') return outcomeFromRow(row);
-  const later = await latestScoredSnapshot(env, accountId, projectId, row.kind, row.metric);
+  const later = await latestScoredSnapshot(env, accountId, projectId, row.kind, row.metric, row.subject || '');
   const before = typeof row.before_value === 'number' ? row.before_value : null;
   const after =
-    later && later.id !== row.before_snapshot_id ? later.score : null;
+    later && later.id !== row.before_snapshot_id && later.measuredAt > row.recommended_at ? later.score : null;
   const judged = outcomeLift(before, after);
   await db
     .prepare(

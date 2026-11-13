@@ -27,6 +27,8 @@ export type SnapshotMetric = (typeof SNAPSHOT_METRICS)[number];
 export type SnapshotSignals = {
   measurementStatus: MeasurementLabel;
   metric: SnapshotMetric;
+  /** Same series only. A citation-watch engine, or the sorted visibility queries. */
+  subject: string;
   score: number | null;
   engines: EngineSignal[];
   notes: string[];
@@ -54,6 +56,7 @@ export type SnapshotDelta = {
 export type SnapshotTrend = {
   kind: SnapshotKind;
   metric: SnapshotMetric;
+  subject: string;
   latestScore: number | null;
   latestDelta: SnapshotDelta | null;
 };
@@ -87,9 +90,14 @@ function finiteScore(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
+function cleanSubject(value: string | undefined): string {
+  return (value || '').trim().slice(0, 80);
+}
+
 export function freezeSignals(input: {
   measurementStatus: MeasurementLabel;
   metric?: SnapshotMetric;
+  subject?: string;
   score: number | null;
   engines: EngineSignal[];
   notes: string[];
@@ -99,8 +107,9 @@ export function freezeSignals(input: {
     .slice(0, 8)
     .map((note) => note.trim().slice(0, 160));
   const metric = input.metric && isSnapshotMetric(input.metric) ? input.metric : 'none';
+  const subject = cleanSubject(input.subject);
   if (input.measurementStatus !== 'measured') {
-    return { measurementStatus: 'not_measured', metric: 'none', score: null, engines: [], notes };
+    return { measurementStatus: 'not_measured', metric: 'none', subject: '', score: null, engines: [], notes };
   }
   const engines = input.engines
     .filter((row) => row.engine.trim().length > 0)
@@ -109,6 +118,7 @@ export function freezeSignals(input: {
   return {
     measurementStatus: 'measured',
     metric,
+    subject,
     score: finiteScore(input.score),
     engines,
     notes,
@@ -138,6 +148,7 @@ export function parseSignals(raw: unknown): SnapshotSignals {
   return freezeSignals({
     measurementStatus: row.measurementStatus === 'measured' ? 'measured' : 'not_measured',
     metric,
+    subject: typeof row.subject === 'string' ? row.subject : '',
     score: finiteScore(row.score),
     engines,
     notes,
@@ -148,24 +159,33 @@ function citedSet(signals: SnapshotSignals): Map<string, boolean> {
   return new Map(signals.engines.map((row) => [row.engine, row.cited]));
 }
 
+function engineNames(signals: SnapshotSignals): string {
+  return [...citedSet(signals).keys()].sort().join('\0');
+}
+
 export function compareSnapshots(earlier: SnapshotPoint, later: SnapshotPoint): SnapshotDelta {
-  const sameSeries =
+  const sameMetric =
     earlier.kind === later.kind &&
     earlier.signals.metric === later.signals.metric &&
-    earlier.signals.metric !== 'none';
-  const earlierScore = sameSeries ? earlier.signals.score : null;
-  const laterScore = sameSeries ? later.signals.score : null;
+    earlier.signals.metric !== 'none' &&
+    earlier.signals.subject === later.signals.subject;
+  const sameEngineNames = engineNames(earlier.signals) === engineNames(later.signals);
+  const comparableScore = sameMetric && (earlier.signals.metric !== 'visibility_rate' || sameEngineNames);
+  const earlierScore = comparableScore ? earlier.signals.score : null;
+  const laterScore = comparableScore ? later.signals.score : null;
   const scoreDelta =
     earlierScore !== null && laterScore !== null ? laterScore - earlierScore : null;
   const before = citedSet(earlier.signals);
   const after = citedSet(later.signals);
   const droppedEngines: string[] = [];
   const gainedEngines: string[] = [];
-  if (sameSeries) {
+  if (sameMetric) {
     for (const [engine, cited] of before) {
+      if (!after.has(engine)) continue;
       if (cited && after.get(engine) !== true) droppedEngines.push(engine);
     }
     for (const [engine, cited] of after) {
+      if (!before.has(engine)) continue;
       if (cited && before.get(engine) !== true) gainedEngines.push(engine);
     }
   }
@@ -206,20 +226,24 @@ export function trendsFromSnapshots(snapshots: SnapshotPoint[]): SnapshotTrend[]
     const scored = list.filter((point) => point.signals.score !== null && point.signals.metric !== 'none');
     const metrics = SNAPSHOT_METRICS.filter((metric) => scored.some((point) => point.signals.metric === metric));
     if (!metrics.length) {
-      trends.push({ kind, metric: 'none', latestScore: null, latestDelta: null });
+      trends.push({ kind, metric: 'none', subject: '', latestScore: null, latestDelta: null });
       continue;
     }
     for (const metric of metrics) {
-      const series = scored.filter((point) => point.signals.metric === metric);
-      const later = series[series.length - 1];
-      const earlier = series.length >= 2 ? series[series.length - 2] : undefined;
-      if (!later) continue;
-      trends.push({
-        kind,
-        metric,
-        latestScore: later.signals.score,
-        latestDelta: earlier ? compareSnapshots(earlier, later) : null,
-      });
+      const subjects = [...new Set(scored.filter((point) => point.signals.metric === metric).map((point) => point.signals.subject))];
+      for (const subject of subjects) {
+        const series = scored.filter((point) => point.signals.metric === metric && point.signals.subject === subject);
+        const later = series[series.length - 1];
+        const earlier = series.length >= 2 ? series[series.length - 2] : undefined;
+        if (!later) continue;
+        trends.push({
+          kind,
+          metric,
+          subject,
+          latestScore: later.signals.score,
+          latestDelta: earlier ? compareSnapshots(earlier, later) : null,
+        });
+      }
     }
   }
   return trends;

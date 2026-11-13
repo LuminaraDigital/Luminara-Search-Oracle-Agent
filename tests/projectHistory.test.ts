@@ -9,12 +9,14 @@ import {
   getProjectHistory,
   listProjectOutcomes,
   markActionDone,
+  mirrorSnapshotForDomain,
   recordProjectSnapshot,
   recordRecommendedAction,
   SNAPSHOT_CAP,
 } from '../worker/projectHistoryService';
 import { listMcpToolCatalogue } from '../worker/mcpServer';
 import {
+  citationWatchSnapshot,
   domainOverviewSnapshot,
   instantAuditSnapshot,
   keywordSnapshot,
@@ -119,7 +121,10 @@ describe('snapshot compare', () => {
         kind: 'ai_visibility',
         measuredAt: 20,
         score: 25,
-        engines: [{ engine: 'perplexity', cited: true }],
+        engines: [
+          { engine: 'chatgpt', cited: false },
+          { engine: 'perplexity', cited: true },
+        ],
       }),
     );
     expect(delta).toEqual({
@@ -133,6 +138,25 @@ describe('snapshot compare', () => {
       gainedEngines: [],
       label: 'measured',
     });
+    const omitted = compareSnapshots(
+      point({
+        id: 'early',
+        kind: 'ai_visibility',
+        measuredAt: 10,
+        score: 40,
+        engines: [{ engine: 'chatgpt', cited: true }],
+      }),
+      point({
+        id: 'late',
+        kind: 'ai_visibility',
+        measuredAt: 20,
+        score: 10,
+        engines: [{ engine: 'perplexity', cited: true }],
+      }),
+    );
+    expect(omitted.scoreDelta).toBeNull();
+    expect(omitted.droppedEngines).toEqual([]);
+    expect(omitted.label).toBe('too_little_data');
   });
 
   it('withholds lift when a score is missing', () => {
@@ -224,6 +248,39 @@ describe('snapshot compare', () => {
     });
   });
 
+  it('does not compare citation shares from different engines', () => {
+    const chatgpt = citationWatchSnapshot({
+      projectId: 'p',
+      runId: 'run-chatgpt',
+      measuredAt: 1,
+      engine: 'chatgpt',
+      measured: true,
+      citedCount: 4,
+      share: 1,
+    });
+    const perplexity = citationWatchSnapshot({
+      projectId: 'p',
+      runId: 'run-perplexity',
+      measuredAt: 2,
+      engine: 'perplexity',
+      measured: true,
+      citedCount: 0,
+      share: 0,
+    });
+    const delta = compareSnapshots(
+      { id: 'a', kind: chatgpt.kind, measuredAt: chatgpt.measuredAt, signals: chatgpt.signals },
+      { id: 'b', kind: perplexity.kind, measuredAt: perplexity.measuredAt, signals: perplexity.signals },
+    );
+    expect(delta.scoreDelta).toBeNull();
+    expect(delta.droppedEngines).toEqual([]);
+    const trends = trendsFromSnapshots([
+      { id: 'a', kind: chatgpt.kind, measuredAt: 1, signals: chatgpt.signals },
+      { id: 'b', kind: perplexity.kind, measuredAt: 2, signals: perplexity.signals },
+    ]);
+    expect(trends.filter((row) => row.metric === 'watch_share')).toHaveLength(2);
+    expect(trends.every((row) => row.latestDelta === null)).toBe(true);
+  });
+
   it('drops a score that arrived on a not-measured check', () => {
     expect(
       freezeSignals({
@@ -235,6 +292,7 @@ describe('snapshot compare', () => {
     ).toEqual({
       measurementStatus: 'not_measured',
       metric: 'none',
+      subject: '',
       score: null,
       engines: [],
       notes: ['ignored'],
@@ -276,7 +334,10 @@ describe('project history store', () => {
         measurementStatus: 'measured',
         metric: 'visibility_rate',
         score: 25,
-        engines: [{ engine: 'perplexity', cited: true }],
+        engines: [
+          { engine: 'chatgpt', cited: false },
+          { engine: 'perplexity', cited: true },
+        ],
         notes: [],
       }),
     });
@@ -475,6 +536,91 @@ describe('project history store', () => {
     });
     const rows = await listProjectOutcomes(env, 'acct_a', owned.project.id);
     expect(rows?.[0]?.status).toBe('done');
+  });
+
+  it('does not close an action with a check from before the recommendation', async () => {
+    const env = { DB: createSqliteD1() } as Env;
+    const owned = await createProject(env, 'acct_a', { domain: 'alpha.example' });
+    if (!owned.ok) throw new Error('project');
+    await recordProjectSnapshot(env, 'acct_a', {
+      projectId: owned.project.id,
+      kind: 'instant_audit',
+      measuredAt: 1_000,
+      sourceRef: 'audit-base',
+      signals: freezeSignals({ measurementStatus: 'measured', metric: 'citation_rate', score: 20, engines: [], notes: [] }),
+    });
+    await recordRecommendedAction(env, {
+      accountId: 'acct_a',
+      projectId: owned.project.id,
+      actionKey: 'titles',
+      title: 'Fix titles',
+      kind: 'instant_audit',
+      now: 3_000,
+    });
+    await recordProjectSnapshot(env, 'acct_a', {
+      projectId: owned.project.id,
+      kind: 'instant_audit',
+      measuredAt: 2_000,
+      sourceRef: 'audit-between',
+      signals: freezeSignals({ measurementStatus: 'measured', metric: 'citation_rate', score: 80, engines: [], notes: [] }),
+    });
+    expect((await listProjectOutcomes(env, 'acct_a', owned.project.id))?.[0]).toMatchObject({
+      status: 'recommended',
+      beforeValue: 20,
+      afterValue: null,
+      lift: null,
+    });
+    const open = (await listProjectOutcomes(env, 'acct_a', owned.project.id))?.[0];
+    const done = await markActionDone(env, 'acct_a', owned.project.id, open?.id || '', 4_000);
+    expect(done).toMatchObject({ status: 'done', beforeValue: 20, afterValue: null, lift: null });
+  });
+
+  it('replaces the stored score when the same audit is saved again', async () => {
+    const env = { DB: createSqliteD1() } as Env;
+    const owned = await createProject(env, 'acct_a', { domain: 'alpha.example' });
+    if (!owned.ok) throw new Error('project');
+    const event = {
+      projectId: owned.project.id,
+      kind: 'instant_audit' as const,
+      measuredAt: 1_000,
+      sourceRef: 'audit-1',
+      signals: freezeSignals({ measurementStatus: 'measured', metric: 'citation_rate', score: 40, engines: [], notes: [] }),
+    };
+    await recordProjectSnapshot(env, 'acct_a', event);
+    await recordProjectSnapshot(
+      env,
+      'acct_a',
+      { ...event, signals: freezeSignals({ measurementStatus: 'measured', metric: 'citation_rate', score: 55, engines: [], notes: [] }) },
+      2_000,
+      { replace: true },
+    );
+    const history = await getProjectHistory(env, 'acct_a', owned.project.id);
+    expect(history?.snapshots[0]?.signals.score).toBe(55);
+  });
+
+  it('mirrors a watch onto the project for that client', async () => {
+    const env = { DB: createSqliteD1() } as Env;
+    const acme = await createProject(env, 'acct_a', { domain: 'alpha.example', clientId: 'acme', name: 'Acme' });
+    const beta = await createProject(env, 'acct_a', { domain: 'alpha.example', clientId: 'beta', name: 'Beta' });
+    if (!acme.ok || !beta.ok) throw new Error('project');
+    await mirrorSnapshotForDomain(
+      env,
+      'acct_a',
+      'alpha.example',
+      (projectId) =>
+        citationWatchSnapshot({
+          projectId,
+          runId: 'watch-1',
+          measuredAt: 1_000,
+          engine: 'chatgpt',
+          measured: true,
+          citedCount: 1,
+          share: 0.5,
+        }),
+      { clientId: 'acme' },
+    );
+    expect((await getProjectHistory(env, 'acct_a', acme.project.id))?.snapshots).toHaveLength(1);
+    expect((await getProjectHistory(env, 'acct_a', beta.project.id))?.snapshots).toEqual([]);
   });
 
   it('does not close an action with an older snapshot', async () => {

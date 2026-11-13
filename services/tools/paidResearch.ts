@@ -393,6 +393,7 @@ export async function getVisibilitySnapshot(
         projectId: project.id,
         measuredAt: Date.now(),
         aggregateCitationRatePercent: out.aggregateCitationRatePercent,
+        queries,
         engines: out.engines.map((row) => ({
           engine: row.engine,
           cited: row.cited,

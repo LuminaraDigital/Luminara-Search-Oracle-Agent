@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS project_action_outcomes (
   after_value REAL,
   lift REAL,
   data_label TEXT NOT NULL CHECK (data_label IN ('measured', 'too_little_data')),
+  subject TEXT NOT NULL DEFAULT '',
   recommended_at INTEGER NOT NULL,
   resolved_at INTEGER,
   UNIQUE (account_id, project_id, action_key)

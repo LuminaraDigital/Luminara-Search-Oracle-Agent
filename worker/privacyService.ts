@@ -243,6 +243,22 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
     if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
     return [] as Record<string, unknown>[];
   });
+  const projectMeasurementSnapshots = await q<Record<string, unknown>>(
+    `SELECT id, project_id, kind, measured_at, source_ref, signals_json
+       FROM project_measurement_snapshots WHERE account_id = ? ORDER BY measured_at DESC LIMIT 1000`,
+    accountId,
+  ).catch((err) => {
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+    return [] as Record<string, unknown>[];
+  });
+  const projectActionOutcomes = await q<Record<string, unknown>>(
+    `SELECT id, project_id, action_key, title, kind, metric, subject, status, before_value, after_value, lift, data_label, recommended_at, resolved_at
+       FROM project_action_outcomes WHERE account_id = ? ORDER BY recommended_at DESC LIMIT 500`,
+    accountId,
+  ).catch((err) => {
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+    return [] as Record<string, unknown>[];
+  });
   const externalEffects = await q<Record<string, unknown>>(
     `SELECT effect_key, project_id, target_system, action_kind, payload_hash, status, result_json, created_at, updated_at FROM external_effects WHERE account_id = ?`,
     accountId,
@@ -288,6 +304,8 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
       'recovery_runs',
       'outcome_stage_events',
       'external_effects',
+      'project_measurement_snapshots',
+      'project_action_outcomes',
     ],
     users,
     workspace: workspace.map((w) => ({
@@ -334,6 +352,8 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
     recoveryRuns,
     outcomeStageEvents,
     externalEffects,
+    projectMeasurementSnapshots,
+    projectActionOutcomes,
     note: 'Financial ledger rows may be retained in minimized form for legal obligations.',
   };
 }

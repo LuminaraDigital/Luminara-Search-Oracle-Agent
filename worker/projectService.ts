@@ -46,15 +46,18 @@ export async function findProjectByDomain(
   env: Env,
   accountId: string,
   domain: string,
+  clientId?: string | null,
 ): Promise<SeoProject | null> {
   if (!env.DB) return null;
   const host = normalizeProjectDomain(domain);
   if (!host) return null;
+  const scoped = typeof clientId === 'string';
   const row = await env.DB.prepare(
     `SELECT id, account_id, client_id, domain, name, default_location_code, default_language_code, created_at, updated_at
-     FROM projects WHERE account_id = ? AND domain = ? ORDER BY updated_at DESC LIMIT 1`,
+     FROM projects WHERE account_id = ? AND domain = ?${scoped ? ' AND client_id = ?' : ''}
+     ORDER BY updated_at DESC LIMIT 1`,
   )
-    .bind(accountId, host)
+    .bind(...(scoped ? [accountId, host, clientId] : [accountId, host]))
     .first<ProjectRow>();
   return row ? rowToProject(row) : null;
 }

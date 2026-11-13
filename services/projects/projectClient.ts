@@ -136,6 +136,7 @@ export type ProjectHistoryPayload = {
   trends: Array<{
     kind: string;
     metric: string;
+    subject: string;
     latestScore: number | null;
     latestDelta: {
       scoreDelta: number | null;

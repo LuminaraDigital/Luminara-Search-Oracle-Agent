@@ -58,7 +58,7 @@ export const PROJECT_HISTORY_MCP_TOOLS: McpToolDef[] = [
         return textResult('No measurements yet.', { history });
       }
       const lines = history.trends.map((trend) => {
-        const name = trend.metric !== 'none' ? `${trend.kind} ${trend.metric}` : trend.kind;
+        const name = [trend.kind, trend.metric !== 'none' ? trend.metric : '', trend.subject].filter(Boolean).join(' ');
         const scoreText = trend.latestScore === null ? 'not measured' : String(trend.latestScore);
         const delta = trend.latestDelta;
         if (!delta || delta.label !== 'measured' || delta.scoreDelta === null) {
