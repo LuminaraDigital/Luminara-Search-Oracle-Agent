@@ -1,0 +1,1151 @@
+[
+  {
+    "name": "whoami",
+    "title": "Account and usage",
+    "description": "Read this first. Returns the account, plan, and MCP calls used and remaining today. Uses no credits. A new token does not reset the daily count.",
+    "creditClass": "free",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Account and usage",
+      "readOnlyHint": true,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "list_projects",
+    "title": "List projects",
+    "description": "Lists this account's projects, at most 50 per page. Uses no credits. Pass cursor when the previous page set nextCursor.",
+    "creditClass": "free",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50,
+          "description": "Page size. The server caps this at 50."
+        },
+        "cursor": {
+          "type": "string",
+          "description": "Pass nextCursor from the previous page. Omit on the first page."
+        }
+      },
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "List projects",
+      "readOnlyHint": true,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "create_project",
+    "title": "Create project",
+    "description": "Uses no credits. Creates a project for a domain (idempotent per account+domain+client).",
+    "creditClass": "free",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "domain": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "clientId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "domain"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Create project",
+      "readOnlyHint": false,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "get_project_context",
+    "title": "Read project context",
+    "description": "Uses no credits. Returns typed sections, competitors, key pages, research log, and missingSections.",
+    "creditClass": "free",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "projectId"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Read project context",
+      "readOnlyHint": true,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "update_project_context",
+    "title": "Update project context",
+    "description": "Uses no credits. Apply patch ops to project memory (sections, competitors, key pages, research log).",
+    "creditClass": "free",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "updates": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "required": [
+        "projectId",
+        "updates"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Update project context",
+      "readOnlyHint": false,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "list_reports",
+    "title": "List reports",
+    "description": "Lists report summaries for one project, at most 50 per page, without HTML bodies. Uses no credits. Pass cursor when nextCursor is set.",
+    "creditClass": "free",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50,
+          "description": "Page size. The server caps this at 50."
+        },
+        "cursor": {
+          "type": "string",
+          "description": "Pass nextCursor from the previous page. Omit on the first page."
+        }
+      },
+      "required": [
+        "projectId"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "List reports",
+      "readOnlyHint": true,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "get_report",
+    "title": "Read a report",
+    "description": "Fetches one report summary. Set includeHtml true only for a short passage. HTML longer than 32000 characters is cut. Uses no credits.",
+    "creditClass": "free",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "reportId": {
+          "type": "string"
+        },
+        "includeHtml": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "reportId"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Read a report",
+      "readOnlyHint": true,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "save_report",
+    "title": "Save a report",
+    "description": "Uses no credits. Saves one self-contained HTML report. Chat should return verdict + link only.",
+    "creditClass": "free",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "html": {
+          "type": "string"
+        },
+        "skill": {
+          "type": "string"
+        },
+        "reportId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "projectId",
+        "title",
+        "summary",
+        "html"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Save a report",
+      "readOnlyHint": false,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "dream_status",
+    "title": "Dreaming status",
+    "description": "Uses no credits. Checks Luminara Dreaming status, pending un-dreamed events, and pending memory review proposals.",
+    "creditClass": "free",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "domain": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "domain"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Dreaming status",
+      "readOnlyHint": true,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "dream_consolidate",
+    "title": "Consolidate memory",
+    "description": "Uses no credits. Triggers an on-demand Luminara Dreaming consolidation run for a domain.",
+    "creditClass": "free",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "domain": {
+          "type": "string"
+        },
+        "force": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "domain"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Consolidate memory",
+      "readOnlyHint": false,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "get_business_memory",
+    "title": "Business memory",
+    "description": "Uses no credits. Retrieves active Business DNA, visibility profiles, action memories, and preferences.",
+    "creditClass": "free",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "domain": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "domain"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Business memory",
+      "readOnlyHint": true,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "review_dream_proposal",
+    "title": "Review a memory proposal",
+    "description": "Uses no credits. Approves or rejects a pending memory proposal from Luminara Dreaming.",
+    "creditClass": "free",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "proposalId": {
+          "type": "string"
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "approve",
+            "reject"
+          ]
+        },
+        "editedContent": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "proposalId",
+        "action"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Review a memory proposal",
+      "readOnlyHint": false,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "draft_fix",
+    "title": "Draft a fix",
+    "description": "Draft a suburb page, agent bio, about page, FAQ block, or RealEstateAgent JSON-LD from fields you pass. Draft only: nothing is published. Uses one Ask from the same daily allowance as chat, and also counts as one MCP call. Do not invent rankings, review counts, or years in business. Omit any fact you do not have.",
+    "creditClass": "free",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "suburb_page",
+            "agent_bio",
+            "about_page",
+            "faq_block",
+            "json_ld"
+          ]
+        },
+        "domain": {
+          "type": "string",
+          "description": "Hostname of the agency site. A habitat token is limited to its own domain."
+        },
+        "businessName": {
+          "type": "string"
+        },
+        "agentName": {
+          "type": "string"
+        },
+        "suburb": {
+          "type": "string"
+        },
+        "phone": {
+          "type": "string"
+        },
+        "address": {
+          "type": "string"
+        },
+        "serviceArea": {
+          "type": "string"
+        },
+        "findingTitle": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Draft a fix",
+      "readOnlyHint": true,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "list_enquiries",
+    "title": "List enquiries",
+    "description": "Lists enquiries for one project, at most 50 per page, with SLA status and qualification briefs. Uses no credits. Pass cursor when nextCursor is set.",
+    "creditClass": "free",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50,
+          "description": "Page size. The server caps this at 50."
+        },
+        "cursor": {
+          "type": "string",
+          "description": "Pass nextCursor from the previous page. Omit on the first page."
+        }
+      },
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "List enquiries",
+      "readOnlyHint": true,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "ingest_enquiry",
+    "title": "Record an enquiry",
+    "description": "Uses no credits. Ingests an inbound real-estate or SME enquiry with Australian statutory valuation/legal guard and ClaimLedger brief extraction.",
+    "creditClass": "free",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "fullName": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string"
+        },
+        "phoneE164": {
+          "type": "string"
+        },
+        "propertyAddress": {
+          "type": "string"
+        },
+        "suburb": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "intentType": {
+          "type": "string",
+          "enum": [
+            "seller_appraisal",
+            "buyer_enquiry",
+            "landlord_management",
+            "general_sme"
+          ]
+        },
+        "sourceChannel": {
+          "type": "string",
+          "enum": [
+            "web_widget",
+            "form_webhook",
+            "missed_call",
+            "meta_lead",
+            "portal_email",
+            "manual"
+          ]
+        },
+        "initialMessage": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "fullName",
+        "initialMessage"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Record an enquiry",
+      "readOnlyHint": false,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "propose_booking_slots",
+    "title": "Propose booking slots",
+    "description": "Uses no credits. Proposes candidate appraisal or consultation slots requiring human agent sign-off.",
+    "creditClass": "free",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "enquiryId": {
+          "type": "string"
+        },
+        "contactId": {
+          "type": "string"
+        },
+        "assignedAgentId": {
+          "type": "string"
+        },
+        "proposedSlots": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "required": [
+        "enquiryId",
+        "contactId",
+        "proposedSlots"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Propose booking slots",
+      "readOnlyHint": false,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "decide_booking_signoff",
+    "title": "Decide a booking",
+    "description": "Destructive/Human-gated. Approves or declines a proposed appraisal appointment after operator approval in the Sign-off Desk.",
+    "creditClass": "free",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "appointmentId": {
+          "type": "string"
+        },
+        "decision": {
+          "type": "string",
+          "enum": [
+            "approve",
+            "decline"
+          ]
+        },
+        "selectedSlotId": {
+          "type": "string"
+        },
+        "selectedSlotIso": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "appointmentId",
+        "decision"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Decide a booking",
+      "readOnlyHint": false,
+      "destructiveHint": true
+    }
+  },
+  {
+    "name": "get_outcomes_funnel",
+    "title": "Outcomes funnel",
+    "description": "Uses no credits. Returns the 6-stage evidence-bound conversion funnel summary (measurementStatus: measured, revenueAttributionStatus: not_measured).",
+    "creditClass": "free",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Outcomes funnel",
+      "readOnlyHint": true,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "classify_cms_remediation",
+    "title": "Classify a CMS fix",
+    "description": "Uses no credits. Classifies an audit finding into Tier 1 (Instant MCP), Tier 2 (Guided Builder / Squarespace Injection), or Tier 3 (Luminara Digital Engineering Brief).",
+    "creditClass": "free",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "domain": {
+          "type": "string"
+        },
+        "pageUrl": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "findingTitle": {
+          "type": "string"
+        },
+        "findingCategory": {
+          "type": "string",
+          "enum": [
+            "schema_jsonld",
+            "meta_tags",
+            "llms_txt",
+            "page_builder_layout",
+            "cwv_performance",
+            "ssr_hydration",
+            "custom_crm_automation",
+            "security_headers"
+          ]
+        },
+        "cmsPlatform": {
+          "type": "string"
+        },
+        "pageBuilderDetected": {
+          "type": "string"
+        },
+        "previousDeployBlocked": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "domain",
+        "findingCategory"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Classify a CMS fix",
+      "readOnlyHint": true,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "prepare_cms_mcp_call",
+    "title": "Prepare a CMS call",
+    "description": "Destructive/Human-gated. Validates and prepares a WordPress.com, GoBuildWP, Respira, InstaWP, Wix, or Squarespace remediation envelope.",
+    "creditClass": "free",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "connectorId": {
+          "type": "string"
+        },
+        "toolName": {
+          "type": "string"
+        },
+        "domain": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "snapshotCreated": {
+          "type": "boolean"
+        },
+        "userConfirmed": {
+          "type": "boolean"
+        },
+        "pageMetaKeys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "schemaJsonLd": {
+          "type": "string"
+        },
+        "parameters": {
+          "type": "object"
+        },
+        "payload": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "connectorId",
+        "domain"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Prepare a CMS call",
+      "readOnlyHint": false,
+      "destructiveHint": true
+    }
+  },
+  {
+    "name": "create_dev_ticket_from_finding",
+    "title": "Create a dev ticket",
+    "description": "Uses no credits. Builds a PR bundle (llms.txt, Organization JSON-LD and a deterministic pre-flight receipt), a front-desk brief, and a 14-day retest schedule from an audit finding.",
+    "creditClass": "free",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "domain": {
+          "type": "string"
+        },
+        "brandName": {
+          "type": "string"
+        },
+        "findingId": {
+          "type": "string"
+        },
+        "findingTitle": {
+          "type": "string"
+        },
+        "findingDescription": {
+          "type": "string"
+        },
+        "rivalName": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "domain"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Create a dev ticket",
+      "readOnlyHint": false,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "compile_review_to_skill",
+    "title": "Compile a review into a skill",
+    "description": "Uses no credits. Saves a review correction or rejection reason as a workspace rule and a project writing preference so future agents inherit it.",
+    "creditClass": "free",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "domain": {
+          "type": "string"
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "targetToolOrAsset": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Compile a review into a skill",
+      "readOnlyHint": false,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "mint_habitat_token",
+    "title": "Mint a habitat token",
+    "description": "Uses no credits. Mints a short-lived Agent Habitat token (lm_hab_*) locked to one project in this account, with a risk ceiling of read or write. Needs Growth or Agency. Not available to OAuth connections.",
+    "creditClass": "free",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "domain": {
+          "type": "string"
+        },
+        "maxRisk": {
+          "type": "string",
+          "enum": [
+            "read",
+            "write"
+          ]
+        },
+        "ttlMinutes": {
+          "type": "number"
+        },
+        "label": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Mint a habitat token",
+      "readOnlyHint": false,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "research_keywords",
+    "title": "Research keywords",
+    "description": "Uses paid DataForSEO credits unless BYOK. Discover keyword ideas from up to 5 seed topics. Returns at most 20 rows. Check the research log first. This is a sample, not a full export.",
+    "creditClass": "paid",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "seeds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "projectId",
+        "seeds"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Research keywords",
+      "readOnlyHint": false,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "get_domain_overview",
+    "title": "Domain overview",
+    "description": "Uses paid DataForSEO credits unless BYOK. High-level domain rank overview. Check research log first.",
+    "creditClass": "paid",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "domain": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "projectId"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Domain overview",
+      "readOnlyHint": true,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "get_serp_results",
+    "title": "SERP snapshot",
+    "description": "Uses paid DataForSEO credits unless BYOK. SERP snapshot for one query. Returns at most 10 rows. Check the research log first. This is a sample, not a ranked export.",
+    "creditClass": "paid",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "query": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "projectId",
+        "query"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "SERP snapshot",
+      "readOnlyHint": true,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "get_backlinks_overview",
+    "title": "Backlink overview",
+    "description": "Uses paid DataForSEO credits unless BYOK. Backlink profile overview. Check research log first.",
+    "creditClass": "paid",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "domain": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "projectId"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Backlink overview",
+      "readOnlyHint": true,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "get_visibility_snapshot",
+    "title": "Visibility snapshot",
+    "description": "Uses paid credits when live. AI visibility snapshot (ChatGPT / AIO / Perplexity) with competitor missing-source discovery.",
+    "creditClass": "paid",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "domain": {
+          "type": "string"
+        },
+        "brand": {
+          "type": "string"
+        },
+        "queries": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "competitors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "projectId"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Visibility snapshot",
+      "readOnlyHint": true,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "get_pagespeed_summary",
+    "title": "PageSpeed summary",
+    "description": "Uses paid credits when live. PageSpeed / CWV summary. Returns not_measured until W5 registry wiring.",
+    "creditClass": "paid",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "PageSpeed summary",
+      "readOnlyHint": true,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "browse_observe",
+    "title": "Observe a page",
+    "description": "Open or reuse a crawler session and return an indexed DOM element table plus visible text. No mutation. Free for Growth+ MCP when crawler is configured; otherwise not_measured / BROWSER_UNAVAILABLE.",
+    "creditClass": "free",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "description": "Start or navigate URL when opening a session."
+        },
+        "sessionId": {
+          "type": "string",
+          "description": "Reuse an existing session when set."
+        },
+        "projectId": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Observe a page",
+      "readOnlyHint": true,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "browse_act",
+    "title": "Act in the browser",
+    "description": "Paid or Agency apiAccess / hosted crawler quota. Execute one indexed act with fingerprint check. Model supplies action id and optional text, never selectors.",
+    "creditClass": "paid",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "fingerprint": {
+          "type": "string"
+        },
+        "actionId": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string",
+          "description": "Required for fill/TYPE_TEXT actions."
+        },
+        "projectId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "fingerprint",
+        "actionId"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Act in the browser",
+      "readOnlyHint": false,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "browse_goal",
+    "title": "Run a browser goal",
+    "description": "Paid (same gate as browse_act). Run a bounded indexed DOM loop for a natural-language goal. Requires independent verifier checks (urlIncludes / textIncludes / titleIncludes). Agent DONE is never proof. Prefer get_project_context first.",
+    "creditClass": "paid",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "goal": {
+          "type": "string"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "maxSteps": {
+          "type": "number"
+        },
+        "checks": {
+          "type": "object",
+          "description": "Mandatory independent DONE checks. At least one include list required.",
+          "properties": {
+            "urlIncludes": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ]
+            },
+            "textIncludes": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ]
+            },
+            "titleIncludes": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "goal",
+        "checks"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Run a browser goal",
+      "readOnlyHint": false,
+      "destructiveHint": true
+    }
+  },
+  {
+    "name": "browse_close",
+    "title": "Close the browser",
+    "description": "Close one crawler browse session by sessionId. Uses no credits. Does not delete the project or its reports.",
+    "creditClass": "free",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Close the browser",
+      "readOnlyHint": false,
+      "destructiveHint": true
+    }
+  }
+]

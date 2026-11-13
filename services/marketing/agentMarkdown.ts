@@ -6,6 +6,7 @@ import { CHECKOUT_TERM_LINE, listPriceSummary, freePlanLines, planBullets, prici
 import { PAID_PLAN_PRICES } from '../../components/paywall/planPrices';
 import { LEGAL_ENTITY_LINE } from '../legal/consumerTerms';
 import { PLAN_ENTITLEMENTS } from '../plans/planEntitlements';
+import { MCP_PUBLIC_URL } from '../mcp/publicServer';
 import { LIVE_ANSWER_CHECKS } from './engineCoverage';
 import { MARKETING_FAQ } from './marketingFaqContent';
 import { HOME_HERO, PRICING_HERO } from './marketingHeroCopy';
@@ -71,7 +72,7 @@ ${MCP_BODY}
 
 Setup: ${MARKETING_ORIGIN}${MCP_DOCS_PATH}
 
-Endpoint: https://luminarasuite.com/api/mcp
+Endpoint: ${MCP_PUBLIC_URL}
 
 ## Common questions
 
@@ -122,10 +123,11 @@ const MCP_MARKDOWN = `# Luminara MCP
 ${MCP_BODY}
 
 - Docs: ${MARKETING_ORIGIN}${MCP_DOCS_PATH}
-- Endpoint: https://luminarasuite.com/api/mcp
+- Endpoint: ${MCP_PUBLIC_URL}
 - Free: ${PLAN_ENTITLEMENTS.free.mcpDailyCallLimit} calls a day
 - Starter: ${PLAN_ENTITLEMENTS.starter.mcpDailyCallLimit} calls a day
 - Growth and Agency: no daily MCP cap
+- The daily count is per account. A new token does not reset it.
 - Paid research needs Agency or your own DataForSEO login
 
 ## Connect
@@ -148,7 +150,7 @@ For a script with no browser, send a Luminara API key instead:
 {
   "mcpServers": {
     "luminara": {
-      "url": "https://luminarasuite.com/api/mcp",
+      "url": "${MCP_PUBLIC_URL}",
       "headers": {
         "Authorization": "Bearer lm_live_YOUR_KEY"
       }

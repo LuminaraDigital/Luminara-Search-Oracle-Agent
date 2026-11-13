@@ -11,6 +11,7 @@ import { identify, json } from './workerUtils';
 import { identifyApiKey } from './apiKeyService';
 import { bearerFromAuthorization } from './firebaseAuth';
 import { identifyMcpOAuthToken, mcpResourceMetadataUrl } from './mcpOAuth';
+import { logMcpAbuse } from './mcpLimits';
 import { identifyHabitatToken } from './selfDrivingHabitat';
 
 /** Paths that require an Agency (apiAccess) plan in addition to authentication. */
@@ -125,7 +126,24 @@ export async function resolveMcpUser(
     const denied = await requireMcpAccess(env, oauth.user);
     if (denied) return { response: denied };
     const scopes = oauth.scopeEnforced ? oauth.scope.split(/\s+/).filter(Boolean) : null;
-    return { user: oauth.user, credential: { kind: 'oauth', id: null, scopes } };
+    return { user: oauth.user, credential: { kind: 'oauth', id: null, scopes, clientId: oauth.clientId } };
+  }
+
+  if (bearer?.startsWith('mcp_')) {
+    logMcpAbuse({ kind: 'invalid_mcp_token' });
+    return {
+      response: json(
+        {
+          ok: false,
+          error: 'token revoked or expired, reconnect',
+          code: 'invalid_token',
+        },
+        401,
+        {
+          'WWW-Authenticate': `Bearer error="invalid_token", error_description="token revoked or expired, reconnect", resource_metadata="${mcpResourceMetadataUrl(request)}"`,
+        },
+      ),
+    };
   }
 
   const who = await identify(request, env);

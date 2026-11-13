@@ -8,10 +8,7 @@ import { SESSION_MCP_CREDENTIAL, credentialAllowsResearch } from './userTypes';
 import { billingId, json } from './workerUtils';
 import { getActiveSubscription } from './quotaMiddleware';
 import { planCapsFor } from './telegramBot';
-import { createProject, listProjects } from './projectService';
-import { getProjectContext, updateProjectContext } from './projectContextService';
-import { getAgentReport, listAgentReports, saveAgentReport } from './agentReportService';
-import type { McpCreditClass, ProjectContextPatch } from '../services/projects/types';
+import type { McpCreditClass } from '../services/projects/types';
 import { TYPED_CONTEXT_KEYS } from '../services/projects/types';
 import { hasDataForSeoCredentials } from '../services/config/runtimeKeys';
 import {
@@ -28,7 +25,16 @@ import {
   governanceFor,
 } from './mcpGovernance';
 import { MAX_BODY_BYTES, readBody } from './security';
-import { meterDailyUse, putCounterBestEffort } from './securityHardening';
+import { putCounterBestEffort } from './securityHardening';
+import {
+  dailyRateHeaders,
+  enforceMcpBurst,
+  logMcpAbuse,
+  MCP_HOSTED_PAID_DAILY,
+  spendMcpDailyCall,
+  type McpDailyUsage,
+} from './mcpLimits';
+import { clipText, MCP_RESULT_TEXT_CAP, MCP_STRUCTURED_CHAR_CAP, mcpToolAnnotations } from './mcpToolMeta';
 import { entitlementsFor } from '../services/plans/planEntitlements';
 import {
   BYOK_PAID_CALL_COST_CENTS,
@@ -48,6 +54,7 @@ import {
 } from './dreamingService';
 import { getPendingDreamEvents } from './dreamingQueue';
 import { evaluateWakeGate } from './dreamingWakeGate';
+import { ACCOUNT_MCP_TOOLS } from './mcpAccountTools';
 import { CONVERSION_SPINE_MCP_TOOLS } from './mcpConversionTools';
 import { FIX_DRAFT_MCP_TOOLS } from './fixDraftRoute';
 import { enforceHabitatScope, SELF_DRIVING_MCP_TOOLS } from './selfDrivingHabitat';
@@ -70,6 +77,7 @@ export type McpToolContext = {
   dataForSeoCredential: string | null;
   /** Which credential authenticated this call (api key, OAuth token, or cookie session). */
   credential: McpCredential;
+  dailyUsage: McpDailyUsage | null;
 };
 
 export type McpToolResult = {
@@ -83,7 +91,8 @@ const MCP_CORS: Record<string, string> = {
   'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
   'Access-Control-Allow-Headers':
     'Content-Type, Accept, Authorization, mcp-session-id, MCP-Protocol-Version, Mcp-Method, Mcp-Name, x-provider-key',
-  'Access-Control-Expose-Headers': 'mcp-session-id',
+  'Access-Control-Expose-Headers':
+    'mcp-session-id, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, Retry-After',
 };
 
 /** What a host shows for this server: the Luminara name, mark and site. */
@@ -106,15 +115,84 @@ export const MCP_INSTRUCTIONS = [
   'Tools that change or spend may answer with an approval link. Give the user that link; do not retry until they approve.',
 ].join(' ');
 
-function mcpJson(data: unknown, status = 200): Response {
+function mcpJson(data: unknown, status = 200, extraHeaders?: Record<string, string>): Response {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { 'content-type': 'application/json; charset=utf-8', ...MCP_CORS },
+    headers: { 'content-type': 'application/json; charset=utf-8', ...MCP_CORS, ...extraHeaders },
   });
 }
 
+const RESULT_TRUNCATED_MARK = '\nRESULT_TRUNCATED';
+
+function textWithTruncationMark(text: string, max: number): string {
+  if (text.includes('RESULT_TRUNCATED')) return clipText(text, max);
+  const room = Math.max(0, max - RESULT_TRUNCATED_MARK.length);
+  return `${clipText(text, room)}${RESULT_TRUNCATED_MARK}`;
+}
+
+/** Cuts tool text and structured JSON. A cut sets `code: RESULT_TRUNCATED` and marks the text. */
+export function capToolResult(result: McpToolResult): McpToolResult {
+  if (result.isError) return result;
+  let text = result.text;
+  let structured = result.structuredContent;
+  let changed = false;
+  if (text.length > MCP_RESULT_TEXT_CAP) {
+    text = textWithTruncationMark(text, MCP_RESULT_TEXT_CAP);
+    structured = { ...structured, code: 'RESULT_TRUNCATED', limit: MCP_RESULT_TEXT_CAP, textTruncated: true };
+    changed = true;
+  }
+  if (structured && JSON.stringify(structured).length > MCP_STRUCTURED_CHAR_CAP) {
+    structured = { code: 'RESULT_TRUNCATED', limit: MCP_STRUCTURED_CHAR_CAP };
+    text = textWithTruncationMark(text, MCP_RESULT_TEXT_CAP);
+    changed = true;
+  }
+  return changed ? { ...result, text, structuredContent: structured } : result;
+}
+
+const DAILY_LIMIT_CODES = new Set(['MCP_DAILY_LIMIT', 'MCP_PAID_DAILY_LIMIT', 'MCP_QUOTA_STORE']);
+
 function textResult(text: string, structured?: Record<string, unknown>, isError = false): McpToolResult {
   return { text, structuredContent: structured, isError };
+}
+
+function dailySpendRefusal(
+  ctx: McpToolContext,
+  meter: { error: string; reason: 'limit' | 'store'; usage: McpDailyUsage },
+  limitCode: 'MCP_DAILY_LIMIT' | 'MCP_PAID_DAILY_LIMIT',
+  limit: number,
+): McpToolResult {
+  if (meter.reason === 'store') {
+    logMcpAbuse({
+      kind: 'MCP_QUOTA_STORE',
+      accountId: ctx.accountId,
+      clientId: ctx.credential.clientId ?? null,
+    });
+    return textResult(meter.error, { code: 'MCP_QUOTA_STORE', retryAfter: 1 }, true);
+  }
+  logMcpAbuse({
+    kind: limitCode,
+    accountId: ctx.accountId,
+    clientId: ctx.credential.clientId ?? null,
+    limit: meter.usage.limit,
+    used: meter.usage.used,
+  });
+  const resetIso = new Date(meter.usage.resetAt * 1000).toISOString();
+  const text =
+    limitCode === 'MCP_DAILY_LIMIT'
+      ? `Daily MCP call limit of ${limit} reached. Resets at ${resetIso}.`
+      : `Hosted paid MCP limit of ${limit} calls today reached. Resets at ${resetIso}. BYOK is not counted.`;
+  return textResult(
+    text,
+    {
+      code: limitCode,
+      ...(limitCode === 'MCP_DAILY_LIMIT' ? { requiredPlan: 'growth' } : {}),
+      limit: meter.usage.limit,
+      used: meter.usage.used,
+      remaining: 0,
+      resetAt: meter.usage.resetAt,
+    },
+    true,
+  );
 }
 
 function requireString(args: Record<string, unknown>, key: string): string | null {
@@ -142,6 +220,7 @@ async function buildCtx(
     caps,
     dataForSeoCredential,
     credential,
+    dailyUsage: null,
   };
 }
 
@@ -216,219 +295,7 @@ function paidHandler(name: string) {
 }
 
 const TOOLS: McpToolDef[] = [
-  {
-    name: 'whoami',
-    description:
-      'Uses no credits. Confirms the connected Luminara account, plan, and MCP access class.',
-    creditClass: 'free',
-    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
-    handler: async (_args, ctx) =>
-      textResult(
-        [
-          `Account: ${ctx.accountId}`,
-          `Plan: ${ctx.planId}`,
-          `MCP free tools: ${ctx.caps.mcpAccess ? 'yes' : 'no'}`,
-          `Agency API / paid research without BYOK: ${ctx.caps.apiAccess ? 'yes' : 'no'}`,
-          `BYOK DataForSEO header present: ${ctx.dataForSeoCredential ? 'yes' : 'no'}`,
-        ].join('\n'),
-        {
-          accountId: ctx.accountId,
-          plan: ctx.planId,
-          mcpAccess: ctx.caps.mcpAccess,
-          apiAccess: ctx.caps.apiAccess,
-        },
-      ),
-  },
-  {
-    name: 'list_projects',
-    description: 'Uses no credits. Lists SEO projects for the connected account.',
-    creditClass: 'free',
-    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
-    handler: async (_args, ctx) => {
-      const allProjects = await listProjects(ctx.env, ctx.accountId);
-      const boundProjectId = ctx.credential.projectId;
-      const projects = boundProjectId ? allProjects.filter((p) => p.id === boundProjectId) : allProjects;
-      const lines = projects.length
-        ? projects.map((p) => `- ${p.id}: ${p.domain} (${p.name})`).join('\n')
-        : 'No projects yet. Use create_project.';
-      return textResult(lines, { projects });
-    },
-  },
-  {
-    name: 'create_project',
-    description: 'Uses no credits. Creates a project for a domain (idempotent per account+domain+client).',
-    creditClass: 'free',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        domain: { type: 'string' },
-        name: { type: 'string' },
-        clientId: { type: 'string' },
-      },
-      required: ['domain'],
-      additionalProperties: false,
-    },
-    handler: async (args, ctx) => {
-      const domain = requireString(args, 'domain');
-      if (!domain) return textResult('domain required', undefined, true);
-      const result = await createProject(ctx.env, ctx.accountId, {
-        domain,
-        name: typeof args.name === 'string' ? args.name : undefined,
-        clientId: typeof args.clientId === 'string' ? args.clientId : undefined,
-      });
-      if (!result.ok) return textResult(result.error, undefined, true);
-      return textResult(`Project ${result.project.id} for ${result.project.domain}`, {
-        project: result.project,
-      });
-    },
-  },
-  {
-    name: 'get_project_context',
-    description:
-      'Uses no credits. Returns typed sections, competitors, key pages, research log, and missingSections.',
-    creditClass: 'free',
-    inputSchema: {
-      type: 'object',
-      properties: { projectId: { type: 'string' } },
-      required: ['projectId'],
-      additionalProperties: false,
-    },
-    handler: async (args, ctx) => {
-      const projectId = requireString(args, 'projectId');
-      if (!projectId) return textResult('projectId required', undefined, true);
-      const context = await getProjectContext(ctx.env, ctx.accountId, projectId);
-      if (!context) return textResult('Project not found', undefined, true);
-      await markProjectContextLoaded(ctx.env, ctx.accountId, projectId);
-      return textResult(context.digestMarkdown, { context });
-    },
-  },
-  {
-    name: 'update_project_context',
-    description:
-      'Uses no credits. Apply patch ops to project memory (sections, competitors, key pages, research log).',
-    creditClass: 'free',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        projectId: { type: 'string' },
-        updates: { type: 'array', items: { type: 'object' } },
-      },
-      required: ['projectId', 'updates'],
-      additionalProperties: false,
-    },
-    handler: async (args, ctx) => {
-      const projectId = requireString(args, 'projectId');
-      if (!projectId) return textResult('projectId required', undefined, true);
-      const updates = args.updates;
-      if (!Array.isArray(updates)) return textResult('updates must be an array', undefined, true);
-      const result = await updateProjectContext(
-        ctx.env,
-        ctx.accountId,
-        projectId,
-        updates as ProjectContextPatch[],
-        'mcp',
-      );
-      if (!result.ok) return textResult(result.error, undefined, true);
-      return textResult(result.context.digestMarkdown, { context: result.context });
-    },
-  },
-  {
-    name: 'list_reports',
-    description: 'Uses no credits. Lists agent report summaries for a project (no HTML bodies).',
-    creditClass: 'free',
-    inputSchema: {
-      type: 'object',
-      properties: { projectId: { type: 'string' } },
-      required: ['projectId'],
-      additionalProperties: false,
-    },
-    handler: async (args, ctx) => {
-      const projectId = requireString(args, 'projectId');
-      if (!projectId) return textResult('projectId required', undefined, true);
-      const reports = await listAgentReports(ctx.env, ctx.accountId, projectId);
-      if (!reports) return textResult('Project not found', undefined, true);
-      const lines = reports.length
-        ? reports.map((r) => `- ${r.id}: ${r.title} (${r.url})`).join('\n')
-        : 'No reports yet.';
-      return textResult(lines, { reports });
-    },
-  },
-  {
-    name: 'get_report',
-    description:
-      'Uses no credits. Fetches a report summary; set includeHtml true only when editing a specific passage.',
-    creditClass: 'free',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        reportId: { type: 'string' },
-        includeHtml: { type: 'boolean' },
-      },
-      required: ['reportId'],
-      additionalProperties: false,
-    },
-    handler: async (args, ctx) => {
-      const reportId = requireString(args, 'reportId');
-      if (!reportId) return textResult('reportId required', undefined, true);
-      const includeHtml = Boolean(args.includeHtml);
-      const report = await getAgentReport(ctx.env, ctx.accountId, reportId, includeHtml);
-      if (!report) return textResult('Report not found', undefined, true);
-      if (ctx.credential.projectId && report.projectId !== ctx.credential.projectId) {
-        return textResult(
-          `Tool blocked by Agent Habitat scope: token is bound to project "${ctx.credential.projectId}".`,
-          { code: 'HABITAT_PROJECT_SCOPE_VIOLATION', boundProjectId: ctx.credential.projectId },
-          true,
-        );
-      }
-      return textResult(report.summary, { report });
-    },
-  },
-  {
-    name: 'save_report',
-    description:
-      'Uses no credits. Saves one self-contained HTML report. Chat should return verdict + link only.',
-    creditClass: 'free',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        projectId: { type: 'string' },
-        title: { type: 'string' },
-        summary: { type: 'string' },
-        html: { type: 'string' },
-        skill: { type: 'string' },
-        reportId: { type: 'string' },
-      },
-      required: ['projectId', 'title', 'summary', 'html'],
-      additionalProperties: false,
-    },
-    handler: async (args, ctx) => {
-      const projectId = requireString(args, 'projectId');
-      const title = requireString(args, 'title');
-      const summary = requireString(args, 'summary');
-      const html = typeof args.html === 'string' ? args.html : '';
-      if (!projectId || !title || !summary || !html) {
-        return textResult('projectId, title, summary, and html are required', undefined, true);
-      }
-      const result = await saveAgentReport(ctx.env, ctx.accountId, {
-        projectId,
-        title,
-        summary,
-        html,
-        skill: typeof args.skill === 'string' ? args.skill : undefined,
-        reportId: typeof args.reportId === 'string' ? args.reportId : undefined,
-        createdByLabel: 'mcp',
-        createdByUserId: ctx.user.id,
-      });
-      if (!result.ok) return textResult(result.error, undefined, true);
-      return textResult(
-        [
-          result.report.summary.split('\n')[0],
-          `Read the full report: ${result.report.url}`,
-        ].join('\n'),
-        { report: result.report },
-      );
-    },
-  },
+  ...ACCOUNT_MCP_TOOLS,
   {
     name: 'dream_status',
     description: 'Uses no credits. Checks Luminara Dreaming status, pending un-dreamed events, and pending memory review proposals.',
@@ -588,26 +455,32 @@ const TOOLS: McpToolDef[] = [
 ];
 export function listMcpToolCatalogue(): Array<{
   name: string;
+  title: string;
   description: string;
   creditClass: McpCreditClass;
+  inputSchema: Record<string, unknown>;
+  annotations: ReturnType<typeof mcpToolAnnotations>;
 }> {
-  return TOOLS.map(({ name, description, creditClass }) => ({ name, description, creditClass }));
+  return TOOLS.map((tool) => {
+    const annotations = mcpToolAnnotations(tool.name);
+    return {
+      name: tool.name,
+      title: annotations.title,
+      description: tool.description,
+      creditClass: tool.creditClass,
+      inputSchema: tool.inputSchema,
+      annotations,
+    };
+  });
 }
 
 function toolsListPayload() {
   return {
-    tools: TOOLS.map((t) => ({
-      name: t.name,
-      description: t.description,
-      inputSchema: t.inputSchema,
-      annotations: {
-        readOnlyHint:
-          t.name.startsWith('get_') ||
-          t.name.startsWith('list_') ||
-          t.name === 'whoami' ||
-          t.name === 'dream_status' ||
-          t.name === 'classify_cms_remediation',
-      },
+    tools: listMcpToolCatalogue().map(({ name, description, inputSchema, annotations }) => ({
+      name,
+      description,
+      inputSchema,
+      annotations,
     })),
   };
 }
@@ -677,6 +550,7 @@ async function callTool(
   }
 
   // Free and Starter get MCP with a daily call cap; Growth+ is unmetered.
+  // The key is the account id, so a new token does not reset the count.
   const mcpDailyCallLimit = entitlementsFor(ctx.planId).mcpDailyCallLimit;
   // Opening a hosted browser session spends crawler time, so it stays on Growth+ (or the paid path).
   // browse_act and browse_goal already need the paid path; browse_close only ends a session.
@@ -687,14 +561,9 @@ async function callTool(
       true,
     );
   }
-  const meter = await meterDailyUse(ctx.env, 'mcp_calls', ctx.accountId, mcpDailyCallLimit, 'MCP call');
-  if (!meter.ok) {
-    return textResult(
-      `${meter.error} Growth has no daily cap.`,
-      { code: 'MCP_DAILY_LIMIT', requiredPlan: 'growth' },
-      true,
-    );
-  }
+  const meter = await spendMcpDailyCall(ctx.env, ctx.accountId, mcpDailyCallLimit);
+  ctx.dailyUsage = meter.usage;
+  if (!meter.ok) return dailySpendRefusal(ctx, meter, 'MCP_DAILY_LIMIT', mcpDailyCallLimit);
 
   // Paid gates run before the approval below, so a call they refuse does not spend it.
   // Scope gate: hosted paid research needs mcp:research on the credential. BYOK
@@ -763,7 +632,12 @@ async function callTool(
   }
 
   if (!tool) return textResult(`Unknown tool: ${name}`, { code: 'TOOL_NOT_FOUND' }, true);
-  const result = await tool.handler(args || {}, ctx);
+  // A missing project, a scope refusal, or an approval hold must not burn the ceiling.
+  if (creditClass === 'paid' && !ctx.dataForSeoCredential) {
+    const paid = await spendMcpDailyCall(ctx.env, ctx.accountId, MCP_HOSTED_PAID_DAILY, 'mcp_paid', 'hosted paid MCP call');
+    if (!paid.ok) return dailySpendRefusal(ctx, paid, 'MCP_PAID_DAILY_LIMIT', MCP_HOSTED_PAID_DAILY);
+  }
+  const result = capToolResult(await tool.handler(args || {}, ctx));
 
   // Cost ingestion: cost events land only after a successful PAID tool
   // execution; free tools and error results record nothing. Interim rule per
@@ -849,8 +723,8 @@ function rpcResult(id: unknown, result: unknown) {
   return { jsonrpc: '2.0', id: id ?? null, result };
 }
 
-function rpcError(id: unknown, code: number, message: string) {
-  return { jsonrpc: '2.0', id: id ?? null, error: { code, message } };
+function rpcError(id: unknown, code: number, message: string, data?: Record<string, unknown>) {
+  return { jsonrpc: '2.0', id: id ?? null, error: data ? { code, message, data } : { code, message } };
 }
 
 /**
@@ -905,6 +779,7 @@ export async function handleMcpRequest(
     return mcpJson(rpcError(null, -32600, 'Send one tools/call per request'), 400);
   }
   const responses: unknown[] = [];
+  let rateHeaders: Record<string, string> | undefined;
 
   for (const msg of messages) {
     if (!msg || typeof msg !== 'object') {
@@ -948,6 +823,19 @@ export async function handleMcpRequest(
         params.arguments && typeof params.arguments === 'object'
           ? (params.arguments as Record<string, unknown>)
           : {};
+      const burst = await enforceMcpBurst(env, ctx.accountId, ctx.credential.clientId ?? null);
+      if (!burst.ok) {
+        rateHeaders = burst.headers;
+        responses.push(
+          rpcError(id, -32000, burst.message, {
+            code: burst.code,
+            limit: burst.limit,
+            remaining: 0,
+            resetAt: burst.resetAt,
+          }),
+        );
+        continue;
+      }
       const runHandle = await startRun(env, {
         surface: 'mcp_tool',
         accountId: ctx.accountId,
@@ -971,12 +859,42 @@ export async function handleMcpRequest(
         }
         throw err;
       }
+      const limitCode = typeof result.structuredContent?.code === 'string' ? result.structuredContent.code : '';
+      if (limitCode === 'MCP_QUOTA_STORE') {
+        rateHeaders = { 'Retry-After': '1' };
+      } else if (limitCode === 'MCP_PAID_DAILY_LIMIT' && result.structuredContent) {
+        const paidUsage = result.structuredContent;
+        rateHeaders = dailyRateHeaders(
+          {
+            limit: Number(paidUsage.limit),
+            used: Number(paidUsage.used),
+            remaining: 0,
+            resetAt: Number(paidUsage.resetAt),
+          },
+          true,
+        );
+      } else if (ctx.dailyUsage) {
+        rateHeaders = dailyRateHeaders(ctx.dailyUsage, DAILY_LIMIT_CODES.has(limitCode));
+      }
+      if (DAILY_LIMIT_CODES.has(limitCode)) {
+        responses.push(rpcError(id, -32000, result.text, result.structuredContent));
+        continue;
+      }
+      const meta: Record<string, unknown> = {};
+      if (runHandle) meta.runId = runHandle.runId;
+      if (ctx.dailyUsage) {
+        meta.rateLimit = {
+          limit: ctx.dailyUsage.limit,
+          remaining: ctx.dailyUsage.remaining,
+          reset: ctx.dailyUsage.resetAt,
+        };
+      }
       responses.push(
         rpcResult(id, {
           content: [{ type: 'text', text: result.text }],
           structuredContent: result.structuredContent,
           isError: result.isError || false,
-          ...(runHandle ? { _meta: { runId: runHandle.runId } } : {}),
+          ...(Object.keys(meta).length ? { _meta: meta } : {}),
         }),
       );
       continue;
@@ -986,12 +904,12 @@ export async function handleMcpRequest(
   }
 
   if (!Array.isArray(body) && responses.length === 1) {
-    return mcpJson(responses[0]);
+    return mcpJson(responses[0], 200, rateHeaders);
   }
   if (responses.length === 0) {
     return new Response(null, { status: 202, headers: MCP_CORS });
   }
-  return mcpJson(responses);
+  return mcpJson(responses, 200, rateHeaders);
 }
 
 /** REST helper used by /api/projects routes (not MCP). */

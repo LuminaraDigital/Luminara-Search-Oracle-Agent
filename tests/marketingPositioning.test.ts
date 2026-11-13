@@ -30,7 +30,7 @@ describe('marketing positioning', () => {
     expect(markdownForPath('/features.md')).toBeNull();
     expect(markdownForPath('/index.md')).toContain('Kim W. Fulwood');
     expect(markdownForPath('/pricing.md')).toContain('A$79');
-    expect(markdownForPath('/mcp.md')).toContain('https://luminarasuite.com/api/mcp');
+    expect(markdownForPath('/mcp.md')).toContain('https://www.luminarasuite.com/api/mcp');
     for (const page of AGENT_MARKDOWN_PAGES) {
       expect(readFileSync(`public${page.path}`, 'utf8')).toBe(page.body);
       expect(page.body).not.toContain('\u2014');
