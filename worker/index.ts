@@ -144,7 +144,8 @@ import {
 } from './auditQueue';
 import { handleAuditScoutRun } from './auditScoutRun';
 import { dispatchQueueBatch } from './queueDispatch';
-import { MCP_OAUTH_PUBLIC_CORS, handleMcpOAuthRoute, handleOAuthDiscovery, listAgentConnections, revokeAgentConnection } from './mcpOAuth';
+import { MCP_OAUTH_PUBLIC_CORS, handleMcpOAuthRoute, handleMcpRegistryAuth, handleOAuthDiscovery, listAgentConnections, revokeAgentConnection } from './mcpOAuth';
+import { enforceMcpOauthIpLimit, MCP_OAUTH_REGISTER_PER_MIN, MCP_OAUTH_TOKEN_PER_MIN } from './mcpLimits';
 import { executeOracleGatewayTask, type OracleGatewayRequest } from './oracleGateway';
 import { createMemoryFact, listMemoryFacts } from './memoryService';
 import { compileFeedbackIntoSkillRule, handleAgentHabitatRoute } from './selfDrivingHabitat';
@@ -327,8 +328,8 @@ async function compileDenialIntoRule(
 
 /** Public MCP OAuth posts. Separate buckets: hosted agents share egress IPs. */
 const MCP_OAUTH_PUBLIC_POST_LIMITS: Record<string, { action: string; limitPerKey: number }> = {
-  '/oauth/mcp/token': { action: 'mcp_oauth_token', limitPerKey: 60 },
-  '/oauth/mcp/register': { action: 'mcp_oauth_register', limitPerKey: 20 },
+  '/oauth/mcp/token': { action: 'mcp_oauth_token', limitPerKey: MCP_OAUTH_TOKEN_PER_MIN },
+  '/oauth/mcp/register': { action: 'mcp_oauth_register', limitPerKey: MCP_OAUTH_REGISTER_PER_MIN },
   '/oauth/mcp/revoke': { action: 'mcp_oauth_revoke', limitPerKey: 60 },
 };
 
@@ -1646,13 +1647,16 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
   if (path.startsWith('/oauth/mcp')) {
     const limit = request.method === 'POST' ? MCP_OAUTH_PUBLIC_POST_LIMITS[path] : undefined;
     if (limit) {
-      const dual = await enforceDualRateLimit(env, {
-        action: limit.action,
-        accountId: null,
-        ip,
-        limitPerKey: limit.limitPerKey,
-        windowSec: 60,
-      });
+      const dual =
+        path === '/oauth/mcp/register' || path === '/oauth/mcp/token'
+          ? await enforceMcpOauthIpLimit(env, limit.action, ip, limit.limitPerKey)
+          : await enforceDualRateLimit(env, {
+              action: limit.action,
+              accountId: null,
+              ip,
+              limitPerKey: limit.limitPerKey,
+              windowSec: 60,
+            });
       if (!dual.ok) return withCors(dual.response);
     }
     const oauthRes = await handleMcpOAuthRoute(request, env, path);
@@ -2376,6 +2380,9 @@ const handler = {
 
     const oauthDiscovery = handleOAuthDiscovery(request);
     if (oauthDiscovery) return guard(oauthDiscovery);
+
+    const registryAuth = handleMcpRegistryAuth(request, env);
+    if (registryAuth) return registryAuth;
 
     const assetLinks = handleAssetLinks(request, env);
     if (assetLinks) return guard(assetLinks);
