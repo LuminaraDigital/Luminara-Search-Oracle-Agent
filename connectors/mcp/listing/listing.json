@@ -13,12 +13,21 @@
   },
   "oauth": {
     "grantType": "authorization_code",
+    "grantTypes": ["authorization_code", "refresh_token"],
     "codeChallengeMethod": "S256",
     "tokenEndpointAuthMethod": "none",
     "registrationEndpoint": "https://www.luminarasuite.com/api/oauth/mcp/register",
     "authorizationEndpoint": "https://www.luminarasuite.com/api/oauth/mcp/authorize",
     "tokenEndpoint": "https://www.luminarasuite.com/api/oauth/mcp/token",
     "revocationEndpoint": "https://www.luminarasuite.com/api/oauth/mcp/revoke",
+    "refreshToken": {
+      "expiresInDays": 90,
+      "accessTokenExpiresInDays": 30,
+      "rotation": "Each refresh returns a new refresh token. The one you sent stops working.",
+      "reuse": "Sending a refresh token that already rotated revokes that family, including its access tokens.",
+      "scope": "The scope cannot grow. The account plan is checked again, and a scope the plan no longer allows is dropped.",
+      "storage": "Only the SHA-256 hash is stored."
+    },
     "protectedResourceMetadata": "https://www.luminarasuite.com/.well-known/oauth-protected-resource/api/mcp",
     "authorizationServerMetadata": "https://www.luminarasuite.com/.well-known/oauth-authorization-server",
     "scopes": [

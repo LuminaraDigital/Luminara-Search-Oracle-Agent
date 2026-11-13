@@ -31,4 +31,8 @@ Free agent access is meant to build Luminara's outcome data. That use needs a ch
 
 ## Not in this slice
 
-Refresh tokens (a connection lasts 30 days, then the owner reconnects) and agent payment rails. Free-plan access follows the plan entitlements, so it arrives with the free MCP packaging change.
+Agent payment rails. Free-plan access follows the plan entitlements, so it arrives with the free MCP packaging change.
+
+## Refresh tokens
+
+A public client that registers `refresh_token` receives one with the access token. Omitting `grant_types` registers both grants. The access token lasts 30 days. The refresh token lasts 90 days and rotates: the previous one stops working, and presenting it again revokes the family. The server stores SHA-256 hashes only. A refresh cannot widen scope, and it re-reads the account's plan. A deleted account is refused. The daily MCP counter key stays the account id and the UTC day.

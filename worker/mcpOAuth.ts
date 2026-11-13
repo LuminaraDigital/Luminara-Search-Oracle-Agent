@@ -1,6 +1,7 @@
 /**
- * Minimal MCP OAuth 2.1 Authorization Code + PKCE (A5).
- * API keys (lm_live_*) remain the primary path; OAuth is additive.
+ * MCP OAuth 2.1 authorization code + PKCE, and refresh-token rotation.
+ * API keys (lm_live_*) remain the primary path. OAuth is additive.
+ * Refresh families live in worker/mcpOAuthRefresh.ts.
  */
 import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
@@ -11,6 +12,18 @@ import { randomId } from '../services/projects/projectUtils';
 import { getActiveSubscription } from './quotaMiddleware';
 import { planCapsFor } from './telegramBot';
 import { resolveOAuthSigningSecret } from './securityHardening';
+import {
+  createRefreshFamily,
+  familyIdFromAccessRecord,
+  grantsFromStoredClient,
+  parseRegisteredGrantTypes,
+  revokeRefreshByToken,
+  revokeRefreshFamily,
+  rotateRefreshGrant,
+  SUPPORTED_GRANT_TYPES,
+  type OAuthGrantType,
+  type RefreshAccessStore,
+} from './mcpOAuthRefresh';
 
 const CODES_KV_PREFIX = 'mcp_oauth_code:';
 const TOKENS_KV_PREFIX = 'mcp_oauth_token:';
@@ -153,6 +166,7 @@ type RegisteredClient = {
   clientName: string;
   redirectUris: string[];
   createdAt: number;
+  grantTypes: OAuthGrantType[];
 };
 
 /** One pending approval, bound to the signed-in user who saw the screen. */
@@ -231,7 +245,7 @@ function authorizationServerMetadata(origin: string) {
     revocation_endpoint: `${origin}/api/oauth/mcp/revoke`,
     revocation_endpoint_auth_methods_supported: ['none'],
     response_types_supported: ['code'],
-    grant_types_supported: ['authorization_code'],
+    grant_types_supported: [...SUPPORTED_GRANT_TYPES],
     token_endpoint_auth_methods_supported: ['none'],
     code_challenge_methods_supported: ['S256'],
     scopes_supported: ['mcp:free', 'mcp:research'],
@@ -293,7 +307,11 @@ export function handleMcpRegistryAuth(request: Request, env: Env): Response | nu
 /** RFC 7591 registration for public clients. Open by design: approval happens per user at consent. */
 async function registerClient(request: Request, env: Env): Promise<Response> {
   if (!env.LUMINARA_KV) return json({ error: 'server_error', error_description: 'KV unavailable' }, 503);
-  const body = (await request.json().catch(() => null)) as { client_name?: unknown; redirect_uris?: unknown } | null;
+  const body = (await request.json().catch(() => null)) as {
+    client_name?: unknown;
+    redirect_uris?: unknown;
+    grant_types?: unknown;
+  } | null;
   const redirectUris: unknown[] = Array.isArray(body?.redirect_uris) ? body.redirect_uris : [];
   const valid =
     redirectUris.length > 0 &&
@@ -308,12 +326,23 @@ async function registerClient(request: Request, env: Env): Promise<Response> {
       400,
     );
   }
+  const grantTypes = parseRegisteredGrantTypes(body?.grant_types);
+  if (!grantTypes) {
+    return json(
+      {
+        error: 'invalid_client_metadata',
+        error_description: 'grant_types must be authorization_code, with refresh_token optional.',
+      },
+      400,
+    );
+  }
   const rawName = typeof body?.client_name === 'string' ? body.client_name.trim() : '';
   const client: RegisteredClient = {
     clientId: randomId('mcpc', 16),
     clientName: rawName.slice(0, 80) || 'Unnamed agent',
     redirectUris: redirectUris as string[],
     createdAt: Date.now(),
+    grantTypes,
   };
   await env.LUMINARA_KV.put(`${CLIENTS_KV_PREFIX}${client.clientId}`, JSON.stringify(client), {
     expirationTtl: CLIENT_TTL_SECONDS,
@@ -323,7 +352,7 @@ async function registerClient(request: Request, env: Env): Promise<Response> {
       client_id: client.clientId,
       client_name: client.clientName,
       redirect_uris: client.redirectUris,
-      grant_types: ['authorization_code'],
+      grant_types: client.grantTypes,
       response_types: ['code'],
       token_endpoint_auth_method: 'none',
     },
@@ -331,14 +360,37 @@ async function registerClient(request: Request, env: Env): Promise<Response> {
   );
 }
 
-async function loadClient(env: Env, clientId: string): Promise<RegisteredClient | null> {
-  const raw = await env.LUMINARA_KV?.get(`${CLIENTS_KV_PREFIX}${clientId}`);
-  if (!raw) return null;
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function parseClient(raw: string): RegisteredClient | null {
+  let value: unknown;
   try {
-    return JSON.parse(raw) as RegisteredClient;
+    value = JSON.parse(raw);
   } catch {
     return null;
   }
+  if (!isRecord(value) || typeof value.clientId !== 'string' || !Array.isArray(value.redirectUris)) return null;
+  const redirectUris: string[] = [];
+  for (const item of value.redirectUris) {
+    if (typeof item !== 'string') return null;
+    redirectUris.push(item);
+  }
+  if (redirectUris.length === 0) return null;
+  return {
+    clientId: value.clientId,
+    clientName: typeof value.clientName === 'string' ? value.clientName : 'Unnamed agent',
+    redirectUris,
+    createdAt: typeof value.createdAt === 'number' ? value.createdAt : 0,
+    grantTypes: grantsFromStoredClient(value.grantTypes),
+  };
+}
+
+async function loadClient(env: Env, clientId: string): Promise<RegisteredClient | null> {
+  const raw = await env.LUMINARA_KV?.get(`${CLIENTS_KV_PREFIX}${clientId}`);
+  if (!raw) return null;
+  return parseClient(raw);
 }
 
 /**
@@ -568,6 +620,70 @@ async function authorize(request: Request, env: Env): Promise<Response> {
   return Response.redirect(redirect.toString(), 302);
 }
 
+function refreshAccessStore(env: Env): RefreshAccessStore {
+  return {
+    put: (input) =>
+      writeAccessToken(env, {
+        accessToken: input.accessToken,
+        accountId: input.accountId,
+        userId: input.userId,
+        plan: input.plan,
+        scope: input.scope,
+        clientId: input.clientId,
+        clientName: input.clientName ?? undefined,
+        familyId: input.familyId,
+        createdAt: Date.now(),
+      }),
+    deleteHash: async (accountId, accessHash) => {
+      if (!env.LUMINARA_KV) return;
+      await env.LUMINARA_KV.delete(`${TOKENS_KV_PREFIX}${accessHash}`);
+      await env.LUMINARA_KV.delete(await connectionKvKey(accountId, accessHash));
+    },
+  };
+}
+
+async function writeAccessToken(
+  env: Env,
+  input: {
+    accessToken: string;
+    accountId: string;
+    userId: string;
+    plan: string;
+    scope: string;
+    clientId?: string;
+    clientName?: string;
+    familyId?: string;
+    createdAt: number;
+  },
+): Promise<void> {
+  if (!env.LUMINARA_KV) return;
+  const tokenRecord: StoredTokenRecord = {
+    accountId: input.accountId,
+    userId: input.userId,
+    plan: input.plan,
+    scope: input.scope,
+    scopeEnforced: true,
+    createdAt: input.createdAt,
+  };
+  if (input.clientName) tokenRecord.clientName = input.clientName;
+  if (input.clientId) tokenRecord.clientId = input.clientId;
+  if (input.familyId) tokenRecord.familyId = input.familyId;
+  await env.LUMINARA_KV.put(await tokenKvKey(input.accessToken), JSON.stringify(tokenRecord), {
+    expirationTtl: TOKEN_TTL_SECONDS,
+  });
+  const id = await sha256Hex(input.accessToken);
+  const connection: AgentConnection = {
+    id,
+    name: input.clientName || 'MCP client',
+    scope: input.scope,
+    createdAt: input.createdAt,
+  };
+  await env.LUMINARA_KV.put(await connectionKvKey(input.accountId, id), '1', {
+    expirationTtl: TOKEN_TTL_SECONDS,
+    metadata: connection,
+  });
+}
+
 async function token(request: Request, env: Env): Promise<Response> {
   if (!oauthSecretOrNull(env)) {
     return json(
@@ -584,9 +700,66 @@ async function token(request: Request, env: Env): Promise<Response> {
     return json({ error: 'invalid_request', error_description: 'Body must be form-encoded or JSON.' }, 400);
   }
 
+  if (body.grant_type === 'refresh_token') return exchangeRefreshToken(env, body);
   if (body.grant_type !== 'authorization_code') {
     return json({ error: 'unsupported_grant_type' }, 400);
   }
+  return exchangeAuthorizationCode(env, body);
+}
+
+async function exchangeRefreshToken(env: Env, body: Record<string, string>): Promise<Response> {
+  const refreshToken = body.refresh_token || '';
+  const clientId = body.client_id || '';
+  if (!refreshToken) {
+    return json({ error: 'invalid_request', error_description: 'refresh_token is required.' }, 400);
+  }
+  if (!clientId) {
+    return json({ error: 'invalid_client', error_description: 'client_id is required.' }, 401);
+  }
+  const client = await loadClient(env, clientId);
+  if (!client) return json({ error: 'invalid_client', error_description: 'Unknown client_id.' }, 401);
+  if (!client.grantTypes.includes('refresh_token')) {
+    return json(
+      { error: 'unauthorized_client', error_description: 'This client did not register the refresh_token grant.' },
+      400,
+    );
+  }
+  if (!env.LUMINARA_KV) return json({ error: 'server_error' }, 503);
+
+  const result = await rotateRefreshGrant(
+    env,
+    { refreshToken, clientId, requestedScope: body.scope ?? null },
+    refreshAccessStore(env),
+  );
+  switch (result.kind) {
+    case 'issued':
+      return json({
+        access_token: result.accessToken,
+        refresh_token: result.refreshToken,
+        token_type: 'Bearer',
+        expires_in: TOKEN_TTL_SECONDS,
+        scope: result.scope,
+      });
+    case 'invalid_scope':
+      return json(
+        {
+          error: 'invalid_scope',
+          error_description: 'Scope cannot widen past the original grant or the current plan.',
+        },
+        400,
+      );
+    case 'unavailable':
+      return json({ error: 'server_error', error_description: 'Could not check the account. Try again.' }, 503);
+    case 'invalid_grant':
+      return json({ error: 'invalid_grant' }, 400);
+    default: {
+      const unreachable: never = result;
+      return unreachable;
+    }
+  }
+}
+
+async function exchangeAuthorizationCode(env: Env, body: Record<string, string>): Promise<Response> {
   const code = body.code || '';
   const redirectUri = body.redirect_uri || '';
   const verifier = body.code_verifier || '';
@@ -613,43 +786,71 @@ async function token(request: Request, env: Env): Promise<Response> {
   if (challenge !== record.codeChallenge) return json({ error: 'invalid_grant', error_description: 'PKCE failed' }, 400);
 
   const accessToken = `mcp_${randomId('tok', 20)}`;
-  const tokenRecord = {
+  const createdAt = Date.now();
+  const issued = {
+    accessToken,
     accountId: record.accountId,
     userId: record.userId,
     plan: record.plan,
     scope: record.scope,
-    scopeEnforced: true,
-    createdAt: Date.now(),
-    clientName: record.clientName,
     clientId: record.clientId,
+    clientName: record.clientName,
+    createdAt,
   };
-  // Store under the SHA-256 hex of the token so the raw bearer value never lands in KV.
-  await env.LUMINARA_KV.put(await tokenKvKey(accessToken), JSON.stringify(tokenRecord), {
-    expirationTtl: TOKEN_TTL_SECONDS,
-  });
-  const connection: AgentConnection = {
-    id: await sha256Hex(accessToken),
-    name: record.clientName || 'MCP client',
-    scope: record.scope,
-    createdAt: tokenRecord.createdAt,
-  };
-  await env.LUMINARA_KV.put(await connectionKvKey(record.accountId, connection.id), '1', {
-    expirationTtl: TOKEN_TTL_SECONDS,
-    metadata: connection,
-  });
+  await writeAccessToken(env, issued);
+  const refreshToken = await issueRefreshToken(env, record, accessToken, createdAt);
 
   return json({
     access_token: accessToken,
     token_type: 'Bearer',
     expires_in: TOKEN_TTL_SECONDS,
     scope: record.scope,
+    ...(refreshToken ? { refresh_token: refreshToken } : {}),
   });
+}
+
+async function issueRefreshToken(
+  env: Env,
+  record: AuthCodeRecord,
+  accessToken: string,
+  createdAt: number,
+): Promise<string | undefined> {
+  if (!record.clientId) return undefined;
+  const client = await loadClient(env, record.clientId);
+  if (!client?.grantTypes.includes('refresh_token')) return undefined;
+  const created = await createRefreshFamily(env, {
+    accountId: record.accountId,
+    userId: record.userId,
+    clientId: record.clientId,
+    clientName: record.clientName ?? null,
+    grantedScope: record.scope,
+    accessToken,
+  });
+  if (!created) return undefined;
+  try {
+    await writeAccessToken(env, {
+      accessToken,
+      accountId: record.accountId,
+      userId: record.userId,
+      plan: record.plan,
+      scope: record.scope,
+      clientId: record.clientId,
+      clientName: record.clientName,
+      familyId: created.familyId,
+      createdAt,
+    });
+  } catch (err) {
+    console.error('[mcp-oauth] refresh link failed:', err instanceof Error ? err.message : err);
+    await revokeRefreshFamily(env, created.familyId, refreshAccessStore(env)).catch(() => undefined);
+    return undefined;
+  }
+  return created.refreshToken;
 }
 
 /**
  * RFC 7009. Public clients send the token they hold. client_id and token_type_hint
- * are optional: this server stores one token type and does not authenticate the client.
- * Unknown tokens still return 200.
+ * are optional. A refresh token revokes its family, including the access tokens
+ * from that consent. Unknown tokens still return 200.
  */
 async function revokeToken(request: Request, env: Env): Promise<Response> {
   if (!env.LUMINARA_KV) return json({ error: 'server_error', error_description: 'KV unavailable' }, 503);
@@ -667,12 +868,19 @@ async function revokeToken(request: Request, env: Env): Promise<Response> {
 
 /** Delete the hashed record, the legacy raw-token record, and the connection row for this bearer. */
 async function revokePresentedToken(env: Env, token: string): Promise<void> {
-  if (!token.startsWith('mcp_') || !env.LUMINARA_KV) return;
+  if (!env.LUMINARA_KV) return;
+  if (token.startsWith('mcr_')) {
+    await revokeRefreshByToken(env, token, refreshAccessStore(env));
+    return;
+  }
+  if (!token.startsWith('mcp_')) return;
   const tokenHash = await sha256Hex(token);
   const hashedKey = await tokenKvKey(token);
   const legacyKey = `${TOKENS_KV_PREFIX}${token}`;
   const hashedRaw = await env.LUMINARA_KV.get(hashedKey);
   const legacyRaw = legacyKey === hashedKey ? null : await env.LUMINARA_KV.get(legacyKey);
+  const familyId = familyIdFromAccessRecord(hashedRaw) || familyIdFromAccessRecord(legacyRaw);
+  if (familyId && (await revokeRefreshFamily(env, familyId, refreshAccessStore(env)))) return;
   const accountIds = new Set<string>();
   for (const raw of [hashedRaw, legacyRaw]) {
     if (!raw) continue;
@@ -705,6 +913,9 @@ export async function revokeAgentConnection(env: Env, accountId: string, tokenHa
   if (!env.LUMINARA_KV || !/^[a-f0-9]{64}$/.test(tokenHash)) return false;
   const key = await connectionKvKey(accountId, tokenHash);
   if (!(await env.LUMINARA_KV.get(key))) return false;
+  const raw = await env.LUMINARA_KV.get(`${TOKENS_KV_PREFIX}${tokenHash}`);
+  const familyId = familyIdFromAccessRecord(raw);
+  if (familyId && (await revokeRefreshFamily(env, familyId, refreshAccessStore(env), accountId))) return true;
   await env.LUMINARA_KV.delete(`${TOKENS_KV_PREFIX}${tokenHash}`);
   await env.LUMINARA_KV.delete(key);
   return true;
@@ -720,6 +931,8 @@ type StoredTokenRecord = {
   createdAt?: number;
   clientName?: string;
   clientId?: string;
+  /** Set when this access token was issued with a refresh token. */
+  familyId?: string;
 };
 
 export type McpOAuthIdentity = {

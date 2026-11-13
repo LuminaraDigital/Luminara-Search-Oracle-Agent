@@ -35,7 +35,11 @@ Registration accepts any https callback that has no username, no password, and n
 
 Hosted clients receive `mcp:free` from the allow screen. The server does not pin a request to one machine, and it does not issue `mcp-session-id`. Discovery GET and OPTIONS send `Access-Control-Allow-Origin: *`.
 
-A revoked, expired, or unknown `mcp_` token returns HTTP 401 `invalid_token` with the message `token revoked or expired, reconnect`. `WWW-Authenticate` points at the protected resource metadata. Reconnect. Do not retry the same bearer.
+Registration accepts `grant_types` of `authorization_code` and `refresh_token`. If you omit `grant_types`, both are registered. Authorization server metadata lists both in `grant_types_supported`.
+
+The token response includes a `refresh_token` when the client registered that grant. The access token still lasts 30 days. The refresh token lasts 90 days. Send it to the token endpoint as `grant_type=refresh_token` with the same `client_id`. Each success returns a new access token and a new refresh token. The refresh token you sent stops working. Sending that used refresh token again revokes the family: every access token from that consent, and the newer refresh token. A refresh cannot ask for a wider scope than the consent. The account's current plan is checked again, and a scope the plan no longer allows is dropped. A deleted account cannot refresh. `POST` to the revoke endpoint with the refresh token revokes that same family. The server stores only the SHA-256 hash of each token.
+
+A revoked, expired, or unknown `mcp_` token returns HTTP 401 `invalid_token` with the message `token revoked or expired, reconnect`. `WWW-Authenticate` points at the protected resource metadata. If you still hold a live refresh token, refresh it. Otherwise reconnect. Do not retry the same bearer.
 
 ## Scopes
 
