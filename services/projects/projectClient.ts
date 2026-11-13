@@ -172,6 +172,61 @@ export async function fetchProjectOutcomes(projectId: string): Promise<ProjectOu
   return data.outcomes;
 }
 
+export type ProjectMonitorPayload = {
+  enabled: boolean;
+  cadence: 'monthly' | 'weekly' | 'daily';
+  planCadence: 'monthly' | 'weekly' | 'daily';
+  emailOptIn: boolean;
+  prompts: string[];
+  lastRunAt: number | null;
+  nextRunAt: number;
+};
+
+export type ProjectAlertPayload = {
+  id: string;
+  kind: 'regression' | 'lift' | 'weekly';
+  summary: string;
+  readAt: number | null;
+};
+
+export async function fetchProjectMonitor(projectId: string): Promise<{ monitor: ProjectMonitorPayload | null; planCadence: ProjectMonitorPayload['planCadence'] }> {
+  const r = await workerFetchWithAuthRetry(`${apiBase()}/api/projects/${encodeURIComponent(projectId)}/monitor`);
+  const data = (await r.json()) as { monitor?: ProjectMonitorPayload | null; planCadence?: ProjectMonitorPayload['planCadence']; error?: string };
+  if (!r.ok || !data.planCadence) throw new Error(data.error || `monitor failed (${r.status})`);
+  return { monitor: data.monitor ?? null, planCadence: data.planCadence };
+}
+
+export async function saveProjectMonitor(
+  projectId: string,
+  input: { enabled: boolean; cadence: ProjectMonitorPayload['cadence']; emailOptIn: boolean },
+): Promise<ProjectMonitorPayload> {
+  const r = await workerFetchWithAuthRetry(`${apiBase()}/api/projects/${encodeURIComponent(projectId)}/monitor`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  const data = (await r.json()) as { monitor?: ProjectMonitorPayload; error?: string };
+  if (!r.ok || !data.monitor) throw new Error(data.error || `monitor save failed (${r.status})`);
+  return data.monitor;
+}
+
+export async function fetchProjectAlerts(projectId: string): Promise<ProjectAlertPayload[]> {
+  const r = await workerFetchWithAuthRetry(`${apiBase()}/api/projects/${encodeURIComponent(projectId)}/monitor/alerts`);
+  const data = (await r.json()) as { alerts?: ProjectAlertPayload[]; error?: string };
+  if (!r.ok || !data.alerts) throw new Error(data.error || `alerts failed (${r.status})`);
+  return data.alerts;
+}
+
+export async function ackProjectAlert(projectId: string, alertId: string): Promise<ProjectAlertPayload> {
+  const r = await workerFetchWithAuthRetry(
+    `${apiBase()}/api/projects/${encodeURIComponent(projectId)}/monitor/alerts/${encodeURIComponent(alertId)}/read`,
+    { method: 'POST' },
+  );
+  const data = (await r.json()) as { alert?: ProjectAlertPayload; error?: string };
+  if (!r.ok || !data.alert) throw new Error(data.error || `alert read failed (${r.status})`);
+  return data.alert;
+}
+
 export async function markProjectActionDone(projectId: string, actionId: string): Promise<ProjectOutcomePayload> {
   const r = await workerFetchWithAuthRetry(
     `${apiBase()}/api/projects/${encodeURIComponent(projectId)}/outcomes/${encodeURIComponent(actionId)}/done`,

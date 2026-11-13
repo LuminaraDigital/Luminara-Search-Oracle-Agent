@@ -21,6 +21,7 @@ export const SNAPSHOT_METRICS = [
   'organic_count',
   'keyword_volume',
   'crawler_status',
+  're_coverage',
 ] as const;
 export type SnapshotMetric = (typeof SNAPSHOT_METRICS)[number];
 

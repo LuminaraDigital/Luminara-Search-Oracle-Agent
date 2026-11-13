@@ -239,12 +239,13 @@ export async function identify(request: Request, env: Env): Promise<{
       // Telegram-only callers still succeed when Firebase token is bad/expired.
       if (!telegramUser) return pack({ user: null, error: result.reason });
     } else {
-      firebaseUser = {
-        id: `fb:${result.user.uid}`,
-        source: 'firebase',
-        email: result.user.email,
-        name: result.user.name,
-      };
+        firebaseUser = {
+          id: `fb:${result.user.uid}`,
+          source: 'firebase',
+          email: result.user.email,
+          name: result.user.name,
+          emailVerified: result.user.emailVerified === true,
+        };
     }
   }
 
