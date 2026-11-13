@@ -50,10 +50,10 @@ export const PROJECT_HISTORY_MCP_TOOLS: McpToolDef[] = [
     },
     handler: async (args, ctx) => {
       const projectId = requireProject(args, ctx);
-      if (!projectId) return textResult('Project not found', undefined, true);
+      if (!projectId) return textResult('Project not found', { code: 'NOT_FOUND' }, true);
       const limit = typeof args.limit === 'number' ? args.limit : 50;
       const history = await getProjectHistory(ctx.env, ctx.accountId, projectId, limit);
-      if (!history) return textResult('Project not found', undefined, true);
+      if (!history) return textResult('Project not found', { code: 'NOT_FOUND' }, true);
       if (!history.snapshots.length) {
         return textResult('No measurements yet.', { history });
       }
@@ -94,10 +94,10 @@ export const PROJECT_HISTORY_MCP_TOOLS: McpToolDef[] = [
       const earlierId = typeof args.earlierId === 'string' ? args.earlierId.trim() : '';
       const laterId = typeof args.laterId === 'string' ? args.laterId.trim() : '';
       if (!projectId || !ID_RE.test(earlierId) || !ID_RE.test(laterId)) {
-        return textResult('Snapshot not found', undefined, true);
+        return textResult('Snapshot not found', { code: 'NOT_FOUND' }, true);
       }
       const delta = await compareProjectSnapshots(ctx.env, ctx.accountId, projectId, earlierId, laterId);
-      if (!delta) return textResult('Snapshot not found', undefined, true);
+      if (!delta) return textResult('Snapshot not found', { code: 'NOT_FOUND' }, true);
       const line =
         delta.label === 'measured' && delta.scoreDelta !== null
           ? `Score change ${delta.scoreDelta}.`
@@ -121,9 +121,9 @@ export const PROJECT_HISTORY_MCP_TOOLS: McpToolDef[] = [
     },
     handler: async (args, ctx) => {
       const projectId = requireProject(args, ctx);
-      if (!projectId) return textResult('Project not found', undefined, true);
+      if (!projectId) return textResult('Project not found', { code: 'NOT_FOUND' }, true);
       const outcomes = await listProjectOutcomes(ctx.env, ctx.accountId, projectId);
-      if (!outcomes) return textResult('Project not found', undefined, true);
+      if (!outcomes) return textResult('Project not found', { code: 'NOT_FOUND' }, true);
       if (!outcomes.length) return textResult('No recommended actions yet.', { outcomes });
       return textResult(outcomes.map(formatLift).join('\n'), { outcomes });
     },
@@ -145,9 +145,9 @@ export const PROJECT_HISTORY_MCP_TOOLS: McpToolDef[] = [
     handler: async (args, ctx) => {
       const projectId = requireProject(args, ctx);
       const actionId = typeof args.actionId === 'string' ? args.actionId.trim() : '';
-      if (!projectId || !ID_RE.test(actionId)) return textResult('Action not found', undefined, true);
+      if (!projectId || !ID_RE.test(actionId)) return textResult('Action not found', { code: 'NOT_FOUND' }, true);
       const outcome = await markActionDone(ctx.env, ctx.accountId, projectId, actionId);
-      if (!outcome) return textResult('Action not found', undefined, true);
+      if (!outcome) return textResult('Action not found', { code: 'NOT_FOUND' }, true);
       return textResult(formatLift(outcome), { outcome });
     },
   },

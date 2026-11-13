@@ -225,6 +225,27 @@
     }
   },
   {
+    "name": "get_guide",
+    "title": "Workflow guides",
+    "description": "Uses no credits. Step-by-step Luminara workflows (audit, keyword research, competitors, visibility, reports). Call with no topic to list them; read the matching guide before starting a task.",
+    "creditClass": "free",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "topic": {
+          "type": "string",
+          "description": "A topic from the list. Omit to list every guide."
+        }
+      },
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Workflow guides",
+      "readOnlyHint": true,
+      "destructiveHint": false
+    }
+  },
+  {
     "name": "dream_status",
     "title": "Dreaming status",
     "description": "Uses no credits. Checks Luminara Dreaming status, pending un-dreamed events, and pending memory review proposals.",

@@ -93,7 +93,7 @@ export const ACCOUNT_MCP_TOOLS: McpToolDef[] = [
     },
     handler: async (args, ctx) => {
       const domain = requireString(args, 'domain');
-      if (!domain) return textResult('domain required', undefined, true);
+      if (!domain) return textResult('domain required', { code: 'BAD_INPUT' }, true);
       const result = await createProject(ctx.env, ctx.accountId, {
         domain,
         name: typeof args.name === 'string' ? args.name : undefined,
@@ -118,9 +118,9 @@ export const ACCOUNT_MCP_TOOLS: McpToolDef[] = [
     },
     handler: async (args, ctx) => {
       const projectId = requireString(args, 'projectId');
-      if (!projectId) return textResult('projectId required', undefined, true);
+      if (!projectId) return textResult('projectId required', { code: 'BAD_INPUT' }, true);
       const context = await getProjectContext(ctx.env, ctx.accountId, projectId);
-      if (!context) return textResult('Project not found', undefined, true);
+      if (!context) return textResult('Project not found', { code: 'NOT_FOUND' }, true);
       await markProjectContextLoaded(ctx.env, ctx.accountId, projectId);
       return textResult(context.digestMarkdown, { context });
     },
@@ -141,9 +141,9 @@ export const ACCOUNT_MCP_TOOLS: McpToolDef[] = [
     },
     handler: async (args, ctx) => {
       const projectId = requireString(args, 'projectId');
-      if (!projectId) return textResult('projectId required', undefined, true);
+      if (!projectId) return textResult('projectId required', { code: 'BAD_INPUT' }, true);
       const updates = args.updates;
-      if (!Array.isArray(updates)) return textResult('updates must be an array', undefined, true);
+      if (!Array.isArray(updates)) return textResult('updates must be an array', { code: 'BAD_INPUT' }, true);
       const result = await updateProjectContext(
         ctx.env,
         ctx.accountId,
@@ -168,9 +168,9 @@ export const ACCOUNT_MCP_TOOLS: McpToolDef[] = [
     },
     handler: async (args, ctx) => {
       const projectId = requireString(args, 'projectId');
-      if (!projectId) return textResult('projectId required', undefined, true);
+      if (!projectId) return textResult('projectId required', { code: 'BAD_INPUT' }, true);
       const reports = await listAgentReports(ctx.env, ctx.accountId, projectId);
-      if (!reports) return textResult('Project not found', undefined, true);
+      if (!reports) return textResult('Project not found', { code: 'NOT_FOUND' }, true);
       const page = pageList(reports, args);
       const lines = page.items.length
         ? page.items.map((r) => `- ${r.id}: ${r.title} (${r.url})`).join('\n')
@@ -199,10 +199,10 @@ export const ACCOUNT_MCP_TOOLS: McpToolDef[] = [
     },
     handler: async (args, ctx) => {
       const reportId = requireString(args, 'reportId');
-      if (!reportId) return textResult('reportId required', undefined, true);
+      if (!reportId) return textResult('reportId required', { code: 'BAD_INPUT' }, true);
       const includeHtml = Boolean(args.includeHtml);
       const report = await getAgentReport(ctx.env, ctx.accountId, reportId, includeHtml);
-      if (!report) return textResult('Report not found', undefined, true);
+      if (!report) return textResult('Report not found', { code: 'NOT_FOUND' }, true);
       if (ctx.credential.projectId && report.projectId !== ctx.credential.projectId) {
         return textResult(
           `Tool blocked by Agent Habitat scope: token is bound to project "${ctx.credential.projectId}".`,
@@ -246,7 +246,7 @@ export const ACCOUNT_MCP_TOOLS: McpToolDef[] = [
       const summary = requireString(args, 'summary');
       const html = typeof args.html === 'string' ? args.html : '';
       if (!projectId || !title || !summary || !html) {
-        return textResult('projectId, title, summary, and html are required', undefined, true);
+        return textResult('projectId, title, summary, and html are required', { code: 'BAD_INPUT' }, true);
       }
       const result = await saveAgentReport(ctx.env, ctx.accountId, {
         projectId,

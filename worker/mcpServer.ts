@@ -55,6 +55,8 @@ import {
 import { getPendingDreamEvents } from './dreamingQueue';
 import { evaluateWakeGate } from './dreamingWakeGate';
 import { ACCOUNT_MCP_TOOLS } from './mcpAccountTools';
+import { GUIDE_MCP_TOOLS } from './mcpGuideTool';
+import { withRecovery } from './mcpRecovery';
 import { CONVERSION_SPINE_MCP_TOOLS } from './mcpConversionTools';
 import { PROJECT_HISTORY_MCP_TOOLS } from './mcpProjectHistoryTools';
 import { FIX_DRAFT_MCP_TOOLS } from './fixDraftRoute';
@@ -308,6 +310,7 @@ function paidHandler(name: string) {
 
 const TOOLS: McpToolDef[] = [
   ...ACCOUNT_MCP_TOOLS,
+  ...GUIDE_MCP_TOOLS,
   {
     name: 'dream_status',
     description: 'Uses no credits. Checks Luminara Dreaming status, pending un-dreamed events, and pending memory review proposals.',
@@ -322,7 +325,7 @@ const TOOLS: McpToolDef[] = [
     },
     handler: async (args, ctx) => {
       const domain = requireString(args, 'domain');
-      if (!domain) return textResult('domain required', undefined, true);
+      if (!domain) return textResult('domain required', { code: 'BAD_INPUT' }, true);
       const pendingEvents = await getPendingDreamEvents(ctx.env, ctx.accountId, domain);
       const activeMemories = await getActiveBusinessMemories(ctx.env, ctx.accountId, domain);
       const wake = evaluateWakeGate({
@@ -362,7 +365,7 @@ const TOOLS: McpToolDef[] = [
     },
     handler: async (args, ctx) => {
       const domain = requireString(args, 'domain');
-      if (!domain) return textResult('domain required', undefined, true);
+      if (!domain) return textResult('domain required', { code: 'BAD_INPUT' }, true);
       const force = args.force === true;
       const res = await executeDreamRun(ctx.env, ctx.accountId, domain, 'mcp_trigger', { force });
       if (!res.ok) return textResult(res.error, undefined, true);
@@ -397,7 +400,7 @@ const TOOLS: McpToolDef[] = [
     },
     handler: async (args, ctx) => {
       const domain = requireString(args, 'domain');
-      if (!domain) return textResult('domain required', undefined, true);
+      if (!domain) return textResult('domain required', { code: 'BAD_INPUT' }, true);
       const typeFilter = typeof args.type === 'string' ? args.type.trim() : null;
       let memories = await getActiveBusinessMemories(ctx.env, ctx.accountId, domain);
       if (typeFilter) {
@@ -429,7 +432,7 @@ const TOOLS: McpToolDef[] = [
       const proposalId = requireString(args, 'proposalId');
       const action = requireString(args, 'action');
       if (!proposalId || (action !== 'approve' && action !== 'reject')) {
-        return textResult('proposalId and action ("approve" | "reject") required', undefined, true);
+        return textResult('proposalId and action ("approve" | "reject") required', { code: 'BAD_INPUT' }, true);
       }
       const editedContent = typeof args.editedContent === 'string' ? args.editedContent : undefined;
       const res = await reviewDreamProposal(
@@ -854,7 +857,7 @@ export async function handleMcpRequest(
       });
       let result: McpToolResult;
       try {
-        result = await callTool(name, args, ctx);
+        result = withRecovery(await callTool(name, args, ctx));
         if (runHandle) {
           const budgetHalted = result.structuredContent?.budgetHalted === true;
           await completeRun(
