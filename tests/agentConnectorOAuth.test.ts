@@ -8,7 +8,7 @@ import { createSqliteD1 } from './helpers/sqliteD1';
 
 const botToken = '123456:CONNECTOR_TEST';
 const callback = 'https://grok.example/oauth/callback';
-const verifier = 'connector-verifier-0123456789';
+const verifier = 'connector-verifier-0123456789-abcdefghijklm';
 const ctx = { waitUntil: () => {}, passThroughOnException: () => {} } as unknown as ExecutionContext;
 
 function initData(userId: number): string {
@@ -157,6 +157,9 @@ describe('agent connector registration', () => {
     expect((await register(env, [])).status).toBe(400);
     expect(isAllowedConnectorRedirectUri('https://user:pw@grok.example/cb')).toBe(false);
     expect(isAllowedConnectorRedirectUri('https://grok.example/cb#x')).toBe(false);
+    expect(isAllowedConnectorRedirectUri('http://foo@127.0.0.1/cb')).toBe(false);
+    expect(isAllowedConnectorRedirectUri('http://127.0.0.1/cb#x')).toBe(false);
+    expect(isAllowedConnectorRedirectUri('cursor://anysphere.cursor-mcp/callback#x')).toBe(false);
     const hosted = await register(env, ['https://mcp-host.example/oauth/callback']);
     expect(hosted.status).toBe(201);
     expect(await hosted.json()).toMatchObject({ redirect_uris: ['https://mcp-host.example/oauth/callback'] });
@@ -168,6 +171,53 @@ describe('agent connector registration', () => {
     const res = await call(env, await authorizePath(clientId, 'https://evil.example/cb'), {}, 77001);
     expect(res.status).toBe(400);
     expect(res.headers.get('location')).toBeNull();
+  });
+
+  it('allows another loopback port and refuses a public host port change', async () => {
+    const { env } = makeEnv();
+    expect((await register(env, ['http://foo@127.0.0.1/cb'])).status).toBe(400);
+    const { client_id: clientId } = (await (await register(env, ['http://127.0.0.1/callback'])).json()) as {
+      client_id: string;
+    };
+    const otherPort = await call(env, await authorizePath(clientId, 'http://127.0.0.1:54321/callback'));
+    expect(otherPort.status).toBe(302);
+    expect(otherPort.headers.get('location')).toContain('agent_connect');
+    const otherPath = await call(env, await authorizePath(clientId, 'http://127.0.0.1:54321/steal'));
+    expect(otherPath.status).toBe(400);
+    expect(otherPath.headers.get('location')).toBeNull();
+
+    const { client_id: httpsId } = (await (
+      await register(env, ['https://mcp-host.example/oauth/callback'])
+    ).json()) as { client_id: string };
+    const otherHttpsPort = await call(
+      env,
+      await authorizePath(httpsId, 'https://mcp-host.example:8443/oauth/callback'),
+    );
+    expect(otherHttpsPort.status).toBe(400);
+    expect(otherHttpsPort.headers.get('location')).toBeNull();
+  });
+
+  it('does not burn an auth code when the PKCE verifier is too short', async () => {
+    const { env } = makeEnv();
+    const { clientId, consent } = await openConsent(env);
+    const location = (await decide(env, consent, 'allow', 77001)).headers.get('location') ?? '';
+    const code = new URL(location).searchParams.get('code');
+    const exchange = (codeVerifier: string) =>
+      call(env, '/api/oauth/mcp/token', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          grant_type: 'authorization_code',
+          code,
+          redirect_uri: callback,
+          code_verifier: codeVerifier,
+          client_id: clientId,
+        }),
+      });
+    const rejected = await exchange('too-short');
+    expect(rejected.status).toBe(400);
+    expect(await rejected.json()).toMatchObject({ error: 'invalid_request' });
+    expect((await exchange(verifier)).status).toBe(200);
   });
 
   it('does not let the legacy flow accept an unregistered https callback', async () => {

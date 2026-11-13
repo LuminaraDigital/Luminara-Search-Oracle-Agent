@@ -59,6 +59,8 @@ export function isAllowedMcpRedirectUri(redirectUri: string): boolean {
   } catch {
     return false;
   }
+  // userinfo and fragments are open-redirect material. OAuth forbids a fragment.
+  if (url.username || url.password || url.hash) return false;
 
   if (ALLOWED_REDIRECT_SCHEMES.has(url.protocol)) {
     // Require a non-empty path or host so bare "cursor:" is rejected.
@@ -339,6 +341,33 @@ async function loadClient(env: Env, clientId: string): Promise<RegisteredClient 
   }
 }
 
+/**
+ * Exact string match, plus RFC 8252: a loopback callback may use a different port.
+ * Scheme, host, path, and query stay fixed, so a public https host cannot change port.
+ */
+function redirectUriRegistered(registered: readonly string[], requested: string): boolean {
+  return registered.some((uri) => uri === requested || loopbackPortAlias(uri, requested));
+}
+
+function loopbackPortAlias(registered: string, requested: string): boolean {
+  let listed: URL;
+  let asked: URL;
+  try {
+    listed = new URL(registered);
+    asked = new URL(requested);
+  } catch {
+    return false;
+  }
+  if (listed.protocol !== 'http:' && listed.protocol !== 'https:') return false;
+  if (!isAllowedMcpRedirectUri(registered) || !isAllowedMcpRedirectUri(requested)) return false;
+  return (
+    listed.protocol === asked.protocol &&
+    listed.hostname === asked.hostname &&
+    listed.pathname === asked.pathname &&
+    listed.search === asked.search
+  );
+}
+
 /** form-action must name the callback or the browser blocks the redirect after Allow. */
 function consentCsp(redirectUri: string): string {
   const url = new URL(redirectUri);
@@ -362,7 +391,7 @@ async function connectorAuthorize(
   const client = await loadClient(env, params.clientId);
   // Never redirect on a bad client or callback: that is the open-redirect case.
   if (!client) return json({ error: 'invalid_client', error_description: 'Unknown client_id. Register first.' }, 400);
-  if (!client.redirectUris.includes(params.redirectUri)) {
+  if (!redirectUriRegistered(client.redirectUris, params.redirectUri)) {
     return json({ error: 'invalid_request', error_description: 'redirect_uri is not registered for this client.' }, 400);
   }
   await env.LUMINARA_KV?.put(`${CLIENTS_KV_PREFIX}${client.clientId}`, JSON.stringify(client), {
@@ -563,6 +592,13 @@ async function token(request: Request, env: Env): Promise<Response> {
   const verifier = body.code_verifier || '';
   if (!code || !redirectUri || !verifier) {
     return json({ error: 'invalid_request' }, 400);
+  }
+  // RFC 7636. Checked before the code is consumed so a short verifier does not burn it.
+  if (!/^[A-Za-z0-9._~-]{43,128}$/.test(verifier)) {
+    return json(
+      { error: 'invalid_request', error_description: 'code_verifier must be 43 to 128 unreserved characters.' },
+      400,
+    );
   }
 
   if (!env.LUMINARA_KV) return json({ error: 'server_error' }, 503);

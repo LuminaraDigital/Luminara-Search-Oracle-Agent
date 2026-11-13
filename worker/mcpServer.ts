@@ -34,7 +34,7 @@ import {
   spendMcpDailyCall,
   type McpDailyUsage,
 } from './mcpLimits';
-import { MCP_RESULT_TEXT_CAP, MCP_STRUCTURED_CHAR_CAP, mcpToolAnnotations } from './mcpToolMeta';
+import { clipText, MCP_RESULT_TEXT_CAP, MCP_STRUCTURED_CHAR_CAP, mcpToolAnnotations } from './mcpToolMeta';
 import { entitlementsFor } from '../services/plans/planEntitlements';
 import {
   BYOK_PAID_CALL_COST_CENTS,
@@ -102,19 +102,28 @@ function mcpJson(data: unknown, status = 200, extraHeaders?: Record<string, stri
   });
 }
 
-function capToolResult(result: McpToolResult): McpToolResult {
+const RESULT_TRUNCATED_MARK = '\nRESULT_TRUNCATED';
+
+function textWithTruncationMark(text: string, max: number): string {
+  if (text.includes('RESULT_TRUNCATED')) return clipText(text, max);
+  const room = Math.max(0, max - RESULT_TRUNCATED_MARK.length);
+  return `${clipText(text, room)}${RESULT_TRUNCATED_MARK}`;
+}
+
+/** Cuts tool text and structured JSON. A cut sets `code: RESULT_TRUNCATED` and marks the text. */
+export function capToolResult(result: McpToolResult): McpToolResult {
   if (result.isError) return result;
   let text = result.text;
   let structured = result.structuredContent;
   let changed = false;
   if (text.length > MCP_RESULT_TEXT_CAP) {
-    text = text.slice(0, MCP_RESULT_TEXT_CAP);
-    structured = { ...structured, textTruncated: true };
+    text = textWithTruncationMark(text, MCP_RESULT_TEXT_CAP);
+    structured = { ...structured, code: 'RESULT_TRUNCATED', limit: MCP_RESULT_TEXT_CAP, textTruncated: true };
     changed = true;
   }
   if (structured && JSON.stringify(structured).length > MCP_STRUCTURED_CHAR_CAP) {
     structured = { code: 'RESULT_TRUNCATED', limit: MCP_STRUCTURED_CHAR_CAP };
-    text = text.slice(0, MCP_RESULT_TEXT_CAP);
+    text = textWithTruncationMark(text, MCP_RESULT_TEXT_CAP);
     changed = true;
   }
   return changed ? { ...result, text, structuredContent: structured } : result;
@@ -534,30 +543,6 @@ async function callTool(
       true,
     );
   }
-  if (creditClass === 'paid' && !ctx.dataForSeoCredential) {
-    const paid = await spendMcpDailyCall(ctx.env, ctx.accountId, MCP_HOSTED_PAID_DAILY, 'mcp_paid', 'hosted paid MCP call');
-    if (!paid.ok) {
-      logMcpAbuse({
-        kind: 'MCP_PAID_DAILY_LIMIT',
-        accountId: ctx.accountId,
-        clientId: ctx.credential.clientId ?? null,
-        limit: paid.usage.limit,
-        used: paid.usage.used,
-      });
-      const resetIso = new Date(paid.usage.resetAt * 1000).toISOString();
-      return textResult(
-        `Hosted paid MCP limit of ${MCP_HOSTED_PAID_DAILY} calls today reached. Resets at ${resetIso}. BYOK is not counted.`,
-        {
-          code: 'MCP_PAID_DAILY_LIMIT',
-          limit: paid.usage.limit,
-          used: paid.usage.used,
-          remaining: 0,
-          resetAt: paid.usage.resetAt,
-        },
-        true,
-      );
-    }
-  }
   if (creditClass === 'paid') {
     const contextGate = await requireProjectContextBeforePaid(ctx.env, ctx.accountId, projectId);
     if (contextGate) return contextGate;
@@ -605,6 +590,33 @@ async function callTool(
       `Tool requires operator approval. Action request ${req.id} created.`,
       { requiresApproval: true, actionRequestId: req.id },
     );
+  }
+
+  // Count a hosted paid call only after the gates above have allowed it.
+  // A missing project, a scope refusal, or an approval hold must not burn the ceiling.
+  if (creditClass === 'paid' && !ctx.dataForSeoCredential) {
+    const paid = await spendMcpDailyCall(ctx.env, ctx.accountId, MCP_HOSTED_PAID_DAILY, 'mcp_paid', 'hosted paid MCP call');
+    if (!paid.ok) {
+      logMcpAbuse({
+        kind: 'MCP_PAID_DAILY_LIMIT',
+        accountId: ctx.accountId,
+        clientId: ctx.credential.clientId ?? null,
+        limit: paid.usage.limit,
+        used: paid.usage.used,
+      });
+      const resetIso = new Date(paid.usage.resetAt * 1000).toISOString();
+      return textResult(
+        `Hosted paid MCP limit of ${MCP_HOSTED_PAID_DAILY} calls today reached. Resets at ${resetIso}. BYOK is not counted.`,
+        {
+          code: 'MCP_PAID_DAILY_LIMIT',
+          limit: paid.usage.limit,
+          used: paid.usage.used,
+          remaining: 0,
+          resetAt: paid.usage.resetAt,
+        },
+        true,
+      );
+    }
   }
 
   if (!tool) return textResult(`Unknown tool: ${name}`, { code: 'TOOL_NOT_FOUND' }, true);

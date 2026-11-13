@@ -31,7 +31,7 @@ Authorization server metadata is `https://www.luminarasuite.com/.well-known/oaut
 
 The person who owns the Luminara account must open the authorize URL and press Allow. Agents cannot buy a plan.
 
-Registration accepts any https callback that has no username, no password, and no fragment. It also accepts loopback http(s) and the `cursor:`, `vscode:`, and `vscode-insiders:` schemes. It rejects `javascript:`, `data:`, and http on a public host. Authorize redirects only to a URI that client registered. A missing `client_id` cannot use an arbitrary https callback.
+Registration accepts any https callback that has no username, no password, and no fragment. It also accepts loopback http(s) and the `cursor:`, `vscode:`, and `vscode-insiders:` schemes. It rejects `javascript:`, `data:`, userinfo, fragments, and http on a public host. Authorize redirects only to a URI that client registered. A loopback URI may use a different port. The scheme, host, path, and query must still match. A public https host may not change port. A missing `client_id` cannot use an arbitrary https callback.
 
 Hosted clients receive `mcp:free` from the allow screen. The server does not pin a request to one machine, and it does not issue `mcp-session-id`. Discovery GET and OPTIONS send `Access-Control-Allow-Origin: *`.
 

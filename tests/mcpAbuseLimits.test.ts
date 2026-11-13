@@ -2,10 +2,10 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import worker from '../worker/index';
 import type { Env } from '../worker/env';
-import { handleMcpRequest, listMcpToolCatalogue } from '../worker/mcpServer';
+import { capToolResult, handleMcpRequest, listMcpToolCatalogue } from '../worker/mcpServer';
 import { TOOL_GOVERNANCE } from '../worker/mcpGovernance';
 import { enforceMcpOauthIpLimit, MCP_ACCOUNT_BURST_PER_MIN, MCP_CLIENT_BURST_PER_MIN, MCP_HOSTED_PAID_DAILY } from '../worker/mcpLimits';
-import { pageList } from '../worker/mcpToolMeta';
+import { clipText, MCP_RESULT_TEXT_CAP, MCP_STRUCTURED_CHAR_CAP, pageList } from '../worker/mcpToolMeta';
 import { MCP_PUBLIC_URL } from '../services/mcp/publicServer';
 import type { HostedIdentity, McpCredential } from '../worker/userTypes';
 import { createSqliteD1 } from './helpers/sqliteD1';
@@ -48,16 +48,20 @@ function user(id: string): HostedIdentity {
   return { id, source: 'telegram' };
 }
 
-function call(name = 'whoami') {
+function call(name = 'whoami', args: Record<string, unknown> = {}) {
   return new Request('https://www.luminarasuite.com/api/mcp', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: {} } }),
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }),
   });
 }
 
 type Rpc = {
-  result?: { structuredContent?: { callsUsedToday?: number; callsRemainingToday?: number | null; plan?: string }; _meta?: { rateLimit?: { limit: number; remaining: number | null; reset: number } } };
+  result?: {
+    isError?: boolean;
+    structuredContent?: { callsUsedToday?: number; callsRemainingToday?: number | null; plan?: string; code?: string };
+    _meta?: { rateLimit?: { limit: number; remaining: number | null; reset: number } };
+  };
   error?: { code?: number; message?: string; data?: { code?: string; resetAt?: number; remaining?: number; limit?: number } };
 };
 
@@ -152,11 +156,12 @@ describe('hosted paid MCP quota', () => {
     const store = new Map<string, string>([
       ['sub:agency-1', JSON.stringify({ plan: 'agency', expiresAt: Date.now() + 86_400_000 })],
       [`mcp_paid:agency-1:${day}`, String(MCP_HOSTED_PAID_DAILY)],
+      ['mcp:context_loaded:agency-1:proj-1', '1'],
     ]);
     const env = makeEnv(store);
     const research: McpCredential = { kind: 'oauth', id: null, scopes: ['mcp:free', 'mcp:research'], clientId: 'paid-client' };
     const blocked = (await (
-      await handleMcpRequest(call('research_keywords'), env, user('agency-1'), research)
+      await handleMcpRequest(call('research_keywords', { projectId: 'proj-1' }), env, user('agency-1'), research)
     ).json()) as Rpc;
     expect(blocked.error?.data?.code).toBe('MCP_PAID_DAILY_LIMIT');
     expect(blocked.error?.data?.limit).toBe(200);
@@ -174,6 +179,33 @@ describe('hosted paid MCP quota', () => {
     const skipped = (await (await handleMcpRequest(byok, env, user('agency-1'), research)).json()) as Rpc;
     expect(skipped.error?.data?.code).not.toBe('MCP_PAID_DAILY_LIMIT');
     expect(store.get(`mcp_paid:agency-1:${day}`)).toBe('200');
+  });
+
+  it('does not spend the hosted paid ceiling when project context is missing', async () => {
+    const day = new Date().toISOString().slice(0, 10);
+    const store = new Map<string, string>([
+      ['sub:agency-2', JSON.stringify({ plan: 'agency', expiresAt: Date.now() + 86_400_000 })],
+    ]);
+    const research: McpCredential = { kind: 'oauth', id: null, scopes: ['mcp:free', 'mcp:research'], clientId: 'paid-client' };
+    const body = (await (
+      await handleMcpRequest(call('research_keywords'), makeEnv(store), user('agency-2'), research)
+    ).json()) as Rpc;
+    expect(body.result?.isError).toBe(true);
+    expect(body.result?.structuredContent?.code).toBe('CONTEXT_REQUIRED');
+    expect(store.get(`mcp_paid:agency-2:${day}`)).toBeUndefined();
+  });
+
+  it('does not daily-block Growth when the counter is already past the free cap', async () => {
+    const day = new Date().toISOString().slice(0, 10);
+    const store = new Map<string, string>([
+      ['sub:growth-1', JSON.stringify({ plan: 'growth', expiresAt: Date.now() + 86_400_000 })],
+      [`mcp_calls:growth-1:${day}`, '500'],
+    ]);
+    const body = (await (await handleMcpRequest(call(), makeEnv(store), user('growth-1'), cred('growth-client'))).json()) as Rpc;
+    expect(body.error).toBeUndefined();
+    expect(body.result?.structuredContent?.plan).toBe('growth');
+    expect(body.result?.structuredContent?.callsRemainingToday).toBeNull();
+    expect(body.result?.structuredContent?.callsUsedToday).toBe(501);
   });
 });
 
@@ -254,6 +286,55 @@ describe('OAuth register and token IP limits', () => {
   });
 });
 
+describe('RESULT_TRUNCATED', () => {
+  it('marks cut tool text and replaces an oversized structured payload', () => {
+    const text = 'a'.repeat(MCP_RESULT_TEXT_CAP + 20);
+    const cut = capToolResult({ text, structuredContent: { note: 'ok' } });
+    expect(cut.text.endsWith('RESULT_TRUNCATED')).toBe(true);
+    expect(cut.text.length).toBeLessThanOrEqual(MCP_RESULT_TEXT_CAP);
+    expect(cut.structuredContent?.code).toBe('RESULT_TRUNCATED');
+    expect(cut.structuredContent?.limit).toBe(MCP_RESULT_TEXT_CAP);
+
+    const huge = capToolResult({ text: 'short', structuredContent: { blob: 'b'.repeat(MCP_STRUCTURED_CHAR_CAP) } });
+    expect(huge.structuredContent).toEqual({ code: 'RESULT_TRUNCATED', limit: MCP_STRUCTURED_CHAR_CAP });
+    expect(huge.text).toContain('RESULT_TRUNCATED');
+    expect(capToolResult({ text: 'a'.repeat(MCP_RESULT_TEXT_CAP + 5), isError: true }).text.length).toBe(MCP_RESULT_TEXT_CAP + 5);
+    expect(clipText('a\uD800b', 2)).toBe('a');
+  });
+});
+
+describe('legacy MCP tokens', () => {
+  it('still accepts a plaintext mcp_ token minted before hashing', async () => {
+    const token = 'mcp_tok_legacyplaintext01';
+    const store = new Map<string, string>([
+      [
+        `mcp_oauth_token:${token}`,
+        JSON.stringify({ accountId: 'legacy-acct', userId: 'legacy-acct', plan: 'growth', scope: 'mcp:free mcp:research' }),
+      ],
+    ]);
+    const res = await worker.fetch(
+      new Request('https://www.luminarasuite.com/api/mcp', {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+          'cf-connecting-ip': '203.0.113.80',
+        },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'whoami', arguments: {} } }),
+      }),
+      makeEnv(store),
+      execCtx,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Rpc;
+    expect(body.error).toBeUndefined();
+    expect(body.result?.structuredContent?.plan).toBe('free');
+    expect(body.result?.structuredContent?.callsUsedToday).toBe(1);
+    expect(store.has(`mcp_oauth_token:${token}`)).toBe(false);
+    expect([...store.keys()].some((key) => /^mcp_oauth_token:[a-f0-9]{64}$/.test(key))).toBe(true);
+  });
+});
+
 describe('MCP tool catalogue', () => {
   it('pages list results at 50', () => {
     const items = Array.from({ length: 60 }, (_, i) => i);
@@ -306,8 +387,17 @@ describe('MCP tool catalogue', () => {
   });
 
   it('connector manifest uses the public server URL', () => {
-    const server = JSON.parse(readFileSync('connectors/mcp/server.json', 'utf8')) as { remotes: Array<{ url: string; type: string }> };
+    const server = JSON.parse(readFileSync('connectors/mcp/server.json', 'utf8')) as {
+      remotes: Array<{ url: string; type: string }>;
+      description: string;
+      $schema: string;
+      name: string;
+    };
     expect(server.remotes[0]).toEqual({ type: 'streamable-http', url: MCP_PUBLIC_URL });
+    expect(server.$schema).toBe('https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json');
+    expect(server.name).toMatch(/^[a-zA-Z0-9.-]+\/[a-zA-Z0-9._-]+$/);
+    expect(server.description.length).toBeGreaterThan(0);
+    expect(server.description.length).toBeLessThanOrEqual(100);
     expect(readFileSync('connectors/mcp/README.md', 'utf8')).toContain(MCP_PUBLIC_URL);
     expect(readFileSync('public/mcp.md', 'utf8')).toContain(MCP_PUBLIC_URL);
     expect(readFileSync('public/llm.txt', 'utf8')).toContain('Starter: 300');

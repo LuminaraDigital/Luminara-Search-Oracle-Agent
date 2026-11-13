@@ -33,7 +33,7 @@
     ],
     "redirectUris": {
       "hostedHttps": "Any https URI with no userinfo and no fragment. The client must register it first. Authorize redirects only to a URI on that client's record.",
-      "loopback": "http or https on localhost, 127.0.0.1, or ::1.",
+      "loopback": "http or https on localhost, 127.0.0.1, or ::1. The port may differ from the registered URI. The path and query must match.",
       "ideSchemes": ["cursor:", "vscode:", "vscode-insiders:"],
       "rejected": ["javascript:", "data:", "http on a public host", "https with a username, password, or fragment"]
     }

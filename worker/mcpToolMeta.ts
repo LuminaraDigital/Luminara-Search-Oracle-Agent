@@ -77,6 +77,15 @@ export function pageList<T>(
   return { items: page, limit, truncated, nextCursor: truncated ? String(next) : null };
 }
 
+/** Cuts on a UTF-16 code unit boundary without leaving a lone surrogate. */
+export function clipText(text: string, max: number): string {
+  if (text.length <= max) return text;
+  let end = max;
+  const unit = text.charCodeAt(end - 1);
+  if (unit >= 0xd800 && unit <= 0xdbff) end -= 1;
+  return text.slice(0, Math.max(0, end));
+}
+
 export const MCP_PAGE_PROPERTIES = {
   limit: {
     type: 'integer',

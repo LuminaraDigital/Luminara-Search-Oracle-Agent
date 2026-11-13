@@ -16,7 +16,7 @@ A person can also add a custom connector at grok.com with the remote URL before 
 
 **Owner.**
 
-`server.json` uses the namespace `com.luminarasuite/suite` and remote type `streamable-http`. The schema URL is the official MCP Registry schema `2025-09-29`. Confirm that URL still matches the registry docs before you publish, because the registry has changed schema dates before.
+`server.json` uses the namespace `com.luminarasuite/suite` and remote type `streamable-http`. The schema URL is the official MCP Registry schema `2025-12-11`. The description must stay within 100 characters. Confirm that URL still matches the registry docs before you publish, because the registry has changed schema dates before.
 
 1. Install the publisher CLI from the [MCP Registry](https://github.com/modelcontextprotocol/registry) docs.
 2. Prove the domain `luminarasuite.com`. Prefer DNS. The CLI prints a TXT record. Add that record on the domain and leave it until verification succeeds.
