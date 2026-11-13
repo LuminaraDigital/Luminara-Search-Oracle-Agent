@@ -248,6 +248,7 @@ export async function guardOracleToolExecution(params: {
 async function consumeSseCompletionStream(
   body: ReadableStream<Uint8Array>,
   onDelta: (delta: string) => Promise<void>,
+  bufferLeadingWhitespace = false,
 ): Promise<{ fullText: string; finishReason: string | null; reasoningTokens: number }> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
@@ -256,6 +257,7 @@ async function consumeSseCompletionStream(
   let finishReason: string | null = null;
   let reasoningTokens = 0;
   let completionTokens = 0;
+  let hasEmittedNonWhitespace = !bufferLeadingWhitespace;
 
   const processLine = async (line: string): Promise<void> => {
     const trimmed = line.trim();
@@ -299,7 +301,12 @@ async function consumeSseCompletionStream(
       const delta = choice?.delta?.content;
       if (delta) {
         fullText += delta;
-        await onDelta(delta);
+        if (hasEmittedNonWhitespace) {
+          await onDelta(delta);
+        } else if (fullText.trim().length > 0) {
+          hasEmittedNonWhitespace = true;
+          await onDelta(fullText);
+        }
       }
     } catch {
       /* ignore malformed chunk */
@@ -385,6 +392,7 @@ export async function streamGroqChatWithEmptyGuard(params: {
     const { fullText, finishReason, reasoningTokens } = await consumeSseCompletionStream(
       llmRes.body,
       params.onDelta,
+      guardsOn && attempt === 0,
     );
     if (!guardsOn) {
       return { ok: true, fullText, retriedEmpty: false };

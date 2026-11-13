@@ -1,5 +1,16 @@
 {
   "name": "luminara",
-  "description": "Luminara Suite MCP connector and 11 SEO/AEO/GEO workflow skills grounded in project memory, evidence ledgers, and shareable audit reports.",
-  "version": "1.0.0"
+  "displayName": "Luminara",
+  "description": "Luminara Suite: AI visibility and SEO audits, project memory and reports, through the Luminara MCP connector. Sign in with your Luminara account; no API key needed.",
+  "version": "1.2.0",
+  "author": { "name": "Luminara", "url": "https://luminarasuite.com" },
+  "homepage": "https://www.luminarasuite.com/docs/mcp.html",
+  "repository": "https://github.com/LuminaraDigital/Luminara-Search-Oracle-Agent",
+  "keywords": ["seo", "aeo", "ai-visibility", "audit", "mcp"],
+  "mcpServers": {
+    "luminara": {
+      "type": "http",
+      "url": "https://luminarasuite.com/api/mcp"
+    }
+  }
 }

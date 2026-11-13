@@ -438,6 +438,40 @@ describe('Phase 4: Tool Loop Guardrails, Empty Response Guard, Frozen Memory & V
     expect(filteredOut).toMatchObject({ ok: false, status: 502 });
     expect(filterFetches).toBe(1);
 
+    // Attempt 0 leading whitespace is buffered until non-whitespace arrives so reasoning-exhausted retries never emit stray newlines.
+    const wsRetryDeltas: string[] = [];
+    let wsAttempts = 0;
+    const wsOut = await streamGroqChatWithEmptyGuard({
+      env: {
+        GROQ_API_KEY: 'gsk_primary',
+        GROQ_API_KEY_FALLBACK: 'gsk_backup',
+        ORACLE_LOOP_GUARDS_ENABLED: 'true',
+      } as Env,
+      model: 'openai/gpt-oss-120b',
+      messages: [{ role: 'user', content: 'Summarize' }],
+      onDelta: async (d) => {
+        wsRetryDeltas.push(d);
+      },
+      fetcher: async () => {
+        wsAttempts += 1;
+        const payload =
+          wsAttempts === 1
+            ? `data: ${JSON.stringify({ choices: [{ delta: { reasoning: 'thinking', content: '\n\n' }, finish_reason: 'length' }] })}\n\ndata: [DONE]\n\n`
+            : `data: ${JSON.stringify({ choices: [{ delta: { content: 'Clean answer.' }, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n`;
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start(c) {
+              c.enqueue(reasoningEncoder.encode(payload));
+              c.close();
+            },
+          }),
+          { status: 200, headers: { 'content-type': 'text/event-stream' } },
+        );
+      },
+    });
+    expect(wsOut).toEqual({ ok: true, fullText: 'Clean answer.', retriedEmpty: true });
+    expect(wsRetryDeltas.join('')).toBe('Clean answer.');
+
     // GroundedCitationLedger captures tool output URLs and flags hallucinated [99] markers.
     const groundedLedger = new GroundedCitationLedger();
     await guardOracleToolExecution({

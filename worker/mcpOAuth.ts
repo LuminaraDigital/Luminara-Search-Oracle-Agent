@@ -28,7 +28,9 @@ const CONNECTOR_SCOPE = 'mcp:free';
 export const MCP_OAUTH_PUBLIC_CORS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'content-type, authorization, mcp-protocol-version',
+  'Access-Control-Allow-Headers': 'content-type, accept, authorization, mcp-protocol-version',
+  'Access-Control-Expose-Headers':
+    'X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, Retry-After',
 };
 
 /**
@@ -250,7 +252,7 @@ export function mcpResourceMetadataUrl(request: Request): string {
 const DISCOVERY_CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
-  'Access-Control-Allow-Headers': 'content-type, authorization, mcp-protocol-version',
+  'Access-Control-Allow-Headers': 'content-type, accept, authorization, mcp-protocol-version',
 };
 
 export function handleOAuthDiscovery(request: Request): Response | null {

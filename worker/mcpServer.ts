@@ -59,10 +59,21 @@ import { CONVERSION_SPINE_MCP_TOOLS } from './mcpConversionTools';
 import { PROJECT_HISTORY_MCP_TOOLS } from './mcpProjectHistoryTools';
 import { FIX_DRAFT_MCP_TOOLS } from './fixDraftRoute';
 import { enforceHabitatScope, SELF_DRIVING_MCP_TOOLS } from './selfDrivingHabitat';
+import { AGENT_MCP_TOOLS, agentPromptGet, agentPromptsList } from './mcpAgents';
+import { webappOrigin } from './agentReportService';
+import {
+  MCP_INSTRUCTIONS,
+  MCP_PROTOCOL_VERSIONS,
+  hasSupportedProtocolHeader,
+  mcpServerInfo,
+  negotiateProtocolVersion,
+} from './mcpProtocol';
 import { mcpDeclaredCostsEnabled, toolCostAnnotationFor } from '../services/mcp/toolCosts';
 
 export type McpToolDef = {
   name: string;
+  /** Human name a host may show in place of `name`. */
+  title?: string;
   description: string;
   creditClass: McpCreditClass;
   inputSchema: Record<string, unknown>;
@@ -452,6 +463,7 @@ const TOOLS: McpToolDef[] = [
   ...CONVERSION_SPINE_MCP_TOOLS,
   ...PROJECT_HISTORY_MCP_TOOLS,
   ...SELF_DRIVING_MCP_TOOLS,
+  ...AGENT_MCP_TOOLS,
   ...PAID_TOOL_CATALOGUE.map((meta) => ({
     name: meta.name,
     description: meta.description,
@@ -477,7 +489,11 @@ export function listMcpToolCatalogue(options?: { includeDeclaredCosts?: boolean 
 }> {
   const includeCosts = options?.includeDeclaredCosts === true;
   return TOOLS.map((tool) => {
-    const baseAnnotations = mcpToolAnnotations(tool.name);
+    // A named agent carries its own title; every other tool takes one from the shared table.
+    const baseAnnotations = {
+      ...mcpToolAnnotations(tool.name),
+      ...(tool.title ? { title: tool.title } : {}),
+    };
     const annotations = includeCosts
       ? { ...baseAnnotations, ...(toolCostAnnotationFor(tool.name) ?? {}) }
       : baseAnnotations;
@@ -495,8 +511,9 @@ export function listMcpToolCatalogue(options?: { includeDeclaredCosts?: boolean 
 function toolsListPayload(env?: Env) {
   return {
     tools: listMcpToolCatalogue({ includeDeclaredCosts: mcpDeclaredCostsEnabled(env) }).map(
-      ({ name, description, inputSchema, annotations }) => ({
+      ({ name, title, description, inputSchema, annotations }) => ({
         name,
+        title,
         description,
         inputSchema,
         annotations,
@@ -642,9 +659,16 @@ async function callTool(
       projectId,
       args,
     });
+    const approvalUrl = `${webappOrigin(ctx.env)}/?mcp_approval=${req.id}`;
+    // A repeated call reuses the pending request, so the time left can be well under the full window.
+    const minutesLeft = Math.max(1, Math.ceil((req.expiresAt - Date.now()) / 60000));
     return textResult(
-      `Tool requires operator approval. Action request ${req.id} created.`,
-      { requiresApproval: true, actionRequestId: req.id },
+      [
+        `Luminara needs the account owner's approval before running ${name}.`,
+        `Approve or deny: ${approvalUrl}`,
+        `The link works for ${minutesLeft} more ${minutesLeft === 1 ? 'minute' : 'minutes'}, for the signed-in account owner only. After approving, ask for the same action again with the same details.`,
+      ].join('\n'),
+      { requiresApproval: true, actionRequestId: req.id, approvalUrl, expiresAt: req.expiresAt },
     );
   }
 
@@ -715,32 +739,6 @@ async function callTool(
 /** One request may carry at most this many JSON-RPC messages. */
 const MAX_MCP_BATCH = 20;
 
-/**
- * Newest first. 2025-11-25 stays off this list: that revision requires HTTP 403
- * when Origin is present and invalid, and this server does not check Origin.
- */
-const MCP_PROTOCOL_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'] as const;
-/** Assumed when the client omits MCP-Protocol-Version. */
-const MCP_PROTOCOL_VERSION_DEFAULT = '2025-03-26' satisfies (typeof MCP_PROTOCOL_VERSIONS)[number];
-
-function isSupportedProtocolVersion(version: string): version is (typeof MCP_PROTOCOL_VERSIONS)[number] {
-  return (MCP_PROTOCOL_VERSIONS as readonly string[]).includes(version);
-}
-
-function negotiateProtocolVersion(requested: unknown): (typeof MCP_PROTOCOL_VERSIONS)[number] {
-  return typeof requested === 'string' && isSupportedProtocolVersion(requested)
-    ? requested
-    : MCP_PROTOCOL_VERSIONS[0];
-}
-
-/** Absent header assumes 2025-03-26. An explicit unsupported version is HTTP 400. */
-function rejectUnsupportedProtocolHeader(request: Request): Response | null {
-  const raw = request.headers.get('mcp-protocol-version');
-  const version = raw === null ? MCP_PROTOCOL_VERSION_DEFAULT : raw.trim();
-  if (isSupportedProtocolVersion(version)) return null;
-  return mcpJson({ error: 'Unsupported MCP-Protocol-Version' }, 400);
-}
-
 function rpcResult(id: unknown, result: unknown) {
   return { jsonrpc: '2.0', id: id ?? null, result };
 }
@@ -762,18 +760,18 @@ export async function handleMcpRequest(
     return new Response(null, { status: 204, headers: MCP_CORS });
   }
 
-  const headerRejection = rejectUnsupportedProtocolHeader(request);
-  if (headerRejection) return headerRejection;
+  const origin = new URL(request.url).origin;
+  if (!hasSupportedProtocolHeader(request)) return mcpJson({ error: 'Unsupported MCP-Protocol-Version' }, 400);
 
   if (request.method === 'GET') {
+    // Streamable HTTP clients GET with this Accept to open a server stream; we offer none.
     const accept = (request.headers.get('accept') || '').toLowerCase();
     if (accept.includes('text/event-stream') && !accept.includes('application/json') && !accept.includes('*/*')) {
-      return new Response(null, { status: 405, headers: MCP_CORS });
+      return new Response(null, { status: 405, headers: { Allow: 'POST', ...MCP_CORS } });
     }
     return mcpJson({
       ok: true,
-      name: 'luminara-mcp',
-      version: '1.0.0',
+      ...mcpServerInfo(origin),
       protocolVersion: MCP_PROTOCOL_VERSIONS[0],
       supportedProtocolVersions: [...MCP_PROTOCOL_VERSIONS],
       tools: listMcpToolCatalogue({ includeDeclaredCosts: mcpDeclaredCostsEnabled(env) }),
@@ -820,8 +818,9 @@ export async function handleMcpRequest(
       responses.push(
         rpcResult(id, {
           protocolVersion: negotiateProtocolVersion(m.params?.protocolVersion),
-          capabilities: { tools: {} },
-          serverInfo: { name: 'luminara-mcp', title: 'Luminara Suite', version: '1.0.0' },
+          capabilities: { tools: {}, prompts: {} },
+          serverInfo: mcpServerInfo(origin),
+          instructions: MCP_INSTRUCTIONS,
         }),
       );
       continue;
@@ -835,6 +834,15 @@ export async function handleMcpRequest(
     }
     if (method === 'tools/list') {
       responses.push(rpcResult(id, toolsListPayload(env)));
+      continue;
+    }
+    if (method === 'prompts/list') {
+      responses.push(rpcResult(id, agentPromptsList()));
+      continue;
+    }
+    if (method === 'prompts/get') {
+      const prompt = agentPromptGet(m.params?.name, m.params?.arguments);
+      responses.push(prompt ? rpcResult(id, prompt) : rpcError(id, -32602, 'Unknown prompt or invalid arguments'));
       continue;
     }
     if (method === 'tools/call') {

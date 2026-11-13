@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "luminara",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "Luminara Suite MCP connector and 11 SEO/AEO/GEO workflow skills grounded in project memory, evidence ledgers, and shareable audit reports.",
   "author": {
     "name": "Luminara Digital",
@@ -35,6 +35,9 @@
             "compare_snapshots": 0,
             "get_project_outcomes": 0,
             "mark_project_action_done": 0,
+            "ask_auditor": 0,
+            "ask_fixer": 0,
+            "ask_coach": 0,
             "update_project_context": 0,
             "list_reports": 0,
             "get_report": 0,

@@ -60,7 +60,7 @@ function parseSimpleFrontmatter(md: string): Record<string, unknown> {
 describe('Agent Plugins v1 Package (plugins/luminara) & MCP Tool Cost Parity', () => {
   const pluginRoot = resolve(process.cwd(), 'plugins', 'luminara');
 
-  it('validates mcp.json, plugin.json, cost synchronization, and zero drift across all 37 MCP tools', () => {
+  it('validates mcp.json, plugin.json, cost synchronization, and zero drift across all 40 MCP tools', () => {
     expect(TOOL_COSTS_HOSTED_CENTS).toBe(HOSTED_PAID_CALL_COST_CENTS);
     expect(TOOL_COSTS_BYOK_CENTS).toBe(BYOK_PAID_CALL_COST_CENTS);
 
@@ -86,7 +86,7 @@ describe('Agent Plugins v1 Package (plugins/luminara) & MCP Tool Cost Parity', (
 
     // Zero drift between live Worker tools/list and declared cost table.
     const liveTools = listMcpToolCatalogue();
-    expect(liveTools).toHaveLength(37);
+    expect(liveTools).toHaveLength(40);
     const liveNames = liveTools.map((t) => t.name);
     expect(unknownCostKeys(policy, liveNames)).toEqual([]);
     expect(Object.keys(LUMINARA_MCP_TOOL_COSTS).sort()).toEqual([...liveNames].sort());
@@ -133,6 +133,23 @@ describe('Agent Plugins v1 Package (plugins/luminara) & MCP Tool Cost Parity', (
     const readme = readFileSync(resolve(pluginRoot, 'README.md'), 'utf8');
     expect(readme).not.toContain('Growth or Agency): `POST /api/api-keys`');
     expect(readme).toContain('hermes plugins install');
+
+    // Guard README.md and docs/hermes-catalog/luminara-mcp.yaml against future MCP tool count/name drift.
+    const costEntries = Object.entries(LUMINARA_MCP_TOOL_COSTS);
+    const freeTools = costEntries.filter(([, e]) => e.requiredScope === 'mcp:free').map(([name]) => name);
+    const paidTools = costEntries.filter(([, e]) => e.requiredScope === 'mcp:research').map(([name]) => name);
+    expect(readme).toContain(`Free MCP tools (${freeTools.length} tools, 0 cents`);
+    expect(readme).toContain(`Paid research & browser action tools (${paidTools.length} tools, 0-1 cent`);
+    for (const toolName of [...freeTools, ...paidTools]) {
+      expect(readme, `plugins/luminara/README.md missing \`${toolName}\``).toContain(`\`${toolName}\``);
+    }
+    const catalogYaml = readFileSync(
+      resolve(process.cwd(), 'docs/hermes-catalog/luminara-mcp.yaml'),
+      'utf8',
+    );
+    expect(catalogYaml).toContain(
+      `${freeTools.length} free tools spend 0 cents; ${paidTools.length} paid research/browser tools`,
+    );
   });
 
   it('rejects malformed cost declarations and gates tools/list cost annotations behind MCP_DECLARED_COSTS_ENABLED', async () => {

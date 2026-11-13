@@ -8,6 +8,7 @@
  */
 import type { UserStoreEnv } from './userStore';
 import { redactSensitive } from './logRedaction';
+import { sha256Hex } from './workerUtils';
 
 export type ToolRisk = 'read' | 'write' | 'destructive';
 export type ToolStatus = 'active' | 'quarantined';
@@ -61,7 +62,23 @@ export const TOOL_GOVERNANCE: Record<string, ToolGovernanceEntry> = {
   compile_review_to_skill: { risk: 'write', status: 'active' },
   mint_habitat_token: { risk: 'write', status: 'active' },
   draft_fix: { risk: 'read', status: 'active' },
+  // Named agents (spec 0031): each reads stored rows for one project
+  ask_auditor: { risk: 'read', status: 'active' },
+  ask_fixer: { risk: 'read', status: 'active' },
+  ask_coach: { risk: 'read', status: 'active' },
 };
+
+/** What approving does, shown to the owner. Fixed text: never built from a caller's arguments. */
+const APPROVAL_CONSEQUENCES: Record<string, string> = {
+  browse_goal: "Luminara's hosted browser will carry out a multi-step goal on the site named below.",
+  browse_close: 'The hosted browser session named below will be closed.',
+  decide_booking_signoff: 'The proposed appointment named below will be approved or declined.',
+  prepare_cms_mcp_call: "A change to your website's CMS will be prepared from the details below.",
+};
+
+export function approvalConsequence(toolName: string): string {
+  return APPROVAL_CONSEQUENCES[toolName] ?? 'The agent will run this action once, with the details below.';
+}
 
 /** Unknown tools default to write/active and are still logged. */
 export function governanceFor(toolName: string): ToolGovernanceEntry {
@@ -129,10 +146,51 @@ export type ActionRequestRow = {
 
 const APPROVAL_TTL_MS = 30 * 60 * 1000;
 
+/** Every column except args_hash, which never leaves the worker. */
+const ROW_COLUMNS =
+  'id, user_id, project_id, tool_name, args_json, status, kind, decided_by, decided_at, expires_at, created_at';
+
+/** Deeper than this and redaction has already cut the stored copy, so the request can only be denied. */
+const MAX_HASHED_DEPTH = 32;
+
+/** JSON with object keys sorted at every level, so key order never changes the result. Null when nested too deep. */
+function canonicalJson(value: unknown, depth = 0): string | null {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null';
+  if (depth >= MAX_HASHED_DEPTH) return null;
+  const parts: string[] = [];
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const part = canonicalJson(item, depth + 1);
+      if (part === null) return null;
+      parts.push(part);
+    }
+    return `[${parts.join(',')}]`;
+  }
+  const record = value as Record<string, unknown>;
+  for (const key of Object.keys(record).sort()) {
+    if (record[key] === undefined) continue;
+    const part = canonicalJson(record[key], depth + 1);
+    if (part === null) return null;
+    parts.push(`${JSON.stringify(key)}:${part}`);
+  }
+  return `{${parts.join(',')}}`;
+}
+
+/**
+ * SHA-256 of the arguments as the caller sent them, before redaction. args_json is the
+ * redacted copy the owner reads; two calls that differ only in a redacted value share
+ * that text, so the hash is what ties an approval to one exact call.
+ * Null when the arguments are nested too deep to hash: such a call can never be approved.
+ */
+export async function hashToolArgs(args: Record<string, unknown> | undefined): Promise<string | null> {
+  const canonical = canonicalJson(args || {});
+  return canonical === null ? null : sha256Hex(`luminara-mcp-args:${canonical}`);
+}
+
 /**
  * Create an action request for a destructive tool call. Dedupe: one pending
- * request per (user_id, tool_name, project_id, args); a second create returns the
- * existing id.
+ * request per (user_id, tool_name, project_id, exact args); a second create returns
+ * the existing id.
  */
 export async function createActionRequest(
   env: UserStoreEnv,
@@ -142,31 +200,37 @@ export async function createActionRequest(
     projectId?: string | null;
     args?: Record<string, unknown>;
   },
-): Promise<{ id: string; existing: boolean }> {
-  if (!env.DB) return { id: crypto.randomUUID(), existing: false };
+): Promise<{ id: string; existing: boolean; expiresAt: number }> {
+  const now = Date.now();
+  if (!env.DB) return { id: crypto.randomUUID(), existing: false, expiresAt: now + APPROVAL_TTL_MS };
   const projectId = params.projectId ?? null;
+  // Redacted for display only. The hash of the real arguments decides what counts as the same call.
   const argsJson = JSON.stringify(redactSensitive(params.args || {}));
+  const argsHash = await hashToolArgs(params.args);
 
+  // An expired pending row can no longer be approved, so it is not reused.
+  // Arguments too deep to hash have no hash to compare; those rows can only be denied,
+  // so reusing one by its redacted text hands nobody an approval.
   const existing = await env.DB.prepare(
-    `SELECT id FROM mcp_action_requests
-     WHERE user_id = ? AND tool_name = ? AND status = 'pending' AND kind = 'tool'
-       AND (project_id IS ? OR project_id = ?) AND args_json = ?
+    `SELECT id, expires_at FROM mcp_action_requests
+     WHERE user_id = ? AND tool_name = ? AND status = 'pending' AND kind = 'tool' AND expires_at > ?
+       AND (project_id IS ? OR project_id = ?)
+       AND (args_hash = ? OR (? IS NULL AND args_hash IS NULL AND args_json = ?))
      ORDER BY created_at DESC LIMIT 1`,
   )
-    .bind(params.userId, params.toolName, projectId, projectId, argsJson)
-    .first<{ id: string }>();
-  if (existing?.id) return { id: existing.id, existing: true };
+    .bind(params.userId, params.toolName, now, projectId, projectId, argsHash, argsHash, argsJson)
+    .first<{ id: string; expires_at: number }>();
+  if (existing?.id) return { id: existing.id, existing: true, expiresAt: existing.expires_at };
 
   const id = crypto.randomUUID();
-  const now = Date.now();
   await env.DB.prepare(
     `INSERT INTO mcp_action_requests
-     (id, user_id, project_id, tool_name, args_json, status, expires_at, created_at, kind)
-     VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, 'tool')`,
+     (id, user_id, project_id, tool_name, args_json, args_hash, status, expires_at, created_at, kind)
+     VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, 'tool')`,
   )
-    .bind(id, params.userId, projectId, params.toolName, argsJson, now + APPROVAL_TTL_MS, now)
+    .bind(id, params.userId, projectId, params.toolName, argsJson, argsHash, now + APPROVAL_TTL_MS, now)
     .run();
-  return { id, existing: false };
+  return { id, existing: false, expiresAt: now + APPROVAL_TTL_MS };
 }
 
 /** List a user's action requests, newest first. */
@@ -177,21 +241,24 @@ export async function listActionRequests(
 ): Promise<ActionRequestRow[]> {
   if (!env.DB) return [];
   const result = await env.DB.prepare(
-    `SELECT * FROM mcp_action_requests WHERE user_id = ? ORDER BY created_at DESC LIMIT ?`,
+    `SELECT ${ROW_COLUMNS} FROM mcp_action_requests WHERE user_id = ? ORDER BY created_at DESC LIMIT ?`,
   )
     .bind(userId, Math.min(Math.max(1, limit), 200))
     .all();
   return (result.results ?? []) as unknown as ActionRequestRow[];
 }
 
-/** Fetch one action request by id (any owner). Caller must enforce authz. */
-export async function getActionRequestById(
+/** One tool request, only for the account that owns it. A missing row and another account's row look the same. */
+export async function getOwnedToolRequest(
   env: UserStoreEnv,
   id: string,
+  accountId: string,
 ): Promise<ActionRequestRow | null> {
   if (!env.DB || !id) return null;
-  const row = await env.DB.prepare(`SELECT * FROM mcp_action_requests WHERE id = ? LIMIT 1`)
-    .bind(id)
+  const row = await env.DB.prepare(
+    `SELECT ${ROW_COLUMNS} FROM mcp_action_requests WHERE id = ? AND user_id = ? AND kind = 'tool' LIMIT 1`,
+  )
+    .bind(id, accountId)
     .first();
   return (row as ActionRequestRow | null) ?? null;
 }
@@ -203,12 +270,14 @@ async function decide(
   status: 'approved' | 'denied',
 ): Promise<boolean> {
   if (!env.DB) return false;
+  const now = Date.now();
+  // An expired request can still be denied, never approved.
   const result = await env.DB.prepare(
     `UPDATE mcp_action_requests
      SET status = ?, decided_by = ?, decided_at = ?
-     WHERE id = ? AND status = 'pending'`,
+     WHERE id = ? AND status = 'pending' AND (? = 'denied' OR expires_at > ?)`,
   )
-    .bind(status, adminId, Date.now(), id)
+    .bind(status, adminId, now, id, status, now)
     .run();
   return (result.meta?.changes ?? 0) > 0;
 }
@@ -230,9 +299,14 @@ export function denyActionRequest(
 }
 
 /**
- * Consumes one approved, unexpired request for this tool+project whose stored args
- * match `args`. True only when this call flipped it to 'consumed', so an approval
- * authorizes exactly one call with the args the operator saw. Expired approvals never authorize.
+ * Consumes one approved, unexpired request for this tool+project whose args_hash
+ * matches the hash of `args`. True only when this call flipped it to 'consumed', so an
+ * approval authorizes exactly one call with exactly the args it was requested with,
+ * including values the stored display copy redacts. Expired approvals never authorize.
+ *
+ * A row with no hash (created before migration 0049, or with args too deep to hash)
+ * is never consumed: `args_hash = ?` is not true for NULL. Tool approvals last
+ * 30 minutes, so an older approval is refused and the caller asks again.
  */
 export async function consumeApprovedRequest(
   env: UserStoreEnv,
@@ -243,17 +317,18 @@ export async function consumeApprovedRequest(
 ): Promise<boolean> {
   if (!env.DB) return false;
   const pid = projectId ?? null;
-  const argsJson = JSON.stringify(redactSensitive(args || {}));
+  const argsHash = await hashToolArgs(args);
+  if (!argsHash) return false;
   const result = await env.DB.prepare(
     `UPDATE mcp_action_requests SET status = 'consumed'
      WHERE status = 'approved' AND id = (
        SELECT id FROM mcp_action_requests
        WHERE user_id = ? AND tool_name = ? AND status = 'approved' AND kind = 'tool' AND expires_at > ?
-         AND (project_id IS ? OR project_id = ?) AND args_json = ?
+         AND (project_id IS ? OR project_id = ?) AND args_hash = ?
        ORDER BY created_at LIMIT 1
      )`,
   )
-    .bind(userId, toolName, Date.now(), pid, pid, argsJson)
+    .bind(userId, toolName, Date.now(), pid, pid, argsHash)
     .run();
   return (result.meta?.changes ?? 0) > 0;
 }

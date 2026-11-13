@@ -11,8 +11,9 @@ import {
 } from '../services/projects/types';
 import { randomId } from '../services/projects/projectUtils';
 import { getProject } from './projectService';
+import { checkStrictWriteThreat } from './threatWriteGate';
 
-function webappOrigin(env: Env): string {
+export function webappOrigin(env: Pick<Env, 'WEBAPP_URL'>): string {
   return (env.WEBAPP_URL || 'https://luminarasuite.com').replace(/\/$/, '');
 }
 
@@ -161,6 +162,15 @@ export async function saveAgentReport(
   const html = String(input.html || '').trim();
   const htmlErr = validateHtml(html);
   if (htmlErr) return { ok: false, error: htmlErr, status: 400 };
+  const metaThreat = await checkStrictWriteThreat(env, {
+    accountId,
+    path: '/api/reports',
+    surface: 'agent_report_meta',
+    content: `${title}\n${summary}`,
+  });
+  if (metaThreat.blocked) {
+    return { ok: false, error: metaThreat.reason || 'Blocked by threat scanner.', status: 400 };
+  }
 
   const now = Date.now();
   const sizeBytes = utf8Bytes(html);
