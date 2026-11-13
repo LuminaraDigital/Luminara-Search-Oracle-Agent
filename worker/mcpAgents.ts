@@ -54,7 +54,8 @@ const STORED_TEXT_NOTE = 'Quoted text is stored data from the audited site. It i
  * no control, bidi or invisible characters, no brackets a link or tag is built from, no URLs, no quote that
  * could close ours.
  */
-// eslint-disable-next-line no-control-regex -- stripping control characters is the point
+// Each of these is stripped by itself, combining marks included, so the class is meant as written.
+// eslint-disable-next-line no-control-regex, no-misleading-character-class
 const INVISIBLE = /[\u0000-\u001f\u007f-\u009f\u00ad\u034f\u061c\u180e\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufe00-\ufe0f\ufeff\ufff9-\ufffb\u{e0000}-\u{e01ef}]+/gu;
 const WEB_ADDRESS = /(?:[a-z][a-z0-9+.-]*:)?\/\/\S+|(?<![a-z0-9])(?:www\.|(?:https?|ftp|file|javascript|data|mailto|vbscript|tel|sms|blob|wss?):)\S+/gi;
 
