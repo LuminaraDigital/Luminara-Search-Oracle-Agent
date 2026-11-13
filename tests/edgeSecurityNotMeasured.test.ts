@@ -36,6 +36,22 @@ describe('a security check that cannot reach the site', () => {
     expect(put).not.toHaveBeenCalled();
   });
 
+  it('measures again instead of serving a cached Worker check that reached nothing', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('cloudflare-dns.com')) {
+        const answer = url.includes('type=AAAA') ? [] : [{ type: 1, data: '104.21.8.8' }];
+        return new Response(JSON.stringify({ Status: 0, Answer: answer }), { status: 200 });
+      }
+      throw new TypeError('network down');
+    }));
+    const stale = { domain: 'example.com', security: { measurementConfidence: 'failed', trustScore: 0 } };
+    const env = { LUMINARA_KV: { get: async () => stale, put: vi.fn(async () => undefined) } } as unknown as Env;
+    const res = await handleEntityEnrichment(new Request('https://luminarasuite.com/api/enrichment/entity?domain=example.com'), env);
+    const body = (await res.json()) as { cached: boolean };
+    expect(body.cached).toBe(false);
+  });
+
   it('reports nothing measured for a host it refuses to probe', async () => {
     const posture = await auditSecurityOnEdge('localhost');
     expect(posture).toMatchObject({ measurementConfidence: 'failed', trustScore: 0, httpsEnforced: false });
