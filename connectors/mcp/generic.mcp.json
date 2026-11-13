@@ -1,0 +1,8 @@
+{
+  "name": "luminara",
+  "transport": "streamable-http",
+  "url": "https://www.luminarasuite.com/api/mcp",
+  "headers": {
+    "Authorization": "Bearer lm_live_YOUR_KEY"
+  }
+}

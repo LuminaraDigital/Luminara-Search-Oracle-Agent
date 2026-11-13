@@ -4,6 +4,7 @@
  */
 
 import type { McpToolDef, McpToolResult } from './mcpServer';
+import { MCP_PAGE_PROPERTIES, pageList } from './mcpToolMeta';
 import {
   ingestInboundEnquiry,
   listProjectEnquiries,
@@ -60,22 +61,32 @@ function toTextResult(
 export const CONVERSION_SPINE_MCP_TOOLS: McpToolDef[] = [
   {
     name: 'list_enquiries',
-    description: 'Uses no credits. Lists enquiries, SLA status, and evidence-bound qualification briefs for a project.',
+    description:
+      'Lists enquiries for one project, at most 50 per page, with SLA status and qualification briefs. Uses no credits. Pass cursor when nextCursor is set.',
     creditClass: 'free',
     inputSchema: {
       type: 'object',
       properties: {
         projectId: { type: 'string' },
+        ...MCP_PAGE_PROPERTIES,
       },
       additionalProperties: false,
     },
     handler: async (args, ctx) => {
       const projectId = typeof args.projectId === 'string' && args.projectId.trim() ? args.projectId.trim() : 'default';
       const enquiries = await listProjectEnquiries(ctx.env, ctx.accountId, projectId);
-      const lines = enquiries.length
-        ? enquiries.map((e) => `- ${e.id}: ${e.contactName} [${e.intentType}] status=${e.status} paused=${Boolean(e.automationPaused)}`).join('\n')
+      const page = pageList(enquiries, args);
+      const lines = page.items.length
+        ? page.items.map((e) => `- ${e.id}: ${e.contactName} [${e.intentType}] status=${e.status} paused=${Boolean(e.automationPaused)}`).join('\n')
         : 'No enquiries recorded yet.';
-      return toTextResult(lines, { projectId, count: enquiries.length, enquiries });
+      return toTextResult(lines, {
+        projectId,
+        count: page.items.length,
+        limit: page.limit,
+        truncated: page.truncated,
+        nextCursor: page.nextCursor,
+        enquiries: page.items,
+      });
     },
   },
   {

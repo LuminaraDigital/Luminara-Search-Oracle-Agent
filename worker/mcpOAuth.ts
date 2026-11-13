@@ -59,6 +59,8 @@ export function isAllowedMcpRedirectUri(redirectUri: string): boolean {
   } catch {
     return false;
   }
+  // userinfo and fragments are open-redirect material. OAuth forbids a fragment.
+  if (url.username || url.password || url.hash) return false;
 
   if (ALLOWED_REDIRECT_SCHEMES.has(url.protocol)) {
     // Require a non-empty path or host so bare "cursor:" is rejected.
@@ -245,11 +247,20 @@ export function mcpResourceMetadataUrl(request: Request): string {
  * RFC 9728 and RFC 8414 discovery. Lives outside /api because clients derive these paths from the
  * server URL, and it answers on every host so the www redirect cannot move the issuer.
  */
+const DISCOVERY_CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, OPTIONS',
+  'Access-Control-Allow-Headers': 'content-type, authorization, mcp-protocol-version',
+};
+
 export function handleOAuthDiscovery(request: Request): Response | null {
-  if (request.method !== 'GET') return null;
   const url = new URL(request.url);
-  const cors = { 'Access-Control-Allow-Origin': '*' };
-  if (url.pathname.startsWith('/.well-known/oauth-protected-resource')) {
+  const resource = url.pathname.startsWith('/.well-known/oauth-protected-resource');
+  const authorization = url.pathname.startsWith('/.well-known/oauth-authorization-server');
+  if (!resource && !authorization) return null;
+  if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: DISCOVERY_CORS });
+  if (request.method !== 'GET') return null;
+  if (resource) {
     return json(
       {
         resource: `${url.origin}/api/mcp`,
@@ -259,13 +270,24 @@ export function handleOAuthDiscovery(request: Request): Response | null {
         bearer_methods_supported: ['header'],
       },
       200,
-      cors,
+      DISCOVERY_CORS,
     );
   }
-  if (url.pathname.startsWith('/.well-known/oauth-authorization-server')) {
-    return json(authorizationServerMetadata(url.origin), 200, cors);
-  }
-  return null;
+  return json(authorizationServerMetadata(url.origin), 200, DISCOVERY_CORS);
+}
+
+/**
+ * HTTP proof for the MCP Registry domain namespace. The owner sets
+ * MCP_REGISTRY_AUTH_TOKEN to the challenge from `mcp-publisher`. Absent means 404.
+ */
+export function handleMcpRegistryAuth(request: Request, env: Env): Response | null {
+  if (new URL(request.url).pathname !== '/.well-known/mcp-registry-auth') return null;
+  const token = env.MCP_REGISTRY_AUTH_TOKEN?.trim();
+  if (!token) return new Response('not found', { status: 404 });
+  return new Response(token, {
+    status: 200,
+    headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' },
+  });
 }
 
 /** RFC 7591 registration for public clients. Open by design: approval happens per user at consent. */
@@ -319,6 +341,33 @@ async function loadClient(env: Env, clientId: string): Promise<RegisteredClient 
   }
 }
 
+/**
+ * Exact string match, plus RFC 8252: a loopback callback may use a different port.
+ * Scheme, host, path, and query stay fixed, so a public https host cannot change port.
+ */
+function redirectUriRegistered(registered: readonly string[], requested: string): boolean {
+  return registered.some((uri) => uri === requested || loopbackPortAlias(uri, requested));
+}
+
+function loopbackPortAlias(registered: string, requested: string): boolean {
+  let listed: URL;
+  let asked: URL;
+  try {
+    listed = new URL(registered);
+    asked = new URL(requested);
+  } catch {
+    return false;
+  }
+  if (listed.protocol !== 'http:' && listed.protocol !== 'https:') return false;
+  if (!isAllowedMcpRedirectUri(registered) || !isAllowedMcpRedirectUri(requested)) return false;
+  return (
+    listed.protocol === asked.protocol &&
+    listed.hostname === asked.hostname &&
+    listed.pathname === asked.pathname &&
+    listed.search === asked.search
+  );
+}
+
 /** form-action must name the callback or the browser blocks the redirect after Allow. */
 function consentCsp(redirectUri: string): string {
   const url = new URL(redirectUri);
@@ -342,7 +391,7 @@ async function connectorAuthorize(
   const client = await loadClient(env, params.clientId);
   // Never redirect on a bad client or callback: that is the open-redirect case.
   if (!client) return json({ error: 'invalid_client', error_description: 'Unknown client_id. Register first.' }, 400);
-  if (!client.redirectUris.includes(params.redirectUri)) {
+  if (!redirectUriRegistered(client.redirectUris, params.redirectUri)) {
     return json({ error: 'invalid_request', error_description: 'redirect_uri is not registered for this client.' }, 400);
   }
   await env.LUMINARA_KV?.put(`${CLIENTS_KV_PREFIX}${client.clientId}`, JSON.stringify(client), {
@@ -544,6 +593,13 @@ async function token(request: Request, env: Env): Promise<Response> {
   if (!code || !redirectUri || !verifier) {
     return json({ error: 'invalid_request' }, 400);
   }
+  // RFC 7636. Checked before the code is consumed so a short verifier does not burn it.
+  if (!/^[A-Za-z0-9._~-]{43,128}$/.test(verifier)) {
+    return json(
+      { error: 'invalid_request', error_description: 'code_verifier must be 43 to 128 unreserved characters.' },
+      400,
+    );
+  }
 
   if (!env.LUMINARA_KV) return json({ error: 'server_error' }, 503);
 
@@ -565,6 +621,7 @@ async function token(request: Request, env: Env): Promise<Response> {
     scopeEnforced: true,
     createdAt: Date.now(),
     clientName: record.clientName,
+    clientId: record.clientId,
   };
   // Store under the SHA-256 hex of the token so the raw bearer value never lands in KV.
   await env.LUMINARA_KV.put(await tokenKvKey(accessToken), JSON.stringify(tokenRecord), {
@@ -662,9 +719,16 @@ type StoredTokenRecord = {
   scopeEnforced?: boolean;
   createdAt?: number;
   clientName?: string;
+  clientId?: string;
 };
 
-export type McpOAuthIdentity = { user: HostedIdentity; plan: string; scope: string; scopeEnforced: boolean };
+export type McpOAuthIdentity = {
+  user: HostedIdentity;
+  plan: string;
+  scope: string;
+  scopeEnforced: boolean;
+  clientId: string | null;
+};
 
 /** Resolve Bearer mcp_* OAuth token to a HostedIdentity-like identity. */
 export async function identifyMcpOAuthToken(
@@ -705,7 +769,13 @@ function parseTokenRecord(raw: string): McpOAuthIdentity | null {
       accountId: record.accountId,
       name: record.clientName || 'MCP OAuth',
     };
-    return { user, plan: record.plan, scope: record.scope, scopeEnforced: record.scopeEnforced === true };
+    return {
+      user,
+      plan: record.plan,
+      scope: record.scope,
+      scopeEnforced: record.scopeEnforced === true,
+      clientId: typeof record.clientId === 'string' && record.clientId ? record.clientId : null,
+    };
   } catch {
     return null;
   }

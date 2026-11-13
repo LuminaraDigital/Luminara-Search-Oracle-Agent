@@ -152,7 +152,7 @@ describe('marketing crawl documents', () => {
 
   it('llms.txt lists product, honesty, pricing, MCP, and the Mini App', () => {
     expect(LLMS_TXT).toContain('/docs/mcp.html');
-    expect(LLMS_TXT).toContain('https://luminarasuite.com/api/mcp');
+    expect(LLMS_TXT).toContain('https://www.luminarasuite.com/api/mcp');
     expect(LLMS_TXT).toContain('https://t.me/LuminaraSuiteBot/app');
     expect(LLMS_TXT).toContain(PAID_PLAN_PRICES.starter.starsLabel);
     expect(LLMS_TXT).toContain(PAID_PLAN_PRICES.growth.starsLabel);

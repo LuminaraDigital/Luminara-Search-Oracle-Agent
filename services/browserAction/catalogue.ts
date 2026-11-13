@@ -69,7 +69,7 @@ export const BROWSE_GOAL_TOOL: ToolDefinitionMeta = {
 
 export const BROWSE_CLOSE_TOOL: ToolDefinitionMeta = {
   name: 'browse_close',
-  description: 'End a crawler browse session. Free.',
+  description: 'Close one crawler browse session by sessionId. Uses no credits. Does not delete the project or its reports.',
   creditClass: 'free',
   inputSchema: {
     type: 'object',
