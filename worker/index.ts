@@ -121,7 +121,7 @@ import { handleGcpOidcRoute } from './gcpOidc';
 import { handleWifSmokeRoute } from './wifSmoke';
 import { handleLlmCrawlerRoute } from './llmCrawlerRoute';
 import { handleProbeCrawlRoute } from './probeCrawlRoute';
-import { handleMcpRequest, listMcpToolCatalogue } from './mcpServer';
+import { MCP_CORS, handleMcpRequest, listMcpToolCatalogue } from './mcpServer';
 import { getBudgetStatus, upsertBudgetPolicy, approveBudgetResume } from './budgets';
 import {
   listActionRequests,
@@ -328,8 +328,15 @@ async function compileDenialIntoRule(
 async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   const url = new URL(request.url);
   const path = url.pathname.replace(/^\/api/, '');
-  // MCP clients run on any origin. These two routes never read a cookie, so a wildcard is safe.
-  const cors = path === '/oauth/mcp/token' || path === '/oauth/mcp/register' ? MCP_OAUTH_PUBLIC_CORS : corsHeaders(env, request);
+  // MCP clients run on any origin. Token/register routes never read a cookie, and /mcp falls back to
+  // non-credentialed MCP_CORS when the caller is not an allowlisted web app origin.
+  const appCors = corsHeaders(env, request);
+  const cors =
+    path === '/oauth/mcp/token' || path === '/oauth/mcp/register'
+      ? MCP_OAUTH_PUBLIC_CORS
+      : (path === '/mcp' || path.startsWith('/mcp/')) && Object.keys(appCors).length === 0
+        ? MCP_CORS
+        : appCors;
 
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
 

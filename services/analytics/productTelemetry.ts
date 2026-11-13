@@ -37,7 +37,11 @@ export type TelemetryEventType =
   | 'share_clicked'
   | 'share_page_view'
   | 'free_tool_copied'
-  | 'hero_exposed';
+  | 'hero_exposed'
+  | 'epistemic_ab_exposed'
+  | 'epistemic_validator_result'
+  | 'dream_contract_result'
+  | 'threat_scan_triggered';
 
 export interface TelemetryEvent {
   id: string;

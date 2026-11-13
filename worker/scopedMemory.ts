@@ -11,6 +11,8 @@ import { appendMemoryHistory } from './memoryRag';
 import { listProjects } from './projectService';
 import { wrapUntrustedContent } from '../utils/untrustedContent';
 import { sanitizePii } from '../services/trust/piiSanitizer';
+import { evaluateStrictWriteGate } from '../services/trust/threatPatterns';
+import { recordServerProductEvent } from './productAnalytics';
 
 const CONSTRAINT_READ_LIMIT = 25;
 const OWNER_RULES_MAX_CHARS = 4000;
@@ -52,6 +54,23 @@ export async function rememberConstraint(
 ): Promise<{ ok: true; factId: string; deduplicated: boolean } | { ok: false; error: string }> {
   if (!env.DB) return { ok: false, error: 'Database unavailable' };
   const { accountId, projectId, domain, text, source } = input;
+  const threatGate = evaluateStrictWriteGate(env, text);
+  if (threatGate.findings.length > 0) {
+    await recordServerProductEvent(env.DB, {
+      accountId,
+      type: 'threat_scan_triggered',
+      path: '/api/scoped-memory',
+      data: {
+        surface: 'scoped_constraint',
+        mode: threatGate.mode,
+        blocked: threatGate.blocked,
+        patternId: threatGate.findings[0],
+      },
+    });
+    if (threatGate.blocked) {
+      return { ok: false, error: threatGate.reason || 'Blocked by threat scanner' };
+    }
+  }
   const contentSha256 = await sha256Hex(
     `${projectId || ''}|${domain || ''}|${text.toLowerCase().replace(/\s+/g, ' ')}`,
   );

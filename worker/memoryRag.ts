@@ -7,6 +7,8 @@ import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
 import { billingId, json } from './workerUtils';
 import { wrapUntrustedContent } from '../utils/untrustedContent';
+import { evaluateStrictWriteGate } from '../services/trust/threatPatterns';
+import { recordServerProductEvent } from './productAnalytics';
 
 export type VectorProvider = 'vectorize' | 'azure' | 'gcp' | 'none';
 
@@ -301,20 +303,42 @@ export async function extractFactsFromChat(
   if (!message) return json({ ok: false, error: 'message required' }, 400);
 
   // Heuristic extractor (LLM optional later): durable preference / brand lines.
-  const candidates: Array<{ text: string; confidence: number }> = [];
-  const lines = message.split(/[\n.!?]+/).map((s) => s.trim()).filter((s) => s.length > 12);
-  for (const line of lines.slice(0, 8)) {
-    const lower = line.toLowerCase();
-    let confidence = 0.35;
-    if (/\b(prefer|always|never|our brand|we are|competitor|located|serves)\b/.test(lower)) {
-      confidence = 0.72;
+  const candidates: Array<{ text: string; scanSource: string; confidence: number }> = [];
+  for (const rawLine of message.split(/\r?\n+/)) {
+    const fragments = rawLine.split(/[.!?]+/).map((s) => s.trim()).filter((s) => s.length > 12);
+    for (const line of fragments) {
+      if (candidates.length >= 8) break;
+      const lower = line.toLowerCase();
+      let confidence = 0.35;
+      if (/\b(prefer|always|never|our brand|we are|competitor|located|serves)\b/.test(lower)) {
+        confidence = 0.72;
+      }
+      if (confidence >= 0.5) {
+        candidates.push({ text: line.slice(0, 500), scanSource: rawLine.trim().slice(0, 1000), confidence });
+      }
     }
-    if (confidence >= 0.5) candidates.push({ text: line.slice(0, 500), confidence });
+    if (candidates.length >= 8) break;
   }
 
   const ids: string[] = [];
   const now = Date.now();
   for (const c of candidates) {
+    const threatGate = evaluateStrictWriteGate(env, `${c.text}\n${c.scanSource}`);
+    if (threatGate.findings.length > 0) {
+      await recordServerProductEvent(env.DB, {
+        accountId,
+        sessionId: opts.sessionId || null,
+        type: 'threat_scan_triggered',
+        path: '/api/memory/extract',
+        data: {
+          surface: 'memory_chat_extract',
+          mode: threatGate.mode,
+          blocked: threatGate.blocked,
+          patternId: threatGate.findings[0],
+        },
+      });
+      if (threatGate.blocked) continue;
+    }
     const id = crypto.randomUUID();
     let memoryFactId: string | null = null;
     let status: 'pending' | 'stored' = 'pending';

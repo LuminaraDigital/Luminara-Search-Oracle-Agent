@@ -13,6 +13,8 @@ import {
 } from '../services/rsi/postingAgent';
 import { RsiUserError } from './rsiErrors';
 import { applyRsiProposal, getRsiSkill } from './rsiSkillStore';
+import { evaluateStrictWriteGate } from '../services/trust/threatPatterns';
+import { recordServerProductEvent } from './productAnalytics';
 
 function requireDb(env: Env): D1Database {
   if (!env.DB) throw new RsiUserError('Database unavailable.', 503);
@@ -33,6 +35,21 @@ export async function draftAndSelectPost(
   if (!evidence.ok) throw new RsiUserError(evidence.reason);
   const brandId = input.brandId.trim().slice(0, 80);
   if (!brandId) throw new RsiUserError('brandId required.');
+  const postThreat = evaluateStrictWriteGate(env, `${input.brandName}\n${input.offer}\n${input.audience}`);
+  if (postThreat.findings.length > 0) {
+    await recordServerProductEvent(env.DB, {
+      accountId,
+      type: 'threat_scan_triggered',
+      path: '/api/rsi/posts/draft',
+      data: {
+        surface: 'rsi_post_draft',
+        mode: postThreat.mode,
+        blocked: postThreat.blocked,
+        patternId: postThreat.findings[0],
+      },
+    });
+  }
+  if (postThreat.blocked) throw new RsiUserError(postThreat.reason || 'Blocked by threat scanner.', 400);
   const candidates = generatePostCandidates(input);
   const history = await loadMeasured(env, accountId, brandId);
   const prediction = predictWinner(candidates, history);

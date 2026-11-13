@@ -1,9 +1,10 @@
 // Deterministic evals runner. Node stdlib only, no npm deps.
 // Usage: node evals/run-evals.mjs [--dir <path>]
 
-import { readdirSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import os from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { parseYamlSubset } from './yaml-subset.mjs';
@@ -21,32 +22,39 @@ function argDir(argv) {
   return v;
 }
 
-// Compile the TS validator module to a temp ESM .mjs once per process, then import it.
+// Compile the TS validator module graph to a temp CJS tree once per process, then load it.
+const requireFromHere = createRequire(import.meta.url);
 let validatorsModule = null;
 async function loadValidators() {
   if (validatorsModule) return validatorsModule;
   const srcPath = path.join(repoRoot, 'worker', 'agentOutputValidators.ts');
   const outDir = path.join(os.tmpdir(), `aov-${process.pid}-${Date.now()}`);
-  const outPath = path.join(outDir, 'agentOutputValidators.js');
+  mkdirSync(outDir, { recursive: true });
+  writeFileSync(path.join(outDir, 'package.json'), '{"type":"commonjs"}', 'utf8');
+  const outPath = path.join(outDir, 'worker', 'agentOutputValidators.js');
   const tsc = path.join(repoRoot, 'node_modules', 'typescript', 'bin', 'tsc');
   execFileSync(
     process.execPath,
     [
       tsc,
       srcPath,
+      '--rootDir',
+      repoRoot,
       '--outDir',
       outDir,
       '--module',
-      'es2020',
+      'commonjs',
+      '--moduleResolution',
+      'node',
       '--target',
       'es2020',
       '--skipLibCheck',
     ],
     { stdio: ['ignore', 'pipe', 'pipe'] },
   );
-  const mod = await import(pathToFileURL(outPath).href);
+  const mod = requireFromHere(outPath);
   try {
-    unlinkSync(outPath);
+    rmSync(outDir, { recursive: true, force: true });
   } catch {
     /* best effort */
   }

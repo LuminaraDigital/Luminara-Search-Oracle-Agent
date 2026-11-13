@@ -2,6 +2,7 @@
  * Server-side product analytics ingest (separate from exception monitoring).
  * Browser productTelemetry can flush anonymized events here when signed in.
  */
+import type { D1Database } from '@cloudflare/workers-types';
 import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
 import { billingId, json } from './workerUtils';
@@ -42,6 +43,10 @@ const ALLOWED_TYPES = new Set([
   'share_page_view',
   'free_tool_copied',
   'hero_exposed',
+  'epistemic_ab_exposed',
+  'epistemic_validator_result',
+  'dream_contract_result',
+  'threat_scan_triggered',
 ]);
 
 const MAX_BATCH = 40;
@@ -82,6 +87,40 @@ export async function recordAnonymousEvent(
          VALUES (?, NULL, NULL, ?, ?, ?, ?)`,
       )
       .bind(crypto.randomUUID(), type, path, payload ? scrubPayload(payload) : '{}', Date.now())
+      .run();
+  } catch {
+    // A missed count must not stop the request.
+  }
+}
+
+/** Server-side product event with optional account/session scope and PII scrubbing. Never throws. */
+export async function recordServerProductEvent(
+  db: D1Database | undefined,
+  event: {
+    accountId?: string | null;
+    sessionId?: string | null;
+    type: string;
+    path: string;
+    data?: Record<string, unknown>;
+  },
+): Promise<void> {
+  if (!db || !ALLOWED_TYPES.has(event.type)) return;
+  try {
+    await db
+      .prepare(
+        `INSERT INTO product_analytics_events
+          (id, account_id, session_id, event_type, path, payload_json, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .bind(
+        crypto.randomUUID(),
+        event.accountId ?? null,
+        event.sessionId ? event.sessionId.slice(0, 80) : null,
+        event.type,
+        event.path.slice(0, 200),
+        event.data ? scrubPayload(event.data) : '{}',
+        Date.now(),
+      )
       .run();
   } catch {
     // A missed count must not stop the request.

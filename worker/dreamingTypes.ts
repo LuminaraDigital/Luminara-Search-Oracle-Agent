@@ -106,6 +106,12 @@ export interface DreamAgentOutput {
   summary: string;
   /** What wrote the proposals: the hosted model's id, or `deterministic`. */
   modelId: string;
+  /** Uncertain observations held out from durable business_memories mutations. */
+  unverifiedHypotheses?: string[];
+  /** True when the 1-retry JSON output contract issued a repair turn. */
+  contractRetried?: boolean;
+  /** True when a hosted model call failed validation and fell back to deterministic consolidation. */
+  usedFallback?: boolean;
   proposals: Array<{
     /** A merge is never proposed: nothing applies one. */
     action: Exclude<DreamProposalAction, 'merge'>;

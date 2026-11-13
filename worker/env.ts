@@ -321,6 +321,14 @@ export interface Env extends DataPlaneEnv {
   /** Google Vertex Vector Search REST endpoint + bearer token. */
   GCP_VERTEX_VECTOR_ENDPOINT?: string;
   GCP_VERTEX_ACCESS_TOKEN?: string;
+  /** Hermes scoped threat scanner mode: "off" (default) | "warn" | "strict". */
+  THREAT_SCAN_MODE?: string;
+  /** First-party A/B flag for epistemic stance + 1-retry JSON contract ("true" | "false"). */
+  EPISTEMIC_AB_ENABLED?: string;
+  /** Enables per-session frozen RAG memory prefix, loop guardrails, empty-retry guard, and verification ledger ("true" | "false"). */
+  ORACLE_LOOP_GUARDS_ENABLED?: string;
+  /** Appends machine-readable per-tool cost metadata to MCP tools/list ("true" | "false"). */
+  MCP_DECLARED_COSTS_ENABLED?: string;
 }
 
 /** Minimal Vectorize binding shape (Cloudflare runtime). */

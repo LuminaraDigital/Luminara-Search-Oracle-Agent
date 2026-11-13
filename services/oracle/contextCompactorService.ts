@@ -18,6 +18,7 @@ export interface StructuredSummary {
   whatWasDone: string[];
   currentState: string;
   nextSteps: string[];
+  unverifiedHypotheses?: string[];
   turnsSummarized: number;
   compactedAt: number;
 }
@@ -131,6 +132,10 @@ export function pruneMultimodalImages(
 export function formatCompactSummary(summary: StructuredSummary): string {
   const actions = summary.whatWasDone.map(a => `- ${a}`).join('\n');
   const steps = summary.nextSteps.map(s => `- ${s}`).join('\n');
+  const hypothesesBlock =
+    summary.unverifiedHypotheses && summary.unverifiedHypotheses.length > 0
+      ? `\n\n### Unverified / Working Hypotheses\n${summary.unverifiedHypotheses.map(h => `- ${h}`).join('\n')}`
+      : '';
 
   return `[CONVERSATION COMPACTED CONTEXT]
 Turns summarized: ${summary.turnsSummarized} | Compacted at: ${new Date(summary.compactedAt).toISOString()}
@@ -145,7 +150,7 @@ ${actions || '- Initial audit and discovery started.'}
 ${summary.currentState}
 
 ### Next Recommended Steps
-${steps || '- Continue analysis based on findings.'}`;
+${steps || '- Continue analysis based on findings.'}${hypothesesBlock}`;
 }
 
 /**
@@ -159,6 +164,7 @@ export function synthesizeSummaryFromMessages(messagesToSummarize: Message[]): S
 
   const whatWasDone: string[] = [];
   const nextSteps: string[] = [];
+  const unverifiedCollector: string[] = [];
 
   for (const m of messagesToSummarize) {
     if (m.toolExecutions && m.toolExecutions.length > 0) {
@@ -173,6 +179,12 @@ export function synthesizeSummaryFromMessages(messagesToSummarize: Message[]): S
         whatWasDone.push(`Investigated URL: ${url}`);
       });
     }
+    for (const line of m.content.split(/\r?\n/)) {
+      const cleaned = line.trim().replace(/^[-*+]\s+/, '');
+      if (/^UNVERIFIED:\s*\S/i.test(cleaned)) {
+        unverifiedCollector.push(cleaned);
+      }
+    }
   }
 
   // Deduplicate entries
@@ -182,17 +194,27 @@ export function synthesizeSummaryFromMessages(messagesToSummarize: Message[]): S
   }
 
   const lastAssistant = [...messagesToSummarize].reverse().find(m => m.role === 'model' || m.role === 'assistant');
-  const currentState = lastAssistant
-    ? lastAssistant.content.slice(0, 240).trim()
+  const strippedLastAssistant = lastAssistant
+    ? lastAssistant.content
+        .replace(/#{1,3}\s+Unverified\s*\/\s*Working\s+Hypotheses[\s\S]*$/im, '')
+        .split(/\r?\n/)
+        .filter(line => !/^\s*(?:[-*+]\s+)?UNVERIFIED:/i.test(line))
+        .join('\n')
+        .trim()
+    : '';
+  const currentState = strippedLastAssistant
+    ? strippedLastAssistant.slice(0, 240).trim()
     : 'Audit investigation in progress.';
 
   nextSteps.push('Address highlighted citation gaps and proceed with verified optimizations.');
+  const uniqueUnverified = Array.from(new Set(unverifiedCollector)).slice(0, 5);
 
   return {
     userGoal: initialGoal,
     whatWasDone: uniqueDone,
     currentState,
     nextSteps,
+    ...(uniqueUnverified.length > 0 ? { unverifiedHypotheses: uniqueUnverified } : {}),
     turnsSummarized: messagesToSummarize.length,
     compactedAt: Date.now(),
   };

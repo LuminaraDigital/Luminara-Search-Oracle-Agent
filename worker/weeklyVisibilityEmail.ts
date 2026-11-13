@@ -109,7 +109,12 @@ function savedSummary(entryJson: string): string | null {
     if (!parsed || typeof parsed !== 'object') return null;
     const summary = (parsed as { summary?: unknown }).summary;
     if (typeof summary !== 'string') return null;
-    const clean = summary.replace(/\s+/g, ' ').trim();
+    const withoutSection = summary.replace(/#{1,3}\s+Unverified\s*\/\s*Working\s+Hypotheses[\s\S]*$/im, '');
+    const filteredLines = withoutSection
+      .split(/\r?\n/)
+      .filter((line) => !/^\s*(?:[-*+]\s+)?(?:\[?UNVERIFIED:?\]?)/i.test(line))
+      .join(' ');
+    const clean = filteredLines.replace(/\s+/g, ' ').trim();
     return clean ? clean.slice(0, 240) : null;
   } catch {
     return null;

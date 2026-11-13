@@ -682,9 +682,14 @@ export class OracleSession {
         const bucket = ownRecordGet(this.stateBuckets, stateKey) ?? { version: 0, doc: null };
         return Response.json({ ok: true, key: stateKey, ...bucket });
       }
+      const internalKeys = new Set(['memory_snapshot', 'tool_guard_history']);
+      const publicStates: Record<string, { version: number; doc: JsonValue }> = {};
+      for (const [k, v] of Object.entries(this.stateBuckets)) {
+        if (!internalKeys.has(k)) publicStates[k] = v;
+      }
       return Response.json({
         ok: true,
-        states: this.stateBuckets,
+        states: publicStates,
         pendingApprovals: Object.values(this.pendingApprovals).filter((a) => a.status === 'pending'),
         pendingCallbacks: Object.values(this.pendingCallbacks).filter((c) => c.status === 'pending'),
         rememberedTools: this.rememberedTools,
@@ -701,9 +706,13 @@ export class OracleSession {
       if (!isSafeRecordKey(stateKey)) {
         return Response.json({ ok: false, error: 'invalid state key', code: 'BAD_REQUEST' }, { status: 400 });
       }
+      const internalKeys = new Set(['memory_snapshot', 'tool_guard_history']);
+      const isInternalKey = internalKeys.has(stateKey);
+      const clientBucketCount = Object.keys(this.stateBuckets).filter((k) => !internalKeys.has(k)).length;
       if (
+        !isInternalKey &&
         !Object.hasOwn(this.stateBuckets, stateKey) &&
-        Object.keys(this.stateBuckets).length >= MAX_STATE_BUCKETS
+        clientBucketCount >= MAX_STATE_BUCKETS
       ) {
         return Response.json(
           { ok: false, error: 'Too many state buckets', code: 'STATE_BUCKETS_LIMIT' },
@@ -725,14 +734,16 @@ export class OracleSession {
           version: nextVersion,
           doc: snapshotClone,
         };
-        const snapEnv = this.publishInternal({
-          event: {
-            type: 'state_snapshot',
-            state_key: stateKey,
-            version: nextVersion,
-            snapshot: this.stateBuckets[stateKey]!.doc,
-          },
-        });
+        const snapEnv = isInternalKey
+          ? null
+          : this.publishInternal({
+              event: {
+                type: 'state_snapshot',
+                state_key: stateKey,
+                version: nextVersion,
+                snapshot: snapshotClone,
+              },
+            });
         await Promise.all([
           this.persistEvents(),
           this.state.storage.put('stateBuckets', this.stateBuckets),
@@ -741,7 +752,7 @@ export class OracleSession {
           ok: true,
           key: stateKey,
           version: nextVersion,
-          doc: this.stateBuckets[stateKey]!.doc,
+          doc: snapshotClone,
           event: snapEnv,
         });
       }
@@ -776,14 +787,16 @@ export class OracleSession {
         version: nextVersion,
         doc: result.doc,
       };
-      const patchEnv = this.publishInternal({
-        event: {
-          type: 'state_patch',
-          state_key: stateKey,
-          version: nextVersion,
-          ops,
-        },
-      });
+      const patchEnv = isInternalKey
+        ? null
+        : this.publishInternal({
+            event: {
+              type: 'state_patch',
+              state_key: stateKey,
+              version: nextVersion,
+              ops,
+            },
+          });
 
       await Promise.all([
         this.persistEvents(),

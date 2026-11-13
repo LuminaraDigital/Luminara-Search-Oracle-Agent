@@ -21,7 +21,9 @@ import {
   type TypedContextKey,
 } from '../services/projects/types';
 import { isoDateUTC, normalizeProjectDomain, randomId } from '../services/projects/projectUtils';
+import { evaluateStrictWriteGate } from '../services/trust/threatPatterns';
 import { getProject } from './projectService';
+import { recordServerProductEvent } from './productAnalytics';
 
 const KEY_PAGE_ROLES: KeyPageRole[] = ['hub', 'spoke', 'money', 'other'];
 
@@ -207,6 +209,39 @@ export async function updateProjectContext(
   if (!project) return { ok: false, error: 'Project not found', status: 404 };
   if (!Array.isArray(updates) || updates.length === 0) {
     return { ok: false, error: 'updates array required', status: 400 };
+  }
+
+  for (const op of updates) {
+    const pieces: string[] = [];
+    if ('section' in op && op.section) pieces.push(String(op.content || ''));
+    if ('customSection' in op && op.customSection) pieces.push(String(op.title || ''), String(op.content || ''));
+    if ('addCompetitors' in op && Array.isArray(op.addCompetitors)) {
+      for (const c of op.addCompetitors) pieces.push(String(c?.name || ''), String(c?.notes || ''));
+    }
+    if ('addKeyPages' in op && Array.isArray(op.addKeyPages)) {
+      for (const p of op.addKeyPages) pieces.push(String(p?.topic || ''), String(p?.notes || ''));
+    }
+    if ('appendResearchLog' in op && op.appendResearchLog) pieces.push(String(op.appendResearchLog.summary || ''));
+    const combined = pieces.filter(Boolean).join('\n');
+    if (combined) {
+      const threat = evaluateStrictWriteGate(env, combined);
+      if (threat.findings.length > 0) {
+        await recordServerProductEvent(env.DB, {
+          accountId,
+          type: 'threat_scan_triggered',
+          path: '/api/projects/context',
+          data: {
+            surface: 'project_context_update',
+            mode: threat.mode,
+            blocked: threat.blocked,
+            patternId: threat.findings[0],
+          },
+        });
+      }
+      if (threat.blocked) {
+        return { ok: false, error: threat.reason || 'Blocked by threat scanner.', status: 400 };
+      }
+    }
   }
 
   const now = Date.now();

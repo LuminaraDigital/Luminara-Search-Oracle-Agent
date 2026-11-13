@@ -229,6 +229,7 @@ export function applySkillProposal(input: {
   revisionId: string;
   changesAlreadyThisRound: number;
   extraCases?: readonly SkillEvalCase[];
+  strictThreats?: boolean;
 }): ApplyProposalResult {
   const proposal = input.proposal;
   if (proposal.status === 'applied' || proposal.status === 'rejected') {
@@ -238,7 +239,7 @@ export function applySkillProposal(input: {
     ? input.skills.find((skill) => skill.id === proposal.targetSkillId)
     : input.skills.find((skill) => skill.accountId === proposal.accountId && skill.slug === proposal.slug && skill.state !== 'archived');
   const pinned = existing?.pinned ?? false;
-  const guard = scanSkillBody(proposal.bodyMd);
+  const guard = scanSkillBody(proposal.bodyMd, { strictThreats: input.strictThreats });
   const evals = runSkillEvals(proposal.bodyMd, input.extraCases);
   const gate = gateLiveChange({
     evidenceRefs: proposal.evidenceRefs,

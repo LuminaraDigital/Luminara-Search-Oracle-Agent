@@ -46,8 +46,9 @@ application_default_credentials.json
 secrets/
 *.secret
 
-# MCP configs often embed tokens; keep examples only if committed under docs
+# MCP configs often embed tokens; portable Agent Plugins v1 manifest under plugins/luminara/mcp.json is secret-free (enforced in CI)
 mcp.json
+!plugins/luminara/mcp.json
 .mcp.json
 .cursor/mcp.json
 

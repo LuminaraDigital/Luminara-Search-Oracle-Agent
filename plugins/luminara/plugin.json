@@ -1,0 +1,107 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "luminara",
+  "version": "1.0.0",
+  "description": "Luminara Suite MCP connector and 11 SEO/AEO/GEO workflow skills grounded in project memory, evidence ledgers, and shareable audit reports.",
+  "author": {
+    "name": "Luminara Digital",
+    "url": "https://luminarasuite.com"
+  },
+  "homepage": "https://luminarasuite.com",
+  "repository": "https://github.com/LuminaraDigital/Luminara-Search-Oracle-Agent",
+  "license": "AGPL-3.0-only",
+  "keywords": [
+    "seo",
+    "aeo",
+    "geo",
+    "ai-visibility",
+    "citations",
+    "mcp"
+  ],
+  "extensions": {
+    "com.nousresearch.hermes": {
+      "servers": {
+        "luminara": {
+          "trust": "untrusted",
+          "timeout": 60,
+          "cost_unit": "cents",
+          "spend_limit": 100,
+          "costs": {
+            "whoami": 0,
+            "list_projects": 0,
+            "create_project": 0,
+            "get_project_context": 0,
+            "update_project_context": 0,
+            "list_reports": 0,
+            "get_report": 0,
+            "save_report": 0,
+            "dream_status": 0,
+            "dream_consolidate": {
+              "credits": 0,
+              "note": "0 billed cents; waking a hosted consolidation run on Free plan uses 1 daily request unit."
+            },
+            "get_business_memory": 0,
+            "review_dream_proposal": 0,
+            "draft_fix": {
+              "credits": 0,
+              "note": "0 billed cents; consumes 1 daily ask quota unit on metered plans."
+            },
+            "list_enquiries": 0,
+            "ingest_enquiry": 0,
+            "propose_booking_slots": 0,
+            "decide_booking_signoff": 0,
+            "get_outcomes_funnel": 0,
+            "classify_cms_remediation": 0,
+            "prepare_cms_mcp_call": 0,
+            "create_dev_ticket_from_finding": 0,
+            "compile_review_to_skill": {
+              "credits": 0,
+              "note": "0 billed cents; requires user session or API key (blocked for OAuth/habitat tokens)."
+            },
+            "mint_habitat_token": {
+              "credits": 0,
+              "note": "0 billed cents; requires Growth+ session or API key (blocked for OAuth/habitat tokens)."
+            },
+            "research_keywords": {
+              "credits": [0, 1],
+              "note": "1 cent hosted (Agency mcp:research); 0 cents with x-provider-key DataForSEO BYOK."
+            },
+            "get_domain_overview": {
+              "credits": [0, 1],
+              "note": "1 cent hosted (Agency mcp:research); 0 cents with x-provider-key DataForSEO BYOK."
+            },
+            "get_serp_results": {
+              "credits": [0, 1],
+              "note": "1 cent hosted (Agency mcp:research); 0 cents with x-provider-key DataForSEO BYOK."
+            },
+            "get_backlinks_overview": {
+              "credits": [0, 1],
+              "note": "1 cent hosted (Agency mcp:research); 0 cents with x-provider-key DataForSEO BYOK."
+            },
+            "get_visibility_snapshot": {
+              "credits": [0, 1],
+              "note": "1 cent hosted (Agency mcp:research); 0 cents with x-provider-key DataForSEO BYOK."
+            },
+            "get_pagespeed_summary": {
+              "credits": [0, 1],
+              "note": "1 cent hosted (Agency mcp:research); 0 cents with x-provider-key DataForSEO BYOK."
+            },
+            "browse_observe": {
+              "credits": 0,
+              "note": "0 billed cents; requires Growth+ plan or x-provider-key BYOK."
+            },
+            "browse_act": {
+              "credits": [0, 1],
+              "note": "1 cent hosted crawler action (Agency mcp:research); 0 cents with x-provider-key BYOK."
+            },
+            "browse_goal": {
+              "credits": [0, 1],
+              "note": "1 cent hosted crawler action (Agency mcp:research); 0 cents with x-provider-key BYOK."
+            },
+            "browse_close": 0
+          }
+        }
+      }
+    }
+  }
+}

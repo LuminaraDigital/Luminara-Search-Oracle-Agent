@@ -86,3 +86,19 @@ Luminara branding, storage keys, and UI remain original to this project.
   - `services/compression/prefixFreeze.ts`: Prompt cache prefix canonicalizer (adapted from `open-sse/services/compression/prefixFreeze.ts`).
   - `services/trust/piiSanitizer.ts`: Client-side PII and credential redaction gate for scraped website data (adapted from `src/lib/piiSanitizer.ts`).
 
+## hermes-agent
+
+- Source: https://github.com/NousResearch/hermes-agent (commit `ca2269588fd028adb41f3cc45875b04f3c0b88b4`)
+- Copyright (c) 2025 Nous Research
+- License: MIT
+- What we adapted into TypeScript:
+  - `services/trust/threatPatterns.ts`: Scoped prompt-injection / promptware / exfiltration scanner, raw invisible-unicode detector, NFKC homograph folding, and two-tier scheduled-prompt scanner (adapted from `tools/threat_patterns.py` and `tools/cronjob_prompt_scan.py`).
+  - `services/trust/epistemicStance.ts`: Epistemic stance rule and `## Unverified / Working Hypotheses` section parser/validator (adapted from `agent/context_compressor_prompt_rules.py`, replacing `U+2014` with ASCII `-` per repository copy rules).
+  - `services/oracle/jsonContract.ts`: Outermost JSON span extractor and single-retry verbatim validation contract (adapted from `tools/delegation_output_schema.py`).
+  - `services/mcp/toolCosts.ts` and `plugins/luminara/plugin.json` / `plugins/luminara/mcp.json`: Agent Plugins v1 manifest validation helpers and declared per-tool MCP cost policy shapes (adapted from `tools/mcp_tool_costs.py` and `hermes_cli/agent_plugins.py`).
+  - `services/oracle/toolLoopGuardrails.ts` and `services/oracle/emptyResponseGuard.ts`: Pure per-turn identical-call / batch-cycle stall detector and deterministic-empty / cost-aware retry budget controller (adapted from `agent/tool_guardrails.py` and `agent/empty_response_guard.py`).
+  - `services/audit/groundedCitations.ts` and `services/oracle/verificationLedger.ts`: Clean-room TypeScript implementations inspired by `skills/research/grounded-citations/SKILL.md` and `agent/verification_nudge.py`.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of hermes-agent software and associated documentation files, to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, subject to the above copyright notice and this permission notice being included in copies or substantial portions of the Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
+
+

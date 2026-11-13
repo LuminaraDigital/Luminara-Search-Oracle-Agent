@@ -23,7 +23,7 @@ Learned loops for Luminara Suite. D1 is the record. KV is a short-lived copy. Pu
 | File | Job |
 |------|-----|
 | `guardrails.ts` | Caps, evidence, pin lock, live-change gate |
-| `skillGuard.ts` | Safety scan before a skill body goes live |
+| `skillGuard.ts` | Safety scan before a skill body goes live (`strictThreats` delegates to `services/trust/threatPatterns.ts`) |
 | `skillEvals.ts` | Built-in evals. Correction cases append later |
 | `skillLibrary.ts` | Propose, apply, usage, curator plan, rollback |
 | `corrections.ts` | Turn a user correction into an eval case and YAML |
@@ -36,7 +36,7 @@ Worker persistence is `worker/rsiSkillStore.ts`. The daily 08:00 UTC cron runs `
 
 ## Attribution
 
-Usage stats, stale archival, and a pre-live safety scan are inspired by Nous Research hermes-agent (MIT), `tools/skill_manager_tool.py`, `skill_usage.py`, and `skills_guard.py`. No Hermes source is copied. https://github.com/NousResearch/hermes-agent
+Usage stats, stale archival, and a pre-live safety scan are inspired by Nous Research hermes-agent (MIT), `tools/skill_manager_tool.py`, `skill_usage.py`, and `skills_guard.py`; strict threat patterns delegate to `services/trust/threatPatterns.ts` (MIT attribution in `THIRD_PARTY_NOTICES.md`). https://github.com/NousResearch/hermes-agent
 
 The propose, evaluate, and retain shape follows Gen-Verse/RSI-Anything (Apache-2.0) at the idea level only. https://github.com/Gen-Verse/RSI-Anything
 

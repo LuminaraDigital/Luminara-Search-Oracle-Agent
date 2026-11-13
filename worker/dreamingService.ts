@@ -3,6 +3,7 @@
  * Coordinates event queues, deterministic wake gates, Dream Agent runs,
  * approval review workflows, and atomic rollbacks.
  */
+import type { D1PreparedStatement } from '@cloudflare/workers-types';
 import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
 import { billingId, json } from './workerUtils';
@@ -24,6 +25,9 @@ import {
 import { evaluateWakeGate } from './dreamingWakeGate';
 import { hasHostedDreamModel, runDreamAgent } from './dreamAgent';
 import { checkHostedQuota, QUOTA_CAPACITY_ERROR, refundMeteredQuota } from './quotaMiddleware';
+import { evaluateStrictWriteGate } from '../services/trust/threatPatterns';
+import { assignEpistemicVariant, type EpistemicAssignment } from '../services/experiments/hermesAbExperiment';
+import { recordServerProductEvent } from './productAnalytics';
 
 const DREAM_RUN_LIMIT_ERROR =
   "Run now uses one of your free daily requests on free plans, and today's are used up. A paid plan lifts that daily cap, or try again after 00:00 UTC.";
@@ -85,7 +89,14 @@ export async function executeDreamRun(
   accountId: string,
   domain: string,
   triggerReason: DreamTriggerReason,
-  opts: { force?: boolean; projectId?: string; threshold?: number } = {},
+  opts: {
+    force?: boolean;
+    projectId?: string;
+    threshold?: number;
+    request?: Request | null;
+    assignment?: EpistemicAssignment;
+    fetcher?: typeof fetch;
+  } = {},
 ): Promise<
   | { ok: true; woke: false; reason: string; signalScore: number }
   | { ok: true; woke: true; run: DreamRun; proposals: DreamProposal[] }
@@ -114,14 +125,27 @@ export async function executeDreamRun(
     };
   }
 
+  const assignment =
+    opts.assignment ??
+    assignEpistemicVariant({
+      env,
+      accountId,
+      request: opts.request,
+    });
+
   const startTime = Date.now();
-  const agentOutput = await runDreamAgent(env, {
-    domain: cleanDomain,
-    pendingEvents,
-    activeMemories,
-    detectedConflictSummary: wakeResult.detectedConflictSummary,
-    expiredMemoryIds: wakeResult.expiredMemoryIds,
-  });
+  const agentOutput = await runDreamAgent(
+    env,
+    {
+      domain: cleanDomain,
+      pendingEvents,
+      activeMemories,
+      detectedConflictSummary: wakeResult.detectedConflictSummary,
+      expiredMemoryIds: wakeResult.expiredMemoryIds,
+    },
+    opts.fetcher ?? fetch,
+    { variant: assignment.variant },
+  );
   const durationMs = Date.now() - startTime;
 
   const runId = `drun_${crypto.randomUUID()}`;
@@ -138,6 +162,21 @@ export async function executeDreamRun(
   const writes: D1PreparedStatement[] = [];
 
   for (const p of agentOutput.proposals) {
+    const propThreat = evaluateStrictWriteGate(env, `${p.title}\n${p.content}\n${p.rationale}`);
+    if (propThreat.findings.length > 0) {
+      await recordServerProductEvent(db, {
+        accountId,
+        type: 'threat_scan_triggered',
+        path: '/api/dreaming/run',
+        data: {
+          surface: 'dream_proposal_create',
+          mode: propThreat.mode,
+          blocked: propThreat.blocked,
+          patternId: propThreat.findings[0],
+        },
+      });
+      if (propThreat.blocked) continue;
+    }
     const proposalId = `dprop_${crypto.randomUUID()}`;
     let previousSnapshot: Partial<BusinessMemoryItem> | null = null;
 
@@ -274,6 +313,11 @@ export async function executeDreamRun(
     });
   }
 
+  const summaryThreat = evaluateStrictWriteGate(env, String(agentOutput.summary || ''));
+  const safeRunSummary = summaryThreat.blocked
+    ? 'Consolidation completed (summary redacted by threat scanner).'
+    : agentOutput.summary;
+
   writes.push(
     db
       .prepare(
@@ -294,7 +338,7 @@ export async function executeDreamRun(
         createdProposals.length,
         autoAppliedCount,
         pendingReviewCount,
-        agentOutput.summary,
+        safeRunSummary,
         agentOutput.modelId,
         durationMs,
         now,
@@ -303,6 +347,34 @@ export async function executeDreamRun(
   const consolidated = markEventsConsolidated(db, pendingEvents.map((e) => e.id), runId);
   if (consolidated) writes.push(consolidated);
   await db.batch(writes);
+
+  if (assignment.enabled && assignment.trackExposure) {
+    await recordServerProductEvent(db, {
+      accountId,
+      type: 'epistemic_ab_exposed',
+      path: '/api/dreaming/run',
+      data: {
+        variant: assignment.variant,
+        surface: 'dreaming',
+        assignmentSource: assignment.source,
+      },
+    });
+    await recordServerProductEvent(db, {
+      accountId,
+      type: 'dream_contract_result',
+      path: '/api/dreaming/run',
+      data: {
+        variant: assignment.variant,
+        modelId: agentOutput.modelId,
+        usedFallback: Boolean(agentOutput.usedFallback),
+        contractRetried: Boolean(agentOutput.contractRetried),
+        proposalsCount: createdProposals.length,
+        autoAppliedCount,
+        pendingReviewCount,
+        unverifiedHypothesesCount: agentOutput.unverifiedHypotheses?.length ?? 0,
+      },
+    });
+  }
 
   const run: DreamRun = {
     id: runId,
@@ -346,7 +418,11 @@ export async function reviewDreamProposal(
   }
 
   const now = Date.now();
-  const finalContent = editedContent !== undefined ? editedContent : row.proposed_content;
+  const finalContent =
+    editedContent !== undefined ? String(editedContent).trim().slice(0, 4000) : row.proposed_content;
+  if (reviewAction === 'approve' && editedContent !== undefined && !finalContent) {
+    return { ok: false, error: 'Edited content cannot be empty', status: 400 };
+  }
 
   if (reviewAction === 'reject') {
     await env.DB.prepare(
@@ -355,6 +431,23 @@ export async function reviewDreamProposal(
       .bind(reviewedBy, now, proposalId)
       .run();
   } else if (reviewAction === 'approve') {
+    const reviewThreat = evaluateStrictWriteGate(env, `${row.title}\n${finalContent}`);
+    if (reviewThreat.findings.length > 0) {
+      await recordServerProductEvent(env.DB, {
+        accountId,
+        type: 'threat_scan_triggered',
+        path: '/api/dreaming/proposals/review',
+        data: {
+          surface: 'dream_proposal_approve',
+          mode: reviewThreat.mode,
+          blocked: reviewThreat.blocked,
+          patternId: reviewThreat.findings[0],
+        },
+      });
+      if (reviewThreat.blocked) {
+        return { ok: false, error: reviewThreat.reason || 'Blocked by threat scanner', status: 400 };
+      }
+    }
     if (row.action === 'create') {
       const memId = `mem_${crypto.randomUUID()}`;
       await env.DB.prepare(
@@ -566,6 +659,24 @@ export async function handleDreamingRoute(
     if (!body.domain || !body.eventType) {
       return json({ ok: false, error: 'domain and eventType required' }, 400);
     }
+    const payloadJson = JSON.stringify(body.payload || {});
+    const evtThreat = evaluateStrictWriteGate(env, payloadJson);
+    if (evtThreat.findings.length > 0) {
+      await recordServerProductEvent(env.DB, {
+        accountId,
+        type: 'threat_scan_triggered',
+        path: '/api/dreaming/events',
+        data: {
+          surface: 'dreaming_event_enqueue',
+          mode: evtThreat.mode,
+          blocked: evtThreat.blocked,
+          patternId: evtThreat.findings[0],
+        },
+      });
+    }
+    if (evtThreat.blocked) {
+      return json({ ok: false, error: evtThreat.reason || 'Blocked by threat scanner.', code: 'THREAT_BLOCKED' }, 400);
+    }
     const res = await enqueueDreamEvent(env, {
       accountId,
       projectId: body.projectId,
@@ -598,18 +709,23 @@ export async function handleDreamingRoute(
         capacity ? 503 : 429,
       );
     }
+    const assignment = assignEpistemicVariant({ env, accountId, request });
     const res = await executeDreamRun(
       env,
       accountId,
       body.domain,
       body.triggerReason || 'manual_user',
-      { force: body.force ?? false },
+      { force: body.force ?? false, request, assignment },
     ).catch(async (err: unknown) => {
       await refundMeteredQuota(env, quota);
       throw err;
     });
     if (!res.ok || !res.woke) await refundMeteredQuota(env, quota);
-    return json(res, res.ok ? 200 : 500);
+    const response = json(res, res.ok ? 200 : 500);
+    if (res.ok && res.woke && assignment.setCookie) {
+      response.headers.append('Set-Cookie', assignment.setCookie);
+    }
+    return response;
   }
 
   // GET /api/dreaming/memories?domain=

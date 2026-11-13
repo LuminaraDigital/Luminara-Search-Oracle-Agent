@@ -53,6 +53,12 @@ const ALLOW_PATH_RE =
 const FORBIDDEN_NAME_RE =
   /(^|[/\\])(\.env|\.env\..+|\.dev\.vars|\.dev\.vars\..+|mcp\.json|\.mcp\.json|.*credentials.*\.json|.*service[_-]?account.*\.json|google-api\.json|application_default_credentials\.json|.*\.(pem|p12|pfx|key)|id_rsa|id_ed25519|id_ecdsa)(\.|$)/i;
 
+/**
+ * Agent Plugins v1 requires `plugins/luminara/mcp.json` by name. Only this exact path is
+ * permitted by filename, and its content still passes through `toScan` + `PATTERNS` below.
+ */
+const PORTABLE_PLUGIN_MCP_RE = /^plugins\/luminara\/mcp\.json$/;
+
 const PLACEHOLDER_RE =
   /your[_-]?|example|change[_-]?me|placeholder|xxxx|dummy|redacted|TODO|insert|sample|test[_-]?key|not[_-]?a[_-]?real/i;
 
@@ -192,7 +198,11 @@ for (const rel of files) {
     if (!existsSync(abs) || !statSync(abs).isFile()) continue;
   }
 
-  if (FORBIDDEN_NAME_RE.test(relNorm(rel)) && !ALLOW_PATH_RE.test(relNorm(rel))) {
+  if (
+    FORBIDDEN_NAME_RE.test(relNorm(rel)) &&
+    !ALLOW_PATH_RE.test(relNorm(rel)) &&
+    !PORTABLE_PLUGIN_MCP_RE.test(toPosix(rel))
+  ) {
     findings.push({ file: rel, label: 'forbidden secret filename', snippet: rel });
     continue;
   }
