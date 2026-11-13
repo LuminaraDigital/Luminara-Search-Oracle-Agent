@@ -2,6 +2,7 @@
  * Free MCP reads for per-project history and measured recommendation outcomes.
  */
 import type { McpToolDef, McpToolResult } from './mcpServer';
+import { MCP_PROJECT_ID_RE, requireProjectId } from './mcpProjectArgs';
 import {
   compareProjectSnapshots,
   getProjectHistory,
@@ -14,13 +15,8 @@ function textResult(text: string, structured?: Record<string, unknown>, isError 
   return { text, structuredContent: structured, isError };
 }
 
-const ID_RE = /^[A-Za-z0-9_-]{1,80}$/;
-
 function requireProject(args: Record<string, unknown>, ctx: { credential: { projectId?: string | null } }): string | null {
-  const projectId = typeof args.projectId === 'string' ? args.projectId.trim() : '';
-  if (!ID_RE.test(projectId)) return null;
-  if (ctx.credential.projectId && ctx.credential.projectId !== projectId) return null;
-  return projectId;
+  return requireProjectId(args, ctx);
 }
 
 function formatLift(outcome: ProjectOutcome): string {
@@ -93,7 +89,7 @@ export const PROJECT_HISTORY_MCP_TOOLS: McpToolDef[] = [
       const projectId = requireProject(args, ctx);
       const earlierId = typeof args.earlierId === 'string' ? args.earlierId.trim() : '';
       const laterId = typeof args.laterId === 'string' ? args.laterId.trim() : '';
-      if (!projectId || !ID_RE.test(earlierId) || !ID_RE.test(laterId)) {
+      if (!projectId || !MCP_PROJECT_ID_RE.test(earlierId) || !MCP_PROJECT_ID_RE.test(laterId)) {
         return textResult('Snapshot not found', { code: 'NOT_FOUND' }, true);
       }
       const delta = await compareProjectSnapshots(ctx.env, ctx.accountId, projectId, earlierId, laterId);
@@ -145,7 +141,7 @@ export const PROJECT_HISTORY_MCP_TOOLS: McpToolDef[] = [
     handler: async (args, ctx) => {
       const projectId = requireProject(args, ctx);
       const actionId = typeof args.actionId === 'string' ? args.actionId.trim() : '';
-      if (!projectId || !ID_RE.test(actionId)) return textResult('Action not found', { code: 'NOT_FOUND' }, true);
+      if (!projectId || !MCP_PROJECT_ID_RE.test(actionId)) return textResult('Action not found', { code: 'NOT_FOUND' }, true);
       const outcome = await markActionDone(ctx.env, ctx.accountId, projectId, actionId);
       if (!outcome) return textResult('Action not found', { code: 'NOT_FOUND' }, true);
       return textResult(formatLift(outcome), { outcome });
