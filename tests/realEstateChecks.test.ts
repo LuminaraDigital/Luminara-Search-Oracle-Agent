@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BLOCKED_CHECK } from '../services/audit/llmCrawlerReadiness';
-import { evaluateRealEstateChecks, formatRealEstateChecks } from '../services/audit/realEstateChecks';
+import { evaluateRealEstateChecks, formatRealEstateChecks, realEstateCoverage } from '../services/audit/realEstateChecks';
 import { auditHistoryService } from '../services/audit/auditHistoryService';
 import { formatAuDate } from '../utils/formatAuDate';
 
@@ -21,7 +21,7 @@ describe('real estate checks', () => {
       rawTextSnippet: 'Checking your browser',
       schemasFound: [],
     }]);
-    expect(checks).toHaveLength(6);
+    expect(checks).toHaveLength(9);
     for (const check of checks) {
       expect(check.status).toBe('not_measured');
       expect(check.detail).toBe(BLOCKED_CHECK);
@@ -54,6 +54,11 @@ describe('real estate checks', () => {
     expect(byId.area_pages.detail).toContain('/suburbs/richmond');
     expect(byId.gbp.detail).toContain('maps.google.com');
     expect(byId.reviews.detail).toContain('AggregateRating');
+    expect(byId.listing_pages.hit).toBe(false);
+    expect(byId.agent_profile.status).toBe('not_measured');
+    expect(byId.answer_prompts.detail).toBe(
+      'Measured. Prompts built from the parsed pages. They were not sent to an AI answer engine: who is the real estate agent at Ray White Richmond; real estate agent in richmond; Ray White Richmond richmond.',
+    );
     expect(formatRealEstateChecks(checks)).toContain('## Real estate checks');
     expect(formatRealEstateChecks(checks)).not.toContain('Fill this in');
   });
@@ -72,6 +77,28 @@ describe('real estate checks', () => {
       { url: 'https://a.example/', schemasFound: [{ type: 'LocalBusiness', rawJson: localBusiness('03 9000 1111') }] },
     ]);
     expect(one.find((check) => check.id === 'nap')?.status).toBe('not_measured');
+  });
+
+  it('names a fetched agent, counts a listing URL, and builds no prompt when the page has neither', () => {
+    const checks = evaluateRealEstateChecks([{
+      url: 'https://harbour.example/team/ada',
+      schemasFound: [{ rawJson: JSON.stringify({ '@type': 'Person', name: 'Ada Harbour' }) }],
+      outboundLinks: ['https://harbour.example/listings/12-bridge-road'],
+    }]);
+    const byId = Object.fromEntries(checks.map((check) => [check.id, check]));
+    expect(byId.agent_profile.detail).toBe('Measured. Agent profile name "Ada Harbour" on https://harbour.example/team/ada.');
+    expect(byId.listing_pages.detail).toBe('Measured. Listing URL: https://harbour.example/listings/12-bridge-road.');
+    expect(byId.answer_prompts.detail).toBe('Measured. No agency name or suburb was in the parsed pages, so no AI answer prompt was built.');
+    expect(realEstateCoverage(checks).score).toBe(3);
+  });
+
+  it('does not score a page that was not fetched', () => {
+    expect(realEstateCoverage(evaluateRealEstateChecks([]))).toEqual({
+      series: 'real estate checks',
+      measurementStatus: 'not_measured',
+      score: null,
+      notes: [],
+    });
   });
 });
 
