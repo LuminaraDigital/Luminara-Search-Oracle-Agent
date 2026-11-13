@@ -196,6 +196,7 @@ import { handleEmailUnsubscribe, runWithWaitUntil } from './welcomeEmail';
 export { DailyQuota } from './dailyQuota';
 import { createProject, listProjects, getProject } from './projectService';
 import { handleProjectHistoryRoute } from './projectHistoryRoute';
+import { handleProjectMonitorRoute, runProjectMonitorTick } from './projectMonitor';
 import { getProjectContext, updateProjectContext, seedContextFromDna } from './projectContextService';
 import { getAgentReport, listAgentReports, saveAgentReport, getAgentReportHtmlForAccount } from './agentReportService';
 import { createApiKey, listApiKeys, revokeApiKey } from './apiKeyService';
@@ -599,6 +600,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
         source: 'firebase',
         email: verified.user.email,
         name: verified.user.name,
+        emailVerified: verified.user.emailVerified === true,
       };
       const stored = await withAccountId(env, fbIdentity);
       const { org, membership } = await getOrCreateUserOrg(env, stored);
@@ -754,11 +756,13 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       }
     } else if ((event === 'user.created' || event === 'user.updated') && (data.uid || data.id)) {
       const uid = String(data.uid || data.id).replace(/^fb:/, '');
+      const verifiedFlag = data.emailVerified ?? data.email_verified;
       const userObj: HostedIdentity = {
         id: `fb:${uid}`,
         source: 'firebase',
         email: data.email,
         name: data.displayName || data.name,
+        ...(typeof verifiedFlag === 'boolean' ? { emailVerified: verifiedFlag } : {}),
       };
       await withAccountId(env, userObj);
     }
@@ -2080,6 +2084,8 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     const accountId = billingId(who.user);
     const historyResponse = await handleProjectHistoryRoute(request, env, path, accountId);
     if (historyResponse) return withCors(historyResponse);
+    const monitorResponse = await handleProjectMonitorRoute(request, env, path, accountId);
+    if (monitorResponse) return withCors(monitorResponse);
 
     if (path === '/projects' && request.method === 'GET') {
       const projects = await listProjects(env, accountId);
@@ -2693,6 +2699,14 @@ const handler = {
         sweepDueRecoveryRuns(env)
           .then(() => undefined)
           .catch((err) => console.error('[Recovery] scheduled sweep failed', err)),
+      );
+    }
+    if (jobs.includes('project_monitor')) {
+      const scheduledAt = controller.scheduledTime;
+      ctx.waitUntil(
+        runProjectMonitorTick(env, { scheduledAt })
+          .then(() => undefined)
+          .catch((err) => console.error('[Monitor] sweep failed', err)),
       );
     }
   },

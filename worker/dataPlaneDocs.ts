@@ -47,6 +47,7 @@ export type UserLoginRow = {
   display_name: string | null;
   welcome_sent_at: number | null;
   email_opt_out_at: number | null;
+  email_verified?: number | null;
 };
 
 export type UserLoginWrite = {
@@ -59,6 +60,8 @@ export type UserLoginWrite = {
   createdAt: number;
   lastSeenAt: number;
   accountId: string;
+  /** 1 or 0 from a Firebase token. Null leaves the stored column unchanged. */
+  emailVerified?: number | null;
 };
 
 export const USER_LIVE_FIELDS = [

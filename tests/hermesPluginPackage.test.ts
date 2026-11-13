@@ -60,7 +60,7 @@ function parseSimpleFrontmatter(md: string): Record<string, unknown> {
 describe('Agent Plugins v1 Package (plugins/luminara) & MCP Tool Cost Parity', () => {
   const pluginRoot = resolve(process.cwd(), 'plugins', 'luminara');
 
-  it('validates mcp.json, plugin.json, cost synchronization, and zero drift across all 40 MCP tools', () => {
+  it('validates mcp.json, plugin.json, cost synchronization, and zero drift across all 44 MCP tools', () => {
     expect(TOOL_COSTS_HOSTED_CENTS).toBe(HOSTED_PAID_CALL_COST_CENTS);
     expect(TOOL_COSTS_BYOK_CENTS).toBe(BYOK_PAID_CALL_COST_CENTS);
 
@@ -86,7 +86,7 @@ describe('Agent Plugins v1 Package (plugins/luminara) & MCP Tool Cost Parity', (
 
     // Zero drift between live Worker tools/list and declared cost table.
     const liveTools = listMcpToolCatalogue();
-    expect(liveTools).toHaveLength(40);
+    expect(liveTools).toHaveLength(44);
     const liveNames = liveTools.map((t) => t.name);
     expect(unknownCostKeys(policy, liveNames)).toEqual([]);
     expect(Object.keys(LUMINARA_MCP_TOOL_COSTS).sort()).toEqual([...liveNames].sort());

@@ -176,6 +176,31 @@ export function citationWatchSnapshot(input: {
   });
 }
 
+export function realEstateSnapshot(input: {
+  projectId: string;
+  monitorId: string;
+  windowAt: number;
+  measuredAt: number;
+  series: string;
+  measurementStatus: 'measured' | 'not_measured';
+  score: number | null;
+  notes: string[];
+}): MeasuredSnapshot {
+  const scored = input.measurementStatus === 'measured' && input.score !== null;
+  return measured({
+    projectId: input.projectId,
+    kind: 'audit',
+    measuredAt: input.measuredAt,
+    sourceRef: `monitor:${input.monitorId}:${input.windowAt}`,
+    metric: scored ? 're_coverage' : 'none',
+    subject: scored ? input.series : '',
+    score: scored ? input.score : null,
+    engines: [],
+    notes: input.notes,
+    measurementStatus: scored ? 'measured' : 'not_measured',
+  });
+}
+
 export function crawlerFileSnapshot(input: {
   projectId: string;
   host: string;

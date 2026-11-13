@@ -62,7 +62,7 @@ const PAID_BROWSER: ToolCostEntry = {
   requiredScope: 'mcp:research',
 };
 
-/** Canonical cost table for all 40 Luminara MCP tools. */
+/** Canonical cost table for all 44 Luminara MCP tools. */
 export const LUMINARA_MCP_TOOL_COSTS: Readonly<Record<string, ToolCostEntry>> = {
   whoami: FREE_STD,
   list_projects: FREE_STD,
@@ -72,6 +72,10 @@ export const LUMINARA_MCP_TOOL_COSTS: Readonly<Record<string, ToolCostEntry>> = 
   compare_snapshots: FREE_STD,
   get_project_outcomes: FREE_STD,
   mark_project_action_done: FREE_STD,
+  get_project_monitor: FREE_STD,
+  set_project_monitor: FREE_STD,
+  list_project_alerts: FREE_STD,
+  ack_project_alert: FREE_STD,
   ask_auditor: FREE_STD,
   ask_fixer: FREE_STD,
   ask_coach: FREE_STD,
