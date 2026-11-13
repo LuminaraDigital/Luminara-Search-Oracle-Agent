@@ -237,6 +237,39 @@ function checkSecretPlaceholders(config) {
   return { ok: true };
 }
 
+function checkHermesFlags(config, { requireExplicit = true } = {}) {
+  const blocks = [
+    ['top-level', config?.vars || {}],
+    ['staging', config?.env?.staging?.vars || {}],
+    ['production', config?.env?.production?.vars || {}],
+  ];
+  const validScanModes = new Set(['off', 'warn', 'strict']);
+  const booleanFlags = ['EPISTEMIC_AB_ENABLED', 'ORACLE_LOOP_GUARDS_ENABLED', 'MCP_DECLARED_COSTS_ENABLED'];
+  for (const [envName, vars] of blocks) {
+    if (requireExplicit || Object.prototype.hasOwnProperty.call(vars, 'THREAT_SCAN_MODE')) {
+      const scanMode = String(vars.THREAT_SCAN_MODE ?? '').trim();
+      if (!validScanModes.has(scanMode)) {
+        return {
+          ok: false,
+          message: `${envName}: THREAT_SCAN_MODE must be "off", "warn", or "strict" (got "${scanMode}").`,
+        };
+      }
+    }
+    for (const flag of booleanFlags) {
+      if (requireExplicit || Object.prototype.hasOwnProperty.call(vars, flag)) {
+        const val = String(vars[flag] ?? '').trim();
+        if (val !== 'true' && val !== 'false') {
+          return {
+            ok: false,
+            message: `${envName}: ${flag} must be "true" or "false" (got "${val}").`,
+          };
+        }
+      }
+    }
+  }
+  return { ok: true };
+}
+
 let wranglerConfig;
 try {
   wranglerConfig = parseJsonc(wranglerContent);
@@ -247,6 +280,11 @@ try {
 const secretPlaceholders = checkSecretPlaceholders(wranglerConfig);
 if (!secretPlaceholders.ok) {
   console.error(`[EnvValidation] ${secretPlaceholders.message}`);
+  process.exit(1);
+}
+const hermesFlags = checkHermesFlags(wranglerConfig, { requireExplicit: !wranglerArg });
+if (!hermesFlags.ok) {
+  console.error(`[EnvValidation] ${hermesFlags.message}`);
   process.exit(1);
 }
 

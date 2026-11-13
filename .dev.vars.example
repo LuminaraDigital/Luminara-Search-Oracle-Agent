@@ -73,3 +73,8 @@ PROOF_XDC_ENABLED=false
 LAUNCHPAD_MAINNET_ENABLED=false
 # Testnet-only: skip on-chain deployment check at registration while no factory is deployed
 # LAUNCHPAD_SKIP_CHAIN_VERIFY=true
+# Hermes Agent switches (off | warn | strict for THREAT_SCAN_MODE; false | true for others)
+THREAT_SCAN_MODE=off
+EPISTEMIC_AB_ENABLED=false
+ORACLE_LOOP_GUARDS_ENABLED=false
+MCP_DECLARED_COSTS_ENABLED=false

@@ -6,6 +6,13 @@
  * provenance event (v1 never blocks the stream).
  */
 
+import {
+  UNVERIFIED_SECTION_HEADING,
+  detectUnverifiedFactLeakage,
+  parseUnverifiedSection,
+} from '../services/trust/epistemicStance';
+import type { GroundedCitationLedger } from '../services/audit/groundedCitations';
+
 export type ValidatorFinding = {
   validator: string;
   severity: 'info' | 'warn' | 'block';
@@ -199,6 +206,88 @@ export function noVendorNames(text: string): ValidatorFinding[] {
   return findings;
 }
 
+export function epistemicStanceHonesty(
+  text: string,
+  opts?: { requireSection?: boolean; blockOnLeakage?: boolean },
+): ValidatorFinding[] {
+  const findings: ValidatorFinding[] = [];
+  if (!text) return findings;
+
+  const parsed = parseUnverifiedSection(text);
+  if (opts?.requireSection && !parsed.hasSection) {
+    findings.push({
+      validator: 'epistemicStanceHonesty',
+      severity: 'warn',
+      span: { start: 0, end: Math.min(text.length, 40) },
+      excerpt: normalizeExcerpt(text, 0, Math.min(text.length, 40)),
+      detail: `Missing required "${UNVERIFIED_SECTION_HEADING}" section.`,
+    });
+  }
+
+  for (const hit of detectUnverifiedFactLeakage(text)) {
+    findings.push({
+      validator: 'epistemicStanceHonesty',
+      severity: opts?.blockOnLeakage ? 'block' : 'warn',
+      span: hit.span,
+      excerpt: hit.excerpt,
+      detail:
+        hit.kind === 'inline_unverified_outside_section'
+          ? `Inline "UNVERIFIED:" marker emitted outside "${UNVERIFIED_SECTION_HEADING}".`
+          : `Unverified hypothesis "${hit.claim}" restated as unqualified fact in main body.`,
+    });
+  }
+
+  return findings;
+}
+
+export function groundedCitationsHonesty(
+  text: string,
+  ledger: GroundedCitationLedger,
+  opts?: { requireEvidenceQuotes?: boolean },
+): ValidatorFinding[] {
+  const findings: ValidatorFinding[] = [];
+  if (!text) return findings;
+  const check = ledger.verifyDraft(text, {
+    requireEvidenceQuotes: opts?.requireEvidenceQuotes,
+  });
+
+  for (const unknownId of check.unknownIds) {
+    const marker = `[${unknownId}]`;
+    const idx = Math.max(0, text.indexOf(marker));
+    findings.push({
+      validator: 'groundedCitationsHonesty',
+      severity: 'block',
+      span: { start: idx, end: idx + marker.length },
+      excerpt: normalizeExcerpt(text, idx, idx + marker.length),
+      detail: `Citation marker [${unknownId}] does not match any registered source in the ledger.`,
+    });
+  }
+
+  for (const missingId of check.missingEvidenceIds) {
+    const marker = `[${missingId}]`;
+    const idx = Math.max(0, text.indexOf(marker));
+    findings.push({
+      validator: 'groundedCitationsHonesty',
+      severity: 'warn',
+      span: { start: idx, end: idx + marker.length },
+      excerpt: normalizeExcerpt(text, idx, idx + marker.length),
+      detail: `Cited source [${missingId}] has no verified verbatim quote attached.`,
+    });
+  }
+
+  for (const mismatch of check.mismatchedSources) {
+    findings.push({
+      validator: 'groundedCitationsHonesty',
+      severity: 'warn',
+      span: { start: 0, end: Math.min(text.length, 40) },
+      excerpt: normalizeExcerpt(text, 0, Math.min(text.length, 40)),
+      detail: mismatch,
+    });
+  }
+
+  return findings;
+}
+
 const SEVERITY_ORDER: Record<ValidatorFinding['severity'], number> = {
   block: 0,
   warn: 1,
@@ -207,13 +296,24 @@ const SEVERITY_ORDER: Record<ValidatorFinding['severity'], number> = {
 
 export function runAllValidators(
   text: string,
-  ctx?: { evidenceNumbers?: number[] },
+  ctx?: {
+    evidenceNumbers?: number[];
+    requireEpistemicSection?: boolean;
+    groundedLedger?: GroundedCitationLedger;
+    requireEvidenceQuotes?: boolean;
+  },
 ): { ok: boolean; findings: ValidatorFinding[] } {
   const findings: ValidatorFinding[] = [
     ...noInventedMetrics(text, ctx),
     ...hasCitationsWhenClaiming(text),
     ...notMeasuredHonesty(text),
     ...noVendorNames(text),
+    ...epistemicStanceHonesty(text, { requireSection: ctx?.requireEpistemicSection }),
+    ...(ctx?.groundedLedger
+      ? groundedCitationsHonesty(text, ctx.groundedLedger, {
+          requireEvidenceQuotes: ctx.requireEvidenceQuotes,
+        })
+      : []),
   ];
   findings.sort(
     (a, b) =>

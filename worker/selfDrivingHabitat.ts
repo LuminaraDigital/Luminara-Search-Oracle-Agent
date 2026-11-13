@@ -200,7 +200,7 @@ export async function compileFeedbackIntoSkillRule(
   const subjectEntity = scope.domain || 'workspace';
 
   const fact = await rememberConstraint(env, { ...scope, accountId, text: ruleText, source: sourceRef });
-  if (!fact.ok) return { ok: false, error: fact.error, status: 503 };
+  if (!fact.ok) return { ok: false, error: fact.error, status: fact.code === 'THREAT_BLOCKED' ? 400 : 503 };
 
   const [edgeId, dream, updatedProjectPreferences] = await Promise.all([
     rememberRuleEdge(env, { ...scope, accountId, subjectEntity, objectEntity: cleanReason.slice(0, 200), sourceRef }),

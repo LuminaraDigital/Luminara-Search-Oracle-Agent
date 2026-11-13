@@ -7,6 +7,8 @@
  * https://github.com/NousResearch/hermes-agent
  */
 
+import { formatFirstThreatFinding, scanForThreats } from '../trust/threatPatterns';
+
 export interface SkillGuardFinding {
   id: string;
   detail: string;
@@ -15,6 +17,10 @@ export interface SkillGuardFinding {
 export interface SkillGuardResult {
   ok: boolean;
   findings: SkillGuardFinding[];
+}
+
+export interface SkillGuardOptions {
+  strictThreats?: boolean;
 }
 
 const BLOCKS: Array<{ id: string; re: RegExp; detail: string }> = [
@@ -50,7 +56,7 @@ const BLOCKS: Array<{ id: string; re: RegExp; detail: string }> = [
   },
 ];
 
-export function scanSkillBody(body: string): SkillGuardResult {
+export function scanSkillBody(body: string, opts?: SkillGuardOptions): SkillGuardResult {
   const text = String(body || '');
   const findings: SkillGuardFinding[] = [];
   if (!text.trim()) {
@@ -61,6 +67,16 @@ export function scanSkillBody(body: string): SkillGuardResult {
   }
   for (const block of BLOCKS) {
     if (block.re.test(text)) findings.push({ id: block.id, detail: block.detail });
+  }
+  if (opts?.strictThreats && text.trim()) {
+    for (const pid of scanForThreats(text, 'strict')) {
+      if (!findings.some((f) => f.id === pid)) {
+        findings.push({
+          id: pid,
+          detail: formatFirstThreatFinding([pid]) || `Blocked threat pattern: ${pid}.`,
+        });
+      }
+    }
   }
   return { ok: findings.length === 0, findings };
 }

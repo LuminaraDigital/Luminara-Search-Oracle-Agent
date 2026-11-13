@@ -14,6 +14,7 @@ import {
 } from '../services/rl/luminaraRewardFunctions';
 import { setAgentSkillEnabled, upsertAgentSkillVersion } from './agentSkills';
 import { RsiUserError } from './rsiErrors';
+import { checkStrictWriteThreat } from './threatWriteGate';
 
 const ROUND_MS = 24 * 60 * 60 * 1000;
 const MISSING_TABLE = /no such table: rsi_/i;
@@ -94,6 +95,14 @@ export async function recordCorrection(
   const db = requireDb(env);
   const validated = validateCorrection(input);
   if (!validated.ok) throw new RsiUserError(validated.reason);
+  const corrThreat = await checkStrictWriteThreat(env, {
+    db,
+    accountId,
+    path: '/api/rsi/corrections',
+    surface: 'rsi_correction',
+    content: `${validated.draft.prompt}\n${validated.draft.badExcerpt}\n${validated.draft.goodExcerpt}`,
+  });
+  if (corrThreat.blocked) throw new RsiUserError(corrThreat.reason || 'Blocked by threat scanner.', 400);
   const id = crypto.randomUUID();
   const correction: UserCorrection = { id, accountId, ...validated.draft, createdAt: now };
   const yaml = renderCorrectionEvalYaml(correction);
@@ -271,6 +280,15 @@ export async function publishGatedPrompt(
   const evidence = requireEvidence(input.evidenceRefs);
   if (!evidence.ok) throw new RsiUserError(evidence.reason);
   const extra = await listCorrectionEvalCases(env, accountId);
+  const promptThreat = await checkStrictWriteThreat(env, {
+    accountId,
+    path: '/api/rsi/prompts/publish',
+    surface: 'rsi_prompt_publish',
+    content: input.promptBody,
+  });
+  if (promptThreat.blocked) {
+    throw new RsiUserError(promptThreat.reason || 'Blocked by threat scanner.', 400);
+  }
   const guard = scanSkillBody(input.promptBody);
   const evals = runPromptEvals(input.promptBody, extra);
   const gate = gateLiveChange({

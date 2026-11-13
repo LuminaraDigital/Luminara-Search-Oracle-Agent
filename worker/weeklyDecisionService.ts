@@ -8,6 +8,7 @@ import { findProjectByDomain, getProject } from './projectService';
 import { recordRecommendedAction } from './projectHistoryService';
 import { enqueueDreamEvent } from './dreamingQueue';
 import { api } from './telegramBot';
+import { checkStrictWriteThreat } from './threatWriteGate';
 
 async function rememberWeeklyAction(
   env: Env,
@@ -92,6 +93,18 @@ export async function handleWeeklyDecisionsRoute(
     const domain = (body.domain || '').trim().toLowerCase();
     const title = (body.title || '').trim();
     if (!domain || !title) return json({ ok: false, error: 'domain and title required' }, 400);
+    const threat = await checkStrictWriteThreat(env, {
+      accountId,
+      path: '/api/weekly-decisions',
+      surface: 'weekly_decision_save',
+      content: `${title}\n${body.whyText || ''}`,
+    });
+    if (threat.blocked) {
+      return json(
+        { ok: false, error: threat.reason || 'Blocked by threat scanner.', code: 'THREAT_BLOCKED' },
+        400,
+      );
+    }
     const week = isoWeekKey();
     const now = Date.now();
     const freshness = body.dataFreshness === 'live' ? 'live' : body.dataFreshness === 'mixed' ? 'mixed' : 'sample';

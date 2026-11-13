@@ -50,6 +50,16 @@ import { markProjectContextLoaded, requireProjectContextBeforePaid } from './mcp
 import { getProjectContext } from './projectContextService';
 import { scheduleWaitUntil } from './welcomeEmail';
 import { withoutUnmeasuredClaims } from './chatHonesty';
+import { VerificationLedger } from '../services/oracle/verificationLedger';
+import { GroundedCitationLedger } from '../services/audit/groundedCitations';
+import { assignEpistemicVariant } from '../services/experiments/hermesAbExperiment';
+import {
+  finalizeOracleHermesTurn,
+  guardOracleToolExecution,
+  isReservedOracleStateKey,
+  prepareOraclePromptWithHermes,
+  streamGroqChatWithEmptyGuard,
+} from './oracleHermesTurn';
 
 /** Runtime skill slug for hosted Oracle chat (admin-seedable via agent_skills). */
 const ORACLE_CHAT_SKILL_SLUG = 'oracle-chat';
@@ -138,6 +148,12 @@ export async function handleOracleSessionControlRoute(
   const id = env.ORACLE_SESSION.idFromName(`${accountId}:${sessionId}`);
   const stub = env.ORACLE_SESSION.get(id);
   const url = new URL(request.url);
+  if (request.method === 'GET' && actionPath === 'state' && isReservedOracleStateKey(url.searchParams.get('key'))) {
+    return new Response(
+      JSON.stringify({ ok: false, error: 'Reserved internal session state key', code: 'RESERVED_STATE_KEY' }),
+      { status: 403, headers: { 'content-type': 'application/json' } },
+    );
+  }
   const targetUrl = `https://oracle-session/${actionPath}${url.search}`;
 
   let bodyText: string | undefined;
@@ -148,6 +164,23 @@ export async function handleOracleSessionControlRoute(
         JSON.stringify({ ok: false, error: 'Request body too large', code: 'PAYLOAD_TOO_LARGE' }),
         { status: 413, headers: { 'content-type': 'application/json' } },
       );
+    }
+    if (actionPath === 'state/patch') {
+      let patchBody: { key?: unknown } = {};
+      try {
+        patchBody = JSON.parse(bodyText || '{}') as { key?: unknown };
+      } catch {
+        return new Response(
+          JSON.stringify({ ok: false, error: 'Invalid JSON body', code: 'BAD_REQUEST' }),
+          { status: 400, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      if (isReservedOracleStateKey(patchBody?.key)) {
+        return new Response(
+          JSON.stringify({ ok: false, error: 'Reserved internal session state key', code: 'RESERVED_STATE_KEY' }),
+          { status: 403, headers: { 'content-type': 'application/json' } },
+        );
+      }
     }
   }
 
@@ -314,6 +347,8 @@ export async function handleOracleChatSse(
     }
   }
 
+  const epistemicAssignment = assignEpistemicVariant({ env, accountId, request });
+
   const { readable, writable } = new TransformStream(
     undefined,
     { highWaterMark: 128 },
@@ -399,6 +434,8 @@ export async function handleOracleChatSse(
       let toolNote = '';
       // The text of a measured tool result: evidence for the numbers in the reply.
       let measuredToolText = '';
+      const verificationLedger = new VerificationLedger();
+      const groundedLedger = new GroundedCitationLedger();
       const allowRegexAutoTools = parseAllowRegexAutoTools(env.ORACLE_AUTO_TOOLS);
       const toolDecision = shouldInvokeResearchKeywords(message, {
         allowRegexAutoTools,
@@ -563,7 +600,6 @@ export async function handleOracleChatSse(
             executionArgs,
             rt,
           );
-          toolNote = `\n\n${fenceToolResult('research_keywords', toolResult.text)}`;
           if (!toolResult.isError) {
             const billedCents = dfsCred ? BYOK_PAID_CALL_COST_CENTS : HOSTED_PAID_CALL_COST_CENTS;
             if (billedCents > 0) {
@@ -592,15 +628,32 @@ export async function handleOracleChatSse(
             toolResult.structuredContent && typeof toolResult.structuredContent === 'object'
               ? (toolResult.structuredContent as Record<string, unknown>)
               : {};
+          const ms = structured.measurementStatus;
+          const safeMeasurementStatus =
+            ms === 'measured' || ms === 'estimated' || ms === 'not_measured' || ms === 'unknown'
+              ? ms
+              : 'not_measured';
           const rawStatus = coerceClaimStatus(
-            (typeof structured.measurementStatus === 'string'
-              ? structured.measurementStatus
-              : 'not_measured') as 'measured' | 'estimated' | 'not_measured' | 'unknown',
-            structured.measurementStatus === 'measured'
+            safeMeasurementStatus,
+            safeMeasurementStatus === 'measured'
               ? [{ kind: 'dfs', excerpt: toolResult.text.slice(0, 240) }]
               : [],
           );
           if (!toolResult.isError && rawStatus === 'measured') measuredToolText = toolResult.text;
+          const guardedTool = await guardOracleToolExecution({
+            env,
+            accountId,
+            sessionId,
+            sessionStub,
+            toolName: 'research_keywords',
+            args: executionArgs,
+            rawToolText: toolResult.text,
+            measurementStatus: rawStatus,
+            isError: toolResult.isError,
+            verificationLedger,
+            groundedLedger,
+          });
+          toolNote = `\n\n${fenceToolResult('research_keywords', guardedTool.effectiveToolText)}`;
           const ledger = new ClaimLedger();
           const cite = citationSupportHeuristic({
             claimText: toolResult.text.slice(0, 400),
@@ -671,18 +724,17 @@ export async function handleOracleChatSse(
       const oracleSkill = await loadAgentSkill(env, ORACLE_CHAT_SKILL_SLUG, {
         fallbackPrompt: bundledOraclePrompt,
       });
-      let systemPrompt = withHealthClaimRule(oracleSkill?.promptBody || bundledOraclePrompt);
-      let memoryFacts: string[] = [];
-      try {
-        const { ragContextForOracle } = await import('./memoryRag');
-        const memory = await ragContextForOracle(env, billingId(user), message);
-        if (memory.block) {
-          systemPrompt = `${systemPrompt}\n\n${memory.block}`;
-          memoryFacts = memory.facts;
-        }
-      } catch {
-        /* memory RAG is best-effort */
-      }
+      const baseSystemPrompt = withHealthClaimRule(oracleSkill?.promptBody || bundledOraclePrompt);
+      const hermesPrompt = await prepareOraclePromptWithHermes({
+        env,
+        sessionStub,
+        accountId: billingId(user),
+        message,
+        baseSystemPrompt,
+        assignment: epistemicAssignment,
+      });
+      let systemPrompt = hermesPrompt.systemPrompt;
+      const memoryFacts = hermesPrompt.memoryFacts;
       try {
         const { ownerRulesPromptBlock } = await import('./scopedMemory');
         const ownerRules = await ownerRulesPromptBlock(env, billingId(user), body.projectId ?? null);
@@ -703,56 +755,20 @@ export async function handleOracleChatSse(
         return;
       }
 
-      const llmRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${groqKey}`,
-          'Content-Type': 'application/json',
+      const streamResult = await streamGroqChatWithEmptyGuard({
+        env,
+        model: GROQ_DEFAULT_MODEL,
+        messages,
+        onDelta: async (delta) => {
+          await write('token', { text: delta });
         },
-        body: JSON.stringify({
-          model: GROQ_DEFAULT_MODEL,
-          messages,
-          temperature: 0.5,
-          max_tokens: 2048,
-          stream: true,
-        }),
       });
-
-      if (!llmRes.ok || !llmRes.body) {
-        const errText = await llmRes.text();
-        await write('error', { error: `LLM error ${llmRes.status}`, detail: errText.slice(0, 200) });
+      if (!streamResult.ok) {
+        await write('error', { error: `LLM error ${streamResult.status}`, detail: streamResult.detail });
         await write('done', { ok: false });
         return;
       }
-
-      const reader = llmRes.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-      let fullText = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed.startsWith('data: ')) continue;
-          const dataStr = trimmed.slice(6);
-          if (dataStr === '[DONE]') continue;
-          try {
-            const parsed = JSON.parse(dataStr);
-            const delta = parsed.choices?.[0]?.delta?.content;
-            if (delta) {
-              fullText += delta;
-              await write('token', { text: delta });
-            }
-          } catch {
-            // ignore
-          }
-        }
-      }
+      let fullText = streamResult.fullText;
 
       const monitor = monitorOracleOutput(fullText, Boolean(measuredToolText));
       const guarded = guardPasteReadyCopy(fullText);
@@ -769,19 +785,38 @@ export async function handleOracleChatSse(
         });
       }
 
-      // Honesty validators: flag into provenance only (v1 never blocks the stream).
-      const validation = runAllValidators(fullText);
+      // Honesty validators: flag streamed claims into provenance before history redaction (v1 never blocks the stream).
+      const validation = runAllValidators(
+        fullText,
+        groundedLedger.list().length > 0 ? { groundedLedger } : undefined,
+      );
       const validationSummary = summarizeFindings(validation.findings);
 
       // A number nobody measured: the warning follows the tokens already sent, and history stores
       // the filtered copy. Figures the user gave, here or in account memory, and the numbers of a
       // measured tool result stay.
+      const preRedactionText = fullText;
       const userTexts = [...memoryFacts, ...historySource.filter((t) => t.role === 'user').map((t) => t.content), message];
       const honest = withoutUnmeasuredClaims(fullText, userTexts, measuredToolText ? [measuredToolText] : []);
       if (honest.replaced > 0) {
         await write('token', { text: `\n\n${UNMEASURED_CLAIM_WARNING}` });
         fullText = honest.text;
         console.warn(JSON.stringify({ event: 'oracle_output_redacted', sentences: honest.replaced }));
+      }
+
+      const hermesFinal = await finalizeOracleHermesTurn({
+        env,
+        accountId,
+        sessionId,
+        assignment: epistemicAssignment,
+        fullText: preRedactionText,
+        validationOk: validation.ok,
+        validationSummary,
+        verificationLedger,
+      });
+      if (hermesFinal.verification && !hermesFinal.verification.ok && hermesFinal.verification.nudgeNote) {
+        await write('token', { text: `\n\n${hermesFinal.verification.nudgeNote}` });
+        fullText = `${fullText}\n\n${hermesFinal.verification.nudgeNote}`;
       }
 
       if (sessionStub && fullText) {
@@ -811,6 +846,7 @@ export async function handleOracleChatSse(
         turnNumber: activeTurnNumber,
         monitor: monitor.ok ? { ok: true, flags: [] } : { ok: false, flags: monitor.flags, notes: monitor.notes },
         validation: { ok: validation.ok, summary: validationSummary },
+        ...(hermesFinal.verification ? { verification: hermesFinal.verification } : {}),
         toolsAvailable: [
           ...PAID_TOOL_CATALOGUE.map((t) => t.name),
           // Observe-first: list browse tools even when crawler is unset; calls return BROWSER_UNAVAILABLE.
@@ -827,6 +863,7 @@ export async function handleOracleChatSse(
             summary: validationSummary,
             findings: validation.findings.slice(0, 20),
           },
+          ...(hermesFinal.verification ? { verification: hermesFinal.verification } : {}),
         });
         await completeRun(env, runHandle.runId, 'completed');
       }
@@ -863,12 +900,16 @@ export async function handleOracleChatSse(
   // tab skips the cost event and the /settle call, leaving the session locked (TURN_ACTIVE).
   scheduleWaitUntil(run().catch((err) => console.error('[oracleChat] stream run failed:', err)));
 
+  const sseHeaders = new Headers({
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-cache, no-transform',
+    Connection: 'keep-alive',
+  });
+  if (epistemicAssignment.setCookie) {
+    sseHeaders.append('Set-Cookie', epistemicAssignment.setCookie);
+  }
   return new Response(readable, {
     status: 200,
-    headers: {
-      'Content-Type': 'text/event-stream; charset=utf-8',
-      'Cache-Control': 'no-cache, no-transform',
-      Connection: 'keep-alive',
-    },
+    headers: sseHeaders,
   });
 }

@@ -177,7 +177,12 @@
     "STRIPE_CHECKOUT_LIVE": "false",
     "BUDGET_ENFORCEMENT": "hard",
     // Homepage hero experiment. Off until the owner turns it on. Staging is the exception.
-    "HERO_AB_ENABLED": "false"
+    "HERO_AB_ENABLED": "false",
+    // Hermes Agent patterns (docs/runbooks/hermes-patterns-ab-qa.md). Ship off by default; soak on staging first.
+    "THREAT_SCAN_MODE": "off",
+    "EPISTEMIC_AB_ENABLED": "false",
+    "ORACLE_LOOP_GUARDS_ENABLED": "false",
+    "MCP_DECLARED_COSTS_ENABLED": "false"
     // Optional secrets (wrangler secret put): SENTRY_DSN, AZURE_AI_SEARCH_KEY, GCP_VERTEX_ACCESS_TOKEN
     // Optional Vectorize: add vectorize binding MEMORY_VECTORS after `wrangler vectorize create luminara-memory`
   },
@@ -322,7 +327,12 @@
         "STRIPE_CHECKOUT_LIVE": "true",
         "BUDGET_ENFORCEMENT": "soft",
         // Homepage hero experiment. On here so staging can measure it. Production stays off.
-        "HERO_AB_ENABLED": "true"
+        "HERO_AB_ENABLED": "true",
+        // Hermes Agent patterns. Staging runs warn-soak + A/B readout; production stays off (docs/runbooks/hermes-patterns-ab-qa.md).
+        "THREAT_SCAN_MODE": "warn",
+        "EPISTEMIC_AB_ENABLED": "true",
+        "ORACLE_LOOP_GUARDS_ENABLED": "true",
+        "MCP_DECLARED_COSTS_ENABLED": "true"
       }
     },
     "production": {
@@ -439,7 +449,12 @@
         "STRIPE_CHECKOUT_LIVE": "true",
         "BUDGET_ENFORCEMENT": "hard",
         // Homepage hero experiment. Off until the owner turns it on.
-        "HERO_AB_ENABLED": "false"
+        "HERO_AB_ENABLED": "false",
+        // Hermes Agent patterns. Off until staging soak completes (docs/runbooks/hermes-patterns-ab-qa.md).
+        "THREAT_SCAN_MODE": "off",
+        "EPISTEMIC_AB_ENABLED": "false",
+        "ORACLE_LOOP_GUARDS_ENABLED": "false",
+        "MCP_DECLARED_COSTS_ENABLED": "false"
       }
     }
   }

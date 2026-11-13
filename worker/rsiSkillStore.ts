@@ -19,6 +19,7 @@ import {
 } from '../services/rsi/skillLibrary';
 import { requireEvidence } from '../services/rsi/guardrails';
 import { RsiUserError } from './rsiErrors';
+import { checkStrictWriteThreat } from './threatWriteGate';
 import { countPromptChangesThisRound, listCorrectionEvalCases } from './rsiCorrections';
 
 const ROUND_MS = 24 * 60 * 60 * 1000;
@@ -365,6 +366,14 @@ export async function recordFixObservation(
   }
   const evidence = requireEvidence(input.sourceRefs || []);
   if (!evidence.ok) throw new RsiUserError(evidence.reason);
+  const obsThreat = await checkStrictWriteThreat(env, {
+    db,
+    accountId,
+    path: '/api/rsi/observations',
+    surface: 'rsi_fix_observation',
+    content: `${title}\n${signature}`,
+  });
+  if (obsThreat.blocked) throw new RsiUserError(obsThreat.reason || 'Blocked by threat scanner.', 400);
   const observation: FixObservation = {
     id: crypto.randomUUID(),
     accountId,
@@ -509,6 +518,19 @@ export async function applyRsiProposal(env: Env, accountId: string, proposalId: 
       .first<ProposalRow>();
     if (!row) throw new RsiUserError('Proposal not found.', 404);
     const proposal = proposalFromRow(row);
+    const propThreat = await checkStrictWriteThreat(env, {
+      db,
+      accountId,
+      path: '/api/rsi/proposals/apply',
+      surface: 'rsi_skill_proposal',
+      content: `${proposal.title}\n${proposal.bodyMd}`,
+    });
+    if (propThreat.blocked) {
+      const reason = `Safety guard: ${propThreat.reason || 'Blocked by threat scanner.'}`;
+      const blockedProposal: SkillProposal = { ...proposal, status: 'blocked', blockReason: reason };
+      await saveProposal(env, blockedProposal, proposal.id);
+      return { ok: false, deferred: false, reason, proposal: blockedProposal };
+    }
     const skills = await loadLiveSkills(env, accountId);
     const spent = await countAutomaticRsiChanges(env, accountId, now);
     const extraCases = await listCorrectionEvalCases(env, accountId);

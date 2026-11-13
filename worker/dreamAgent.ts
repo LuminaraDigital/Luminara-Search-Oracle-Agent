@@ -9,6 +9,19 @@ import type {
   DreamEvent,
   DreamMemoryType,
 } from './dreamingTypes';
+import type { EpistemicVariant } from '../services/experiments/hermesAbExperiment';
+import {
+  EPISTEMIC_STANCE_RULE,
+  UNVERIFIED_SECTION_HEADING,
+  containsUnverifiedMarker,
+  detectUnverifiedFactLeakage,
+} from '../services/trust/epistemicStance';
+import {
+  appendOutputContract,
+  extractJsonCandidate,
+  runWithSingleJsonRetry,
+  type JsonContractValidator,
+} from '../services/oracle/jsonContract';
 
 const GROQ_DREAM_MODEL = 'openai/gpt-oss-120b';
 const GEMINI_DREAM_MODEL = 'gemini-2.5-flash';
@@ -181,15 +194,160 @@ export function deterministicDreamConsolidator(input: ConsolidateInput): DreamAg
   };
 }
 
+const DREAM_OUTPUT_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  required: ['summary', 'proposals'],
+  properties: {
+    summary: { type: 'string' },
+    unverifiedHypotheses: { type: 'array', items: { type: 'string' } },
+    proposals: {
+      type: 'array',
+      maxItems: 5,
+      items: {
+        type: 'object',
+        required: ['action', 'memoryType', 'title', 'content', 'confidence', 'sourceRefs', 'rationale'],
+      },
+    },
+  },
+};
+
+const validateDreamAgentJson: JsonContractValidator<{
+  summary?: string;
+  unverifiedHypotheses?: string[];
+  proposals: DreamAgentOutput['proposals'];
+}> = (parsed) => {
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { ok: false, errors: ['Top-level value must be a JSON object.'] };
+  }
+  const obj = parsed as Record<string, unknown>;
+  const errors: string[] = [];
+  if (obj.summary !== undefined && typeof obj.summary !== 'string') {
+    errors.push('"summary" must be a string when provided.');
+  }
+  if (!Array.isArray(obj.proposals)) {
+    errors.push('"proposals" must be an array.');
+  } else if (obj.proposals.length > 5) {
+    errors.push('"proposals" must contain at most 5 items.');
+  } else {
+    obj.proposals.forEach((rawItem, idx) => {
+      if (!rawItem || typeof rawItem !== 'object' || Array.isArray(rawItem)) {
+        errors.push(`proposals[${idx}] must be an object.`);
+        return;
+      }
+      const item = rawItem as Record<string, unknown>;
+      if (typeof item.action !== 'string' || !DREAM_ACTIONS.includes(item.action)) {
+        errors.push(`proposals[${idx}].action must be one of create, update, deprecate.`);
+      }
+      if (typeof item.memoryType !== 'string' || !DREAM_MEMORY_TYPES.includes(item.memoryType)) {
+        errors.push(`proposals[${idx}].memoryType is invalid.`);
+      }
+      if (typeof item.title !== 'string' || !item.title.trim()) {
+        errors.push(`proposals[${idx}].title must be a non-empty string.`);
+      }
+      if (typeof item.content !== 'string' || !item.content.trim()) {
+        errors.push(`proposals[${idx}].content must be a non-empty string.`);
+      }
+      if (typeof item.confidence !== 'number' || !Number.isFinite(item.confidence)) {
+        errors.push(`proposals[${idx}].confidence must be a finite number.`);
+      }
+      if (!Array.isArray(item.sourceRefs)) {
+        errors.push(`proposals[${idx}].sourceRefs must be an array.`);
+      }
+      if (typeof item.rationale !== 'string') {
+        errors.push(`proposals[${idx}].rationale must be a string.`);
+      }
+    });
+  }
+  if (
+    obj.unverifiedHypotheses !== undefined &&
+    (!Array.isArray(obj.unverifiedHypotheses) ||
+      !obj.unverifiedHypotheses.every((h) => typeof h === 'string'))
+  ) {
+    errors.push('"unverifiedHypotheses" must be an array of strings when provided.');
+  }
+  if (errors.length > 0) return { ok: false, errors };
+  return {
+    ok: true,
+    value: {
+      summary: typeof obj.summary === 'string' ? obj.summary : undefined,
+      unverifiedHypotheses: Array.isArray(obj.unverifiedHypotheses)
+        ? obj.unverifiedHypotheses.filter((h): h is string => typeof h === 'string')
+        : undefined,
+      proposals: obj.proposals as DreamAgentOutput['proposals'],
+    },
+  };
+};
+
+async function callHostedDreamCompletion(
+  env: Env,
+  fetcher: typeof fetch,
+  systemPrompt: string,
+  turns: ReadonlyArray<{ role: 'user' | 'assistant'; content: string }>,
+): Promise<string | null> {
+  if (env.GROQ_API_KEY) {
+    const res = await fetcher('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        Authorization: `Bearer ${env.GROQ_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: GROQ_DREAM_MODEL,
+        messages: [{ role: 'system', content: systemPrompt }, ...turns],
+        temperature: 0.1,
+        response_format: { type: 'json_object' },
+      }),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json().catch(() => null)) as {
+      choices?: Array<{ message?: { content?: string } }>;
+    } | null;
+    return data?.choices?.[0]?.message?.content || null;
+  }
+
+  if (env.GEMINI_API_KEY) {
+    const res = await fetcher(
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_DREAM_MODEL}:generateContent`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-goog-api-key': env.GEMINI_API_KEY,
+        },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: systemPrompt }] },
+          contents: turns.map((t) => ({
+            role: t.role === 'assistant' ? 'model' : 'user',
+            parts: [{ text: t.content }],
+          })),
+          generationConfig: {
+            temperature: 0.1,
+            responseMimeType: 'application/json',
+          },
+        }),
+      },
+    );
+    if (!res.ok) return null;
+    const data = (await res.json().catch(() => null)) as {
+      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+    } | null;
+    return data?.candidates?.[0]?.content?.parts?.[0]?.text || null;
+  }
+
+  return null;
+}
+
 export async function runDreamAgent(
   env: Env,
   input: ConsolidateInput,
   fetcher: typeof fetch = fetch,
+  opts?: { variant?: EpistemicVariant },
 ): Promise<DreamAgentOutput> {
   if (!hasHostedDreamModel(env)) {
     return deterministicDreamConsolidator(input);
   }
 
+  const variant: EpistemicVariant = opts?.variant === 'treatment' ? 'treatment' : 'baseline';
   const promptText = `
 Workspace Domain: ${input.domain}
 
@@ -220,67 +378,58 @@ ${input.expiredMemoryIds?.length ? `Expired Memory IDs for Pruning: ${input.expi
 Consolidate these into at most 5 verified memory mutation proposals. Output JSON only.
 `.trim();
 
+  const systemPrompt =
+    variant === 'treatment'
+      ? appendOutputContract(
+          `${DREAM_AGENT_SYSTEM}\n\nEpistemic Rule: ${EPISTEMIC_STANCE_RULE} ` +
+            'Place any uncertain inference or unverified causal suspicion in top-level "unverifiedHypotheses" ' +
+            'as "UNVERIFIED: <claim> - <basis>", and never propose unverified claims as auto-applied facts.',
+          DREAM_OUTPUT_SCHEMA,
+        )
+      : DREAM_AGENT_SYSTEM;
+
   try {
-    let rawJson: string | null = null;
     const modelId = env.GROQ_API_KEY ? GROQ_DREAM_MODEL : GEMINI_DREAM_MODEL;
+    let parsed: {
+      summary?: string;
+      unverifiedHypotheses?: string[];
+      proposals: DreamAgentOutput['proposals'];
+    };
+    let contractRetried = false;
 
-    if (env.GROQ_API_KEY) {
-      const res = await fetcher('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          Authorization: `Bearer ${env.GROQ_API_KEY}`,
-        },
-        body: JSON.stringify({
-          model: GROQ_DREAM_MODEL,
-          messages: [
-            { role: 'system', content: DREAM_AGENT_SYSTEM },
+    if (variant === 'treatment') {
+      const outcome = await runWithSingleJsonRetry({
+        firstAttempt: () =>
+          callHostedDreamCompletion(env, fetcher, systemPrompt, [{ role: 'user', content: promptText }]),
+        retryAttempt: (retryMsg, failedRaw) =>
+          callHostedDreamCompletion(env, fetcher, systemPrompt, [
             { role: 'user', content: promptText },
-          ],
-          temperature: 0.1,
-          response_format: { type: 'json_object' },
-        }),
+            { role: 'assistant', content: failedRaw },
+            { role: 'user', content: retryMsg },
+          ]),
+        validator: validateDreamAgentJson,
       });
-      if (res.ok) {
-        const data = (await res.json().catch(() => null)) as {
-          choices?: Array<{ message?: { content?: string } }>;
-        } | null;
-        rawJson = data?.choices?.[0]?.message?.content || null;
+      if (!outcome.ok) {
+        return {
+          ...deterministicDreamConsolidator(input),
+          contractRetried: outcome.retried,
+          usedFallback: true,
+        };
       }
-    } else if (env.GEMINI_API_KEY) {
-      const res = await fetcher(
-        `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_DREAM_MODEL}:generateContent`,
-        {
-          method: 'POST',
-          headers: {
-            'content-type': 'application/json',
-            'x-goog-api-key': env.GEMINI_API_KEY,
-          },
-          body: JSON.stringify({
-            systemInstruction: { parts: [{ text: DREAM_AGENT_SYSTEM }] },
-            contents: [{ role: 'user', parts: [{ text: promptText }] }],
-            generationConfig: {
-              temperature: 0.1,
-              responseMimeType: 'application/json',
-            },
-          }),
-        },
-      );
-      if (res.ok) {
-        const data = (await res.json().catch(() => null)) as {
-          candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-        } | null;
-        rawJson = data?.candidates?.[0]?.content?.parts?.[0]?.text || null;
+      parsed = outcome.value;
+      contractRetried = outcome.retried;
+    } else {
+      const rawJson = await callHostedDreamCompletion(env, fetcher, systemPrompt, [
+        { role: 'user', content: promptText },
+      ]);
+      if (!rawJson) {
+        return { ...deterministicDreamConsolidator(input), contractRetried: false, usedFallback: true };
       }
-    }
-
-    if (!rawJson) {
-      return deterministicDreamConsolidator(input);
-    }
-
-    const parsed = JSON.parse(rawJson) as DreamAgentOutput;
-    if (!parsed || !Array.isArray(parsed.proposals)) {
-      return deterministicDreamConsolidator(input);
+      const rawParsed = JSON.parse(extractJsonCandidate(rawJson)) as DreamAgentOutput;
+      if (!rawParsed || !Array.isArray(rawParsed.proposals)) {
+        return { ...deterministicDreamConsolidator(input), contractRetried: false, usedFallback: true };
+      }
+      parsed = rawParsed;
     }
 
     // The model's output is checked against what the run knows before anything is stored: an
@@ -288,8 +437,18 @@ Consolidate these into at most 5 verified memory mutation proposals. Output JSON
     // or a deprecate, a memory that is active. A proposal that fails is dropped. At most 5.
     const validEventIds = new Set(input.pendingEvents.map((e) => e.id));
     const activeMemoryIds = new Set(input.activeMemories.map((m) => m.id));
+    const hypothesisLines =
+      variant === 'treatment' && Array.isArray(parsed.unverifiedHypotheses)
+        ? parsed.unverifiedHypotheses
+            .filter((h): h is string => typeof h === 'string' && h.trim().length > 0)
+            .map((h) => {
+              const trimmed = h.trim().replace(/^[-*+]\s+/, '');
+              return `- ${containsUnverifiedMarker(trimmed) ? trimmed : `UNVERIFIED: ${trimmed}`}`;
+            })
+        : [];
     const sanitizedProposals = parsed.proposals
       .filter((p) => {
+        if (!p || typeof p !== 'object' || Array.isArray(p)) return false;
         if (!p.title || !p.content) return false;
         if (!DREAM_ACTIONS.includes(p.action) || !DREAM_MEMORY_TYPES.includes(p.memoryType)) return false;
         if (typeof p.confidence !== 'number' || !(p.confidence >= 0.5 && p.confidence <= 1)) return false;
@@ -297,12 +456,27 @@ Consolidate these into at most 5 verified memory mutation proposals. Output JSON
       })
       .map((p) => {
         // Enforce valid source refs
-        const filteredRefs = (p.sourceRefs || []).filter((ref) => validEventIds.has(ref));
+        const rawRefs = Array.isArray(p.sourceRefs) ? p.sourceRefs : [];
+        const filteredRefs = rawRefs.filter((ref): ref is string => typeof ref === 'string' && validEventIds.has(ref));
         const finalRefs =
           filteredRefs.length > 0 ? filteredRefs : input.pendingEvents.slice(0, 1).map((e) => e.id);
 
+        const leakedHypothesis =
+          hypothesisLines.length > 0 &&
+          detectUnverifiedFactLeakage(
+            `${p.title}. ${p.content}\n\n${UNVERIFIED_SECTION_HEADING}\n${hypothesisLines.join('\n')}`,
+          ).length > 0;
+
+        const flaggedUnverified =
+          variant === 'treatment' &&
+          (containsUnverifiedMarker(p.title) ||
+            containsUnverifiedMarker(p.content) ||
+            containsUnverifiedMarker(p.rationale) ||
+            leakedHypothesis);
+
         const requiresApproval =
           p.requiresApproval === true ||
+          flaggedUnverified ||
           p.action === 'deprecate' ||
           p.memoryType === 'business_dna' ||
           p.confidence < 0.85;
@@ -327,8 +501,15 @@ Consolidate these into at most 5 verified memory mutation proposals. Output JSON
       summary: parsed.summary || `Consolidated ${sanitizedProposals.length} memory proposals.`,
       proposals: sanitizedProposals,
       modelId,
+      unverifiedHypotheses: parsed.unverifiedHypotheses,
+      contractRetried,
+      usedFallback: false,
     };
   } catch {
-    return deterministicDreamConsolidator(input);
+    return {
+      ...deterministicDreamConsolidator(input),
+      contractRetried: false,
+      usedFallback: true,
+    };
   }
 }

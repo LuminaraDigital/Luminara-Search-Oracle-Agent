@@ -4,6 +4,7 @@
 import type { Env } from './env';
 import type { SeoProject } from '../services/projects/types';
 import { normalizeProjectDomain, randomId } from '../services/projects/projectUtils';
+import { checkStrictWriteThreat } from './threatWriteGate';
 
 type ProjectRow = {
   id: string;
@@ -93,6 +94,15 @@ export async function createProject(
   if (!domain) return { ok: false, error: 'domain required', status: 400 };
   const clientId = String(input.clientId || '').trim();
   const name = (input.name || domain).trim().slice(0, 120) || domain;
+  const nameThreat = await checkStrictWriteThreat(env, {
+    accountId,
+    path: '/api/projects',
+    surface: 'project_create',
+    content: `${name}\n${clientId}`,
+  });
+  if (nameThreat.blocked) {
+    return { ok: false, error: nameThreat.reason || 'Blocked by threat scanner.', status: 400 };
+  }
   const now = Date.now();
   const id = randomId('proj');
 

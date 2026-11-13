@@ -70,6 +70,7 @@ import {
   mcpServerInfo,
   negotiateProtocolVersion,
 } from './mcpProtocol';
+import { mcpDeclaredCostsEnabled, toolCostAnnotationFor } from '../services/mcp/toolCosts';
 
 export type McpToolDef = {
   name: string;
@@ -100,13 +101,13 @@ export type McpToolResult = {
   isError?: boolean;
 };
 
-const MCP_CORS: Record<string, string> = {
+export const MCP_CORS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+  'Access-Control-Allow-Methods': 'GET,POST,DELETE,OPTIONS',
   'Access-Control-Allow-Headers':
     'Content-Type, Accept, Authorization, mcp-session-id, MCP-Protocol-Version, Mcp-Method, Mcp-Name, x-provider-key',
   'Access-Control-Expose-Headers':
-    'mcp-session-id, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, Retry-After',
+    'mcp-session-id, WWW-Authenticate, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, Retry-After',
 };
 
 function mcpJson(data: unknown, status = 200, extraHeaders?: Record<string, string>): Response {
@@ -481,20 +482,27 @@ const TOOLS: McpToolDef[] = [
     handler: paidHandler(meta.name),
   })),
 ];
-export function listMcpToolCatalogue(): Array<{
+export function listMcpToolCatalogue(options?: { includeDeclaredCosts?: boolean }): Array<{
   name: string;
   title: string;
   description: string;
   creditClass: McpCreditClass;
   inputSchema: Record<string, unknown>;
-  annotations: ReturnType<typeof mcpToolAnnotations>;
+  annotations: ReturnType<typeof mcpToolAnnotations> & Record<string, unknown>;
 }> {
+  const includeCosts = options?.includeDeclaredCosts === true;
   return TOOLS.map((tool) => {
     // A named agent carries its own title; every other tool takes one from the shared table.
-    const annotations = { ...mcpToolAnnotations(tool.name), ...(tool.title ? { title: tool.title } : {}) };
+    const baseAnnotations = {
+      ...mcpToolAnnotations(tool.name),
+      ...(tool.title ? { title: tool.title } : {}),
+    };
+    const annotations = includeCosts
+      ? { ...baseAnnotations, ...(toolCostAnnotationFor(tool.name) ?? {}) }
+      : baseAnnotations;
     return {
       name: tool.name,
-      title: annotations.title,
+      title: baseAnnotations.title,
       description: tool.description,
       creditClass: tool.creditClass,
       inputSchema: tool.inputSchema,
@@ -503,15 +511,17 @@ export function listMcpToolCatalogue(): Array<{
   });
 }
 
-function toolsListPayload() {
+function toolsListPayload(env?: Env) {
   return {
-    tools: listMcpToolCatalogue().map(({ name, title, description, inputSchema, annotations }) => ({
-      name,
-      title,
-      description,
-      inputSchema,
-      annotations,
-    })),
+    tools: listMcpToolCatalogue({ includeDeclaredCosts: mcpDeclaredCostsEnabled(env) }).map(
+      ({ name, title, description, inputSchema, annotations }) => ({
+        name,
+        title,
+        description,
+        inputSchema,
+        annotations,
+      }),
+    ),
   };
 }
 
@@ -760,7 +770,8 @@ export async function handleMcpRequest(
 
   if (request.method === 'GET') {
     // Streamable HTTP clients GET with this Accept to open a server stream; we offer none.
-    if ((request.headers.get('accept') || '').includes('text/event-stream')) {
+    const accept = (request.headers.get('accept') || '').toLowerCase();
+    if (accept.includes('text/event-stream') && !accept.includes('application/json') && !accept.includes('*/*')) {
       return new Response(null, { status: 405, headers: { Allow: 'POST', ...MCP_CORS } });
     }
     return mcpJson({
@@ -768,7 +779,7 @@ export async function handleMcpRequest(
       ...mcpServerInfo(origin),
       protocolVersion: MCP_PROTOCOL_VERSIONS[0],
       supportedProtocolVersions: [...MCP_PROTOCOL_VERSIONS],
-      tools: listMcpToolCatalogue(),
+      tools: listMcpToolCatalogue({ includeDeclaredCosts: mcpDeclaredCostsEnabled(env) }),
       typedContextKeys: TYPED_CONTEXT_KEYS,
     });
   }
@@ -827,7 +838,7 @@ export async function handleMcpRequest(
       continue;
     }
     if (method === 'tools/list') {
-      responses.push(rpcResult(id, toolsListPayload()));
+      responses.push(rpcResult(id, toolsListPayload(env)));
       continue;
     }
     if (method === 'prompts/list') {

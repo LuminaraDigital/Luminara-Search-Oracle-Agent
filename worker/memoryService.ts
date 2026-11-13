@@ -6,6 +6,7 @@ import type { HostedIdentity } from './userTypes';
 import { billingId, json } from './workerUtils';
 import { putCounterBestEffort } from './securityHardening';
 import { randomId } from '../services/projects/projectUtils';
+import { checkStrictWriteThreat } from './threatWriteGate';
 
 const DAILY_INSERT_CAP = 100;
 
@@ -49,6 +50,15 @@ export async function createMemoryFact(
   if (!text) return json({ ok: false, error: 'text required' }, 400);
 
   const accountId = billingId(user);
+  const threatGate = await checkStrictWriteThreat(env, {
+    accountId,
+    path: '/api/memory',
+    surface: 'memory_fact_create',
+    content: text,
+  });
+  if (threatGate.blocked) {
+    return json({ ok: false, error: threatGate.reason || 'Blocked by threat scanner.', code: 'THREAT_BLOCKED' }, 400);
+  }
 
   if (env.LUMINARA_KV) {
     const day = new Date().toISOString().slice(0, 10);

@@ -22,8 +22,27 @@ import {
 } from '../services/projects/types';
 import { isoDateUTC, normalizeProjectDomain, randomId } from '../services/projects/projectUtils';
 import { getProject } from './projectService';
+import { checkStrictWriteThreat } from './threatWriteGate';
 
 const KEY_PAGE_ROLES: KeyPageRole[] = ['hub', 'spoke', 'money', 'other'];
+
+function isValidKeyPageUrl(raw: string): boolean {
+  if (!raw || raw.length > 2048 || /\s/.test(raw)) return false;
+  for (let i = 0; i < raw.length; i++) {
+    const code = raw.charCodeAt(i);
+    if (code <= 0x1f || code === 0x7f) return false;
+  }
+  try {
+    if (raw.startsWith('/') && !raw.startsWith('//')) {
+      new URL(raw, 'https://example.invalid');
+      return true;
+    }
+    const parsed = new URL(raw);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
 
 function clampContent(content: string): string {
   return String(content || '').slice(0, SECTION_CHAR_CAP);
@@ -207,6 +226,39 @@ export async function updateProjectContext(
   if (!project) return { ok: false, error: 'Project not found', status: 404 };
   if (!Array.isArray(updates) || updates.length === 0) {
     return { ok: false, error: 'updates array required', status: 400 };
+  }
+
+  for (const op of updates) {
+    const pieces: string[] = [];
+    if ('section' in op && op.section) pieces.push(String(op.content || ''));
+    if ('customSection' in op && op.customSection) pieces.push(String(op.title || ''), String(op.content || ''));
+    if ('addCompetitors' in op && Array.isArray(op.addCompetitors)) {
+      for (const c of op.addCompetitors) {
+        pieces.push(String(c?.domain || ''), String(c?.name || ''), String(c?.notes || ''));
+      }
+    }
+    if ('addKeyPages' in op && Array.isArray(op.addKeyPages)) {
+      for (const p of op.addKeyPages) {
+        const rawUrl = String(p?.url || '').trim();
+        if (rawUrl && !isValidKeyPageUrl(rawUrl)) {
+          return { ok: false, error: 'Invalid key page URL.', status: 400 };
+        }
+        pieces.push(rawUrl, String(p?.topic || ''), String(p?.notes || ''));
+      }
+    }
+    if ('appendResearchLog' in op && op.appendResearchLog) pieces.push(String(op.appendResearchLog.summary || ''));
+    const combined = pieces.filter(Boolean).join('\n');
+    if (combined) {
+      const threat = await checkStrictWriteThreat(env, {
+        accountId,
+        path: '/api/projects/context',
+        surface: 'project_context_update',
+        content: combined,
+      });
+      if (threat.blocked) {
+        return { ok: false, error: threat.reason || 'Blocked by threat scanner.', status: 400 };
+      }
+    }
   }
 
   const now = Date.now();

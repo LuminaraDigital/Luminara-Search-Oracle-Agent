@@ -22,6 +22,7 @@ import {
   type ObserveFn,
   type ObservePayload,
 } from './types';
+import { ToolLoopGuardrail } from '../oracle/toolLoopGuardrails';
 
 export type BrowserActionLoopOptions = {
   goal: string;
@@ -49,6 +50,8 @@ export type BrowserActionLoopOptions = {
   enforceTwoTierPolicy?: boolean;
   writeApproved?: boolean;
   allowSensitiveFill?: boolean;
+  /** Optional Hermes periodic cycle / identical triplet loop guard (`ORACLE_LOOP_GUARDS_ENABLED`). */
+  enableLoopGuardrails?: boolean;
   maxSteps?: number;
 };
 
@@ -70,6 +73,7 @@ export class BrowserActionLoop {
   private readonly enforceTwoTierPolicy: boolean;
   private readonly writeApproved: boolean;
   private readonly allowSensitiveFill: boolean;
+  private readonly loopGuardrail: ToolLoopGuardrail | null;
   private pendingText: PendingText | null = null;
   private startedAt: number | null = null;
 
@@ -84,6 +88,7 @@ export class BrowserActionLoop {
     this.enforceTwoTierPolicy = opts.enforceTwoTierPolicy ?? false;
     this.writeApproved = opts.writeApproved ?? true;
     this.allowSensitiveFill = opts.allowSensitiveFill ?? false;
+    this.loopGuardrail = opts.enableLoopGuardrails ? new ToolLoopGuardrail() : null;
     this.state = {
       goal: opts.goal,
       page: opts.initialPage,
@@ -295,9 +300,18 @@ export class BrowserActionLoop {
     entry.url = nextPage.url;
 
     const repeated = this.state.history.slice(-3);
+    const guardStalled = this.loopGuardrail
+      ? this.loopGuardrail.observeCall({
+          toolName: selected,
+          args: { kind: action.kind, text: maskedHistoryText ?? null },
+          resultText: `${nextPage.url}|${nextPage.fingerprint}`,
+          isPoller: action.kind === 'wait',
+        }).stalled
+      : false;
     const stalled =
-      repeated.length === 3 &&
-      repeated.every((h) => h.page_changed === false && h.kind !== 'wait');
+      guardStalled ||
+      (repeated.length === 3 &&
+        repeated.every((h) => h.page_changed === false && h.kind !== 'wait'));
 
     let recoveredByVisionFallback = false;
     const fbPage = await this.tryVisionFallback(this.state.page);

@@ -5,6 +5,7 @@
  */
 import { wrapUntrustedContent, UNTRUSTED_CONTENT_RULE } from '../utils/untrustedContent';
 import { withHealthClaimRule } from '../services/audit/healthClaimGuard';
+import { scanForThreats, type ThreatScanMode } from '../services/trust/threatPatterns';
 
 export type ChatTurn = { role: 'user' | 'assistant'; content: string };
 
@@ -75,6 +76,21 @@ export function resolveOracleHistory(opts: {
 export function fenceToolResult(toolName: string, text: string): string {
   const label = `TOOL_${String(toolName || 'result').replace(/[^A-Za-z0-9_]+/g, '_').slice(0, 40)}`;
   return wrapUntrustedContent(label, text);
+}
+
+/**
+ * Warn-only `context`-scope threat scan for untrusted tool outputs.
+ * Never blocks or strips legitimate tool output (researchers reading C2 / injection
+ * postmortems keep full results while telemetry records the warning).
+ */
+export function scanToolResultThreats(
+  toolName: string,
+  text: string,
+  mode: ThreatScanMode,
+): { toolName: string; findings: string[] } | null {
+  if (mode === 'off' || !text) return null;
+  const findings = scanForThreats(text, 'context');
+  return findings.length > 0 ? { toolName, findings } : null;
 }
 
 /**

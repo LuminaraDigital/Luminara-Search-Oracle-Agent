@@ -23,6 +23,7 @@ import {
   executeBrowserActionTool,
   type BrowserActionRuntime,
 } from '../browserAction';
+import { oracleLoopGuardsEnabled } from '../oracle/toolLoopGuardrails';
 
 export { PAID_TOOL_CATALOGUE, LIVE_SEARCH_TOOL_META, BROWSER_ACTION_CATALOGUE };
 
@@ -116,6 +117,7 @@ export function buildPaidToolRuntime(opts: {
     onMeasured: (event) => mirrorProjectSnapshot(env, accountId, event),
     dfsPost: (path, payload) =>
       dataForSeoPost(env, path, payload, { credential: dataForSeoCredential }),
+    enableLoopGuardrails: oracleLoopGuardsEnabled(env),
   };
 }
 

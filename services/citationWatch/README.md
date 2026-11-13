@@ -11,7 +11,7 @@ Scheduled, fixed prompt sets per account, client, domain, and engine. Each run i
 | `consistent` | Measured, enough history, and the absolute share change from the latest qualifying run is at or under `maxConsistentShareDelta`. | Share and delta are stored. |
 | `drift` | Measured, enough history, and the absolute share change is above the threshold. | Share and delta are stored. |
 
-Share is cited prompts divided by prompts in that run. It is not a blended SEO score. An estimated model completion is not a measured citation. The built-in probe does not call an engine.
+Share is cited prompts divided by prompts in that run. It is not a blended SEO score. An estimated model completion is not a measured citation. When `CITATION_WATCH_LIVE=true` and DataForSEO credentials are present, `defaultCitationProbe` (`worker/citationWatch.ts`) queries DataForSEO `llm_mentions/search_mentions/live` per prompt (`method: 'dataforseo_llm_mentions'`); without `CITATION_WATCH_LIVE=true` or DataForSEO credentials, runs stay `not_measured`.
 
 ## Defaults
 
@@ -25,6 +25,11 @@ These sit above typical small-sample flips. They are policy defaults, not a meas
 
 ## Schedule
 
-The daily 08:00 UTC cron owns `citation_watch`. No second cron was added. The tick anchors `next_run_at` on the cron's scheduled time, so a late start does not skip the next fire. It pages through due watches, up to 500 in one fire. `CITATION_WATCH_LIVE` must be the string `true` or neither the tick nor `POST /citation-watches/:id/run` writes a run. A manual run also requires the watch to be active, the plan to still allow that cadence, and `next_run_at` to be due. While the built-in probe is connected, a live run still stores `not_measured`. A probe may return `measured` only when each prompt was actually observed. Cadence on a watch cannot be faster than the plan's `scheduledReaudit`. The active-watch cap reuses that plan's Sentinel limit. Migration 0035 replaces the full unique index from 0034 with a partial index on `active = 1`, so a soft-deleted watch can be created again. A create response includes `warning` when the prompt set is shorter than `minPrompts`.
+The daily 08:00 UTC cron owns `citation_watch`. No second cron was added. The tick anchors `next_run_at` on the cron's scheduled time, so a late start does not skip the next fire. It pages through due watches, up to 500 in one fire. `CITATION_WATCH_LIVE` must be the string `true` or neither the tick nor `POST /citation-watches/:id/run` writes a run. A manual run also requires the watch to be active, the plan to still allow that cadence, and `next_run_at` to be due. Without DataForSEO credentials configured, a live run still stores `not_measured`. A probe may return `measured` only when each prompt was actually observed. Cadence on a watch cannot be faster than the plan's `scheduledReaudit`. The active-watch cap reuses that plan's Sentinel limit. Migration 0035 replaces the full unique index from 0034 with a partial index on `active = 1`, so a soft-deleted watch can be created again. A create response includes `warning` when the prompt set is shorter than `minPrompts`.
 
 Share changes are compared with integer counts, so a delta that lands on the threshold stays `consistent`.
+
+## Scheduled prompt safety and epistemic run notes
+
+- When `THREAT_SCAN_MODE` is `warn` or `strict`, `POST /api/citation-watches` and `recordRun` scan stored prompts with `scanScheduledPrompt` (`services/trust/threatPatterns.ts`). `strict` rejects poisoned prompts at creation (`400 THREAT_BLOCKED`) and halts scheduled execution as `not_measured` without invoking the probe.
+- When `EPISTEMIC_AB_ENABLED=true`, interactive `POST /api/citation-watches/:id/run` assigns `baseline` vs `treatment` (`lx_epistemic`). `treatment` attaches a validated `epistemicNote` (`services/citationWatch/epistemicNote.ts`) separating measured counts from `## Unverified / Working Hypotheses`; headless cron ticks do not emit exposure rows.

@@ -17,6 +17,7 @@ import {
   markActionDone,
   recordRecommendedAction,
 } from './projectHistoryService';
+import { checkStrictWriteThreat } from './threatWriteGate';
 
 const ACTION_KEY_RE = /^[A-Za-z0-9_.:-]{1,128}$/;
 const ID_RE = /^[A-Za-z0-9_-]{1,80}$/;
@@ -98,6 +99,18 @@ export async function handleProjectHistoryRoute(
     }
     if (!isSnapshotKind(kind)) {
       return json({ ok: false, error: 'kind must be audit, keyword, ai_visibility, or instant_audit' }, 400);
+    }
+    const threat = await checkStrictWriteThreat(env, {
+      accountId,
+      path: '/api/projects/outcomes',
+      surface: 'project_outcome_create',
+      content: `${actionKey}\n${title}`,
+    });
+    if (threat.blocked) {
+      return json(
+        { ok: false, error: threat.reason || 'Blocked by threat scanner.', code: 'THREAT_BLOCKED' },
+        400,
+      );
     }
     const outcome = await recordRecommendedAction(env, {
       accountId,

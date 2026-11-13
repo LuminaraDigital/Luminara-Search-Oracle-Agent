@@ -161,11 +161,30 @@ describe('APPCHECK_ENFORCE', () => {
     expect(resolveAppCheckMode({ APPCHECK_ENFORCE: 'LOG' })).toBe('log');
   });
 
-  it('exempts health, robots.txt, llms.txt, llm.txt, ai.txt, and webhooks', () => {
-    for (const path of ['/api/health', '/health', '/robots.txt', '/llms.txt', '/llm.txt', '/ai.txt', '/index.md', '/pricing.md', '/mcp.md', '/api/stripe/webhook', '/api/webhooks/auth', '/api/telegram/webhook']) {
-      expect(isAppCheckExempt(new URL(path, 'https://luminarasuite.com'))).toBe(true);
+  it('exempts health, crawl/markdown files, non-browser MCP endpoints, and webhooks', () => {
+    for (const path of [
+      '/api/health',
+      '/health',
+      '/robots.txt',
+      '/llms.txt',
+      '/llm.txt',
+      '/ai.txt',
+      '/index.md',
+      '/pricing.md',
+      '/mcp.md',
+      '/api/mcp',
+      '/api/mcp/sse',
+      '/api/oauth/mcp/register',
+      '/api/oauth/mcp/token',
+      '/api/oauth/mcp/revoke',
+      '/api/stripe/webhook',
+      '/api/webhooks/auth',
+      '/api/telegram/webhook',
+    ]) {
+      expect(isAppCheckExempt(new URL(path, 'https://luminarasuite.com')), path).toBe(true);
     }
     expect(isAppCheckExempt(new URL('/api/projects', 'https://luminarasuite.com'))).toBe(false);
+    expect(isAppCheckExempt(new URL('/api/oauth/mcp/authorize', 'https://luminarasuite.com'))).toBe(false);
   });
 
   it.each(['off', 'log', 'enforce'] as const)('missing token in %s', async (mode) => {

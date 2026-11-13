@@ -26,6 +26,20 @@ import { citationWatchSnapshot } from '../services/history/snapshotCapture';
 import { MAX_SMALL_BODY_BYTES, readBody, safePublicHostname } from './security';
 import { envHasDataForSeo } from '../services/config/runtimeKeys';
 import { dataForSeoPost, dfsFirstResult } from './dataForSeoClient';
+import {
+  evaluateScheduledPromptsGate,
+  resolveThreatScanMode,
+  scanAssembledScheduledPrompt,
+} from '../services/trust/threatPatterns';
+import {
+  buildCitationWatchEpistemicNote,
+  validateCitationWatchEpistemicNote,
+} from '../services/citationWatch/epistemicNote';
+import {
+  assignEpistemicVariant,
+  type EpistemicAssignment,
+} from '../services/experiments/hermesAbExperiment';
+import { recordServerProductEvent } from './productAnalytics';
 
 const PAGE = 25;
 /** shortcut: one cron fire stops after this many runs, the next daily fire continues */
@@ -202,15 +216,50 @@ async function priorMeasured(env: Env, watchId: string): Promise<MeasuredPoint[]
   return (results || []).map((row) => ({ runId: row.id, citedCount: row.cited_count, promptCount: row.prompt_count }));
 }
 
-async function recordRun(env: Env, row: WatchRow, prompts: string[], deps: CitationWatchDeps): Promise<Record<string, unknown>> {
+async function recordRun(
+  env: Env,
+  row: WatchRow,
+  prompts: string[],
+  deps: CitationWatchDeps,
+  opts?: { request?: Request; assignment?: EpistemicAssignment },
+): Promise<Record<string, unknown>> {
   const probe = deps.probe || defaultCitationProbe;
   const engine = isCitationWatchEngine(row.engine) ? row.engine : null;
+  const scanMode = resolveThreatScanMode(env);
+  let effectivePrompts = prompts;
   let measurement: WatchMeasurement;
   if (!engine) {
     measurement = { status: 'not_measured', method: 'none', reason: 'The stored engine is not one this watch can classify.' };
+  } else if (scanMode === 'strict' || scanMode === 'warn') {
+    const scannedPrompts = prompts.map((p) => scanAssembledScheduledPrompt(p));
+    const firstError = scannedPrompts.find((s) => s.error)?.error ?? null;
+    if (firstError) {
+      await recordServerProductEvent(env.DB, {
+        accountId: row.account_id,
+        type: 'threat_scan_triggered',
+        path: '/api/citation-watches/run',
+        data: {
+          surface: 'citation_watch_assembled',
+          mode: scanMode,
+          blocked: scanMode === 'strict',
+          patternId: firstError.pid,
+        },
+      });
+    }
+    if (scanMode === 'strict' && firstError) {
+      measurement = { status: 'not_measured', method: 'none', reason: firstError.message };
+    } else {
+      effectivePrompts = scannedPrompts.map((s) => s.cleaned);
+      try {
+        measurement = await probe({ env, engine, domain: row.domain, prompts: effectivePrompts });
+      } catch (err) {
+        console.error('[citation-watch] probe failed', err instanceof Error ? err.name : 'error');
+        measurement = { status: 'not_measured', method: 'none', reason: 'The probe failed before a citation was observed.' };
+      }
+    }
   } else {
     try {
-      measurement = await probe({ env, engine, domain: row.domain, prompts });
+      measurement = await probe({ env, engine, domain: row.domain, prompts: effectivePrompts });
     } catch (err) {
       console.error('[citation-watch] probe failed', err instanceof Error ? err.name : 'error');
       measurement = { status: 'not_measured', method: 'none', reason: 'The probe failed before a citation was observed.' };
@@ -220,8 +269,9 @@ async function recordRun(env: Env, row: WatchRow, prompts: string[], deps: Citat
     measurement = { status: 'not_measured', method: 'none', reason: 'The probe did not return one observation per prompt.' };
   }
   const thresholds = citationWatchThresholds(env.CITATION_WATCH_THRESHOLDS);
+  const effectiveEngine = engine || 'chatgpt';
   const classified = classifyCitationWatch({
-    engine: engine || 'chatgpt',
+    engine: effectiveEngine,
     measurement,
     priorMeasured: await priorMeasured(env, row.id),
     thresholds,
@@ -244,6 +294,58 @@ async function recordRun(env: Env, row: WatchRow, prompts: string[], deps: Citat
       }),
     { clientId: row.client_id },
   );
+  const isInteractiveRun = Boolean(opts?.request || opts?.assignment);
+  let epistemicNote: string | null | undefined;
+  if (isInteractiveRun) {
+    const assignment =
+      opts?.assignment ??
+      assignEpistemicVariant({
+        env,
+        accountId: row.account_id,
+        request: opts?.request,
+      });
+    if (assignment.enabled) {
+      if (assignment.trackExposure) {
+        await recordServerProductEvent(env.DB, {
+          accountId: row.account_id,
+          type: 'epistemic_ab_exposed',
+          path: '/api/citation-watches/run',
+          data: {
+            variant: assignment.variant,
+            surface: 'citation_watch',
+            assignmentSource: assignment.source,
+          },
+        });
+      }
+      if (assignment.variant === 'treatment') {
+        const defaultHypotheses =
+          classified.verdict === 'drift'
+            ? [
+                {
+                  claim: 'Citation share shift may reflect engine answer volatility or retrieval index updates',
+                  basis: 'single watch run; page-level changes not yet verified',
+                },
+              ]
+            : classified.verdict === 'not_measured'
+              ? [
+                  {
+                    claim: 'Live citation presence for this prompt set is unobserved',
+                    basis: 'no live engine probe ran',
+                  },
+                ]
+              : undefined;
+        const candidateNote = buildCitationWatchEpistemicNote({
+          domain: row.domain,
+          engine: effectiveEngine,
+          classified,
+          hypotheses: defaultHypotheses,
+        });
+        epistemicNote = validateCitationWatchEpistemicNote(candidateNote).ok ? candidateNote : null;
+      } else {
+        epistemicNote = null;
+      }
+    }
+  }
   return {
     id,
     verdict: classified.verdict,
@@ -254,6 +356,7 @@ async function recordRun(env: Env, row: WatchRow, prompts: string[], deps: Citat
     deltaShare: classified.deltaShare,
     comparedToRunId: classified.comparedToRunId,
     reason: classified.reason,
+    ...(epistemicNote !== undefined ? { epistemicNote } : {}),
     ranAt,
   };
 }
@@ -313,6 +416,23 @@ export async function handleCitationWatchRoute(
       const parsedPrompts = parsePromptList(own(body, 'prompts'));
       if (!parsedPrompts.ok) return json({ ok: false, error: parsedPrompts.error }, 400);
       const prompts = parsedPrompts.prompts;
+      const promptThreat = evaluateScheduledPromptsGate(env, prompts);
+      if (promptThreat.findings.length > 0) {
+        await recordServerProductEvent(env.DB, {
+          accountId,
+          type: 'threat_scan_triggered',
+          path: '/api/citation-watches',
+          data: {
+            surface: 'citation_watch_create',
+            mode: promptThreat.mode,
+            blocked: promptThreat.blocked,
+            patternId: promptThreat.findings[0],
+          },
+        });
+        if (promptThreat.blocked) {
+          return json({ ok: false, error: promptThreat.reason || 'Blocked by threat scanner.', code: 'THREAT_BLOCKED' }, 400);
+        }
+      }
       const clientRaw = own(body, 'clientId');
       const clientId = clientRaw == null || clientRaw === '' ? '' : typeof clientRaw === 'string' ? clientRaw.trim() : null;
       if (clientId === null || clientId.length > 64 || (clientId && !/^[a-zA-Z0-9_-]+$/.test(clientId))) {
@@ -395,8 +515,13 @@ export async function handleCitationWatchRoute(
       }
       const prompts = storedPrompts(row.prompts_json);
       if (!prompts) return json({ ok: false, error: 'The stored prompt set could not be read.', code: 'PROMPT_SET_UNREADABLE' }, 500);
-      const run = await recordRun(env, row, prompts, deps);
-      return json({ ok: true, run });
+      const assignment = assignEpistemicVariant({ env, accountId, request });
+      const run = await recordRun(env, row, prompts, deps, { request, assignment });
+      const response = json({ ok: true, run });
+      if (assignment.setCookie) {
+        response.headers.append('Set-Cookie', assignment.setCookie);
+      }
+      return response;
     }
 
     if (request.method === 'GET') {

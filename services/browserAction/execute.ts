@@ -17,6 +17,7 @@ export type BrowserActionRuntime = PaidToolRuntime & {
   /** Absolute crawler base URL. Empty/unset => BROWSER_UNAVAILABLE. */
   patchrightUrl?: string | null;
   crawlerToken?: string | null;
+  enableLoopGuardrails?: boolean;
 };
 
 function requireString(args: Record<string, unknown>, key: string): string | null {
@@ -402,6 +403,7 @@ async function browseGoal(
     },
     chooseLlm: rt.llmGenerate,
     fieldLlm: rt.llmGenerate,
+    enableLoopGuardrails: rt.enableLoopGuardrails,
   });
 
   let steps = 0;

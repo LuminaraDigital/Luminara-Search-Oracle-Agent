@@ -208,7 +208,7 @@ function appCheckResponse(status: number, code: string, error: string): Response
   });
 }
 
-/** Health, crawl files, agent markdown, and any path containing /webhook. */
+/** Health, crawl files, agent markdown, non-browser MCP endpoints, and any path containing /webhook. */
 export function isAppCheckExempt(url: URL): boolean {
   const path = url.pathname.replace(/\/+$/, '') || '/';
   if (
@@ -220,7 +220,12 @@ export function isAppCheckExempt(url: URL): boolean {
     path === '/pricing.md' ||
     path === '/mcp.md' ||
     path === '/api/health' ||
-    path === '/health'
+    path === '/health' ||
+    path === '/api/mcp' ||
+    path.startsWith('/api/mcp/') ||
+    path === '/api/oauth/mcp/register' ||
+    path === '/api/oauth/mcp/token' ||
+    path === '/api/oauth/mcp/revoke'
   ) return true;
   return path.includes('/webhook');
 }
