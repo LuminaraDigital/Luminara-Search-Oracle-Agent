@@ -3,6 +3,7 @@
  * into VFS + context graph (not a user-edited wiki).
  */
 
+import type { AuditRunMeta } from '../audit/auditRun';
 import type { BusinessDNA } from '../../types';
 import { vfsMemoryService } from '../vfs/vfsMemoryService';
 import { contextGraphService } from '../contextGraph/contextGraphService';
@@ -101,6 +102,7 @@ export interface IngestAuditVaultInput {
   topCompetitor?: string | null;
   dna?: BusinessDNA | null;
   planId?: string | null;
+  auditRun?: AuditRunMeta;
 }
 
 export function ingestAudit(input: IngestAuditVaultInput): {
@@ -123,6 +125,7 @@ export function ingestAudit(input: IngestAuditVaultInput): {
     dnaCompetitors: competitors,
     clientId,
     planId: input.planId,
+    auditRun: input.auditRun,
   });
 
   try {

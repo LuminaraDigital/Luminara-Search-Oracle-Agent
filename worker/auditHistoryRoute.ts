@@ -8,6 +8,8 @@ import { MAX_BODY_BYTES, readBody } from './security';
 import { identify, json, billingId } from './workerUtils';
 import { DataPlaneConfigError, readPlane, type DataPlaneDeps } from './dataPlane';
 import { openAuditHistoryStore } from './auditHistoryRepo';
+import { readAuditRun } from './auditRunEntry';
+import type { AuditRunMeta } from '../services/audit/auditRun';
 
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 50;
@@ -29,6 +31,7 @@ export type StoredAuditEntry = {
   reportExcerpt: string;
   clientId: string | null;
   tags: string[];
+  auditRun: AuditRunMeta | null;
 };
 
 function normalizeDomain(raw: string): string {
@@ -84,6 +87,7 @@ export function sanitizeAuditEntry(raw: unknown): { ok: true; entry: StoredAudit
       reportExcerpt: text(r.reportExcerpt, MAX_EXCERPT),
       clientId: typeof r.clientId === 'string' && r.clientId ? r.clientId.slice(0, 128) : null,
       tags: strings(r.tags, 10, 120),
+      auditRun: readAuditRun(r.auditRun),
     },
   };
 }

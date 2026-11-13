@@ -4,6 +4,7 @@
  * browser list is its cache. Guests keep the browser list only. Depth gated by plan entitlements.
  */
 
+import type { AuditRunMeta } from './auditRun';
 import { entitlementsFor, type PlanId } from '../plans/planEntitlements';
 import { clipPlain } from '../../utils/clipPlain';
 import { notifyAuditActivity } from './auditActivity';
@@ -28,6 +29,7 @@ export interface AuditHistoryEntry {
   reportExcerpt: string;
   clientId?: string | null;
   tags: string[];
+  auditRun?: AuditRunMeta | null;
 }
 
 let memoryStore: AuditHistoryEntry[] = [];
@@ -123,6 +125,7 @@ export interface RecordAuditInput {
   measuredAt?: number;
   /** When this id is already saved, the row is updated instead of listed twice. */
   id?: string;
+  auditRun?: AuditRunMeta;
 }
 
 let auditSeq = 0;
@@ -153,6 +156,7 @@ export function recordAudit(input: RecordAuditInput): AuditHistoryEntry {
     reportExcerpt: text.slice(0, 80_000),
     clientId: input.clientId ?? null,
     tags: [input.focus.toLowerCase(), domain],
+    ...(input.auditRun ? { auditRun: input.auditRun } : {}),
   };
 
   const depth = entitlementsFor(input.planId).auditHistoryDepth;

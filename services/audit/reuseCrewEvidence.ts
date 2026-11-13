@@ -15,6 +15,8 @@ export interface AuditReportCrewEvidence {
   rlmCorpus?: Record<string, string> | null;
   /** Finding ids the evidence check did not support, including the `-unmeasured` suffix. */
   unsupportedClaims?: readonly { id?: string; description?: string }[] | null;
+  /** Minted before the crew starts, so findings and the report share it. */
+  runId?: string | null;
 }
 
 export interface ReusedPageEvidence {
