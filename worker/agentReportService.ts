@@ -12,7 +12,7 @@ import {
 import { randomId } from '../services/projects/projectUtils';
 import { getProject } from './projectService';
 
-function webappOrigin(env: Env): string {
+export function webappOrigin(env: Pick<Env, 'WEBAPP_URL'>): string {
   return (env.WEBAPP_URL || 'https://luminarasuite.com').replace(/\/$/, '');
 }
 

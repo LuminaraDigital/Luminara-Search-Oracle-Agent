@@ -171,6 +171,17 @@ describe('action request lifecycle', () => {
     expect(b.id).not.toBe(a.id);
   });
 
+  it('does not reuse a pending request that has expired', async () => {
+    const env = makeEnv();
+    const first = await createActionRequest(env, { userId: 'u1', toolName: 'browse_goal', projectId: 'p1' });
+    await env.DB!.prepare('UPDATE mcp_action_requests SET expires_at = 1 WHERE id = ?').bind(first.id).run();
+    const second = await createActionRequest(env, { userId: 'u1', toolName: 'browse_goal', projectId: 'p1' });
+    expect(second.existing).toBe(false);
+    expect(second.id).not.toBe(first.id);
+    expect(second.expiresAt).toBeGreaterThan(Date.now());
+    expect(await approveActionRequest(env, first.id, 'admin_1')).toBe(false);
+  });
+
   it('approveActionRequest marks pending row approved; double approve fails', async () => {
     const env = makeEnv();
     const { id } = await createActionRequest(env, { userId: 'u1', toolName: 'browse_goal' });

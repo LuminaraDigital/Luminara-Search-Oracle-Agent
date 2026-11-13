@@ -46,6 +46,16 @@ These connect without this package. Add a custom connector with the endpoint and
 
 With no browser to sign in, send a Luminara API key: `Authorization: Bearer lm_live_...`.
 
+## Named agents
+
+Three agents answer in any connected host, from what Luminara has stored for a project. They are free and read only.
+
+- Luminara Auditor (`ask_auditor`): findings on record, worst first, with the date of the last audit
+- Luminara Fixer (`ask_fixer`): stored fix drafts, and open findings that have none
+- Luminara Coach (`ask_coach`): this week's decision, or a candidate when none is set
+
+When an action needs your approval, the agent gives you a luminarasuite.com link. Sign in and choose Approve once or Deny.
+
 ## Included skills
 
 - luminara-coach: start here; it finds your project and offers the next step

@@ -4,7 +4,8 @@
 import { describe, expect, it } from 'vitest';
 import worker from '../worker/index';
 import type { Env } from '../worker/env';
-import { handleMcpRequest, MCP_INSTRUCTIONS } from '../worker/mcpServer';
+import { handleMcpRequest } from '../worker/mcpServer';
+import { MCP_INSTRUCTIONS } from '../worker/mcpProtocol';
 import type { HostedIdentity } from '../worker/userTypes';
 import { createSqliteD1 } from './helpers/sqliteD1';
 
@@ -60,13 +61,13 @@ describe('brand identity on initialize', () => {
     expect(body.result.serverInfo).toEqual({
       name: 'luminara-mcp',
       title: 'Luminara Suite',
-      version: '1.1.0',
+      version: '1.2.0',
       websiteUrl: 'https://luminarasuite.com',
       icons: [{ src: 'https://luminarasuite.com/favicon-192.png', mimeType: 'image/png', sizes: ['192x192'] }],
     });
     expect(body.result.instructions).toBe(MCP_INSTRUCTIONS);
     expect(body.result.instructions).toContain('Luminara');
-    expect(body.result.capabilities).toEqual({ tools: {} });
+    expect(body.result.capabilities).toEqual({ tools: {}, prompts: {} });
   });
 });
 

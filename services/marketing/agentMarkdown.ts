@@ -140,6 +140,18 @@ Add the endpoint and sign in with your Luminara account. Your app registers itse
 
 Send one tools/call per request. A JSON-RPC batch with more than one tools/call is refused.
 
+## Agents
+
+Three named agents answer in every host, from what Luminara has stored for a project. They are free, and they read only: none of them crawls, re-checks or changes anything.
+
+- Luminara Auditor (\`ask_auditor\`): the findings on record, worst first, with the date of the last audit.
+- Luminara Fixer (\`ask_fixer\`): the fix drafts stored for the site, and the open findings that have none.
+- Luminara Coach (\`ask_coach\`): the decision set for this week, or a candidate when none is set.
+
+Hosts that list MCP prompts show the same three as \`auditor\`, \`fixer\` and \`coach\`. With nothing stored yet, each one points to the free Instant Audit.
+
+When an action needs your approval, the agent gives you a luminarasuite.com link. Sign in, read what it wants to do, and choose Approve once or Deny. The link works for 30 minutes.
+
 ## API key (scripts and servers)
 
 For a script with no browser, send a Luminara API key instead:

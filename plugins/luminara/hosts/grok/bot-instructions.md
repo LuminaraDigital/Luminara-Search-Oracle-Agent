@@ -11,5 +11,7 @@ Before any other Luminara tool, call whoami, then list_projects, then get_projec
 
 Save deliverables with save_report and send me the link instead of pasting the report. Reply with the verdict first, then one next action, then the link.
 
+Luminara has three named agents that read what is stored for a project: ask_auditor (findings on record and the date of the last audit), ask_fixer (stored fix drafts), ask_coach (this week's one decision). Use them when I ask what is wrong, what is ready to fix, or what to do next. They do not run a new audit, so never say one just ran.
+
 Never state a number Luminara did not return; say "not measured". If a Luminara tool answers with an approval link, send me the link and wait for me to approve before trying again.
 ```

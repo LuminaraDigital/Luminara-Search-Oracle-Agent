@@ -57,7 +57,23 @@ export const TOOL_GOVERNANCE: Record<string, ToolGovernanceEntry> = {
   compile_review_to_skill: { risk: 'write', status: 'active' },
   mint_habitat_token: { risk: 'write', status: 'active' },
   draft_fix: { risk: 'read', status: 'active' },
+  // Named agents (spec 0031): each reads stored rows for one project
+  ask_auditor: { risk: 'read', status: 'active' },
+  ask_fixer: { risk: 'read', status: 'active' },
+  ask_coach: { risk: 'read', status: 'active' },
 };
+
+/** What approving does, shown to the owner. Fixed text: never built from a caller's arguments. */
+const APPROVAL_CONSEQUENCES: Record<string, string> = {
+  browse_goal: "Luminara's hosted browser will carry out a multi-step goal on the site named below.",
+  browse_close: 'The hosted browser session named below will be closed.',
+  decide_booking_signoff: 'The proposed appointment named below will be approved or declined.',
+  prepare_cms_mcp_call: "A change to your website's CMS will be prepared from the details below.",
+};
+
+export function approvalConsequence(toolName: string): string {
+  return APPROVAL_CONSEQUENCES[toolName] ?? 'The agent will run this action once, with the details below.';
+}
 
 /** Unknown tools default to write/active and are still logged. */
 export function governanceFor(toolName: string): ToolGovernanceEntry {
@@ -138,23 +154,24 @@ export async function createActionRequest(
     projectId?: string | null;
     args?: Record<string, unknown>;
   },
-): Promise<{ id: string; existing: boolean }> {
-  if (!env.DB) return { id: crypto.randomUUID(), existing: false };
+): Promise<{ id: string; existing: boolean; expiresAt: number }> {
+  const now = Date.now();
+  if (!env.DB) return { id: crypto.randomUUID(), existing: false, expiresAt: now + APPROVAL_TTL_MS };
   const projectId = params.projectId ?? null;
   const argsJson = JSON.stringify(redactSensitive(params.args || {}));
 
+  // An expired pending row can no longer be approved, so it is not reused.
   const existing = await env.DB.prepare(
-    `SELECT id FROM mcp_action_requests
-     WHERE user_id = ? AND tool_name = ? AND status = 'pending' AND kind = 'tool'
+    `SELECT id, expires_at FROM mcp_action_requests
+     WHERE user_id = ? AND tool_name = ? AND status = 'pending' AND kind = 'tool' AND expires_at > ?
        AND (project_id IS ? OR project_id = ?) AND args_json = ?
      ORDER BY created_at DESC LIMIT 1`,
   )
-    .bind(params.userId, params.toolName, projectId, projectId, argsJson)
-    .first<{ id: string }>();
-  if (existing?.id) return { id: existing.id, existing: true };
+    .bind(params.userId, params.toolName, now, projectId, projectId, argsJson)
+    .first<{ id: string; expires_at: number }>();
+  if (existing?.id) return { id: existing.id, existing: true, expiresAt: existing.expires_at };
 
   const id = crypto.randomUUID();
-  const now = Date.now();
   await env.DB.prepare(
     `INSERT INTO mcp_action_requests
      (id, user_id, project_id, tool_name, args_json, status, expires_at, created_at, kind)
@@ -162,7 +179,7 @@ export async function createActionRequest(
   )
     .bind(id, params.userId, projectId, params.toolName, argsJson, now + APPROVAL_TTL_MS, now)
     .run();
-  return { id, existing: false };
+  return { id, existing: false, expiresAt: now + APPROVAL_TTL_MS };
 }
 
 /** List a user's action requests, newest first. */
@@ -178,6 +195,21 @@ export async function listActionRequests(
     .bind(userId, Math.min(Math.max(1, limit), 200))
     .all();
   return (result.results ?? []) as unknown as ActionRequestRow[];
+}
+
+/** One tool request, only for the account that owns it. A missing row and another account's row look the same. */
+export async function getOwnedToolRequest(
+  env: UserStoreEnv,
+  id: string,
+  accountId: string,
+): Promise<ActionRequestRow | null> {
+  if (!env.DB || !id) return null;
+  const row = await env.DB.prepare(
+    `SELECT * FROM mcp_action_requests WHERE id = ? AND user_id = ? AND kind = 'tool' LIMIT 1`,
+  )
+    .bind(id, accountId)
+    .first();
+  return (row as ActionRequestRow | null) ?? null;
 }
 
 /** Fetch one action request by id (any owner). Caller must enforce authz. */
@@ -199,12 +231,14 @@ async function decide(
   status: 'approved' | 'denied',
 ): Promise<boolean> {
   if (!env.DB) return false;
+  const now = Date.now();
+  // An expired request can still be denied, never approved.
   const result = await env.DB.prepare(
     `UPDATE mcp_action_requests
      SET status = ?, decided_by = ?, decided_at = ?
-     WHERE id = ? AND status = 'pending'`,
+     WHERE id = ? AND status = 'pending' AND (? = 'denied' OR expires_at > ?)`,
   )
-    .bind(status, adminId, Date.now(), id)
+    .bind(status, adminId, now, id, status, now)
     .run();
   return (result.meta?.changes ?? 0) > 0;
 }

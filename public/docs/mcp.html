@@ -30,6 +30,15 @@
     <li><strong>Cursor:</strong> <a href="cursor://anysphere.cursor-deeplink/mcp/install?name=luminara&amp;config=eyJ1cmwiOiJodHRwczovL2x1bWluYXJhc3VpdGUuY29tL2FwaS9tY3AifQ==">Add to Cursor</a>, or put the server below in <code>.cursor/mcp.json</code>.
       <pre>{ "mcpServers": { "luminara": { "url": "https://luminarasuite.com/api/mcp" } } }</pre></li>
   </ul>
+  <h2>Agents</h2>
+  <p>Three named agents answer in every host, from what Luminara has stored for a project. They are free, and they read only: none of them crawls, re-checks or changes anything.</p>
+  <ul>
+    <li><strong>Luminara Auditor</strong> (<code>ask_auditor</code>): the findings on record, worst first, with the date of the last audit.</li>
+    <li><strong>Luminara Fixer</strong> (<code>ask_fixer</code>): the fix drafts stored for the site, and the open findings that have none.</li>
+    <li><strong>Luminara Coach</strong> (<code>ask_coach</code>): the decision set for this week, or a candidate when none is set.</li>
+  </ul>
+  <p>Hosts that list MCP prompts show the same three as <code>auditor</code>, <code>fixer</code> and <code>coach</code>. With nothing stored yet, each one points to the free Instant Audit.</p>
+  <p>When an action needs your approval, the agent gives you a luminarasuite.com link. Sign in, read what it wants to do, and choose Approve once or Deny. The link works for 30 minutes.</p>
   <h2>API key (scripts and servers)</h2>
   <p>For a script with no browser, send a Luminara API key as a Bearer token instead.</p>
   <pre>{
@@ -43,6 +52,7 @@
   }
 }</pre>
   <h2>Changes</h2>
+  <p>November 2026: added the Auditor, Fixer and Coach tools and prompts, and approval links.</p>
   <p>October 2026: send one <code>tools/call</code> per request. A JSON-RPC batch with more than one <code>tools/call</code> is refused with HTTP 400 and error <code>-32600</code>. A batch may still carry <code>initialize</code>, <code>tools/list</code> and <code>ping</code> next to its one call.</p>
 </body>
 </html>

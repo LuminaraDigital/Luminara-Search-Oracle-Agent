@@ -219,7 +219,7 @@ describe('mcp-action-requests HTTP', () => {
     expect(res.status).toBe(401);
   });
 
-  it('lists and approves own pending request; forbids other account', async () => {
+  it('lists and approves own pending request; another account sees not found', async () => {
     const env = makeEnv();
     // Telegram billingId = user id string
     const created = await createActionRequest(env, {
@@ -249,7 +249,7 @@ describe('mcp-action-requests HTTP', () => {
       env,
       ctx,
     );
-    expect(other.status).toBe(403);
+    expect(other.status).toBe(404);
 
     const approve = await worker.fetch(
       req(`/api/mcp-action-requests/${created.id}/approve`, {
@@ -293,5 +293,64 @@ describe('mcp-action-requests HTTP', () => {
     expect(deny.status).toBe(200);
     const body = (await deny.json()) as { ok: boolean; status: string };
     expect(body.status).toBe('denied');
+  });
+
+  it('reads one request for the approval page, with the site and what approving does', async () => {
+    const env = makeEnv();
+    const made = await createProject(env, '88001', { domain: 'acme.io' });
+    if (!made.ok) throw new Error(made.error);
+    const created = await createActionRequest(env, {
+      userId: '88001',
+      toolName: 'browse_goal',
+      projectId: made.project.id,
+      args: { goal: 'Open pricing', token: 'lm_live_secretsecretsecret' },
+    });
+    const res = await worker.fetch(
+      req(`/api/mcp-action-requests/${created.id}`, { headers: { 'x-telegram-init-data': signInitData(88001, 'Owner') } }),
+      env,
+      ctx,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { request: Record<string, unknown> };
+    expect(body.request).toMatchObject({
+      id: created.id,
+      toolName: 'browse_goal',
+      domain: 'acme.io',
+      status: 'pending',
+      expiresAt: created.expiresAt,
+    });
+    expect(String(body.request.consequence)).toContain('hosted browser');
+    expect(String(body.request.args)).toContain('Open pricing');
+    expect(String(body.request.args)).not.toContain('secretsecret');
+    expect(body.request).not.toHaveProperty('user_id');
+  });
+
+  it("answers a missing request and another account's request identically", async () => {
+    const env = makeEnv();
+    const created = await createActionRequest(env, { userId: '88001', toolName: 'browse_close', args: { sessionId: 's1' } });
+    const asOther = { headers: { 'x-telegram-init-data': signInitData(88002, 'Other') } };
+    const foreign = await worker.fetch(req(`/api/mcp-action-requests/${created.id}`, asOther), env, ctx);
+    const missing = await worker.fetch(req('/api/mcp-action-requests/00000000-0000-4000-8000-000000000000', asOther), env, ctx);
+    expect(foreign.status).toBe(404);
+    expect(await foreign.text()).toBe(await missing.text());
+    const signedOut = await worker.fetch(req(`/api/mcp-action-requests/${created.id}`), env, ctx);
+    expect(signedOut.status).toBe(401);
+  });
+
+  it('refuses to approve an expired request, and still lets it be denied', async () => {
+    const env = makeEnv();
+    const created = await createActionRequest(env, { userId: '88001', toolName: 'browse_close', args: { sessionId: 's1' } });
+    await env.DB!.prepare('UPDATE mcp_action_requests SET expires_at = 1 WHERE id = ?').bind(created.id).run();
+    const post = (decision: string) =>
+      worker.fetch(
+        req(`/api/mcp-action-requests/${created.id}/${decision}`, {
+          method: 'POST',
+          headers: { 'x-telegram-init-data': signInitData(88001, 'Owner') },
+        }),
+        env,
+        ctx,
+      );
+    expect((await post('approve')).status).toBe(409);
+    expect((await post('deny')).status).toBe(200);
   });
 });

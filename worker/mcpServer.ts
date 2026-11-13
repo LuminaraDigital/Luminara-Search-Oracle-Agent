@@ -51,9 +51,20 @@ import { evaluateWakeGate } from './dreamingWakeGate';
 import { CONVERSION_SPINE_MCP_TOOLS } from './mcpConversionTools';
 import { FIX_DRAFT_MCP_TOOLS } from './fixDraftRoute';
 import { enforceHabitatScope, SELF_DRIVING_MCP_TOOLS } from './selfDrivingHabitat';
+import { AGENT_MCP_TOOLS, agentPromptGet, agentPromptsList } from './mcpAgents';
+import { webappOrigin } from './agentReportService';
+import {
+  MCP_INSTRUCTIONS,
+  MCP_PROTOCOL_VERSIONS,
+  hasSupportedProtocolHeader,
+  mcpServerInfo,
+  negotiateProtocolVersion,
+} from './mcpProtocol';
 
 export type McpToolDef = {
   name: string;
+  /** Human name a host may show in place of `name`. */
+  title?: string;
   description: string;
   creditClass: McpCreditClass;
   inputSchema: Record<string, unknown>;
@@ -85,26 +96,6 @@ const MCP_CORS: Record<string, string> = {
     'Content-Type, Accept, Authorization, mcp-session-id, MCP-Protocol-Version, Mcp-Method, Mcp-Name, x-provider-key',
   'Access-Control-Expose-Headers': 'mcp-session-id',
 };
-
-/** What a host shows for this server: the Luminara name, mark and site. */
-export function mcpServerInfo(origin: string) {
-  return {
-    name: 'luminara-mcp',
-    title: 'Luminara Suite',
-    version: '1.1.0',
-    websiteUrl: origin,
-    icons: [{ src: `${origin}/favicon-192.png`, mimeType: 'image/png', sizes: ['192x192'] }],
-  };
-}
-
-/** Sent to the host's model on connect, so Luminara answers in its own voice wherever it is used. */
-export const MCP_INSTRUCTIONS = [
-  'You are connected to Luminara, the AI visibility and SEO suite at luminarasuite.com.',
-  'Luminara keeps each project\'s context, audits and reports. Call whoami, then list_projects, then get_project_context before any other tool.',
-  'Reply the Luminara way: lead with the verdict, give one next action, and link to the saved report instead of pasting it.',
-  'Never present a number Luminara did not return; say "not measured" instead.',
-  'Tools that change or spend may answer with an approval link. Give the user that link; do not retry until they approve.',
-].join(' ');
 
 function mcpJson(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -571,6 +562,7 @@ const TOOLS: McpToolDef[] = [
   ...FIX_DRAFT_MCP_TOOLS,
   ...CONVERSION_SPINE_MCP_TOOLS,
   ...SELF_DRIVING_MCP_TOOLS,
+  ...AGENT_MCP_TOOLS,
   ...PAID_TOOL_CATALOGUE.map((meta) => ({
     name: meta.name,
     description: meta.description,
@@ -598,11 +590,13 @@ function toolsListPayload() {
   return {
     tools: TOOLS.map((t) => ({
       name: t.name,
+      ...(t.title ? { title: t.title } : {}),
       description: t.description,
       inputSchema: t.inputSchema,
       annotations: {
         readOnlyHint:
           t.name.startsWith('get_') ||
+          t.name.startsWith('ask_') ||
           t.name.startsWith('list_') ||
           t.name === 'whoami' ||
           t.name === 'dream_status' ||
@@ -756,9 +750,14 @@ async function callTool(
       projectId,
       args,
     });
+    const approvalUrl = `${webappOrigin(ctx.env)}/?mcp_approval=${req.id}`;
     return textResult(
-      `Tool requires operator approval. Action request ${req.id} created.`,
-      { requiresApproval: true, actionRequestId: req.id },
+      [
+        `Luminara needs the account owner's approval before running ${name}.`,
+        `Approve or deny: ${approvalUrl}`,
+        'The link works for 30 minutes, for the signed-in account owner only. After approving, ask for the same action again with the same details.',
+      ].join('\n'),
+      { requiresApproval: true, actionRequestId: req.id, approvalUrl, expiresAt: req.expiresAt },
     );
   }
 
@@ -819,32 +818,6 @@ async function callTool(
 /** One request may carry at most this many JSON-RPC messages. */
 const MAX_MCP_BATCH = 20;
 
-/**
- * Newest first. 2025-11-25 stays off this list: that revision requires HTTP 403
- * when Origin is present and invalid, and this server does not check Origin.
- */
-const MCP_PROTOCOL_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'] as const;
-/** Assumed when the client omits MCP-Protocol-Version. */
-const MCP_PROTOCOL_VERSION_DEFAULT = '2025-03-26' satisfies (typeof MCP_PROTOCOL_VERSIONS)[number];
-
-function isSupportedProtocolVersion(version: string): version is (typeof MCP_PROTOCOL_VERSIONS)[number] {
-  return (MCP_PROTOCOL_VERSIONS as readonly string[]).includes(version);
-}
-
-function negotiateProtocolVersion(requested: unknown): (typeof MCP_PROTOCOL_VERSIONS)[number] {
-  return typeof requested === 'string' && isSupportedProtocolVersion(requested)
-    ? requested
-    : MCP_PROTOCOL_VERSIONS[0];
-}
-
-/** Absent header assumes 2025-03-26. An explicit unsupported version is HTTP 400. */
-function rejectUnsupportedProtocolHeader(request: Request): Response | null {
-  const raw = request.headers.get('mcp-protocol-version');
-  const version = raw === null ? MCP_PROTOCOL_VERSION_DEFAULT : raw.trim();
-  if (isSupportedProtocolVersion(version)) return null;
-  return mcpJson({ error: 'Unsupported MCP-Protocol-Version' }, 400);
-}
-
 function rpcResult(id: unknown, result: unknown) {
   return { jsonrpc: '2.0', id: id ?? null, result };
 }
@@ -867,8 +840,7 @@ export async function handleMcpRequest(
   }
 
   const origin = new URL(request.url).origin;
-  const headerRejection = rejectUnsupportedProtocolHeader(request);
-  if (headerRejection) return headerRejection;
+  if (!hasSupportedProtocolHeader(request)) return mcpJson({ error: 'Unsupported MCP-Protocol-Version' }, 400);
 
   if (request.method === 'GET') {
     // Streamable HTTP clients GET with this Accept to open a server stream; we offer none.
@@ -923,7 +895,7 @@ export async function handleMcpRequest(
       responses.push(
         rpcResult(id, {
           protocolVersion: negotiateProtocolVersion(m.params?.protocolVersion),
-          capabilities: { tools: {} },
+          capabilities: { tools: {}, prompts: {} },
           serverInfo: mcpServerInfo(origin),
           instructions: MCP_INSTRUCTIONS,
         }),
@@ -939,6 +911,15 @@ export async function handleMcpRequest(
     }
     if (method === 'tools/list') {
       responses.push(rpcResult(id, toolsListPayload()));
+      continue;
+    }
+    if (method === 'prompts/list') {
+      responses.push(rpcResult(id, agentPromptsList()));
+      continue;
+    }
+    if (method === 'prompts/get') {
+      const prompt = agentPromptGet(m.params?.name, m.params?.arguments);
+      responses.push(prompt ? rpcResult(id, prompt) : rpcError(id, -32602, 'Unknown prompt or invalid arguments'));
       continue;
     }
     if (method === 'tools/call') {

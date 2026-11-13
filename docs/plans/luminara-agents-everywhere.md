@@ -114,6 +114,8 @@ Slice A needs nothing from Track SW and can start now. Slice B rides on SW.
 
 **Slice A status (branch `feat/agents-everywhere-slice-a`):** AE-1 to AE-6 done. AE-1 uses the negotiation that landed on staging in `3184301` (2024-11-05 to 2025-06-18, and a 400 for an unsupported `MCP-Protocol-Version` header). 2025-11-25 stays off until the server checks `Origin`, which that revision requires. Slice A adds a 405 when a client asks for a server stream. The MCP spec's current revision, 2026-07-28, drops the handshake and adds `server/discover`. That is not served yet; add it once a host is seen using it. AE-7 waits on the live test.
 
+**Slice B status (branch `feat/agents-everywhere-slice-b`, spec 0031):** AE-8, AE-9 and the link half of AE-10 are built without waiting for Track SW. The three agents read what is already stored (findings, saved audits, prepared assets, weekly decisions) and say so; they gain the run log as a data source when SW1a lands, with no change to their names or contract. Approval requests now answer with a `luminarasuite.com/?mcp_approval=<id>` link that opens an approve-or-deny dialog for the signed-in owner. Not built: resuming a run after approval (needs SW's run engine), AE-11 (no per-project scheduled audit exists to pause or resume) and AE-12.
+
 Slice A: AE-1 to AE-7. Slice B: AE-8 to AE-12, each after the SW task that makes its agent real (Auditor after SW1a, Fixer and Coach after SW1-15 and SW1-18, approvals after SW2-5).
 
 ## 7. Decisions for the owner

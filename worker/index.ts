@@ -125,7 +125,8 @@ import { handleMcpRequest, listMcpToolCatalogue } from './mcpServer';
 import { getBudgetStatus, upsertBudgetPolicy, approveBudgetResume } from './budgets';
 import {
   listActionRequests,
-  getActionRequestById,
+  getOwnedToolRequest,
+  approvalConsequence,
   approveActionRequest,
   denyActionRequest,
 } from './mcpGovernance';
@@ -1927,16 +1928,39 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       return withCors(json({ ok: true, requests: rows }));
     }
 
+    // The page behind an agent's approval link (spec 0031) reads one request, for its owner only.
+    const oneMatch = path.match(/^\/mcp-action-requests\/([^/]+)$/);
+    if (oneMatch && request.method === 'GET') {
+      const row = await getOwnedToolRequest(env, oneMatch[1], accountId);
+      if (!row) {
+        return withCors(json({ ok: false, error: 'Action request not found', code: 'NOT_FOUND' }, 404));
+      }
+      const project = row.project_id ? await getProject(env, accountId, row.project_id) : null;
+      return withCors(
+        json({
+          ok: true,
+          request: {
+            id: row.id,
+            toolName: row.tool_name,
+            domain: project?.domain ?? null,
+            // Stored already redacted; capped so a huge argument cannot fill the dialog.
+            args: row.args_json.length > 4000 ? `${row.args_json.slice(0, 4000)} [truncated]` : row.args_json,
+            consequence: approvalConsequence(row.tool_name),
+            status: row.status,
+            expiresAt: row.expires_at,
+          },
+        }),
+      );
+    }
+
     const decideMatch = path.match(/^\/mcp-action-requests\/([^/]+)\/(approve|deny)$/);
     if (decideMatch && request.method === 'POST') {
       const requestId = decideMatch[1];
       const decision = decideMatch[2] as 'approve' | 'deny';
-      const row = await getActionRequestById(env, requestId);
+      // Another account's request answers exactly like a missing one.
+      const row = await getOwnedToolRequest(env, requestId, accountId);
       if (!row) {
         return withCors(json({ ok: false, error: 'Action request not found', code: 'NOT_FOUND' }, 404));
-      }
-      if (row.user_id !== accountId) {
-        return withCors(json({ ok: false, error: 'Forbidden', code: 'FORBIDDEN' }, 403));
       }
       if (row.status !== 'pending') {
         return withCors(
