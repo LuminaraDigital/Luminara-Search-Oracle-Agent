@@ -62,7 +62,7 @@ interface LandingPageProps {
 }
 
 const MCP_COMMAND =
-  'claude mcp add --transport http luminara https://luminarasuite.com/api/mcp --header "Authorization: Bearer lm_live_YOUR_KEY"';
+  'claude mcp add --transport http luminara https://www.luminarasuite.com/api/mcp --header "Authorization: Bearer lm_live_YOUR_KEY"';
 
 const PAGE_LEAKS = [
   {

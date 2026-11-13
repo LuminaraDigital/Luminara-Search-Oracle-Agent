@@ -285,6 +285,8 @@ export interface Env extends DataPlaneEnv {
   GSC_TOKEN_KEY?: string;
   /** MCP OAuth signing secret. Required in production; staging/local may fall back to AUTH_WEBHOOK_SECRET / BOT_TOKEN. */
   MCP_OAUTH_SECRET?: string;
+  /** Challenge body for https://<host>/.well-known/mcp-registry-auth. Unset until the owner publishes. */
+  MCP_REGISTRY_AUTH_TOKEN?: string;
   /**
    * Optional Cloudflare Workers Rate Limiting bindings (edge-local within a colo).
    * Configured via wrangler `ratelimits`. Absent in unit tests / older deploys.
