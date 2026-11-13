@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { createRequire } from 'node:module';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -188,5 +190,13 @@ describe('desktop external app launches from frames and popups', () => {
 
   it('leaves every other permission at the Electron default', () => {
     expect(packaged.isPermissionGranted('notifications', {})).toBe(true);
+  });
+});
+
+describe('main process URL filters', () => {
+  it('names a scheme on every filter with a port, or Electron throws and no window opens', () => {
+    const main = readFileSync(resolve(__dirname, '..', 'electron/main.cjs'), 'utf8');
+    expect(main).toContain("'http://127.0.0.1:11434/*'");
+    expect(main).not.toMatch(/'\*:\/\/[^']*:\d+\//);
   });
 });

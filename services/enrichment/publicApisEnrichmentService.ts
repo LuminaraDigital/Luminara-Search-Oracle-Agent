@@ -231,14 +231,22 @@ export class PublicApisEnrichmentService {
     let securityTxtPresent = false;
     let measurementConfidence: MeasurementConfidence = 'failed';
     let headersReadable = false;
+    // Any response at all, even an opaque one. With none, nothing was measured.
+    let anyResponse = false;
 
     try {
       let res = await fetch(testUrl, { method: 'HEAD', redirect: 'follow' }).catch(() => null);
       if (!res || !res.ok) {
         res = await fetch(testUrl, { method: 'GET', redirect: 'follow' }).catch(() => null);
       }
+      // Most sites send no CORS headers, so a readable fetch throws even when the site is up.
+      // An opaque no-cors answer still proves the origin answered (headers stay unread: cors_limited).
+      if (!res) {
+        res = await fetch(testUrl, { method: 'GET', mode: 'no-cors', redirect: 'follow' }).catch(() => null);
+      }
 
       if (res) {
+        anyResponse = true;
         measurementConfidence = 'full';
         try {
           const hstsVal = res.headers.get('strict-transport-security');
@@ -270,6 +278,7 @@ export class PublicApisEnrichmentService {
       if (isHttps) {
         const httpUrl = testUrl.replace(/^https:\/\//i, 'http://');
         const redir = await fetch(httpUrl, { method: 'GET', redirect: 'follow' }).catch(() => null);
+        if (redir) anyResponse = true;
         if (redir?.url?.startsWith('https://')) {
           redirectsToHttps = true;
         } else if (!redir && measurementConfidence === 'full') {
@@ -283,6 +292,7 @@ export class PublicApisEnrichmentService {
       try {
         const origin = new URL(testUrl).origin;
         const st = await fetch(`${origin}/.well-known/security.txt`, { method: 'GET' }).catch(() => null);
+        if (st) anyResponse = true;
         if (st && st.ok) {
           const body = await st.text().catch(() => '');
           securityTxtPresent = /contact\s*:/i.test(body) || /canonical\s*:/i.test(body);
@@ -294,6 +304,21 @@ export class PublicApisEnrichmentService {
       measurementConfidence = isHttps ? 'cors_limited' : 'failed';
     }
 
+    // Every request failed: the site was not reached (or blocked every read), so report not measured
+    // instead of crediting HTTPS from the URL scheme alone.
+    if (!anyResponse) {
+      return {
+        httpsEnforced: false,
+        redirectsToHttps: false,
+        hstsEnabled: false,
+        cspDetected: false,
+        referrerPolicy: false,
+        xFrameOptions: false,
+        securityTxtPresent: false,
+        trustScore: 0,
+        measurementConfidence: 'failed',
+      };
+    }
     if (measurementConfidence === 'failed' && isHttps) {
       measurementConfidence = 'cors_limited';
     }
@@ -353,7 +378,8 @@ export class PublicApisEnrichmentService {
 
     // Prefer Worker (full security headers) when available
     const fromWorker = await this.tryWorkerEnrichment(cleanDomain, cleanBrand);
-    if (fromWorker?.security) {
+    // A Worker check that reached nothing falls through to the browser probe.
+    if (fromWorker?.security && fromWorker.security.measurementConfidence !== 'failed') {
       this.cacheEnrichment(cleanDomain, fromWorker);
       return fromWorker;
     }
@@ -381,7 +407,7 @@ export class PublicApisEnrichmentService {
       timestamp: Date.now(),
     };
 
-    this.cacheEnrichment(cleanDomain, result);
+    if (security.measurementConfidence !== 'failed') this.cacheEnrichment(cleanDomain, result);
     return result;
   }
 
@@ -389,7 +415,9 @@ export class PublicApisEnrichmentService {
     if (typeof window === 'undefined') return null;
     try {
       const all = JSON.parse(localStorage.getItem(STORAGE_KEY_ENRICHMENT) || '{}');
-      return all[domain] || null;
+      const hit: EnrichedEntityIntelligence | undefined = all[domain];
+      // Older builds cached checks that reached nothing; those are measured again, not reused.
+      return hit && hit.security?.measurementConfidence !== 'failed' ? hit : null;
     } catch {
       return null;
     }

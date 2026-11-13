@@ -89,7 +89,7 @@ import { getOrCreateUserOrg, hasPermission } from './enterpriseStore';
 import { auditOrgIdFor, recordAuditLog, getAuditLogs, recordAuditLogBestEffort, getAuditChainEntries, verifyAuditChain } from './auditLog';
 import { isAdminAuthorized } from './adminAuth';
 
-import { applyCorsHeaders, corsHeaders, getSessionCookieToken, identify, json, secretEquals, billingId, sha256Hex } from './workerUtils';
+import { applyCorsHeaders, corsHeaders, getSessionCookieToken, identify, json, secretEquals, billingId, sha256Hex, sessionIsTelegramUser } from './workerUtils';
 import { getActiveSubscription, mapHostedEntitlement, readQuotaSnapshot } from './quotaMiddleware';
 import { handleReferralRoute } from './referrals';
 import { handleIdeaScoutRoute } from './ideaScout';
@@ -325,18 +325,24 @@ async function compileDenialIntoRule(
   }
 }
 
+/** Public MCP OAuth posts. Separate buckets: hosted agents share egress IPs. */
+const MCP_OAUTH_PUBLIC_POST_LIMITS: Record<string, { action: string; limitPerKey: number }> = {
+  '/oauth/mcp/token': { action: 'mcp_oauth_token', limitPerKey: 60 },
+  '/oauth/mcp/register': { action: 'mcp_oauth_register', limitPerKey: 20 },
+  '/oauth/mcp/revoke': { action: 'mcp_oauth_revoke', limitPerKey: 60 },
+};
+
 async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   const url = new URL(request.url);
   const path = url.pathname.replace(/^\/api/, '');
-  // MCP clients run on any origin. Token/register routes never read a cookie, and /mcp falls back to
+  // MCP clients run on any origin. Public OAuth routes never read a cookie, and /mcp falls back to
   // non-credentialed MCP_CORS when the caller is not an allowlisted web app origin.
   const appCors = corsHeaders(env, request);
-  const cors =
-    path === '/oauth/mcp/token' || path === '/oauth/mcp/register'
-      ? MCP_OAUTH_PUBLIC_CORS
-      : (path === '/mcp' || path.startsWith('/mcp/')) && Object.keys(appCors).length === 0
-        ? MCP_CORS
-        : appCors;
+  const cors = MCP_OAUTH_PUBLIC_POST_LIMITS[path]
+    ? MCP_OAUTH_PUBLIC_CORS
+    : (path === '/mcp' || path.startsWith('/mcp/')) && Object.keys(appCors).length === 0
+      ? MCP_CORS
+      : appCors;
 
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
 
@@ -1058,9 +1064,17 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     if (typeof initData !== 'string' || !initData) return withCors(json({ error: 'initData required' }, 400));
     if (!env.BOT_TOKEN) return withCors(json({ error: 'BOT_TOKEN not configured' }, 503));
     const v = await validateInitData(initData, env.BOT_TOKEN);
-    if (!v.ok) return withCors(json({ error: v.reason }, 401));
+    // Stars from a Mini App open over an hour: the initData is stale but Telegram's signature still
+    // names the buyer, so the session the app holds may stand in when it is that same user.
+    // Signing in again (/telegram/auth) stays strict.
+    const buyerId = v.ok
+      ? v.user.id
+      : path === '/telegram/invoice' && (await sessionIsTelegramUser(request, env, v.staleUserId))
+        ? (v.staleUserId as number)
+        : null;
+    if (!v.ok && buyerId === null) return withCors(json({ error: v.reason }, 401));
 
-    if (path === '/telegram/auth') {
+    if (path === '/telegram/auth' && v.ok) {
       const csrf = refuseCrossSiteSessionWrite(request, env);
       if (csrf) return withCors(csrf);
       const tgIdentity: HostedIdentity = { id: String(v.user.id), source: 'telegram' };
@@ -1080,8 +1094,8 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       );
       return withCors(res);
     }
-    if (typeof plan !== 'string' || !plan) return withCors(json({ error: 'initData and plan required' }, 400));
-    const link = await createInvoiceLink(env, v.user.id, normalizePlanId(plan));
+    if (typeof plan !== 'string' || !plan || buyerId === null) return withCors(json({ error: 'initData and plan required' }, 400));
+    const link = await createInvoiceLink(env, buyerId, normalizePlanId(plan));
     return withCors(link.ok ? json({ ok: true, url: link.url }) : json({ error: link.error }, 400));
   }
 
@@ -1628,15 +1642,15 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     return withCors(handleEntityEnrichment(request, env));
   }
 
-  // MCP OAuth 2.1 + PKCE (token + metadata public; authorize needs session)
+  // MCP OAuth 2.1 + PKCE (token, revoke, and metadata public; authorize needs session)
   if (path.startsWith('/oauth/mcp')) {
-    if ((path === '/oauth/mcp/token' || path === '/oauth/mcp/register') && request.method === 'POST') {
+    const limit = request.method === 'POST' ? MCP_OAUTH_PUBLIC_POST_LIMITS[path] : undefined;
+    if (limit) {
       const dual = await enforceDualRateLimit(env, {
-        // Hosted agents share egress IPs, so token and register keep separate, wider buckets.
-        action: path === '/oauth/mcp/token' ? 'mcp_oauth_token' : 'mcp_oauth_register',
+        action: limit.action,
         accountId: null,
         ip,
-        limitPerKey: path === '/oauth/mcp/token' ? 60 : 20,
+        limitPerKey: limit.limitPerKey,
         windowSec: 60,
       });
       if (!dual.ok) return withCors(dual.response);
