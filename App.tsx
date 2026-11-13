@@ -37,6 +37,7 @@ import { productTelemetry } from './services/analytics/productTelemetry';
 import { draftPersistenceService, DRAFT_KEYS } from './services/state/draftPersistenceService';
 import { apiBase, getCurrentQuotaSync, setAccountSignedIn, streamOracleChat } from './services/apiClient';
 import { agentConnectTarget, resumeAgentConnect } from './services/auth/agentConnect';
+import { useMcpApproval } from './components/settings/McpApprovalDialog';
 import { entitlementsFor } from './services/plans/planEntitlements';
 import { hasPersistedAuthSession } from './services/auth/firebaseIdToken';
 import type { AuditHandoff } from './services/activation/auditHandoff';
@@ -437,6 +438,8 @@ const App: React.FC = () => {
     else setLoginWallMode('signin');
   }, [appAuth.loading, appAuth.authenticated]);
 
+  const mcpApprovalDialog = useMcpApproval(appAuth, () => setLoginWallMode('signin'));
+
   // Before child effects, so a signed-out Instant Audit does not call /api/auth/quota.
   setAccountSignedIn(appAuth.loading ? null : appAuth.authenticated);
 
@@ -572,6 +575,7 @@ const App: React.FC = () => {
   const marketingOverlays = (
     <>
       {loginWallModal}
+      {mcpApprovalDialog}
       <Suspense fallback={null}>
         <PaywallSlot onOpenSettings={() => setIsKeyModalOpen(true)} />
         {isKeyModalOpen && (
@@ -1243,6 +1247,7 @@ const App: React.FC = () => {
     <>
     {introOverlay}
     {loginWallModal}
+    {mcpApprovalDialog}
     <div
       className="flex flex-col bg-black text-ink overflow-x-clip overflow-y-hidden relative selection:bg-gold selection:text-black font-sans"
       style={{

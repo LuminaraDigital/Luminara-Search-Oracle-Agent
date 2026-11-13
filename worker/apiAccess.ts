@@ -148,15 +148,18 @@ export async function resolveMcpUser(
 
   const who = await identify(request, env);
   if (who.error || !who.user) {
+    // Most callers here are agents, so say how to connect rather than how to open the web app.
+    const metadata = mcpResourceMetadataUrl(request);
     return {
       response: json(
         {
           ok: false,
-          error: who.error || 'Unauthorized: Authentication required',
+          error: 'Connect to Luminara with OAuth: read the resource metadata, register, then sign in. Or send a Luminara API key as a Bearer token.',
           code: 'AUTH_REQUIRED',
+          resource_metadata: metadata,
         },
         401,
-        { 'WWW-Authenticate': `Bearer resource_metadata="${mcpResourceMetadataUrl(request)}"` },
+        { 'WWW-Authenticate': `Bearer resource_metadata="${metadata}"` },
       ),
     };
   }
