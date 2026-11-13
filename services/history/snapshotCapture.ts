@@ -2,7 +2,14 @@
  * Build a snapshot from a measurement the product already returned.
  * Callers pass only numbers and booleans that check produced.
  */
+import { normalizeProjectDomain } from '../projects/projectUtils';
 import { freezeSignals, type SnapshotKind, type SnapshotMetric, type SnapshotSignals } from './snapshotCompare';
+
+export function sameProjectHost(projectDomain: string, measuredDomain: string): boolean {
+  const projectHost = normalizeProjectDomain(projectDomain);
+  const measuredHost = normalizeProjectDomain(measuredDomain);
+  return projectHost.length > 0 && projectHost === measuredHost;
+}
 
 export type MeasuredSnapshot = {
   projectId: string;
@@ -66,21 +73,20 @@ export function keywordSnapshot(input: {
   measuredAt: number;
   keywords: Array<{ keyword: string; searchVolume: number | null }>;
 }): MeasuredSnapshot {
-  const first = input.keywords[0];
-  const score = first && first.searchVolume !== null ? first.searchVolume : null;
   const notes = input.keywords.slice(0, 5).map((row) =>
     row.searchVolume !== null ? `${row.keyword} vol ${row.searchVolume}` : row.keyword,
   );
+  // Volumes are real, but the first row is not a stable project score, so it cannot be a lift.
   return measured({
     projectId: input.projectId,
     kind: 'keyword',
     measuredAt: input.measuredAt,
     sourceRef: `keyword:${input.projectId}:${input.measuredAt}`,
-    metric: 'keyword_volume',
-    score,
+    metric: 'none',
+    score: null,
     engines: [],
     notes,
-    measurementStatus: 'measured',
+    measurementStatus: notes.length > 0 ? 'measured' : 'not_measured',
   });
 }
 
@@ -90,6 +96,10 @@ export function visibilitySnapshot(input: {
   aggregateCitationRatePercent: number | null;
   engines: Array<{ engine: string; cited: boolean | null; measurementStatus: string }>;
 }): MeasuredSnapshot {
+  const score =
+    typeof input.aggregateCitationRatePercent === 'number' && Number.isFinite(input.aggregateCitationRatePercent)
+      ? input.aggregateCitationRatePercent
+      : null;
   const engines = input.engines
     .filter((row) => row.measurementStatus === 'measured' && typeof row.cited === 'boolean')
     .map((row) => ({ engine: row.engine, cited: row.cited === true }));
@@ -98,11 +108,11 @@ export function visibilitySnapshot(input: {
     kind: 'ai_visibility',
     measuredAt: input.measuredAt,
     sourceRef: `visibility:${input.projectId}:${input.measuredAt}`,
-    metric: 'visibility_rate',
-    score: input.aggregateCitationRatePercent,
-    engines,
+    metric: score === null ? 'none' : 'visibility_rate',
+    score,
+    engines: score === null ? [] : engines,
     notes: [],
-    measurementStatus: 'measured',
+    measurementStatus: score === null ? 'not_measured' : 'measured',
   });
 }
 
@@ -113,17 +123,19 @@ export function domainOverviewSnapshot(input: {
   organicEtv: number | null;
 }): MeasuredSnapshot {
   const notes: string[] = [];
-  if (input.organicEtv !== null) notes.push(`organic etv ${input.organicEtv}`);
+  if (input.organicEtv !== null && Number.isFinite(input.organicEtv)) notes.push(`organic etv ${input.organicEtv}`);
+  const score =
+    typeof input.organicCount === 'number' && Number.isFinite(input.organicCount) ? input.organicCount : null;
   return measured({
     projectId: input.projectId,
     kind: 'audit',
     measuredAt: input.measuredAt,
     sourceRef: `domain-overview:${input.projectId}:${input.measuredAt}`,
-    metric: 'organic_count',
-    score: input.organicCount,
+    metric: score === null ? 'none' : 'organic_count',
+    score,
     engines: [],
     notes,
-    measurementStatus: 'measured',
+    measurementStatus: score === null ? 'not_measured' : 'measured',
   });
 }
 

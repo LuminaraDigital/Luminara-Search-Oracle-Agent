@@ -8,6 +8,7 @@ import { randomId } from '../services/projects/projectUtils';
 import { buildPaidToolRuntime, executePaidTool } from '../services/tools/registry';
 import { getProject } from './projectService';
 import { mirrorProjectSnapshot } from './projectHistoryService';
+import { sameProjectHost } from '../services/history/snapshotCapture';
 import { freezeSignals } from '../services/history/snapshotCompare';
 import { startRun, completeRun } from './runProvenance';
 import { safePublicUrl, resolvesToPublicAddress, type DohFetch } from './security';
@@ -320,19 +321,22 @@ export async function processAuditJob(
     };
     await markRun(env, msg.runId, 'completed', result, null);
     if (msg.projectId && result.measurementStatus !== 'measured') {
-      await mirrorProjectSnapshot(env, msg.accountId, {
-        projectId: msg.projectId,
-        kind: 'audit',
-        measuredAt: Date.now(),
-        sourceRef: msg.runId,
-        signals: freezeSignals({
-          measurementStatus: 'not_measured',
-          metric: 'none',
-          score: null,
-          engines: [],
-          notes: [],
-        }),
-      });
+      const project = await getProject(env, msg.accountId, msg.projectId);
+      if (project && sameProjectHost(project.domain, host)) {
+        await mirrorProjectSnapshot(env, msg.accountId, {
+          projectId: msg.projectId,
+          kind: 'audit',
+          measuredAt: Date.now(),
+          sourceRef: msg.runId,
+          signals: freezeSignals({
+            measurementStatus: 'not_measured',
+            metric: 'none',
+            score: null,
+            engines: [],
+            notes: [],
+          }),
+        });
+      }
     }
     if (provenanceRunId) await completeRun(env, provenanceRunId, 'completed');
   } catch (e) {

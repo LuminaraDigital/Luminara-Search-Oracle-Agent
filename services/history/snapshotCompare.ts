@@ -51,6 +51,13 @@ export type SnapshotDelta = {
   label: CompareLabel;
 };
 
+export type SnapshotTrend = {
+  kind: SnapshotKind;
+  metric: SnapshotMetric;
+  latestScore: number | null;
+  latestDelta: SnapshotDelta | null;
+};
+
 export function isSnapshotKind(value: string): value is SnapshotKind {
   return (SNAPSHOT_KINDS as readonly string[]).includes(value);
 }
@@ -185,29 +192,35 @@ export function outcomeLift(before: number | null, after: number | null): {
   return { lift: after - before, label: 'measured' };
 }
 
-export function trendsFromSnapshots(
-  snapshots: SnapshotPoint[],
-): Array<{ kind: SnapshotKind; latestScore: number | null; latestDelta: SnapshotDelta | null }> {
+export function trendsFromSnapshots(snapshots: SnapshotPoint[]): SnapshotTrend[] {
   const byKind = new Map<SnapshotKind, SnapshotPoint[]>();
   for (const point of snapshots) {
     const list = byKind.get(point.kind) ?? [];
     list.push(point);
     byKind.set(point.kind, list);
   }
-  const trends: Array<{ kind: SnapshotKind; latestScore: number | null; latestDelta: SnapshotDelta | null }> = [];
+  const trends: SnapshotTrend[] = [];
   for (const kind of SNAPSHOT_KINDS) {
     const list = (byKind.get(kind) ?? []).slice().sort((a, b) => a.measuredAt - b.measuredAt);
     if (!list.length) continue;
     const scored = list.filter((point) => point.signals.score !== null && point.signals.metric !== 'none');
-    const later = scored[scored.length - 1] ?? list[list.length - 1];
-    if (!later) continue;
-    const series = scored.filter((point) => point.signals.metric === later.signals.metric);
-    const earlier = series.length >= 2 ? series[series.length - 2] : undefined;
-    trends.push({
-      kind,
-      latestScore: later.signals.score,
-      latestDelta: earlier ? compareSnapshots(earlier, later) : null,
-    });
+    const metrics = SNAPSHOT_METRICS.filter((metric) => scored.some((point) => point.signals.metric === metric));
+    if (!metrics.length) {
+      trends.push({ kind, metric: 'none', latestScore: null, latestDelta: null });
+      continue;
+    }
+    for (const metric of metrics) {
+      const series = scored.filter((point) => point.signals.metric === metric);
+      const later = series[series.length - 1];
+      const earlier = series.length >= 2 ? series[series.length - 2] : undefined;
+      if (!later) continue;
+      trends.push({
+        kind,
+        metric,
+        latestScore: later.signals.score,
+        latestDelta: earlier ? compareSnapshots(earlier, later) : null,
+      });
+    }
   }
   return trends;
 }

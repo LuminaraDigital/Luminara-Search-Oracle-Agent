@@ -19,6 +19,16 @@ import {
 } from './projectHistoryService';
 
 const ACTION_KEY_RE = /^[A-Za-z0-9_.:-]{1,128}$/;
+const ID_RE = /^[A-Za-z0-9_-]{1,80}$/;
+
+function decodeId(value: string): string | null {
+  try {
+    const decoded = decodeURIComponent(value);
+    return ID_RE.test(decoded) ? decoded : null;
+  } catch {
+    return null;
+  }
+}
 
 type HistoryMatch = {
   projectId: string;
@@ -29,13 +39,13 @@ type HistoryMatch = {
 function matchPath(path: string): HistoryMatch | null {
   const matched = path.match(/^\/projects\/([^/]+)\/(history(?:\/compare)?|outcomes(?:\/([^/]+)\/done)?)$/);
   if (!matched) return null;
-  const projectId = decodeURIComponent(matched[1] || '');
+  const projectId = decodeId(matched[1] || '');
   const section = matched[2] || '';
   if (!projectId) return null;
   if (section === 'history') return { projectId, section: 'history', actionId: null };
   if (section === 'history/compare') return { projectId, section: 'compare', actionId: null };
   if (section === 'outcomes') return { projectId, section: 'outcomes', actionId: null };
-  const actionId = matched[3] ? decodeURIComponent(matched[3]) : '';
+  const actionId = matched[3] ? decodeId(matched[3]) : null;
   if (!actionId) return null;
   return { projectId, section: 'done', actionId };
 }
@@ -62,7 +72,9 @@ export async function handleProjectHistoryRoute(
     const url = new URL(request.url);
     const earlierId = url.searchParams.get('earlierId') || '';
     const laterId = url.searchParams.get('laterId') || '';
-    if (!earlierId || !laterId) return json({ ok: false, error: 'earlierId and laterId required' }, 400);
+    if (!ID_RE.test(earlierId) || !ID_RE.test(laterId)) {
+      return json({ ok: false, error: 'earlierId and laterId required' }, 400);
+    }
     const delta = await compareProjectSnapshots(env, accountId, matched.projectId, earlierId, laterId);
     if (!delta) return json({ ok: false, error: 'Snapshot not found' }, 404);
     return json({ ok: true, delta });

@@ -7,6 +7,7 @@ import {
   type ProjectHistoryPayload,
   type ProjectOutcomePayload,
 } from '../../services/projects/projectClient';
+import type { SnapshotSignals } from '../../services/history/snapshotCompare';
 import type { SeoProject } from '../../services/projects/types';
 
 const KIND_LABEL: Record<string, string> = {
@@ -16,12 +17,32 @@ const KIND_LABEL: Record<string, string> = {
   instant_audit: 'Instant Audit',
 };
 
+const METRIC_LABEL: Record<string, string> = {
+  citation_rate: 'citation rate %',
+  watch_share: 'citation share %',
+  visibility_rate: 'visibility rate %',
+  organic_count: 'organic pages',
+  keyword_volume: 'keyword volume',
+  crawler_status: 'crawler files',
+};
+
 function kindLabel(kind: string): string {
   return KIND_LABEL[kind] || kind;
 }
 
 function dayLabel(measuredAt: number): string {
   return new Date(measuredAt).toISOString().slice(0, 10);
+}
+
+function trendTitle(kind: string, metric: string | undefined): string {
+  const metricLabel = metric ? METRIC_LABEL[metric] : '';
+  return metricLabel ? `${kindLabel(kind)}, ${metricLabel}` : kindLabel(kind);
+}
+
+function recordedText(signals: SnapshotSignals): string {
+  if (typeof signals.score === 'number') return String(signals.score);
+  if (signals.notes.length > 0) return signals.notes.join('; ');
+  return 'Not measured';
 }
 
 function liftText(lift: number): string {
@@ -152,8 +173,8 @@ export function ProjectHistoryOutcomes({ signedIn }: { signedIn: boolean }) {
               const delta = trend.latestDelta;
               const score = trend.latestScore;
               return (
-                <li key={trend.kind} className="border border-[var(--color-rule)] bg-black/40 p-4">
-                  <div className="text-[11px] font-mono uppercase tracking-wider text-[var(--gold-light)]">{kindLabel(trend.kind)}</div>
+                <li key={`${trend.kind}:${trend.metric || 'none'}`} className="border border-[var(--color-rule)] bg-black/40 p-4">
+                  <div className="text-[11px] font-mono uppercase tracking-wider text-[var(--gold-light)]">{trendTitle(trend.kind, trend.metric)}</div>
                   <p className="text-lg text-[var(--color-ink)] mt-1">
                     {score === null || score === undefined ? 'Not measured' : score}
                   </p>
@@ -174,7 +195,7 @@ export function ProjectHistoryOutcomes({ signedIn }: { signedIn: boolean }) {
               <li key={row.id} className="text-sm text-[var(--color-ink-2)] flex flex-wrap gap-x-3">
                 <span className="font-mono text-[var(--color-ink)]">{dayLabel(row.measuredAt)}</span>
                 <span>{kindLabel(row.kind)}</span>
-                <span>{row.signals.score === null ? 'Not measured' : row.signals.score}</span>
+                <span>{recordedText(row.signals)}</span>
               </li>
             ))}
           </ul>

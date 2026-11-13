@@ -14,9 +14,11 @@ function textResult(text: string, structured?: Record<string, unknown>, isError 
   return { text, structuredContent: structured, isError };
 }
 
+const ID_RE = /^[A-Za-z0-9_-]{1,80}$/;
+
 function requireProject(args: Record<string, unknown>, ctx: { credential: { projectId?: string | null } }): string | null {
   const projectId = typeof args.projectId === 'string' ? args.projectId.trim() : '';
-  if (!projectId) return null;
+  if (!ID_RE.test(projectId)) return null;
   if (ctx.credential.projectId && ctx.credential.projectId !== projectId) return null;
   return projectId;
 }
@@ -28,7 +30,7 @@ function formatLift(outcome: ProjectOutcome): string {
   const rounded = Math.round(outcome.lift * 10) / 10;
   const text = Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
   const signed = rounded > 0 ? `+${text}` : text;
-  return `${outcome.title}: ${outcome.status}. Measured lift ${signed} on ${outcome.kind} (${outcome.beforeValue} to ${outcome.afterValue}).`;
+  return `${outcome.title}: ${outcome.status}. Measured lift ${signed} on ${outcome.kind} ${outcome.metric} (${outcome.beforeValue} to ${outcome.afterValue}).`;
 }
 
 export const PROJECT_HISTORY_MCP_TOOLS: McpToolDef[] = [
@@ -56,17 +58,18 @@ export const PROJECT_HISTORY_MCP_TOOLS: McpToolDef[] = [
         return textResult('No measurements yet.', { history });
       }
       const lines = history.trends.map((trend) => {
+        const name = trend.metric !== 'none' ? `${trend.kind} ${trend.metric}` : trend.kind;
         const scoreText = trend.latestScore === null ? 'not measured' : String(trend.latestScore);
         const delta = trend.latestDelta;
         if (!delta || delta.label !== 'measured' || delta.scoreDelta === null) {
-          return `${trend.kind}: ${scoreText}. Too little data to measure lift.`;
+          return `${name}: ${scoreText}. Too little data to measure lift.`;
         }
         const rounded = Math.round(delta.scoreDelta * 10) / 10;
         const signed = rounded > 0 ? `+${rounded}` : String(rounded);
         const dropped = delta.droppedEngines.length
           ? ` Dropped out of AI answers: ${delta.droppedEngines.join(', ')}.`
           : '';
-        return `${trend.kind}: ${scoreText} (${signed} vs previous).${dropped}`;
+        return `${name}: ${scoreText} (${signed} vs previous).${dropped}`;
       });
       return textResult(lines.join('\n'), { history });
     },
@@ -90,7 +93,9 @@ export const PROJECT_HISTORY_MCP_TOOLS: McpToolDef[] = [
       const projectId = requireProject(args, ctx);
       const earlierId = typeof args.earlierId === 'string' ? args.earlierId.trim() : '';
       const laterId = typeof args.laterId === 'string' ? args.laterId.trim() : '';
-      if (!projectId || !earlierId || !laterId) return textResult('Snapshot not found', undefined, true);
+      if (!projectId || !ID_RE.test(earlierId) || !ID_RE.test(laterId)) {
+        return textResult('Snapshot not found', undefined, true);
+      }
       const delta = await compareProjectSnapshots(ctx.env, ctx.accountId, projectId, earlierId, laterId);
       if (!delta) return textResult('Snapshot not found', undefined, true);
       const line =
@@ -140,7 +145,7 @@ export const PROJECT_HISTORY_MCP_TOOLS: McpToolDef[] = [
     handler: async (args, ctx) => {
       const projectId = requireProject(args, ctx);
       const actionId = typeof args.actionId === 'string' ? args.actionId.trim() : '';
-      if (!projectId || !actionId) return textResult('Action not found', undefined, true);
+      if (!projectId || !ID_RE.test(actionId)) return textResult('Action not found', undefined, true);
       const outcome = await markActionDone(ctx.env, ctx.accountId, projectId, actionId);
       if (!outcome) return textResult('Action not found', undefined, true);
       return textResult(formatLift(outcome), { outcome });

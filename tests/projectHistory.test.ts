@@ -2,7 +2,7 @@ import { createHmac } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import worker from '../worker/index';
 import type { Env } from '../worker/env';
-import { createSqliteD1 } from './helpers/sqliteD1';
+import { createSqliteD1, type SqliteD1 } from './helpers/sqliteD1';
 import { createProject } from '../worker/projectService';
 import {
   compareProjectSnapshots,
@@ -14,8 +14,14 @@ import {
   SNAPSHOT_CAP,
 } from '../worker/projectHistoryService';
 import { listMcpToolCatalogue } from '../worker/mcpServer';
-import { instantAuditSnapshot } from '../services/history/snapshotCapture';
-import { compareSnapshots, freezeSignals, metricForKind, outcomeLift } from '../services/history/snapshotCompare';
+import {
+  domainOverviewSnapshot,
+  instantAuditSnapshot,
+  keywordSnapshot,
+  sameProjectHost,
+  visibilitySnapshot,
+} from '../services/history/snapshotCapture';
+import { compareSnapshots, freezeSignals, metricForKind, outcomeLift, trendsFromSnapshots } from '../services/history/snapshotCompare';
 import type { SnapshotPoint } from '../services/history/snapshotCompare';
 
 const botToken = '123456:HISTORY_TEST_TOKEN';
@@ -160,6 +166,61 @@ describe('snapshot compare', () => {
       measurementStatus: 'measured',
       metric: 'citation_rate',
       score: 33,
+    });
+  });
+
+  it('does not treat keyword volume or a missing count as a project score', () => {
+    const keywords = keywordSnapshot({
+      projectId: 'p',
+      measuredAt: 1,
+      keywords: [
+        { keyword: 'shoes', searchVolume: 1200 },
+        { keyword: 'boots', searchVolume: 40 },
+      ],
+    });
+    expect(keywords.signals.score).toBeNull();
+    expect(keywords.signals.metric).toBe('none');
+    expect(keywords.signals.notes.join(' ')).toContain('shoes vol 1200');
+    expect(domainOverviewSnapshot({
+      projectId: 'p',
+      measuredAt: 2,
+      organicCount: null,
+      organicEtv: 9,
+    }).signals).toMatchObject({ score: null, metric: 'none', measurementStatus: 'not_measured' });
+    expect(visibilitySnapshot({
+      projectId: 'p',
+      measuredAt: 3,
+      aggregateCitationRatePercent: null,
+      engines: [],
+    }).signals.score).toBeNull();
+    expect(sameProjectHost('www.example.com', 'example.com')).toBe(true);
+    expect(sameProjectHost('example.com', 'rival.com')).toBe(false);
+  });
+
+  it('keeps citation share off the visibility-rate trend', () => {
+    const trends = trendsFromSnapshots([
+      point({ id: 'vis-1', kind: 'ai_visibility', measuredAt: 1, score: 40, engines: [] }),
+      point({ id: 'vis-2', kind: 'ai_visibility', measuredAt: 2, score: 55, engines: [] }),
+      {
+        id: 'watch-1',
+        kind: 'ai_visibility',
+        measuredAt: 3,
+        signals: freezeSignals({
+          measurementStatus: 'measured',
+          metric: 'watch_share',
+          score: 100,
+          engines: [],
+          notes: [],
+        }),
+      },
+    ]);
+    expect(trends.find((row) => row.metric === 'visibility_rate')).toMatchObject({
+      latestScore: 55,
+      latestDelta: { scoreDelta: 15, label: 'measured' },
+    });
+    expect(trends.find((row) => row.metric === 'watch_share')).toMatchObject({
+      latestScore: 100,
+      latestDelta: null,
     });
   });
 
@@ -416,6 +477,79 @@ describe('project history store', () => {
     expect(rows?.[0]?.status).toBe('done');
   });
 
+  it('does not close an action with an older snapshot', async () => {
+    const env = { DB: createSqliteD1() } as Env;
+    const owned = await createProject(env, 'acct_a', { domain: 'alpha.example' });
+    if (!owned.ok) throw new Error('project');
+    await recordProjectSnapshot(env, 'acct_a', {
+      projectId: owned.project.id,
+      kind: 'instant_audit',
+      measuredAt: 3_000,
+      sourceRef: 'audit-new',
+      signals: freezeSignals({ measurementStatus: 'measured', metric: 'citation_rate', score: 10, engines: [], notes: [] }),
+    });
+    await recordRecommendedAction(env, {
+      accountId: 'acct_a',
+      projectId: owned.project.id,
+      actionKey: 'late',
+      title: 'Fix later',
+      kind: 'instant_audit',
+      now: 3_100,
+    });
+    await recordProjectSnapshot(env, 'acct_a', {
+      projectId: owned.project.id,
+      kind: 'instant_audit',
+      measuredAt: 1_000,
+      sourceRef: 'audit-old',
+      signals: freezeSignals({ measurementStatus: 'measured', metric: 'citation_rate', score: 99, engines: [], notes: [] }),
+    });
+    const rows = await listProjectOutcomes(env, 'acct_a', owned.project.id);
+    expect(rows?.[0]).toMatchObject({
+      status: 'recommended',
+      beforeValue: 10,
+      afterValue: null,
+      lift: null,
+      dataLabel: 'too_little_data',
+    });
+  });
+
+  it('rolls the new snapshot back when the retention batch fails', async () => {
+    const env = { DB: createSqliteD1() } as Env;
+    const owned = await createProject(env, 'acct_a', { domain: 'alpha.example' });
+    if (!owned.ok) throw new Error('project');
+    const db = env.DB as SqliteD1;
+    const origPrepare = db.prepare.bind(db);
+    db.prepare = (sql: string) => {
+      const wrap = (stmt: { bind: (...args: unknown[]) => unknown; execute?: () => unknown; sqlText?: string }) => {
+        stmt.sqlText = sql;
+        const origBind = stmt.bind.bind(stmt);
+        stmt.bind = (...args: unknown[]) => wrap(origBind(...args) as typeof stmt);
+        return stmt;
+      };
+      return wrap(origPrepare(sql) as { bind: (...args: unknown[]) => unknown; execute?: () => unknown });
+    };
+    db.batch = async (statements: Array<{ sqlText?: string; execute: () => unknown }>) => {
+      const sqls = statements.map((statement) => statement.sqlText || '');
+      expect(sqls.some((sql) => sql.includes('INSERT INTO project_measurement_snapshots'))).toBe(true);
+      expect(sqls.some((sql) => sql.includes('DELETE FROM project_measurement_snapshots'))).toBe(true);
+      db.sqlite.exec('BEGIN');
+      statements[0]?.execute();
+      db.sqlite.exec('ROLLBACK');
+      throw new Error('trim failed');
+    };
+    await expect(recordProjectSnapshot(env, 'acct_a', {
+      projectId: owned.project.id,
+      kind: 'audit',
+      measuredAt: 5,
+      sourceRef: 'audit-rollback',
+      signals: freezeSignals({ measurementStatus: 'measured', metric: 'organic_count', score: 3, engines: [], notes: [] }),
+    })).rejects.toThrow('trim failed');
+    const count = await db.prepare(
+      `SELECT COUNT(*) AS n FROM project_measurement_snapshots WHERE account_id = ?`,
+    ).bind('acct_a').first<{ n: number }>();
+    expect(count).toEqual({ n: 0 });
+  });
+
   it('keeps the latest 200 snapshots for the project', async () => {
     const env = { DB: createSqliteD1() } as Env;
     const owned = await createProject(env, 'acct_a', { domain: 'alpha.example' });
@@ -581,7 +715,7 @@ describe('project history http and mcp', () => {
     };
     expect(mcpBody.result?.isError ?? false).toBe(false);
     expect(mcpBody.result?.content?.[0]?.text).toBe(
-      'instant_audit: 62. Too little data to measure lift.',
+      'instant_audit citation_rate: 62. Too little data to measure lift.',
     );
     expect(mcpBody.result?.structuredContent?.history?.snapshots?.[0]?.signals.score).toBe(62);
 
@@ -596,5 +730,33 @@ describe('project history http and mcp', () => {
     };
     expect(deniedBody.result?.isError).toBe(true);
     expect(deniedBody.result?.content?.[0]?.text).toBe('Project not found');
+
+    const anon = await worker.fetch(
+      new Request(`https://luminarasuite.com/api/projects/${projectId}/history`),
+      env,
+      ctx,
+    );
+    expect(anon.status).toBe(401);
+
+    const badKey = await worker.fetch(
+      new Request(`https://luminarasuite.com/api/projects/${projectId}/outcomes`, {
+        method: 'POST',
+        headers: tgHeaders(501, '10.30.0.8'),
+        body: JSON.stringify({ actionKey: 'has space', title: 'Nope', kind: 'audit' }),
+      }),
+      env,
+      ctx,
+    );
+    expect(badKey.status).toBe(400);
+
+    const marked = await worker.fetch(
+      new Request(`https://luminarasuite.com/api/projects/${projectId}/outcomes/out_missing/done`, {
+        method: 'POST',
+        headers: tgHeaders(502, '10.30.0.9'),
+      }),
+      env,
+      ctx,
+    );
+    expect(marked.status).toBe(404);
   });
 });

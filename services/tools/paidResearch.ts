@@ -5,6 +5,7 @@ import { findResearchLogHit, researchLogHitResult } from './researchLogGate';
 import {
   domainOverviewSnapshot,
   keywordSnapshot,
+  sameProjectHost,
   visibilitySnapshot,
   type MeasuredSnapshot,
 } from '../history/snapshotCapture';
@@ -179,15 +180,20 @@ export async function getDomainOverview(
 
   const summary = `Domain overview: ${domain}. Organic count=${overview.organicCount ?? 'unknown'}, etv=${overview.organicEtv ?? 'unknown'}.`;
   await rt.appendResearchLog(projectId, summary);
-  await mirrorMeasured(
-    rt,
-    domainOverviewSnapshot({
-      projectId,
-      measuredAt: Date.now(),
-      organicCount: overview.organicCount,
-      organicEtv: overview.organicEtv,
-    }),
-  );
+  if (
+    sameProjectHost(project.domain, domain) &&
+    (overview.organicCount !== null || overview.organicEtv !== null)
+  ) {
+    await mirrorMeasured(
+      rt,
+      domainOverviewSnapshot({
+        projectId,
+        measuredAt: Date.now(),
+        organicCount: overview.organicCount,
+        organicEtv: overview.organicEtv,
+      }),
+    );
+  }
   return {
     text: summary,
     structuredContent: { measurementStatus: 'measured', ...overview, code: 'OK' },
@@ -372,15 +378,21 @@ export async function getVisibilitySnapshot(
 
   const summary = `Visibility snapshot: ${domain}. Status=${out.measurementStatus}. Aggregate citation rate=${out.aggregateCitationRatePercent ?? 'n/a'}.`;
   // Only append successful measured runs; estimated / not_measured must not block retries.
-  if (projectId && out.measurementStatus === 'measured') {
+  if (
+    projectId &&
+    project &&
+    out.measurementStatus === 'measured' &&
+    typeof out.aggregateCitationRatePercent === 'number' &&
+    Number.isFinite(out.aggregateCitationRatePercent) &&
+    sameProjectHost(project.domain, domain)
+  ) {
     await rt.appendResearchLog(projectId, summary);
     await mirrorMeasured(
       rt,
       visibilitySnapshot({
-        projectId,
+        projectId: project.id,
         measuredAt: Date.now(),
-        aggregateCitationRatePercent:
-          typeof out.aggregateCitationRatePercent === 'number' ? out.aggregateCitationRatePercent : null,
+        aggregateCitationRatePercent: out.aggregateCitationRatePercent,
         engines: out.engines.map((row) => ({
           engine: row.engine,
           cited: row.cited,
@@ -388,6 +400,8 @@ export async function getVisibilitySnapshot(
         })),
       }),
     );
+  } else if (projectId && out.measurementStatus === 'measured') {
+    await rt.appendResearchLog(projectId, summary);
   }
   return {
     text: summary,

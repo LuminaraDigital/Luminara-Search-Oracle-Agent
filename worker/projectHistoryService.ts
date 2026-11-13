@@ -1,6 +1,7 @@
 /**
  * Account-scoped project history. Every read and write filters on account_id.
  * shortcut: keep the latest 200 snapshots of each kind per project, upgrade when a plan defines retention days.
+ * The insert and that delete share one batch, so a failed trim rolls the new row back.
  */
 import type { Env } from './env';
 import { findProjectByDomain, getProject } from './projectService';
@@ -20,6 +21,7 @@ import {
   type SnapshotMetric,
   type SnapshotPoint,
   type SnapshotSignals,
+  type SnapshotTrend,
 } from '../services/history/snapshotCompare';
 
 export const SNAPSHOT_CAP = 200;
@@ -32,7 +34,7 @@ export type ProjectHistory = {
   projectId: string;
   retentionNote: string;
   snapshots: HistorySnapshot[];
-  trends: Array<{ kind: SnapshotKind; latestScore: number | null; latestDelta: SnapshotDelta | null }>;
+  trends: SnapshotTrend[];
 };
 
 export type OutcomeStatus = 'recommended' | 'done' | 'detected';
@@ -144,7 +146,7 @@ export async function recordProjectSnapshot(
 
   const id = randomId('snap');
   const score = signals.score;
-  await db
+  const insert = db
     .prepare(
       `INSERT INTO project_measurement_snapshots
         (id, account_id, project_id, kind, measured_at, source_ref, signals_json, created_at)
@@ -160,8 +162,81 @@ export async function recordProjectSnapshot(
       event.sourceRef,
       JSON.stringify(signals),
       now,
+    );
+  const trim = db
+    .prepare(
+      `DELETE FROM project_measurement_snapshots
+       WHERE account_id = ? AND project_id = ? AND kind = ?
+         AND id NOT IN (
+           SELECT id FROM project_measurement_snapshots
+           WHERE account_id = ? AND project_id = ? AND kind = ?
+           ORDER BY measured_at DESC, created_at DESC, id DESC
+           LIMIT ?
+         )`,
     )
-    .run();
+    .bind(accountId, event.projectId, event.kind, accountId, event.projectId, event.kind, SNAPSHOT_CAP);
+  const canScore = score !== null && signals.metric !== 'none';
+  await db.batch(
+    canScore
+      ? [
+          insert,
+          trim,
+          db
+            .prepare(
+              `UPDATE project_action_outcomes
+               SET after_snapshot_id = ?,
+                   after_value = ?,
+                   lift = CASE WHEN before_value IS NOT NULL THEN (? - before_value) ELSE NULL END,
+                   data_label = CASE WHEN before_value IS NOT NULL THEN 'measured' ELSE 'too_little_data' END,
+                   status = CASE WHEN before_value IS NOT NULL THEN 'detected' ELSE status END,
+                   resolved_at = CASE WHEN before_value IS NOT NULL THEN ? ELSE resolved_at END
+               WHERE account_id = ? AND project_id = ? AND kind = ? AND metric = ? AND status = 'recommended'
+                 AND before_snapshot_id IS NOT NULL
+                 AND before_snapshot_id != ?
+                 AND EXISTS (
+                   SELECT 1 FROM project_measurement_snapshots AS saved
+                   WHERE saved.id = ?
+                     AND saved.account_id = project_action_outcomes.account_id
+                     AND saved.project_id = project_action_outcomes.project_id
+                 )
+                 AND EXISTS (
+                   SELECT 1 FROM project_measurement_snapshots AS prior
+                   WHERE prior.id = project_action_outcomes.before_snapshot_id
+                     AND prior.account_id = project_action_outcomes.account_id
+                     AND prior.project_id = project_action_outcomes.project_id
+                     AND prior.measured_at < ?
+                 )`,
+            )
+            .bind(
+              id,
+              score,
+              score,
+              now,
+              accountId,
+              event.projectId,
+              event.kind,
+              signals.metric,
+              id,
+              id,
+              event.measuredAt,
+            ),
+          db
+            .prepare(
+              `UPDATE project_action_outcomes
+               SET before_snapshot_id = ?, before_value = ?
+               WHERE account_id = ? AND project_id = ? AND kind = ? AND metric = ? AND status = 'recommended'
+                 AND before_snapshot_id IS NULL
+                 AND EXISTS (
+                   SELECT 1 FROM project_measurement_snapshots AS saved
+                   WHERE saved.id = ?
+                     AND saved.account_id = project_action_outcomes.account_id
+                     AND saved.project_id = project_action_outcomes.project_id
+                 )`,
+            )
+            .bind(id, score, accountId, event.projectId, event.kind, signals.metric, id),
+        ]
+      : [insert, trim],
+  );
   const stored = await db
     .prepare(
       `SELECT id FROM project_measurement_snapshots
@@ -170,50 +245,7 @@ export async function recordProjectSnapshot(
     .bind(accountId, event.projectId, event.kind, event.sourceRef)
     .first<{ id: string }>();
   if (!stored?.id) return null;
-  if (stored.id !== id) return { id: stored.id };
-
-  const trim = db
-    .prepare(
-      `DELETE FROM project_measurement_snapshots
-       WHERE account_id = ? AND project_id = ? AND kind = ?
-         AND id NOT IN (
-           SELECT id FROM project_measurement_snapshots
-           WHERE account_id = ? AND project_id = ? AND kind = ?
-           ORDER BY measured_at DESC
-           LIMIT ?
-         )`,
-    )
-    .bind(accountId, event.projectId, event.kind, accountId, event.projectId, event.kind, SNAPSHOT_CAP);
-  if (score !== null && signals.metric !== 'none') {
-    await db.batch([
-      db
-        .prepare(
-          `UPDATE project_action_outcomes
-           SET after_snapshot_id = ?,
-               after_value = ?,
-               lift = CASE WHEN before_value IS NOT NULL THEN (? - before_value) ELSE NULL END,
-               data_label = CASE WHEN before_value IS NOT NULL THEN 'measured' ELSE 'too_little_data' END,
-               status = CASE WHEN before_value IS NOT NULL THEN 'detected' ELSE status END,
-               resolved_at = CASE WHEN before_value IS NOT NULL THEN ? ELSE resolved_at END
-           WHERE account_id = ? AND project_id = ? AND kind = ? AND metric = ? AND status = 'recommended'
-             AND before_snapshot_id IS NOT NULL
-             AND before_snapshot_id != ?`,
-        )
-        .bind(id, score, score, now, accountId, event.projectId, event.kind, signals.metric, id),
-      db
-        .prepare(
-          `UPDATE project_action_outcomes
-           SET before_snapshot_id = ?, before_value = ?
-           WHERE account_id = ? AND project_id = ? AND kind = ? AND metric = ? AND status = 'recommended'
-             AND before_snapshot_id IS NULL`,
-        )
-        .bind(id, score, accountId, event.projectId, event.kind, signals.metric),
-      trim,
-    ]);
-  } else {
-    await trim.run();
-  }
-  return { id };
+  return { id: stored.id };
 }
 
 export async function mirrorProjectSnapshot(

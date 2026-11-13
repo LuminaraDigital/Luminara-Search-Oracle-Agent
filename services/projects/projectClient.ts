@@ -135,6 +135,7 @@ export type ProjectHistoryPayload = {
   snapshots: ProjectHistorySnapshot[];
   trends: Array<{
     kind: string;
+    metric: string;
     latestScore: number | null;
     latestDelta: {
       scoreDelta: number | null;
