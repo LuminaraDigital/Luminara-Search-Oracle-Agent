@@ -110,8 +110,8 @@ async function register(env: Env, grantTypes?: string[]) {
   return { res, body: (await res.json()) as { client_id?: string; grant_types?: string[]; error?: string } };
 }
 
-async function connect(env: Env, grantTypes?: string[]) {
-  const registered = await register(env, grantTypes);
+async function connect(env: Env, grantTypes: string[] | 'omit' = ['authorization_code', 'refresh_token']) {
+  const registered = await register(env, grantTypes === 'omit' ? undefined : grantTypes);
   const clientId = registered.body.client_id ?? '';
   const q = new URLSearchParams({
     client_id: clientId,
@@ -174,23 +174,78 @@ describe('refresh token registration and metadata', () => {
     expect(extra.body.grant_types).toEqual(['authorization_code', 'refresh_token']);
     const codeOnly = await register(env, ['authorization_code']);
     expect(codeOnly.body.grant_types).toEqual(['authorization_code']);
+    const codeToken = await connect(env, ['authorization_code']);
+    expect(codeToken.token.refresh_token).toBeUndefined();
+    expect(codeToken.token.expires_in).toBe(60 * 60 * 24 * 30);
+    const refreshed = await connect(env, ['authorization_code', 'refresh_token']);
+    expect(refreshed.token.refresh_token?.startsWith('mcr_')).toBe(true);
+    expect(refreshed.token.expires_in).toBe(60 * 60);
   });
 
-  it('omitted grant_types register both, and authorization_code alone does not issue a refresh token', async () => {
-    const omitted = makeEnv();
-    const withDefault = await connect(omitted.env);
-    expect(withDefault.tokenRes.status).toBe(200);
-    expect(withDefault.token.refresh_token?.startsWith('mcr_')).toBe(true);
-    expect(withDefault.token.expires_in).toBe(60 * 60);
-    expect(withDefault.tokenRes.headers.get('cache-control')).toBe('no-store');
-    expect(withDefault.tokenRes.headers.get('pragma')).toBe('no-cache');
-
+  it('omits refresh when grant_types is absent, and echoes authorization_code', async () => {
     const { env } = makeEnv();
-    const issued = await connect(env, ['authorization_code']);
-    expect(issued.token.access_token?.startsWith('mcp_')).toBe(true);
+    const registered = await register(env);
+    expect(registered.res.status).toBe(201);
+    expect(registered.body.grant_types).toEqual(['authorization_code']);
+    const issued = await connect(env, 'omit');
+    expect(issued.tokenRes.status).toBe(200);
     expect(issued.token.refresh_token).toBeUndefined();
     expect(issued.token.expires_in).toBe(60 * 60 * 24 * 30);
+    expect(issued.tokenRes.headers.get('cache-control')).toBe('no-store');
+    expect(issued.tokenRes.headers.get('pragma')).toBe('no-cache');
     const denied = await refresh(env, 'mcr_not-issued', issued.clientId);
+    expect(denied.status).toBe(400);
+    expect(((await denied.json()) as TokenBody).error).toBe('unauthorized_client');
+  });
+
+  it('treats a stored client with no grant_types as authorization_code only', async () => {
+    const { env, store } = makeEnv();
+    const registered = await register(env, ['authorization_code', 'refresh_token']);
+    const clientId = registered.body.client_id ?? '';
+    const key = `mcp_oauth_client:${clientId}`;
+    const stored = JSON.parse(store.get(key) ?? '{}') as { grantTypes?: string[] };
+    delete stored.grantTypes;
+    store.set(key, JSON.stringify(stored));
+    const page = await call(
+      env,
+      `/api/oauth/mcp/authorize?${new URLSearchParams({
+        client_id: clientId,
+        redirect_uri: callback,
+        state: 'st1',
+        code_challenge: await challenge(verifier),
+        code_challenge_method: 'S256',
+      })}`,
+      {},
+      77001,
+    );
+    const consent = /name="consent" value="([^"]+)"/.exec(await page.text())?.[1] ?? '';
+    const allowed = await call(
+      env,
+      '/api/oauth/mcp/authorize',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ consent, decision: 'allow' }).toString(),
+      },
+      77001,
+    );
+    const code = new URL(allowed.headers.get('location') ?? callback).searchParams.get('code');
+    const tokenRes = await call(env, '/api/oauth/mcp/token', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: callback,
+        code_verifier: verifier,
+        client_id: clientId,
+      }),
+    });
+    const token = (await tokenRes.json()) as TokenBody;
+    expect(tokenRes.status).toBe(200);
+    expect(token.refresh_token).toBeUndefined();
+    expect(token.expires_in).toBe(60 * 60 * 24 * 30);
+    const denied = await refresh(env, 'mcr_legacy', clientId);
     expect(denied.status).toBe(400);
     expect(((await denied.json()) as TokenBody).error).toBe('unauthorized_client');
   });
@@ -251,7 +306,7 @@ describe('refresh token rotation', () => {
   it('refuses another client without burning the refresh token', async () => {
     const { env } = makeEnv();
     const issued = await connect(env);
-    const other = await register(env);
+    const other = await register(env, ['authorization_code', 'refresh_token']);
     const misused = await refresh(env, issued.token.refresh_token ?? '', other.body.client_id ?? '');
     expect(misused.status).toBe(400);
     expect(((await misused.json()) as TokenBody).error).toBe('invalid_grant');
@@ -276,7 +331,7 @@ describe('refresh token rotation', () => {
 
   it('drops research scope when the plan no longer includes it, and leaves the old access token', async () => {
     const { env, store } = makeEnv('agency');
-    const registered = await register(env);
+    const registered = await register(env, ['authorization_code', 'refresh_token']);
     const clientId = registered.body.client_id ?? '';
     const code = 'oc_research_refresh';
     store.set(
@@ -382,7 +437,7 @@ describe('refresh family atomicity', () => {
 
   it('does not narrow scope when the plan read fails, and slides the client registration', async () => {
     const { env, putTtls } = makeEnv('agency');
-    const registered = await register(env);
+    const registered = await register(env, ['authorization_code', 'refresh_token']);
     const clientId = registered.body.client_id ?? '';
     const code = 'oc_plan_read_failure';
     const kv = env.LUMINARA_KV!;
