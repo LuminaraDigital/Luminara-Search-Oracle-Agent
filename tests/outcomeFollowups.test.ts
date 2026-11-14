@@ -531,7 +531,7 @@ describe('outcome follow-ups', () => {
 
   it('applies the migration twice', () => {
     const env = makeEnv();
-    const sql = readFileSync(resolve(__dirname, '..', 'migrations', '0052_outcome_followups.sql'), 'utf8');
+    const sql = readFileSync(resolve(__dirname, '..', 'migrations', '0054_outcome_followups.sql'), 'utf8');
     const db = env.DB as { sqlite?: { exec: (source: string) => void } };
     expect(db.sqlite).toBeTruthy();
     expect(() => db.sqlite?.exec(sql)).not.toThrow();
