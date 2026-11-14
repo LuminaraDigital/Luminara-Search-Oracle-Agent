@@ -1,6 +1,8 @@
 import type { McpToolDef } from './mcpServer';
 import { markProjectContextLoaded } from './mcpServer';
-import { createProject, listProjects } from './projectService';
+import { createProject } from './projectService';
+import { listVisibleProjects } from './tenantGate';
+import { readOptionalIndustry, listIndustryProfiles, industryProfile, fillKeywordTemplate, competitorDiscoveryHints } from '../services/industries/industryProfiles';
 import { getProjectContext, updateProjectContext } from './projectContextService';
 import { getAgentReport, listAgentReports, saveAgentReport } from './agentReportService';
 import type { ProjectContextPatch } from '../services/projects/types';
@@ -19,6 +21,30 @@ function requireString(args: Record<string, unknown>, key: string): string | nul
 }
 
 export const ACCOUNT_MCP_TOOLS: McpToolDef[] = [
+  {
+    name: 'list_industries',
+    description:
+      'Lists industries a project can use, with default checks, the keyword template, competitor hints, and report wording. Uses no credits.',
+    creditClass: 'free',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    handler: async () => {
+      const industries = listIndustryProfiles().map((profile) => ({
+        id: profile.id,
+        label: profile.label,
+        defaultChecks: profile.defaultChecks,
+        keywordTemplate: profile.keywordTemplate,
+        competitorHints: profile.competitorHints,
+        reportHeading: profile.reportHeading,
+        reportAudience: profile.reportAudience,
+        keywordExample: fillKeywordTemplate(profile, { service: 'service', suburb: 'Richmond' }),
+        competitorExample: competitorDiscoveryHints(profile, { service: 'service', suburb: 'Richmond' }),
+      }));
+      return textResult(
+        industries.map((profile) => `- ${profile.id}: ${profile.label}`).join('\n'),
+        { industries, defaultIndustryId: industryProfile(null).id },
+      );
+    },
+  },
   {
     name: 'whoami',
     description:
@@ -62,7 +88,7 @@ export const ACCOUNT_MCP_TOOLS: McpToolDef[] = [
       additionalProperties: false,
     },
     handler: async (args, ctx) => {
-      const allProjects = await listProjects(ctx.env, ctx.accountId);
+      const allProjects = await listVisibleProjects(ctx.env, ctx.user);
       const boundProjectId = ctx.credential.projectId;
       const projects = boundProjectId ? allProjects.filter((p) => p.id === boundProjectId) : allProjects;
       const page = pageList(projects, args);
@@ -87,6 +113,8 @@ export const ACCOUNT_MCP_TOOLS: McpToolDef[] = [
         domain: { type: 'string' },
         name: { type: 'string' },
         clientId: { type: 'string' },
+        industryId: { type: 'string', description: 'Industry id from list_industries. Omit to keep the account default.' },
+        workspaceId: { type: 'string', description: 'Workspace id when a staff member is adding a client to that workspace.' },
       },
       required: ['domain'],
       additionalProperties: false,
@@ -94,10 +122,13 @@ export const ACCOUNT_MCP_TOOLS: McpToolDef[] = [
     handler: async (args, ctx) => {
       const domain = requireString(args, 'domain');
       if (!domain) return textResult('domain required', undefined, true);
+      const industryId = readOptionalIndustry(args.industryId);
+      if (industryId === null) return textResult('industryId is not a known industry.', undefined, true);
       const result = await createProject(ctx.env, ctx.accountId, {
         domain,
         name: typeof args.name === 'string' ? args.name : undefined,
         clientId: typeof args.clientId === 'string' ? args.clientId : undefined,
+        industryId,
       });
       if (!result.ok) return textResult(result.error, undefined, true);
       return textResult(`Project ${result.project.id} for ${result.project.domain}`, {

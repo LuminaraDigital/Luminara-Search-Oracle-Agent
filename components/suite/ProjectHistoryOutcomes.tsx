@@ -15,6 +15,9 @@ import {
 } from '../../services/projects/projectClient';
 import type { SnapshotSignals } from '../../services/history/snapshotCompare';
 import type { SeoProject } from '../../services/projects/types';
+import { IndustrySelect } from '../industries/IndustrySelect';
+import { DEFAULT_INDUSTRY_ID } from '../../services/industries/industryProfiles';
+import { saveProjectIndustry } from '../../services/industries/industryClient';
 
 const KIND_LABEL: Record<string, string> = {
   audit: 'Audit',
@@ -176,21 +179,37 @@ export function ProjectHistoryOutcomes({ signedIn }: { signedIn: boolean }) {
           </h2>
           <p className="text-sm text-[var(--color-ink-2)] mt-1">Checks saved for this project, and whether a fix moved a measured score.</p>
         </div>
-        {projects.length > 1 && (
-          <label className="text-xs text-[var(--color-ink-2)] flex flex-col gap-1">
-            Project
-            <select
-              className="bg-black/60 border border-[var(--color-rule)] text-[var(--color-ink)] text-sm px-2 py-2 min-h-11"
-              value={projectId}
-              onChange={(event) => setProjectId(event.target.value)}
-            >
-              {projects.map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.name} ({project.domain})
-                </option>
-              ))}
-            </select>
-          </label>
+        {projectId && (
+          <div className="flex flex-col sm:flex-row gap-3">
+            {projects.length > 1 && (
+              <label className="text-xs text-[var(--color-ink-2)] flex flex-col gap-1">
+                Project
+                <select
+                  className="bg-black/60 border border-[var(--color-rule)] text-[var(--color-ink)] text-sm px-2 py-2 min-h-11"
+                  value={projectId}
+                  onChange={(event) => setProjectId(event.target.value)}
+                >
+                  {projects.map((project) => (
+                    <option key={project.id} value={project.id}>
+                      {project.name} ({project.domain})
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            <label className="text-xs text-[var(--color-ink-2)] flex flex-col gap-1">
+              Industry
+              <IndustrySelect
+                id="project-industry"
+                value={projects.find((project) => project.id === projectId)?.industryId || DEFAULT_INDUSTRY_ID}
+                onChange={(industryId) => {
+                  setProjects((rows) => rows.map((project) => (project.id === projectId ? { ...project, industryId } : project)));
+                  void saveProjectIndustry(projectId, industryId);
+                }}
+                className="bg-black/60 border border-[var(--color-rule)] text-[var(--color-ink)] text-sm px-2 py-2 min-h-11"
+              />
+            </label>
+          </div>
         )}
       </div>
 
