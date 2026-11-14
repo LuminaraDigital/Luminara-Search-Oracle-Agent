@@ -1,4 +1,5 @@
 -- Explicit workspace invite acceptance.
+-- Numbered 0056: 0054 is outcome follow-ups and 0055 is shared report projects.
 -- Existing active rows stay active. New columns are nullable, so current access is unchanged.
 -- Rollback: the app can ignore the columns. Dropping them is optional and not required to roll back.
 
