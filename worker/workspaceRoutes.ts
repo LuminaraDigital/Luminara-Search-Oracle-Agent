@@ -8,8 +8,15 @@
  *   PATCH /workspaces/current       brand fields, owner only
  *   GET  /workspaces/current/members
  *   POST /workspaces/current/invites { email, role, clientId? }
+ *   DELETE /workspaces/current/invites/:id      owner, pending invite (id or email)
+ *   DELETE /workspaces/current/members/:id      owner, cannot remove the last owner (id or email)
+ *   GET  /workspaces/invites                    signed-in user's pending invites
+ *   POST /workspaces/invites/:id/accept
+ *   POST /workspaces/invites/:id/decline
  *   GET  /workspaces/current/clients
  *   POST /workspaces/current/clients { name, domain, industryId? }
+ *   DELETE /workspaces/current/clients/:clientId  owner or staff
+ *   DELETE /workspaces/current  owner; refuses while clients remain unless confirm is true
  */
 import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
@@ -25,15 +32,19 @@ import {
 } from '../services/industries/industryProfiles';
 import { accountIndustryId, setAccountIndustry } from './projectService';
 import {
-  acceptPendingInvites,
   addWorkspaceClient,
   countClients,
   createWorkspace,
+  deleteWorkspace,
+  deleteWorkspaceClient,
   inviteMember,
   listMembers,
+  listPendingInvites,
   listWorkspaceClients,
   membershipsForUser,
   parseBrandPatch,
+  removeWorkspacePerson,
+  respondToInvite,
   updateWorkspaceBrand,
   workspaceById,
   workspaceForAccount,
@@ -65,13 +76,14 @@ export async function handleIndustryWorkspaceRoute(
   if (path === '/industries' && request.method === 'GET') {
     return json({ ok: true, industries: industryPayload(), defaultIndustryId: industryProfile(null).id });
   }
-  if (path !== '/account/industry' && path !== '/workspaces/current' && !path.startsWith('/workspaces/current/')) {
+  const invitePath = path === '/workspaces/invites' || path.startsWith('/workspaces/invites/');
+  if (path !== '/account/industry' && path !== '/workspaces/current' && !path.startsWith('/workspaces/current/') && !invitePath) {
     return null;
   }
   const who = await identify(request, env);
   if (who.error || !who.user) return json({ ok: false, error: who.error || 'Unauthorized', code: 'AUTH_REQUIRED' }, 401);
   if (!env.DB) return json({ ok: false, error: 'Database unavailable' }, 503);
-  await acceptPendingInvites(env, who.user);
+  if (invitePath) return answerInvite(request, env, path, who.user);
   const accountId = billingId(who.user);
   const current = await currentWorkspace(env, who.user, new URL(request.url).searchParams.get('workspaceId'));
 
@@ -101,6 +113,16 @@ export async function handleIndustryWorkspaceRoute(
     if (!name.trim()) return json({ ok: false, error: 'name required' }, 400);
     const workspace = await createWorkspace(env, who.user, name);
     return json({ ok: true, workspace, role: 'owner' });
+  }
+  if (path === '/workspaces/current' && request.method === 'DELETE') {
+    if (!current) return json({ ok: false, error: 'No workspace yet' }, 404);
+    const refused = ownerOnly(current.role, 'delete the workspace');
+    if (refused) return refused;
+    const flag = await readConfirm(request);
+    if (!flag.ok) return json({ error: flag.error }, flag.status);
+    const deleted = await deleteWorkspace(env, current.workspace, flag.confirm, who.user.id);
+    if (!deleted.ok) return json({ ok: false, error: deleted.error }, deleted.status);
+    return json({ ok: true });
   }
   if (path === '/workspaces/current' && request.method === 'PATCH') {
     if (!current) return json({ ok: false, error: 'No workspace yet' }, 404);
@@ -146,6 +168,38 @@ export async function handleIndustryWorkspaceRoute(
       clients: await listWorkspaceClients(env, workspace.accountId, current.clientId),
     });
   }
+  const clientMatch = path.match(/^\/workspaces\/current\/clients\/([^/]+)$/);
+  if (clientMatch && request.method === 'DELETE') {
+    const clientId = decodePathKey(clientMatch[1]);
+    if (!clientId) return json({ ok: false, error: 'Not found' }, 404);
+    if (current.role === 'client_viewer') {
+      if (current.clientId !== clientId) return json({ ok: false, error: 'Not found' }, 404);
+      return json({ ok: false, error: 'This client login is read-only.' }, 403);
+    }
+    const deleted = await deleteWorkspaceClient(env, workspace.accountId, clientId, who.user.id);
+    if (!deleted.ok) return json({ ok: false, error: deleted.error }, deleted.status);
+    return json({ ok: true });
+  }
+  const inviteMatch = path.match(/^\/workspaces\/current\/invites\/([^/]+)$/);
+  if (inviteMatch && request.method === 'DELETE') {
+    const refused = ownerOnly(current.role, 'revoke an invite');
+    if (refused) return refused;
+    const email = decodePathKey(inviteMatch[1]);
+    if (!email) return json({ ok: false, error: 'Not found' }, 404);
+    const revoked = await removeWorkspacePerson(env, workspace, email, 'invite', who.user.id);
+    if (!revoked.ok) return json({ ok: false, error: revoked.error }, revoked.status);
+    return json({ ok: true });
+  }
+  const memberMatch = path.match(/^\/workspaces\/current\/members\/([^/]+)$/);
+  if (memberMatch && request.method === 'DELETE') {
+    const refused = ownerOnly(current.role, 'remove a member');
+    if (refused) return refused;
+    const email = decodePathKey(memberMatch[1]);
+    if (!email) return json({ ok: false, error: 'Not found' }, 404);
+    const removed = await removeWorkspacePerson(env, workspace, email, 'member', who.user.id);
+    if (!removed.ok) return json({ ok: false, error: removed.error }, removed.status);
+    return json({ ok: true });
+  }
   if (path === '/workspaces/current/clients' && request.method === 'POST') {
     if (current.role === 'client_viewer') return json({ ok: false, error: 'This client login is read-only.' }, 403);
     const body = await readBody(request, MAX_SMALL_BODY_BYTES);
@@ -160,6 +214,52 @@ export async function handleIndustryWorkspaceRoute(
     return json(created);
   }
   return json({ error: 'Method not allowed' }, 405);
+}
+
+async function answerInvite(request: Request, env: Env, path: string, user: HostedIdentity): Promise<Response> {
+  if (path === '/workspaces/invites' && request.method === 'GET') {
+    return json({ ok: true, invites: await listPendingInvites(env, user) });
+  }
+  const decision = path.match(/^\/workspaces\/invites\/([^/]+)\/(accept|decline)$/);
+  if (decision && request.method === 'POST') {
+    const id = decodePathKey(decision[1]);
+    if (!id) return json({ ok: false, error: 'Not found', code: 'NOT_FOUND' }, 404);
+    const choice = decision[2] === 'accept' ? 'accept' : 'decline';
+    const result = await respondToInvite(env, user, id, choice);
+    if (!result.ok) return json({ ok: false, error: result.error, code: result.code }, result.status);
+    return json({ ok: true, invite: result.invite });
+  }
+  return json({ error: 'Method not allowed' }, 405);
+}
+
+function ownerOnly(role: WorkspaceRole, action: string): Response | null {
+  if (role === 'owner') return null;
+  if (role === 'client_viewer') return json({ ok: false, error: 'This client login is read-only.' }, 403);
+  return json({ ok: false, error: `Only the workspace owner can ${action}.` }, 403);
+}
+
+function decodePathKey(raw: string | undefined): string | null {
+  if (!raw) return null;
+  try {
+    const value = decodeURIComponent(raw).trim();
+    if (!value || value.length > 200) return null;
+    return value;
+  } catch {
+    return null;
+  }
+}
+
+async function readConfirm(
+  request: Request,
+): Promise<{ ok: true; confirm: boolean } | { ok: false; status: number; error: string }> {
+  const query = new URL(request.url).searchParams.get('confirm');
+  if (query === '1' || query === 'true') return { ok: true, confirm: true };
+  const body = await readBody(request, MAX_SMALL_BODY_BYTES);
+  if (!body.ok) return { ok: false, status: body.status, error: body.error };
+  const raw = body.value;
+  const confirm = raw !== null && typeof raw === 'object' && !Array.isArray(raw)
+    && (raw as { confirm?: unknown }).confirm === true;
+  return { ok: true, confirm };
 }
 
 async function currentWorkspace(

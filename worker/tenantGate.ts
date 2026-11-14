@@ -8,7 +8,6 @@ import { billingId } from './workerUtils';
 import { getProjectById, listProjects } from './projectService';
 import type { SeoProject } from '../services/projects/types';
 import {
-  acceptPendingInvites,
   assertNewClientAllowed,
   membershipsForUser,
   workspaceById,
@@ -24,7 +23,6 @@ export async function openProject(
   projectId: string,
   write: boolean,
 ): Promise<OpenResult> {
-  await acceptPendingInvites(env, user);
   const project = await getProjectById(env, projectId);
   if (!project) return { ok: false, status: 404, error: 'Project not found' };
   const accountId = billingId(user);
@@ -42,7 +40,6 @@ export async function openProject(
 }
 
 export async function listVisibleProjects(env: Env, user: HostedIdentity): Promise<SeoProject[]> {
-  await acceptPendingInvites(env, user);
   const accountId = billingId(user);
   const own = await listProjects(env, accountId);
   const seen = new Set(own.map((project) => project.id));
@@ -65,7 +62,6 @@ export async function createTargetAccount(
   user: HostedIdentity,
   workspaceId?: string | null,
 ): Promise<{ ok: true; accountId: string } | { ok: false; status: number; error: string }> {
-  await acceptPendingInvites(env, user);
   const accountId = billingId(user);
   if (!workspaceId) return { ok: true, accountId };
   const workspace = await workspaceById(env, workspaceId);
