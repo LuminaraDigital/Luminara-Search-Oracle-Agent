@@ -9,7 +9,7 @@ import { createProject } from '../worker/projectService';
 import { handleMcpRequest } from '../worker/mcpServer';
 import { runProjectMonitorTick } from '../worker/projectMonitor';
 import { SESSION_MCP_CREDENTIAL } from '../worker/userTypes';
-import { InviteBannerList } from '../components/suite/WorkspaceInviteBanner';
+import { InviteBannerList, VerifyEmailInviteNotice, VERIFY_INVITE_COPY, showsVerifyInviteBanner } from '../components/suite/WorkspaceInviteBanner';
 
 const botToken = '123456:CLEANUP_TEST_TOKEN';
 
@@ -130,8 +130,11 @@ describe('workspace invite acceptance', () => {
     }
     const declineInvite = await invite('viewer@example.com');
     const open = await call(env, 802, '/workspaces/invites');
-    const openBody = (await open.json()) as { invites: Array<{ id: string }> };
+    const openBody = (await open.json()) as { invites: Array<{ id: string; workspaceName: string }> };
     expect(openBody.invites.map((row) => row.id)).toEqual([declineInvite.member.id]);
+    expect(openBody.invites[0].workspaceName).toBe('Harbour');
+    expect(openBody).not.toHaveProperty('emailVerified');
+    expect(openBody).not.toHaveProperty('pendingInviteCount');
     expect((await call(env, 802, `/workspaces/invites/${declineInvite.member.id}/decline`, { method: 'POST' })).status).toBe(200);
     expect((await call(env, 802, `/workspaces/invites/${declineInvite.member.id}/accept`, { method: 'POST' })).status).toBe(409);
     expect(((await (await call(env, 802, '/workspaces/invites')).json()) as { invites: unknown[] }).invites).toEqual([]);
@@ -323,6 +326,45 @@ describe('safe deletes', () => {
   });
 });
 
+describe('unverified invite list', () => {
+  it('returns a count and no workspace details, while a verified user still gets the list', async () => {
+    const env = makeEnv();
+    await insertUser(env, '804', 'Plain@Example.com', 0);
+    await insertUser(env, '802', 'viewer@example.com');
+    await call(env, 701, '/workspaces/current', { method: 'POST', body: JSON.stringify({ name: 'Harbour' }) });
+    const hiddenInvite = await call(env, 701, '/workspaces/current/invites', {
+      method: 'POST',
+      body: JSON.stringify({ email: 'plain@example.com', role: 'staff' }),
+    });
+    expect(hiddenInvite.status).toBe(200);
+    const other = await call(env, 701, '/workspaces/current/invites', {
+      method: 'POST',
+      body: JSON.stringify({ email: 'viewer@example.com', role: 'staff' }),
+    });
+    expect(other.status).toBe(200);
+
+    const hidden = await call(env, 804, '/workspaces/invites');
+    expect(hidden.status).toBe(200);
+    const hiddenBody = (await hidden.json()) as { ok: boolean; emailVerified: boolean; pendingInviteCount: number; invites: unknown[] };
+    expect(hiddenBody).toEqual({ ok: true, emailVerified: false, pendingInviteCount: 1, invites: [] });
+    expect(JSON.stringify(hiddenBody)).not.toContain('Harbour');
+
+    const shown = await call(env, 802, '/workspaces/invites');
+    const shownBody = (await shown.json()) as { invites: Array<{ workspaceName: string }> };
+    expect(shownBody.invites).toHaveLength(1);
+    expect(shownBody.invites[0].workspaceName).toBe('Harbour');
+    expect(shownBody).not.toHaveProperty('emailVerified');
+    expect(shownBody).not.toHaveProperty('pendingInviteCount');
+
+    await env.DB!.prepare(`UPDATE client_workspace_members SET expires_at = 1 WHERE email = ?`).bind('plain@example.com').run();
+    const expired = await call(env, 804, '/workspaces/invites');
+    expect(((await expired.json()) as { pendingInviteCount: number }).pendingInviteCount).toBe(0);
+    expect(showsVerifyInviteBanner({ emailVerified: false, pendingInviteCount: 1 })).toBe(true);
+    expect(showsVerifyInviteBanner({ emailVerified: false, pendingInviteCount: 0 })).toBe(false);
+    expect(showsVerifyInviteBanner({ pendingInviteCount: 2 })).toBe(false);
+  });
+});
+
 describe('invite banner', () => {
   it('shows accept and decline for a pending invite', () => {
     const html = renderToStaticMarkup(createElement(InviteBannerList, {
@@ -334,5 +376,17 @@ describe('invite banner', () => {
     expect(html).toContain('Harbour invited you as a client viewer.');
     expect(html).toContain('Accept');
     expect(html).toContain('Decline');
+  });
+
+  it('asks an unverified user to verify before they can accept', () => {
+    const html = renderToStaticMarkup(createElement(VerifyEmailInviteNotice, {
+      busy: false,
+      onResend: () => {},
+    }));
+    expect(html).toContain(VERIFY_INVITE_COPY);
+    expect(html).toContain('Resend verification email');
+    expect(html).not.toContain('Harbour');
+    expect(html).not.toContain('\u2014');
+    expect(html).not.toContain('\u2013');
   });
 });
