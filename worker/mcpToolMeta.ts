@@ -17,6 +17,7 @@ const MCP_TOOL_TITLES: Record<string, string> = {
   get_project_history: 'Project history',
   compare_snapshots: 'Compare snapshots',
   get_project_outcomes: 'Project outcomes',
+  get_outcome_report: 'Outcome report',
   mark_project_action_done: 'Mark an action done',
   get_project_monitor: 'Project check schedule',
   set_project_monitor: 'Set the check schedule',

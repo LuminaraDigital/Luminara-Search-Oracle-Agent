@@ -3,6 +3,7 @@
  */
 import { apiBase, workerFetchWithAuthRetry } from '../apiClient';
 import type { BusinessDNA } from '../../types';
+import type { OutcomeFollowUpView } from '../history/outcomeFollowUp';
 import type { SnapshotSignals } from '../history/snapshotCompare';
 import type {
   AgentReportSummary,
@@ -156,6 +157,7 @@ export type ProjectOutcomePayload = {
   afterValue: number | null;
   lift: number | null;
   dataLabel: string;
+  followUps?: OutcomeFollowUpView[];
 };
 
 export async function fetchProjectHistory(projectId: string): Promise<ProjectHistoryPayload> {
