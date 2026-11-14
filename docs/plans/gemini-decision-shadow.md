@@ -212,6 +212,13 @@ Applied: keep the last entry when a 401 retry produces two; a capture with no re
 
 **2026-11-15. Site list drafted (section 11).** Awaiting the owner's approval, which is owner decision 1.
 
+**2026-11-15. Site list approved (23 sites); collection moved to production.** Staging could not produce the request: its signed-out free check calls `/api/visibility/probe-crawl` and never Jev, and the full audit needs a sign-in that staging's web app does not support. The owner approved running the audits on production, signed in as the owner.
+
+**2026-11-15. First audit captured (barryplant.com.au).** The capture wrapper worked: one Jev request, HTTP 200, `model: "jev-1.14.0"`, 4 pages and 5 files in `state`, about 1,500 input tokens. Two findings from it:
+- Jev's yes/no answers have no `confidence` field (`{ type: "noul", noul: 0.65 }`). GD-1b required one, so every Jev call would have been invalid. Fixed: `confidence` is now required only on a pick, which is the only place `services/audit/jevVerifier.ts` reads it. A test covers the Jev shape.
+- The audit asked Jev about **one** finding. If that is typical, 23 audits give Q of about 23 to 50, under the 100 that section 5 step 2 needs when fewer than 8 rows are marked. A run where Gemini mostly agrees with Jev would then end **inconclusive**.
+- The owner's account allows 3 audits a day, so 23 audits take about 8 days.
+
 ## 11. Site list (draft, not approved)
 
 Public sites only. Checked 2026-11-15 with a plain HTTPS request. A 403 or 429 means the site turned that request away; our audit's own fetcher may still get through. No answer means the address may be wrong.

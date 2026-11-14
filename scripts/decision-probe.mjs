@@ -73,9 +73,10 @@ export function validAnswers(questions, answers) {
     const question = questions[key];
     const answer = answers[key];
     if (!['noul', 'choice', 'score'].includes(question?.type)) return null;
-    if (!isObject(answer) || answer.type !== question.type || typeof answer.confidence !== 'number') return null;
+    if (!isObject(answer) || answer.type !== question.type) return null;
     if (question.type === 'noul' && !(typeof answer.noul === 'number' && answer.noul >= 0 && answer.noul <= 1)) return null;
-    if (question.type === 'choice' && !(typeof answer.choice === 'string' && Object.hasOwn(question.criteria || {}, answer.choice))) return null;
+    // Jev's yes/no answers carry no confidence; jevVerifier.ts reads confidence only on a pick.
+    if (question.type === 'choice' && !(typeof answer.choice === 'string' && Object.hasOwn(question.criteria || {}, answer.choice) && typeof answer.confidence === 'number')) return null;
     if (question.type === 'score') {
       const top = Array.isArray(question.criteria) ? question.criteria.length - 1 : -1;
       if (!(typeof answer.score === 'number' && answer.score >= 0 && answer.score <= top)) return null;

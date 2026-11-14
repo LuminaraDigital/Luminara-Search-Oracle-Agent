@@ -49,13 +49,18 @@ describe('validAnswers', () => {
     expect(validAnswers(QUESTIONS, good)).toBe(good);
   });
 
+  it('accepts a Jev-style yes/no answer, which has no confidence field', () => {
+    const jevStyle = { ...answers(0.9, 0.2), finding_0: { type: 'noul', noul: 0.65 } };
+    expect(validAnswers(QUESTIONS, jevStyle)).toBe(jevStyle);
+  });
+
   it.each([
     ['an extra key', { ...answers(0.9, 0.2), brand_pick: choice('x') }],
     ['a missing key', { finding_0: noul(0.9), site_type: choice('other') }],
     ['a wrong type', { ...answers(0.9, 0.2), finding_1: choice('other') }],
     ['a probability over 1', { ...answers(0.9, 0.2), finding_0: noul(1.2) }],
     ['an option not offered', { ...answers(0.9, 0.2), site_type: choice('developer') }],
-    ['no confidence', { ...answers(0.9, 0.2), finding_0: { type: 'noul', noul: 0.9 } }],
+    ['a pick with no confidence', { ...answers(0.9, 0.2), site_type: { type: 'choice', choice: 'other' } }],
     ['no answers at all', undefined],
   ])('rejects %s', (_label, given) => {
     expect(validAnswers(QUESTIONS, given)).toBeNull();
