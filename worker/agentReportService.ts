@@ -11,6 +11,8 @@ import {
 } from '../services/projects/types';
 import { randomId } from '../services/projects/projectUtils';
 import { getProject } from './projectService';
+import { reportBrandForAccount } from './reportBrand';
+import { applyReportBrandHtml } from '../services/reports/reportBrand';
 
 export function webappOrigin(env: Pick<Env, 'WEBAPP_URL'>): string {
   return (env.WEBAPP_URL || 'https://luminarasuite.com').replace(/\/$/, '');
@@ -133,7 +135,13 @@ export async function getAgentReport(
     url: reportUrl(env, row.id),
   };
   if (!includeHtml) return summary;
-  return { ...summary, html: row.html, shareId: row.share_id };
+  return { ...summary, html: await brandReportHtml(env, accountId, row.html), shareId: row.share_id };
+}
+
+async function brandReportHtml(env: Env, accountId: string, html: string): Promise<string> {
+  const live = await reportBrandForAccount(env, accountId);
+  if (!live.hasWorkspace) return html;
+  return applyReportBrandHtml(html, live.brand);
 }
 
 export async function saveAgentReport(

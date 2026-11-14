@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { apiBase, workerFetchWithAuthRetry } from '../../services/apiClient';
+import { WorkspaceBrandForm, type WorkspaceBrandFields } from './WorkspaceBrandForm';
 
 type ClientCard = {
   clientId: string;
@@ -11,8 +12,11 @@ type ClientCard = {
 
 const MONITOR_LABEL = { on: 'On', off: 'Off', not_set: 'Not set' } as const;
 
+type WorkspaceHead = WorkspaceBrandFields & { role: 'owner' | 'staff' | 'client_viewer' };
+
 export function WorkspaceClientsCard({ signedIn }: { signedIn: boolean }) {
   const [clients, setClients] = useState<ClientCard[] | null>(null);
+  const [workspace, setWorkspace] = useState<WorkspaceHead | null>(null);
   const [missing, setMissing] = useState(false);
   const [name, setName] = useState('');
   const [error, setError] = useState('');
@@ -22,20 +26,28 @@ export function WorkspaceClientsCard({ signedIn }: { signedIn: boolean }) {
     let cancelled = false;
     const base = apiBase();
     if (!base) return;
-    workerFetchWithAuthRetry(`${base}/api/workspaces/current/clients`)
-      .then(async (response) => {
+    Promise.all([
+      workerFetchWithAuthRetry(`${base}/api/workspaces/current`),
+      workerFetchWithAuthRetry(`${base}/api/workspaces/current/clients`),
+    ])
+      .then(async ([workspaceResponse, clientsResponse]) => {
         if (cancelled) return;
-        if (response.status === 404) {
+        if (workspaceResponse.status === 404 || clientsResponse.status === 404) {
           setMissing(true);
+          setWorkspace(null);
           setClients([]);
           return;
         }
-        if (!response.ok) {
+        if (!clientsResponse.ok) {
           setError('Could not load clients.');
           setClients([]);
           return;
         }
-        const body = (await response.json()) as { clients?: ClientCard[] };
+        if (workspaceResponse.ok) {
+          const head = (await workspaceResponse.json()) as { workspace?: WorkspaceBrandFields; role?: WorkspaceHead['role'] };
+          if (head.workspace && head.role) setWorkspace({ ...head.workspace, role: head.role });
+        }
+        const body = (await clientsResponse.json()) as { clients?: ClientCard[] };
         setClients(body.clients || []);
         setMissing(false);
       })
@@ -123,6 +135,12 @@ export function WorkspaceClientsCard({ signedIn }: { signedIn: boolean }) {
             </li>
           ))}
         </ul>
+      )}
+      {workspace?.role === 'owner' && (
+        <WorkspaceBrandForm
+          workspace={workspace}
+          onSaved={(next) => setWorkspace({ ...workspace, ...next })}
+        />
       )}
     </section>
   );
