@@ -137,6 +137,8 @@ export interface BusinessDNA {
   perceivedGaps: string[];
   rawContext: string; // Condensed summary for LLM context
   industry?: string;
+  /** Industry profile id. Omitted keeps the real estate agency checks. */
+  industryId?: string;
   /** Suburb the free AI answer asks about. Optional until the profile is filled in. */
   suburb?: string;
   /** State or territory that goes with suburb. */
