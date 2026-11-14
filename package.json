@@ -48,6 +48,7 @@
     "keys:receipt": "node scripts/generate-receipt-key.mjs",
     "test": "vitest run",
     "evals": "node evals/run-evals.mjs",
+    "evals:outcome:promote": "node evals/outcome/promote.mjs",
     "test:watch": "vitest",
     "cli": "node --experimental-strip-types services/harness/standaloneCli.ts",
     "crawler": "node crawler/server.mjs",

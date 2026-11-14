@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { evaluateLlmCrawlerReadiness, type LlmCrawlerCheck } from '../services/audit/llmCrawlerReadiness';
@@ -8,28 +8,15 @@ import { crawlerFixes, type CrawlerCheckRow } from '../services/audit/crawlerFix
 import { buildGuestScoutSummary } from '../services/audit/guestScoutSummary';
 import { executiveTranslatorAgent } from '../services/agentCore/agents/executiveTranslatorAgent';
 import { ActionableFixList } from '../components/retention/ActionableFixList';
+import { fakeSiteFetcher, type FakeSite } from '../evals/outcome/fakeSite';
 
 const HOMEPAGE = '<!DOCTYPE html>\n<html lang="en"><head><title>Home</title></head><body><h1>Welcome</h1></body></html>';
 const LLMS = '# Example Co\n\n> Example Co sells water filters to homes in Sydney and Melbourne.\n';
 const ROBOTS = 'User-agent: *\nAllow: /\n';
 
-type Served = { body: string; status?: number; type?: string; location?: string };
-
 /** Public DNS for the host, then each crawler path answers as given (a missing path is a 404). */
-async function crawl(files: Record<string, Served>) {
-  const fetcher = vi.fn(async (input: RequestInfo | URL) => {
-    const url = String(input);
-    if (url.includes('cloudflare-dns.com')) {
-      const answer = url.includes('type=AAAA') ? [] : [{ type: 1, data: '104.21.8.8' }];
-      return new Response(JSON.stringify({ Status: 0, Answer: answer }), { status: 200 });
-    }
-    const file = files[new URL(url).pathname];
-    if (!file) return new Response('', { status: 404 });
-    const headers: Record<string, string> = { 'content-type': file.type || 'text/plain' };
-    if (file.location) headers.Location = file.location;
-    return new Response(file.body, { status: file.status || 200, headers });
-  });
-  const loaded = await loadCrawlerSnapshot('https://aquazerofit.com', fetcher as unknown as typeof fetch);
+async function crawl(files: FakeSite) {
+  const loaded = await loadCrawlerSnapshot('https://aquazerofit.com', fakeSiteFetcher(files));
   if (!loaded.ok) throw new Error(loaded.error);
   return { snapshot: loaded.snapshot, checks: evaluateLlmCrawlerReadiness(loaded.snapshot).checks };
 }
