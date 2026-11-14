@@ -123,14 +123,16 @@ describe('pre-push hook: its checks run on the tree being pushed, not on the che
     const wrongTree = "console.log('WRONG TREE: ' + process.argv[1]); process.exit(1);\n";
     writeFileSync(join(other, 'scripts', 'check-secrets.mjs'), wrongTree);
     writeFileSync(join(other, 'scripts', 'smoke-check.mjs'), wrongTree);
+    writeFileSync(join(other, 'scripts', 'check-ratchets.mjs'), wrongTree);
 
-    // The tree being pushed: a feature branch with stand-ins for the four checks.
+    // The tree being pushed: a feature branch with stand-ins for the five checks.
     const repo = initRepo('pushing-tree', 'feature/hook-root');
     mkdirSync(join(repo, 'scripts'), { recursive: true });
     const stub = "console.log('STUB ' + process.argv.slice(2).join(' ') + ' cwd=' + process.cwd());\n";
     writeFileSync(join(repo, 'scripts', 'stub.mjs'), stub);
     writeFileSync(join(repo, 'scripts', 'check-secrets.mjs'), "process.argv.splice(2, 0, 'secrets');\n" + stub);
     writeFileSync(join(repo, 'scripts', 'smoke-check.mjs'), "process.argv.splice(2, 0, 'smoke');\n" + stub);
+    writeFileSync(join(repo, 'scripts', 'check-ratchets.mjs'), "process.argv.splice(2, 0, 'ratchets');\n" + stub);
     writeFileSync(
       join(repo, 'package.json'),
       JSON.stringify({ name: 'hook-fixture', private: true, scripts: { typecheck: 'node scripts/stub.mjs typecheck', test: 'node scripts/stub.mjs test' } }),
@@ -142,7 +144,7 @@ describe('pre-push hook: its checks run on the tree being pushed, not on the che
     expect(res.status, output).toBe(0);
 
     const stubs = [...output.matchAll(/^STUB (.+) cwd=(.+)$/gm)].map((m) => ({ what: m[1].trim(), cwd: m[2].trim() }));
-    expect(stubs.map((s) => s.what)).toEqual(['secrets --all', 'typecheck', 'test', 'smoke --dry-run']);
+    expect(stubs.map((s) => s.what)).toEqual(['secrets --all', 'typecheck', 'ratchets', 'test', 'smoke --dry-run']);
     for (const s of stubs) expect(samePath(s.cwd, repo), `${s.what} ran in ${s.cwd}`).toBe(true);
     expect(output).toMatch(/All branch safeguards and smoke checks passed/);
   });

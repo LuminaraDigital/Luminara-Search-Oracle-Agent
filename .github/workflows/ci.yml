@@ -47,6 +47,12 @@ jobs:
       - name: Type check (Client + Worker)
         run: npm run typecheck
 
+      - name: Ratchets (no file may get worse than it is on staging)
+        if: github.event_name == 'pull_request' && github.base_ref == 'staging'
+        run: |
+          git fetch --no-tags --depth=1 origin staging
+          node scripts/check-ratchets.mjs --base FETCH_HEAD
+
       - name: Lint (ESLint)
         run: npm run lint:ci
 

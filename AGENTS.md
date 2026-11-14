@@ -34,6 +34,8 @@ npm run build
 
 CI runs the same gates. `main` requires a pull request and a green CI check.
 
+Ratchets (`npm run ratchets:check`, also in pre-push and on pull requests into `staging`): a change may not leave a file with more explicit `any` types or lint/type suppressions than it has on `staging`, or push a file past 1000 lines. Fix the code; there is no baseline file to edit. Rules live in `scripts/ratchets-lib.mjs`.
+
 ## Releases
 
 Every agent, Cursor included, follows this (owner decision, 2026-10-26). Agent merges and release PRs run under the owner's GitHub login, so branch protection cannot tell them apart.
