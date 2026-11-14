@@ -2,6 +2,7 @@ package com.luminarasuite.app.core.network
 
 import com.luminarasuite.app.core.model.AccountDeleteRequest
 import com.luminarasuite.app.core.model.AccountDeleteResponse
+import com.luminarasuite.app.core.model.AgentTodayResponse
 import com.luminarasuite.app.core.model.AppointmentDecisionRequest
 import com.luminarasuite.app.core.model.AuditHistoryListResponse
 import com.luminarasuite.app.core.model.AuditHistoryUpsertRequest
@@ -36,6 +37,7 @@ import com.luminarasuite.app.core.model.IdeaDetailResponse
 import com.luminarasuite.app.core.model.IdeaListResponse
 import com.luminarasuite.app.core.model.PrivacyExportResponse
 import com.luminarasuite.app.core.model.ProbeCrawlResponse
+import com.luminarasuite.app.core.model.PushDeviceRequest
 import com.luminarasuite.app.core.model.ScoutRecheckRequest
 import com.luminarasuite.app.core.model.ScoutRecheckResponse
 import com.luminarasuite.app.core.model.ShareCreateRequest
@@ -55,6 +57,7 @@ import kotlinx.serialization.json.put
 import okhttp3.ResponseBody
 import retrofit2.http.Body
 import retrofit2.http.GET
+import retrofit2.http.HTTP
 import retrofit2.http.Header
 import retrofit2.http.PATCH
 import retrofit2.http.POST
@@ -211,6 +214,21 @@ interface LuminaraApi {
     suspend fun decideAppointment(
         @Path("id") id: String,
         @Body body: AppointmentDecisionRequest,
+    ): JsonObject
+
+    @GET("api/enquiries/today")
+    suspend fun getAgentToday(
+        @Query("projectId") projectId: String = "default",
+    ): AgentTodayResponse
+
+    @POST("api/push/devices")
+    suspend fun registerPushDevice(
+        @Body body: PushDeviceRequest,
+    ): JsonObject
+
+    @HTTP(method = "DELETE", path = "api/push/devices", hasBody = true)
+    suspend fun removePushDevice(
+        @Body body: PushDeviceRequest,
     ): JsonObject
 
     @GET("api/boot")

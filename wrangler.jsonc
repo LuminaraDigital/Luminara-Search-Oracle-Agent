@@ -121,6 +121,8 @@
     "FIREBASE_PROJECT_ID": "luminara-suite",
     // Numeric project number (Messaging Sender ID). Needed for App Check JWT audience/issuer.
     "FIREBASE_PROJECT_NUMBER": "274315225068",
+    // Firebase project the Android app registers with. Agent push sends go here (FCM HTTP v1).
+    "FCM_PROJECT_ID": "luminara-suite",
     // Keep false until VITE_FIREBASE_APPCHECK_SITE_KEY is set and console registration is live.
     "REQUIRE_APP_CHECK": "false",
     // API-wide App Check: off | log | enforce. Production stays off until a log soak is clean.
@@ -272,6 +274,8 @@
         "FREE_DAILY_LIMIT": "3",
         "FIREBASE_PROJECT_ID": "luminara-suite-staging",
         "FIREBASE_PROJECT_NUMBER": "449283385852",
+        // Firebase project the Android app registers with. Agent push sends go here (FCM HTTP v1).
+        "FCM_PROJECT_ID": "luminara-suite",
         "REQUIRE_APP_CHECK": "false",
         // log: bad or missing App Check tokens are recorded and requests still succeed.
         "APPCHECK_ENFORCE": "log",
@@ -390,6 +394,8 @@
         "FREE_DAILY_LIMIT": "3",
         "FIREBASE_PROJECT_ID": "luminara-suite",
         "FIREBASE_PROJECT_NUMBER": "274315225068",
+        // Firebase project the Android app registers with. Agent push sends go here (FCM HTTP v1).
+        "FCM_PROJECT_ID": "luminara-suite",
         // Keep false until the prod build step passes VITE_FIREBASE_APPCHECK_SITE_KEY (validate-env enforces this).
         "REQUIRE_APP_CHECK": "false",
         // Stay off. Flip to log only after the client sends tokens, then enforce after that soak.

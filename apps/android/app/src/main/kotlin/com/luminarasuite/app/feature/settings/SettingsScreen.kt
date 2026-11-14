@@ -31,6 +31,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -77,6 +79,7 @@ data class SettingsUiState(
 
 class SettingsViewModel(
     private val repository: LuminaraRepository,
+    private val beforeSignOut: suspend () -> Unit = {},
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(SettingsUiState())
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
@@ -203,6 +206,7 @@ class SettingsViewModel(
 
     fun signOut() {
         viewModelScope.launch {
+            beforeSignOut()
             repository.signOut()
             _uiState.update {
                 it.copy(quota = null, statusBanner = "Signed out.", errorBanner = null)
@@ -269,6 +273,8 @@ fun SettingsScreen(
     viewModel: SettingsViewModel,
     onOpenProfile: () -> Unit = {},
     onOpenEnquiries: () -> Unit = {},
+    agentMode: Boolean = false,
+    onAgentModeChange: (Boolean) -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsState()
     val context = LocalContext.current
@@ -304,6 +310,7 @@ fun SettingsScreen(
         if (state.vault.isSignedIn) {
             BusinessSection(onOpenProfile = onOpenProfile, onOpenEnquiries = onOpenEnquiries)
         }
+        AgentModeSection(agentMode = agentMode, onChange = onAgentModeChange)
         ReminderSection()
         PrivacyAndLegalSection(state = state, viewModel = viewModel, context = context)
         DeveloperByokSection(state = state, viewModel = viewModel)
@@ -332,6 +339,46 @@ private fun BusinessSection(
             modifier = Modifier.fillMaxWidth().testTag("open_enquiries_button"),
         ) {
             Text("Enquiry Desk")
+        }
+    }
+}
+
+@Composable
+private fun AgentModeSection(
+    agentMode: Boolean,
+    onChange: (Boolean) -> Unit,
+) {
+    val context = LocalContext.current
+    // Alerts need the notification permission. Agent tools still turn on if it is refused.
+    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { onChange(true) }
+    WorkbenchCard {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                EyebrowKicker("For real-estate agents")
+                Text(
+                    text = "Adds a Today tab: approve appraisals, call people back, and see your last 7 days. " +
+                        "Alerts when someone needs your sign-off.",
+                    style = LuminaraTextStyles.Body,
+                )
+            }
+            Switch(
+                checked = agentMode,
+                onCheckedChange = { on ->
+                    if (on && NextFixReminder.needsPermission(context)) {
+                        permission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    } else {
+                        onChange(on)
+                    }
+                },
+                modifier =
+                Modifier
+                    .testTag("agent_mode_switch")
+                    .semantics { contentDescription = "For real-estate agents: show the Today tab and alerts" },
+            )
         }
     }
 }

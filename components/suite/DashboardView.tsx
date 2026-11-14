@@ -3,6 +3,7 @@ import { HONEST_VISIBILITY_PROMISE } from '../../services/marketing/engineCovera
 import { AppView, BusinessDNA } from '../../types';
 import { ICONS } from '../../constants';
 import { productTelemetry } from '../../services/analytics/productTelemetry';
+import { AgentWaitingNotice } from './AgentTodayView';
 import { HomeCtaStrip } from './HomeCtaStrip';
 import { VisibilityRetentionCard } from './VisibilityRetentionCard';
 import { auditCountFromStorage, shouldShowHomeCta } from './homeCtaStripLogic';
@@ -248,6 +249,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
         </p>
       </div>
 
+      {signedIn && <AgentWaitingNotice onOpen={() => onNavigate(AppView.AGENT_TODAY)} />}
       <VisibilityRetentionCard signedIn={signedIn} onNavigate={onNavigate} plainLanguage={!advancedUi} />
       {advancedUi && <DreamingDashboardCard domain={homeDomain} onNavigate={onNavigate} />}
 

@@ -323,6 +323,8 @@ export interface Env extends DataPlaneEnv {
   /** Google Vertex Vector Search REST endpoint + bearer token. */
   GCP_VERTEX_VECTOR_ENDPOINT?: string;
   GCP_VERTEX_ACCESS_TOKEN?: string;
+  /** Firebase project that owns the Android app, for FCM pushes (`luminara-suite`). Unset disables push. Not a secret. */
+  FCM_PROJECT_ID?: string;
 }
 
 /** Minimal Vectorize binding shape (Cloudflare runtime). */

@@ -8,6 +8,7 @@
  * 4. Evidence-Bound Opportunity Brief generation, 6-Stage Outcomes Ledger recording, and Twenty CRM sync.
  */
 
+import { callbackMessage, dismissalOf, notifyAgent } from './pushNotifyService';
 import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
 import { billingId, json } from './workerUtils';
@@ -25,6 +26,7 @@ import {
   type OutcomeEvidenceType,
   type OutcomeStage,
 } from '../services/enquiries/playbookQualificationService';
+import { buildAgentToday, TODAY_WINDOW_MS, type TodayOutcomeRow } from '../services/enquiries/agentToday';
 import {
   getProjectConversionFunnelSummary,
   recordOutcomeStageEvent,
@@ -346,6 +348,10 @@ export async function ingestInboundEnquiry(
   };
 
   await finalizeExternalEffect(env, effectCheck.effectKey, args.accountId, { enquiry: enquiryRecord, evaluation }, now);
+  // After finalize, so a retried ingest is a duplicate and never alerts twice.
+  if (evaluation.action === 'escalate_to_agent') {
+    await notifyAgent(env, args.accountId, callbackMessage(fullName, enquiryId));
+  }
   return { ok: true, duplicate: false, effectKey: effectCheck.effectKey, enquiry: enquiryRecord, evaluation };
 }
 
@@ -406,6 +412,8 @@ export async function appendEnquiryTurn(
     )
       .bind(JSON.stringify(conversation), now, existing.id, args.accountId)
       .run();
+    // The agent has replied, so the call-back is done on every phone.
+    await notifyAgent(env, args.accountId, dismissalOf('callback', existing.id));
 
     return {
       ok: true,
@@ -516,6 +524,13 @@ export async function appendEnquiryTurn(
     now,
   });
 
+  // Alert when this is a new call-back: not already escalated, or the agent had replied since.
+  const alreadyWaiting =
+    existing.qualificationBrief.escalationRequired && existing.conversation.at(-1)?.sender !== 'agent';
+  if (evaluation.action === 'escalate_to_agent' && !alreadyWaiting) {
+    await notifyAgent(env, args.accountId, callbackMessage(existing.contactName, existing.id));
+  }
+
   return {
     ok: true,
     evaluation,
@@ -618,6 +633,54 @@ export async function listProjectEnquiries(
     .bind(accountId, projectId)
     .all<EnquiryRow>();
   return (rows.results || []).map(mapEnquiryRow);
+}
+
+/** Only enquiries that can appear on Today, so a busy desk never pushes them out of a recent-100 window. */
+async function listTodayEnquiries(
+  env: Env,
+  accountId: string,
+  projectId: string,
+  now: number,
+): Promise<EnquiryRecord[]> {
+  if (!env.DB) return [];
+  const rows = await env.DB.prepare(
+    `${ENQUIRY_SELECT_SQL}
+     WHERE e.account_id = ? AND e.project_id = ? AND (
+       (e.status = 'new' AND e.sla_due_at > 0 AND e.sla_due_at < ?)
+       OR (e.status != 'closed' AND json_extract(e.qualification_brief_json, '$.escalationRequired') = 1)
+       OR e.id IN (
+         SELECT enquiry_id FROM appraisal_appointments
+         WHERE account_id = ? AND project_id = ? AND (
+           approval_status = 'pending_agent_signoff' OR (approval_status = 'approved' AND confirmed_start_at >= ?)
+         )
+       )
+     )
+     ORDER BY e.updated_at DESC LIMIT 200`,
+  )
+    .bind(accountId, projectId, now, accountId, projectId, now)
+    .all<EnquiryRow>();
+  return (rows.results || []).map(mapEnquiryRow);
+}
+
+async function listRecentOutcomesBySegment(
+  env: Env,
+  accountId: string,
+  projectId: string,
+  since: number,
+): Promise<TodayOutcomeRow[]> {
+  if (!env.DB) return [];
+  const rows = await env.DB.prepare(
+    `SELECT e.intent_type as intent_type, o.stage as stage, COUNT(DISTINCT o.enquiry_id) as cnt
+     FROM outcome_stage_events o
+     JOIN enquiries e ON e.id = o.enquiry_id AND e.account_id = o.account_id
+     WHERE o.account_id = ? AND o.project_id = ? AND o.created_at >= ?
+     GROUP BY e.intent_type, o.stage`,
+  )
+    .bind(accountId, projectId, since)
+    .all<{ intent_type: EnquiryIntentType; stage: OutcomeStage; cnt: number }>();
+  return (rows.results || [])
+    .filter((r) => VALID_INTENTS.has(r.intent_type))
+    .map((r) => ({ intentType: r.intent_type, stage: r.stage, count: Number(r.cnt || 0) }));
 }
 
 function mapEnquiryRow(row: EnquiryRow): EnquiryRecord {
@@ -840,6 +903,17 @@ export async function handleEnquiryDeskRoute(
     });
     if (!res.ok) return json({ ok: false, error: res.error }, res.status);
     return json(res, 201);
+  }
+
+  if (path === '/enquiries/today' && request.method === 'GET') {
+    const projectId = (url.searchParams.get('projectId') || 'default').trim();
+    const now = Date.now();
+    const [enquiries, appointments, outcomes] = await Promise.all([
+      listTodayEnquiries(env, accountId, projectId, now),
+      listProjectAppointments(env, accountId, projectId, now),
+      listRecentOutcomesBySegment(env, accountId, projectId, now - TODAY_WINDOW_MS),
+    ]);
+    return json({ ok: true, projectId, ...buildAgentToday({ enquiries, appointments, outcomes, now }) });
   }
 
   if (path === '/enquiries/appointments' && request.method === 'GET') {

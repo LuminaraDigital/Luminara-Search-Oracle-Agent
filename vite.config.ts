@@ -74,7 +74,10 @@ export default defineConfig(({ mode }) => {
   const env = { ...process.env, ...loadEnv(mode, process.cwd(), '') };
   const languageToolUrl = env.LANGUAGETOOL_URL || 'http://localhost:8010';
   const umamiUrl = env.UMAMI_URL || 'http://localhost:3002';
-  const apiProxyTarget = env.VITE_API_BASE || 'https://luminarasuite.com';
+  // DEV_API_PROXY_TARGET relays /api without exposing a cross-origin base to the browser bundle.
+  const apiProxyTarget = env.DEV_API_PROXY_TARGET || env.VITE_API_BASE || 'https://luminarasuite.com';
+  // Dev only: reach a 0% preview Worker version, e.g. worker-name="version-id".
+  const workerVersionOverride = env.DEV_WORKER_VERSION_OVERRIDE || '';
   const umamiApiKey = env.UMAMI_API_KEY || '';
   const isProduction = mode === 'production' || mode === 'staging';
 
@@ -142,6 +145,9 @@ export default defineConfig(({ mode }) => {
               const from = req.headers.origin;
               if (from && from.replace(/^https?:\/\//, '') === req.headers.host) {
                 proxyReq.setHeader('origin', new URL(apiProxyTarget).origin);
+              }
+              if (workerVersionOverride) {
+                proxyReq.setHeader('Cloudflare-Workers-Version-Overrides', workerVersionOverride);
               }
             });
           },

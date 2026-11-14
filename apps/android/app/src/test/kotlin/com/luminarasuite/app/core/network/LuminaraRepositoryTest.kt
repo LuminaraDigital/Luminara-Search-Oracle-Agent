@@ -10,6 +10,7 @@ import com.luminarasuite.app.core.database.LuminaraDao
 import com.luminarasuite.app.core.database.StudioSourceEntity
 import com.luminarasuite.app.core.model.AccountDeleteRequest
 import com.luminarasuite.app.core.model.AccountDeleteResponse
+import com.luminarasuite.app.core.model.AgentTodayResponse
 import com.luminarasuite.app.core.model.AppointmentDecisionRequest
 import com.luminarasuite.app.core.model.AuditFinding
 import com.luminarasuite.app.core.model.AuditHistoryEntry
@@ -55,6 +56,7 @@ import com.luminarasuite.app.core.model.IdeaListResponse
 import com.luminarasuite.app.core.model.PrivacyExportResponse
 import com.luminarasuite.app.core.model.ProbeCrawlData
 import com.luminarasuite.app.core.model.ProbeCrawlResponse
+import com.luminarasuite.app.core.model.PushDeviceRequest
 import com.luminarasuite.app.core.model.QuotaStatus
 import com.luminarasuite.app.core.model.ScoutRecheckRequest
 import com.luminarasuite.app.core.model.ScoutRecheckResponse
@@ -321,6 +323,21 @@ class FakeLuminaraApi : LuminaraApi {
         id: String,
         body: AppointmentDecisionRequest,
     ): JsonObject = JsonObject(emptyMap())
+
+    var agentToday = AgentTodayResponse(ok = true)
+    val pushTokens = mutableListOf<String>()
+
+    override suspend fun getAgentToday(projectId: String): AgentTodayResponse = agentToday
+
+    override suspend fun registerPushDevice(body: PushDeviceRequest): JsonObject {
+        pushTokens += body.token
+        return JsonObject(emptyMap())
+    }
+
+    override suspend fun removePushDevice(body: PushDeviceRequest): JsonObject {
+        pushTokens -= body.token
+        return JsonObject(emptyMap())
+    }
 
     override suspend fun signIn(body: AuthCredentialsRequest): AuthTokenResponse =
         AuthTokenResponse(

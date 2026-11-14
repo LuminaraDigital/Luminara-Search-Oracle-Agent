@@ -59,6 +59,7 @@ export const PUBLIC_APP_VIEWS = new Set([
   'LAUNCHPAD',
   'VISION',
   'ENQUIRY_DESK',
+  'AGENT_TODAY',
 ]);
 
 /**

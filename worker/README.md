@@ -619,6 +619,14 @@ URLs, TON pricing vars, D1 `DB`, KV `LUMINARA_KV`. Secrets stay server-side.
 - **Daily `recovery_campaign_sweep` cron (`worker/recoveryCampaignService.ts`)**: deterministic 0-LLM-token (`no-agent`) sweep that checks Australian Spam Act 2003 consent, local state calling hours (09:00-20:00 Mon-Fri, 09:00-17:00 Sat, never Sun), prospect replies, and agent takeover before dispatching due steps.
 - **3-Tier CMS Fixer MCP Relay (`worker/cmsMcpRelay.ts`)**: Tier 1 (Auto-Fix) and Tier 2 (Guided Patch) prepare idempotent JSON-RPC envelopes for WordPress (`wordpress_com_mcp`, `gobuildwp_mcp`, `respira_wp_mcp`, `instawp_mcp`), Wix (`wix_official_mcp`), and Squarespace (`squarespace_bridge`); Tier 3 full-stack/automation scope returns an architectural handoff brief pointing to `https://luminara.digital`.
 
+## Agent push notifications (migration 0047, `tests/pushNotify.test.ts`)
+
+- `POST,DELETE /push/devices` (session auth, `worker/pushNotifyService.ts`) register or remove an Android FCM token for the signed-in account. It shares the `/enquiries` auth and 60 per minute limit. Max 10 devices per account, oldest dropped. A token seen under another account moves to the caller.
+- Sends use FCM HTTP v1 with the keyless Workload Identity flow in `worker/gcpToken.ts` (scope `firebase.messaging`, separate from the Firestore token). Devices are sent in parallel, each fetch aborted at 3 s. Triggers: a booking proposal pending sign-off, and an enquiry escalating to the agent. `ingestInboundEnquiry` alerts after the idempotency record is final, so a retry never alerts twice; `appendEnquiryTurn` alerts on a new call-back only (not already escalated, or the agent replied since). Tokens FCM reports `UNREGISTERED` or 404 are deleted; other failures only set `last_error`, so a payload bug never wipes devices.
+- `GET /enquiries/today` (`services/enquiries/agentToday.ts`, `tests/agentTodayRegressions.test.ts`) reads only enquiries that can appear there (overdue new, escalated, or with a pending or upcoming appraisal), so a busy desk never drops them. A call-back leaves the list once the last message is the agent's.
+- Invariant: push is optional. Without `FCM_PROJECT_ID` or the WIF config, sending is a logged no-op and never fails or noticeably slows the request (3 s cap, errors swallowed).
+- Invariant: notification bodies are visible on lock screens. They carry a contact's first name at most, never an address, phone number or email.
+
 ## Key tests
 
 - `tests/userStore.test.ts`: user/profile + workspace blob round trip.
