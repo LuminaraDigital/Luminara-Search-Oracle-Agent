@@ -5,6 +5,8 @@ import { getAnswerDepth, setAnswerDepth } from './services/audit/answerDepth';
 import { toChatHistory } from './services/chat/messages';
 import { addStreamChunk, completeReply, newStreamedReply, showReplyProgress, type ReplyEffects } from './services/chat/streamedReply';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { AppRail, AppTabBar, AppTopBar, PRIMARY_VIEWS, VIEW_TITLES, type AgentState } from './components/shell/AppShell';
+import { useActionRequests } from './components/review/useActionRequests';
 import { Button } from './components/ui/Button';
 import { useConfirm } from './components/ui/ConfirmModal';
 import { isInTelegram, bindTelegramBackButton, haptic, getStartParam, getInitDataRaw, subscribeTelegramReady, hasTelegramLaunchHints } from './services/telegram/tma';
@@ -30,7 +32,6 @@ import { TelegramBottomNav } from './components/telegram/TelegramBottomNav';
 import { ReplayTourButton } from './components/onboarding/FirstRunTour';
 import { pullWorkspaceOnLogin, noteWorkspaceDirty, clearLocalWorkspace, saveWorkspaceItem, onWorkspaceRestored } from './services/sync/workspaceSyncService';
 import { brandMemoryVaultService } from './services/memory/brandMemoryVaultService';
-import { PremiumAtmosphere } from './components/ui/PremiumAtmosphere';
 import { lazyWithReload } from './utils/lazyWithReload';
 import { isDesktopShell } from './services/desktop/desktopShell';
 import { productTelemetry } from './services/analytics/productTelemetry';
@@ -90,6 +91,7 @@ const VisionView = lazyWithReload(() => import('./components/suite/VisionView').
 const TimesFMView = lazyWithReload(() => import('./components/suite/TimesFMView').then(m => ({ default: m.TimesFMView })));
 const OracleMindView = lazyWithReload(() => import('./components/suite/OracleMindView').then(m => ({ default: m.OracleMindView })));
 const EnquiryDeskView = lazyWithReload(() => import('./components/suite/EnquiryDeskView').then(m => ({ default: m.EnquiryDeskView })));
+const ReviewView = lazyWithReload(() => import('./components/review/ReviewView').then(m => ({ default: m.ReviewView })));
 const ArchyHarnessView = lazyWithReload(() => import('./components/harness/ArchyHarnessView').then(m => ({ default: m.ArchyHarnessView })));
 const OmnibarModal = lazyWithReload(() => import('./components/harness/OmnibarModal').then(m => ({ default: m.OmnibarModal })));
 const ApiKeyModal = lazyWithReload(() => import('./components/ApiKeyModal').then(m => ({ default: m.ApiKeyModal })));
@@ -391,19 +393,18 @@ const App: React.FC = () => {
   const [isKeyModalOpen, setIsKeyModalOpen] = useState(false);
   const { requestConfirm, confirmModal } = useConfirm();
   const [showSuiteMenu, setShowSuiteMenu] = useState(false);
-  const moreBtnContainerRef = useRef<HTMLDivElement>(null);
-  const [suiteMenuPos, setSuiteMenuPos] = useState<{ top: number; left: number } | null>(null);
-
-  useEffect(() => {
-    if (showSuiteMenu && moreBtnContainerRef.current) {
-      const rect = moreBtnContainerRef.current.getBoundingClientRect();
-      const left = Math.max(12, Math.min(rect.left, window.innerWidth - 320));
-      setSuiteMenuPos({
-        top: rect.bottom + 6,
-        left,
-      });
-    }
-  }, [showSuiteMenu]);
+  const [suiteMenuPos, setSuiteMenuPos] = useState<React.CSSProperties | null>(null);
+  // The rail's More button opens the menu beside it; the tab bar's opens it above the bar.
+  const toggleSuiteMenu = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const beside = rect.right < window.innerWidth / 2;
+    setSuiteMenuPos(
+      beside
+        ? { top: Math.max(12, Math.min(rect.top, window.innerHeight - 460)), left: rect.right + 8 }
+        : { bottom: window.innerHeight - rect.top + 8, right: 12 },
+    );
+    setShowSuiteMenu((open) => !open);
+  }, []);
 
   const [advancedUi, setAdvancedUi] = useState(labsVisible);
   useEffect(() => {
@@ -430,6 +431,13 @@ const App: React.FC = () => {
   }, [advancedUi, view]);
 
   const appAuth = useAppAuth();
+  const approvals = useActionRequests(appAuth.authenticated);
+  // Drives the horizon under the composer and the status in the top bar.
+  const agentState: AgentState = isThinking ? 'working' : approvals.open.length > 0 ? 'waiting' : 'idle';
+  const goBrandHome = () => {
+    if (!skipMarketing) setView(AppView.LANDING);
+    else setView(appAuth.authenticated ? AppView.DASHBOARD : AppView.INSTANT_AUDIT);
+  };
 
   // An agent connector sent the owner here to sign in. Go back to the approval screen once they have.
   useEffect(() => {
@@ -1250,7 +1258,8 @@ const App: React.FC = () => {
     {loginWallModal}
     {mcpApprovalDialog}
     <div
-      className="flex flex-col bg-black text-ink overflow-x-clip overflow-y-hidden relative selection:bg-gold selection:text-black font-sans"
+      className="lg-app flex flex-row overflow-x-clip overflow-y-hidden relative font-sans"
+      data-agent={agentState}
       style={{
         // Prefer stable height; fall back to 100dvh when viewport CSS vars never bind (macOS hang path).
         height: inTelegram
@@ -1266,466 +1275,86 @@ const App: React.FC = () => {
         paddingRight: 'var(--tg-viewport-safe-area-inset-right, env(safe-area-inset-right, 0px))',
       }}
     >
-      <PremiumAtmosphere intensity="subtle" />
-      {/* Universal Top Header - Responsive, guaranteed no overflow */}
-      <header data-testid="app-header" className="flex flex-wrap sm:grid sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-center items-center justify-between gap-1 sm:gap-2 px-2.5 sm:px-6 py-1 sm:py-2.5 z-50 border-b border-[color:var(--color-rule)] shrink-0 bg-[var(--color-paper)] w-full max-w-full min-w-0">
-        {/* Left: Brand Identity */}
-        <button
-          type="button"
-          onClick={() => {
-            if (!skipMarketing) setView(AppView.LANDING);
-            else setView(appAuth.authenticated ? AppView.DASHBOARD : AppView.INSTANT_AUDIT);
-          }}
-          data-header-item="brand"
-          className="flex items-center gap-2 sm:gap-3 shrink-0 text-left outline-none focus-visible:ring-2 focus-visible:ring-gold rounded p-1 -m-1 transition-all"
-          title={skipMarketing ? 'Home' : 'Back to luminarasuite.com'}
-          aria-label={skipMarketing ? 'Luminara home' : 'Back to the Luminara Suite website'}
-        >
-          <div className="w-8 h-8 sm:w-9 sm:h-9 shrink-0">
-            <ICONS.LuminaraLogo 
-              className={`w-full h-full transition-all duration-500 ${isVoiceActive ? 'drop-shadow-[0_0_15px_rgba(252,246,186,0.6)]' : ''}`} 
-              isThinking={isThinking} 
-              isVoice={isVoiceActive} 
-            />
-          </div>
-          <div className="hidden xl:block">
-            <h2 className="text-sm sm:text-base font-display text-gold-light leading-none tracking-tight">
-              Luminara
-            </h2>
-          </div>
-        </button>
-
-        {/* Center: Suite Switcher & Quick Navigation */}
-        <nav className="order-last flex basis-full flex-nowrap items-center gap-1 overflow-x-auto no-scrollbar overscroll-x-contain [mask-image:linear-gradient(to_right,#000_calc(100%-2rem),transparent)] sm:order-none sm:basis-auto sm:min-w-0 sm:overflow-visible sm:[mask-image:none] px-0.5" aria-label="Primary tools">
-          <Button
-            variant="ghost"
-            size="none"
-            onClick={() => setView(AppView.ORACLE_AGENT)}
-            data-header-item="ask"
-            aria-pressed={view === AppView.ORACLE_AGENT}
-            className={`px-2.5 sm:px-3 py-2 min-h-11 rounded text-[11px] shrink-0 whitespace-nowrap ${
-              view === AppView.ORACLE_AGENT ? 'bg-gold/20 text-gold-light hover:text-gold-light hover:bg-gold/20 border border-gold/40' : ''
-            }`}
-          >
-            Ask
-          </Button>
-
-          <Button
-            variant="ghost"
-            size="none"
-            onClick={() => setView(AppView.IDEA_SCOUT)}
-            data-header-item="idea-scout"
-            aria-pressed={view === AppView.IDEA_SCOUT}
-            className={`hidden 2xl:inline-flex px-2.5 sm:px-3 py-2 min-h-11 rounded-lg text-[10px] shrink-0 whitespace-nowrap ${
-              view === AppView.IDEA_SCOUT ? 'bg-gold/20 text-gold-light hover:text-gold-light hover:bg-gold/20 border border-gold/40' : ''
-            }`}
-          >
-            Idea Scout
-          </Button>
-
-          <Button
-            variant="ghost"
-            size="none"
-            onClick={() => setView(AppView.INSTANT_AUDIT)}
-            data-header-item="instant-audit"
-            aria-pressed={view === AppView.INSTANT_AUDIT}
-            className={`px-2.5 sm:px-3 py-2 min-h-11 rounded text-[11px] shrink-0 whitespace-nowrap ${
-              view === AppView.INSTANT_AUDIT ? 'bg-gold/20 text-gold-light hover:text-gold-light hover:bg-gold/20 border border-gold/40' : ''
-            }`}
-          >
-            Instant Audit
-          </Button>
-
-          <Button
-            variant="ghost"
-            size="none"
-            onClick={() => setView(AppView.BRAND_MEMORY)}
-            data-header-item="memory"
-            aria-pressed={view === AppView.BRAND_MEMORY}
-            className={`hidden 2xl:inline-flex px-2.5 sm:px-3 py-2 min-h-11 rounded text-[11px] shrink-0 whitespace-nowrap ${
-              view === AppView.BRAND_MEMORY ? 'bg-gold/20 text-gold-light hover:text-gold-light hover:bg-gold/20 border border-gold/40' : ''
-            }`}
-          >
-            Memory
-          </Button>
-
-          <Button
-            variant="ghost"
-            size="none"
-            onClick={() => setView(AppView.NOTEBOOK)}
-            data-header-item="studio"
-            aria-pressed={view === AppView.NOTEBOOK}
-            className={`hidden 2xl:inline-flex px-2.5 sm:px-3 py-2 min-h-11 rounded text-[11px] shrink-0 whitespace-nowrap ${
-              view === AppView.NOTEBOOK ? 'bg-gold/20 text-gold-light hover:text-gold-light hover:bg-gold/20 border border-gold/40' : ''
-            }`}
-            title="Luminara Studio - Grounded Research Dossiers & Audio Overviews"
-          >
-            Studio
-          </Button>
-
-          <div className="relative shrink-0" ref={moreBtnContainerRef}>
-            <Button
-              variant="ghost"
-              size="none"
-              onClick={() => setShowSuiteMenu(!showSuiteMenu)}
-              data-header-item="more"
-              aria-haspopup="menu"
-              aria-expanded={showSuiteMenu}
-              aria-pressed={[AppView.DASHBOARD, AppView.ENQUIRY_DESK, AppView.TRUST_CENTER, AppView.NOTEBOOK, AppView.HARNESS, AppView.BUSINESS_DNA, AppView.STRESS_TEST, AppView.DATA_ANALYST, AppView.TIMESFM_FORECAST, AppView.ORACLE_MIND, AppView.ORGANIZER, AppView.RESEARCH, AppView.VISION, AppView.BRAND_MEMORY].includes(view)}
-              className={`px-2.5 sm:px-3 py-2 min-h-11 rounded text-[11px] shrink-0 whitespace-nowrap ${
-                [AppView.DASHBOARD, AppView.ENQUIRY_DESK, AppView.TRUST_CENTER, AppView.NOTEBOOK, AppView.HARNESS, AppView.BUSINESS_DNA, AppView.STRESS_TEST, AppView.DATA_ANALYST, AppView.TIMESFM_FORECAST, AppView.ORACLE_MIND, AppView.ORGANIZER, AppView.RESEARCH, AppView.VISION, AppView.BRAND_MEMORY].includes(view)
-                  ? 'bg-gold/20 text-gold-light hover:text-gold-light hover:bg-gold/20 border border-gold/40'
-                  : ''
-              }`}
-            >
-              <span>More</span>
-              <ICONS.ChevronDown className="w-3 h-3 text-gold" />
-            </Button>
-
-            {/* Portal: the header nav scrolls sideways and would otherwise clip this phone sheet. */}
-            {showSuiteMenu && createPortal(
-              <>
-                <div
-                  className="fixed inset-0 z-40 bg-black/70 animate-in fade-in duration-150"
-                  onClick={() => setShowSuiteMenu(false)}
-                  aria-hidden="true"
-                />
-                <div 
-                  style={suiteMenuPos && !inTelegram && typeof window !== 'undefined' && window.innerWidth >= 640 ? { top: suiteMenuPos.top, left: suiteMenuPos.left } : undefined}
-                  className={`z-50 overflow-y-auto border border-[var(--color-rule)] rounded-lg p-2.5 shadow-2xl bg-[var(--color-paper-2)] animate-in fade-in zoom-in-95 duration-200 fixed ${
-                    inTelegram
-                      ? 'bottom-[calc(env(safe-area-inset-bottom,0px)+68px)] left-3 right-3 max-h-[72dvh] mx-auto max-w-sm'
-                      : 'max-sm:bottom-4 max-sm:left-3 max-sm:right-3 max-sm:max-h-[72dvh] max-sm:mx-auto max-sm:max-w-sm sm:w-[min(19rem,calc(100vw-1.5rem))] sm:max-h-[min(70dvh,28rem)]'
-                  }`}
-                >
-                  <div className="sm:hidden flex items-center justify-between px-3 py-1.5 border-b border-white/10 mb-1.5">
-                    <span className="text-[10px] font-mono uppercase tracking-widest text-gold-light font-bold">Luminara Suite</span>
-                    <button
-                      type="button"
-                      onClick={() => setShowSuiteMenu(false)}
-                      className="text-gray-400 hover:text-white p-1 text-xs"
-                      aria-label="Close menu"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                  <a href="/faq" className="w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold">Help: FAQ</a>
-                  <a href="/contact" className="w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold">Help: Contact</a>
-                  {!skipMarketing && <a href="/how-it-works" className="w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold">How Luminara works</a>}
-                  <button
-                    type="button"
-                    onClick={() => { setView(AppView.IDEA_SCOUT); setShowSuiteMenu(false); }}
-                    className="2xl:hidden w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
-                  >
-                    <ICONS.Zap className="w-3.5 h-3.5 text-gold-light" />
-                    <span>Idea Scout</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setView(AppView.TRUST_CENTER); setShowSuiteMenu(false); }}
-                    className="w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
-                  >
-                    <ICONS.CheckCircle className="w-3.5 h-3.5 text-gold-light" />
-                    <span>Trust</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setView(AppView.DASHBOARD); setShowSuiteMenu(false); }}
-                    className="w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
-                  >
-                    <ICONS.Shield className="w-3.5 h-3.5 text-gold-light" />
-                    <span>Dashboard</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setView(AppView.BRAND_MEMORY); setShowSuiteMenu(false); }}
-                    className="2xl:hidden w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
-                  >
-                    <ICONS.DNA className="w-3.5 h-3.5 text-gold-light" />
-                    <span>Memory</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setView(AppView.NOTEBOOK); setShowSuiteMenu(false); }}
-                    className="2xl:hidden w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gold-light hover:text-white hover:bg-gold/20 transition-colors flex items-center gap-2 bg-gold/15 border border-gold/40 my-0.5 outline-none focus-visible:ring-2 focus-visible:ring-gold"
-                  >
-                    <ICONS.Notebook className="w-3.5 h-3.5 text-gold-light" />
-                    <div className="flex items-center justify-between flex-1 gap-2 min-w-0">
-                      <span className="font-bold truncate">Intelligence Studio</span>
-                      <span className="text-[8px] font-mono px-1.5 py-0.5 rounded bg-gold/20 text-gold-light font-bold shrink-0">STUDIO</span>
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setView(AppView.BUSINESS_DNA); setShowSuiteMenu(false); }}
-                    className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
-                  >
-                    <ICONS.DNA className="w-3.5 h-3.5 text-gold-light" />
-                    <span>Business profile</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setView(AppView.ENQUIRY_DESK); setShowSuiteMenu(false); }}
-                    className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
-                  >
-                    <ICONS.Organizer className="w-3.5 h-3.5 text-gold-light" />
-                    <span>Enquiry Desk</span>
-                  </button>
-                  {advancedUi && (<>
-                  <button
-                    type="button"
-                    onClick={() => { setView(AppView.HARNESS); setShowSuiteMenu(false); }}
-                    className="w-full text-left px-3 py-2 rounded-xl text-xs text-gold-light hover:text-white hover:bg-gold/20 transition-colors flex items-center gap-2 bg-gold/15 border border-gold/40 my-0.5 outline-none focus-visible:ring-2 focus-visible:ring-gold"
-                  >
-                    <ICONS.Terminal className="w-3.5 h-3.5 text-gold-light" />
-                    <div className="flex items-center justify-between flex-1">
-                      <span className="font-bold">Developer harness</span>
-                      <span className="text-[8px] font-mono px-1.5 py-0.5 rounded bg-warning-500/20 text-warning-300 font-bold">LAB</span>
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setView(AppView.ORACLE_MIND); setShowSuiteMenu(false); }}
-                    className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
-                  >
-                    <ICONS.Brain className="w-3.5 h-3.5 text-gold-light" />
-                    <span>OracleMind SLM Studio <span className="text-[8px] text-warning-300 font-mono">LAB</span></span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setView(AppView.TIMESFM_FORECAST); setShowSuiteMenu(false); }}
-                    className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
-                  >
-                    <ICONS.TimeSeries className="w-3.5 h-3.5 text-gold-light" />
-                    <span>TimesFM Forecaster <span className="text-[8px] text-warning-300 font-mono">LAB</span></span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setView(AppView.STRESS_TEST); setShowSuiteMenu(false); }}
-                    className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
-                  >
-                    <ICONS.Stress className="w-3.5 h-3.5 text-gold-light" />
-                    <span>Poke holes in my plan</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setView(AppView.DATA_ANALYST); setShowSuiteMenu(false); }}
-                    className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
-                  >
-                    <ICONS.Analyst className="w-3.5 h-3.5 text-gold-light" />
-                    <span>Analyse my data</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setView(AppView.ORGANIZER); setShowSuiteMenu(false); }}
-                    className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
-                  >
-                    <ICONS.Organizer className="w-3.5 h-3.5 text-gold-light" />
-                    <span>Turn notes into a plan</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setView(AppView.RESEARCH); setShowSuiteMenu(false); }}
-                    className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
-                  >
-                    <ICONS.Research className="w-3.5 h-3.5 text-gold-light" />
-                    <span>Research the market</span>
-                  </button>
-                  </>)}
-                  {!skipMarketing && <button
-                    type="button"
-                    onClick={() => { setView(AppView.INFRASTRUCTURE); setShowSuiteMenu(false); }}
-                    className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 border-t border-white/5 mt-1 pt-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
-                  >
-                    <ICONS.Sparkle className="w-3.5 h-3.5 text-gold-light" />
-                    <span>How Luminara works</span>
-                  </button>}
-                  <button
-                    type="button"
-                    onClick={() => { setShowSuiteMenu(false); setIsOmnibarOpen(true); }}
-                    className="w-full text-left px-3 py-2 rounded-xl text-xs text-gold-light hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 border-t border-white/5 mt-1 pt-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
-                  >
-                    <ICONS.Search className="w-3.5 h-3.5 text-gold-light" />
-                    <span className="truncate">Jump to any tool (Omnibar)</span>
-                    <kbd className="ml-auto hidden sm:inline text-[9px] px-1.5 py-0.5 rounded bg-white/10 text-gray-300">⌘K</kbd>
-                  </button>
-                  {!inTelegram && appAuth.authenticated && <ReplayTourButton onDone={() => setShowSuiteMenu(false)} goToAudit={() => setView(AppView.INSTANT_AUDIT)} />}
-                  <button
-                    type="button"
-                    onClick={() => { setMode(OracleMode.FLASH); setAnswerDepth('quick'); setShowSuiteMenu(false); }}
-                    className="hidden lg:flex xl:hidden w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors items-center gap-2 border-t border-white/5 mt-1 pt-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
-                  >
-                    Quick answers
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setMode(OracleMode.DEEP_THINK); setAnswerDepth('thorough'); setShowSuiteMenu(false); }}
-                    className="hidden lg:flex xl:hidden w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
-                  >
-                    Thorough answers
-                  </button>
-                  {!inTelegram && appAuth.authenticated && (
-                    <button
-                      type="button"
-                      onClick={() => { setShowSuiteMenu(false); void logoutToLanding(); }}
-                      className="sm:hidden w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-400 hover:text-gold hover:bg-gold/10 transition-colors flex items-center gap-2 border-t border-white/5 mt-1 pt-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
-                    >
-                      <ICONS.Close className="w-3.5 h-3.5 text-gold-light" />
-                      <span>Log out</span>
-                    </button>
-                  )}
-                </div>
-              </>,
-              document.body,
-            )}
-          </div>
-
-          {/* Omnibar Fast Search Trigger Button */}
-          <Button
-            variant="ghost"
-            size="none"
-            onClick={() => setIsOmnibarOpen(true)}
-            data-testid="header-search"
-            data-header-item="search"
-            className="inline-flex items-center gap-1.5 px-1.5 py-2 min-h-11 rounded-full bg-white/5 hover:bg-gold/10 border border-white/10 hover:border-gold/40 text-xs font-mono font-normal normal-case tracking-normal shrink-0"
-            title="Open Omnibar (Cmd+K)"
-            aria-label="Jump to a tool"
-          >
-            <ICONS.Search className="w-3.5 h-3.5 text-gold" />
-            <span className="hidden 2xl:inline truncate">Jump to a tool</span>
-            <kbd className="hidden 2xl:inline text-[9px] px-1.5 py-0.5 rounded bg-white/10 text-gray-300">⌘K</kbd>
-          </Button>
-        </nav>
-
-        {/* Right: Native LLM Trinity HUD, Omnibar, Theme, Agent Badge, DNA, Mode, Settings, Log out */}
-        <div className="flex flex-nowrap items-center justify-end gap-1 max-sm:overflow-x-auto no-scrollbar sm:gap-2.5 sm:shrink-0 sm:overflow-visible">
-          {/* Native Trinity (Groq, NVIDIA NIM, Ollama) Engine Status & Priority */}
-          {advancedUi && <NativeEngineHUD />}
-
-          {/* Default Agent Badge - visible on 2xl displays only to prevent crowding */}
-          {advancedUi && <Button
-            variant="ghost"
-            size="none"
-            onClick={() => setView(AppView.HARNESS)}
-            className="hidden 2xl:inline-flex gap-1.5 px-2.5 py-1 rounded-full border border-white/10 bg-white/5 text-[9px] font-mono font-normal normal-case tracking-normal text-gray-300 hover:border-gold/50 hover:text-gold-light hover:bg-white/5 shrink-0"
-            title="Active Default Agent (Click to open Archy Harness)"
-          >
-            <span className="text-gold">⚡</span>
-            <span className="truncate max-w-[90px]">{defaultAgentName}</span>
-          </Button>}
-
-          {/* Theme Quick Cycle Button - visible on 2xl displays only */}
-          {advancedUi && <Button
-            variant="ghost"
-            size="none"
-            onClick={() => themingService.cycleTheme()}
-            className="hidden 2xl:inline-flex gap-1.5 px-2.5 py-1 rounded-full border border-white/10 bg-white/5 text-[9px] font-mono font-normal normal-case tracking-normal text-gray-300 hover:border-gold/50 hover:text-gold-light hover:bg-white/5 shrink-0"
-            title={`Active Theme: ${currentTheme.name} (Click to cycle)`}
-          >
-            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: currentTheme.palette.primaryGold }} />
-            <span className="truncate max-w-[80px]">{currentTheme.name}</span>
-          </Button>}
-
-          {/* Reminders Count Indicator */}
-          {activeRemindersCount > 0 && (
-            <Button
+      {!inTelegram && (
+        <AppRail
+          view={view}
+          onNavigate={(v) => setView(v)}
+          onBrand={goBrandHome}
+          brandTitle={skipMarketing ? 'Luminara home' : 'Back to the Luminara Suite website'}
+          businessName={dna ? dna.name : null}
+          onBusiness={() => setView(AppView.BUSINESS_DNA)}
+          pendingCount={approvals.open.length}
+          moreOpen={showSuiteMenu}
+          moreActive={!PRIMARY_VIEWS.has(view)}
+          onMore={toggleSuiteMenu}
+          onSearch={() => setIsOmnibarOpen(true)}
+          onSettings={() => setIsKeyModalOpen(true)}
+          footer={
+            <>
+              <div className="lg-rail-row"><UsageQuotaBadge /></div>
+              {appAuth.authenticated ? (
+                <button type="button" className="lg-btn lg-btn--ghost lg-btn--sm" onClick={() => void logoutToLanding()} data-header-item="logout">Log out</button>
+              ) : null}
+            </>
+          }
+        />
+      )}
+      <div className="lg-main">
+      {view === AppView.ORACLE_AGENT && !isVoiceActive && <div className="lg-horizon" aria-hidden="true"><i /><s /></div>}
+      <AppTopBar
+        title={VIEW_TITLES[view] ?? 'Luminara'}
+        businessName={dna ? dna.name : null}
+        agent={agentState}
+        pendingCount={approvals.open.length}
+        onStatus={() => setView(AppView.REVIEW)}
+        onBrand={goBrandHome}
+        brandTitle={skipMarketing ? 'Luminara home' : 'Back to the Luminara Suite website'}
+      >
+            {advancedUi && <NativeEngineHUD />}
+            {advancedUi && <Button
               variant="ghost"
               size="none"
               onClick={() => setView(AppView.HARNESS)}
-              className="gap-1 px-2 py-1 rounded-full border border-warning-500/30 bg-warning-500/10 text-warning-400 hover:text-warning-300 text-[9px] font-mono font-normal normal-case tracking-normal hover:bg-warning-500/20 shrink-0"
-              title="Active Scheduled Reminders"
+              className="hidden 2xl:inline-flex gap-1.5 px-2.5 py-1 rounded-full border border-white/10 bg-white/5 text-[9px] font-mono font-normal normal-case tracking-normal text-gray-300 hover:border-gold/50 hover:text-gold-light hover:bg-white/5 shrink-0"
+              title="Active Default Agent (Click to open Archy Harness)"
             >
-              <span>⏰</span>
-              <span>{activeRemindersCount}</span>
-            </Button>
-          )}
-
-          {/* DNA Status Pill - visible on xl+ displays */}
-          <Button
-            variant="ghost"
-            size="none"
-            onClick={() => setView(AppView.BUSINESS_DNA)}
-            data-testid="add-business-pill"
-            data-header-item="business"
-            className={`hidden lg:inline-flex gap-2 px-3 py-1 rounded-full border text-[9px] font-mono font-normal shrink-0 whitespace-nowrap ${
-              dna
-                ? 'bg-success-500/10 border-success-500/30 text-success-400 hover:text-success-300 hover:bg-success-500/20'
-                : 'bg-white/5 border-white/10 hover:text-gold-light hover:bg-white/5'
-            }`}
-            title="Business profile"
-          >
-            <span className={`w-1.5 h-1.5 rounded-full ${dna ? 'bg-success-400 shadow-[0_0_8px_theme(colors.success.500)]' : 'bg-gold'}`}></span>
-            <span className={dna ? 'truncate max-w-[10rem]' : 'whitespace-nowrap'}>{dna ? dna.name : 'Add my business'}</span>
-          </Button>
-
-          {/* AI Usage Quota & Paywall Badge */}
-          <div className="shrink-0">
-            <UsageQuotaBadge />
-          </div>
-
-          {/* Settings and AI Keys Button - GUARANTEED PROMINENT & ALWAYS VISIBLE */}
-          <Button
-            variant="ghost"
-            size="none"
-            onClick={() => setIsKeyModalOpen(true)}
-            data-header-item="settings"
-            className="p-2.5 min-h-11 min-w-10 rounded border border-[var(--color-rule)] text-gold-light hover:text-white hover:border-gold hover:bg-gold/10 shrink-0 transition-colors"
-            title="Settings (AI Keys & Config)"
-            aria-label="Settings and AI keys"
-          >
-            <ICONS.Settings className="w-4 h-4" />
-          </Button>
-
-          <div className="hidden max-lg:flex xl:flex items-center bg-[var(--color-paper-2)] rounded p-0.5 border border-[var(--color-rule)] shrink-0" role="group" aria-label="Answer mode">
-            <Button
+              <span className="text-gold">⚡</span>
+              <span className="truncate max-w-[90px]">{defaultAgentName}</span>
+            </Button>}
+            {advancedUi && <Button
               variant="ghost"
               size="none"
-              onClick={() => { setMode(OracleMode.FLASH); setAnswerDepth('quick'); }}
-              data-header-item="quick"
-              aria-pressed={mode === OracleMode.FLASH}
-              className={`min-h-11 px-3 py-1 rounded-sm text-[11px] ${
-                mode === OracleMode.FLASH ? 'bg-[var(--color-accent)] text-black hover:text-black hover:bg-[var(--color-accent)] font-semibold' : 'text-gray-500 hover:text-gray-300'
-              }`}
+              onClick={() => themingService.cycleTheme()}
+              className="hidden 2xl:inline-flex gap-1.5 px-2.5 py-1 rounded-full border border-white/10 bg-white/5 text-[9px] font-mono font-normal normal-case tracking-normal text-gray-300 hover:border-gold/50 hover:text-gold-light hover:bg-white/5 shrink-0"
+              title={`Active Theme: ${currentTheme.name} (Click to cycle)`}
             >
-              Quick
-            </Button>
-            <Button
-              variant="ghost"
-              size="none"
-              onClick={() => { setMode(OracleMode.DEEP_THINK); setAnswerDepth('thorough'); }}
-              data-header-item="thorough"
-              aria-pressed={mode === OracleMode.DEEP_THINK}
-              className={`min-h-11 px-3 py-1 rounded-sm text-[11px] ${
-                mode === OracleMode.DEEP_THINK ? 'bg-[var(--color-accent)] text-black hover:text-black hover:bg-[var(--color-accent)] font-semibold' : 'text-gray-500 hover:text-gray-300'
-              }`}
-            >
-              Thorough
-            </Button>
-          </div>
-
-          {!inTelegram && appAuth.authenticated && (
-            <Button
-              variant="ghost"
-              size="none"
-              onClick={() => void logoutToLanding()}
-              data-header-item="logout"
-              className="hidden sm:inline-flex px-2.5 sm:px-3 py-1.5 min-h-11 border border-[var(--color-rule)] rounded text-[11px] text-[var(--color-ink-2)] hover:text-[var(--color-ink)] hover:bg-transparent shrink-0 whitespace-nowrap"
-            >
-              Log out
-            </Button>
-          )}
-          {!inTelegram && !appAuth.authenticated && !appAuth.loading && (
-            <button
-              type="button"
-              onClick={() => openLoginWall('signin')}
-              data-header-item="sign-in"
-              className="mkt-cta-primary !min-h-11 !py-2 !px-4 shrink-0 whitespace-nowrap"
-            >
-              Sign in
-            </button>
-          )}
-        </div>
-      </header>
+              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: currentTheme.palette.primaryGold }} />
+              <span className="truncate max-w-[80px]">{currentTheme.name}</span>
+            </Button>}
+            {activeRemindersCount > 0 && (
+              <Button
+                variant="ghost"
+                size="none"
+                onClick={() => setView(AppView.HARNESS)}
+                className="gap-1 px-2 py-1 rounded-full border border-warning-500/30 bg-warning-500/10 text-warning-400 hover:text-warning-300 text-[9px] font-mono font-normal normal-case tracking-normal hover:bg-warning-500/20 shrink-0"
+                title="Active Scheduled Reminders"
+              >
+                <span>⏰</span>
+                <span>{activeRemindersCount}</span>
+              </Button>
+            )}
+        <span className="hidden sm:inline-flex lg:hidden"><UsageQuotaBadge /></span>
+            {!inTelegram && !appAuth.authenticated && !appAuth.loading && (
+              <button
+                type="button"
+                onClick={() => openLoginWall('signin')}
+                data-header-item="sign-in"
+                className="lg-btn lg-btn--primary lg-btn--sm shrink-0"
+              >
+                Sign in
+              </button>
+            )}
+      </AppTopBar>
       {appAuth.authenticated ? <WorkspaceInviteBanner /> : null}
 
       {/* Main App Container - min-h-0 ensures flex child heights and scrollbars calculate cleanly */}
@@ -1892,6 +1521,20 @@ const App: React.FC = () => {
           <EnquiryDeskView />
         )}
 
+        {/* VIEW: Review, agent actions waiting for the owner's OK */}
+        {view === AppView.REVIEW && (
+          <ReviewView
+            signedIn={appAuth.authenticated}
+            onSignIn={() => openLoginWall('signin')}
+            rows={approvals.rows}
+            open={approvals.open}
+            details={approvals.details}
+            state={approvals.state}
+            onRefresh={() => void approvals.refresh()}
+            onDecide={approvals.decide}
+          />
+        )}
+
         {/* VIEW: Ecosystem & Playbook Hub */}
         {view === AppView.ECOSYSTEM_HUB && (
           <EcosystemHubView
@@ -1934,85 +1577,35 @@ const App: React.FC = () => {
                   </div>
                 </div>
               )}
-              <ChatTranscript messages={messages} isThinking={isThinking} activeTool={activeTool} onSimplify={handleSimplify} />
-              
-              {agentStep && (
-                <div
-                  role="status"
-                  aria-live="polite"
-                  aria-busy="true"
-                  className="absolute top-6 left-1/2 -translate-x-1/2 flex flex-col items-center gap-3 z-40 w-full max-w-lg px-6"
-                >
-                  <div className="w-full flex items-center gap-4 px-6 py-4 rounded-[24px] border border-gold/40 bg-black/90 shadow-xl animate-in slide-in-from-top-6 duration-700">
-                    <div className="w-6 h-6 flex items-center justify-center shrink-0">
-                      <div className="w-full h-full border-2 border-gold/20 border-t-gold rounded-full animate-spin" aria-hidden="true"></div>
-                    </div>
-                    <div className="flex-1 flex flex-col">
-                      <div className="flex items-center justify-between mb-2 gap-3">
-                        <span className="text-[11px] text-gold-light font-semibold tracking-wide truncate">{agentStep}</span>
-                        <div className="flex items-center gap-3 shrink-0">
-                          <button type="button" onClick={handleStop} className="text-[10px] font-semibold tracking-wide text-danger-400 hover:text-danger-300 border border-danger-500/30 rounded-lg px-2 py-0.5 outline-none focus-visible:ring-2 focus-visible:ring-danger-400" title="Stop generating" aria-label="Stop generating">Stop</button>
-                        </div>
-                      </div>
-                      <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden border border-white/5">
-                        <div 
-                          className="h-full w-2/5 progress-gold rounded-full"
-                        ></div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
+              <ChatTranscript
+                messages={messages}
+                isThinking={isThinking}
+                activeTool={activeTool}
+                onSimplify={handleSimplify}
+                agentStep={agentStep}
+                onStop={handleStop}
+                starters={quickActions}
+                onStarter={(query) => handleSendMessage(query)}
+              />
             </>
           )
         )}
         </ErrorBoundary>
       </main>
 
-      {/* Terminal Footer only in Oracle Agent View */}
+      {/* Ask composer: glass over the horizon */}
       {view === AppView.ORACLE_AGENT && !isVoiceActive && (
-        <footer className="z-40 bg-gradient-to-t from-black via-black to-transparent flex flex-col gap-0.5 pb-2 shrink-0">
-          <div 
-            className="flex flex-wrap items-center justify-center gap-2 px-4 transition-all duration-700 overflow-hidden py-1.5 sm:py-2" 
-            style={{ 
-              maxHeight: isThinking ? '0px' : '200px', 
-              opacity: isThinking ? 0 : 1,
-              transform: isThinking ? 'translateY(20px)' : 'translateY(0px)'
-            }}
-          >
-            {messages.length > 0 && (
-              <Button
-                variant="ghost"
-                size="none"
-                onClick={handleClearChat}
-                disabled={isThinking}
-                className="px-3 py-1.5 rounded-full border border-white/10 text-[9px] text-gray-400 hover:text-danger-300 hover:border-danger-500/30 hover:bg-transparent tracking-[0.2em] focus-visible:ring-danger-400 disabled:hover:text-gray-400 disabled:hover:border-white/10"
-                title="Clear conversation"
-              >
-                Clear chat
-              </Button>
-            )}
-            {quickActions.map((action, i) => (
-              <button
-                key={i}
-                type="button"
-                onClick={() => handleSendMessage(action.query)}
-                disabled={isThinking}
-                className="px-3.5 sm:px-4 py-1.5 rounded-full border border-gold/30 hover:border-gold text-[10px] font-semibold text-gold-light tracking-wide transition-all hover:bg-gold/10 active:scale-[0.98] shadow-md bg-black/80 outline-none focus-visible:ring-2 focus-visible:ring-gold disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {action.label}
-              </button>
-            ))}
-          </div>
-
-          <ChatComposer
-            onSendMessage={handleSendMessage}
-            onVoiceToggle={toggleVoice}
-            isVoiceActive={isVoiceActive}
-            isThinking={isThinking}
-            mode={mode}
-          />
-        </footer>
+        <ChatComposer
+          onSendMessage={handleSendMessage}
+          onVoiceToggle={toggleVoice}
+          isVoiceActive={isVoiceActive}
+          isThinking={isThinking}
+          mode={mode}
+          onModeChange={(m) => { setMode(m); setAnswerDepth(m === OracleMode.DEEP_THINK ? 'thorough' : 'quick'); }}
+          onStop={handleStop}
+          onClear={handleClearChat}
+          canClear={messages.length > 0}
+        />
       )}
 
       {/* Telegram Native Mobile Bottom Navigation */}
@@ -2024,6 +1617,192 @@ const App: React.FC = () => {
           onOpenTools={() => setShowSuiteMenu(prev => !prev)}
         />
       )}
+      {!inTelegram && (
+        <AppTabBar
+          view={view}
+          onNavigate={(v) => setView(v)}
+          pendingCount={approvals.open.length}
+          moreOpen={showSuiteMenu}
+          moreActive={!PRIMARY_VIEWS.has(view)}
+          onMore={toggleSuiteMenu}
+        />
+      )}
+      </div>
+
+      {/* More tools: opens beside the rail button, above the phone tab bar, or as a Telegram sheet. */}
+            {showSuiteMenu && createPortal(
+              <>
+                <div
+                  className="fixed inset-0 z-40 bg-black/70 animate-in fade-in duration-150"
+                  onClick={() => setShowSuiteMenu(false)}
+                  aria-hidden="true"
+                />
+                <div 
+                  style={suiteMenuPos && !inTelegram && typeof window !== 'undefined' && window.innerWidth >= 640 ? suiteMenuPos : undefined}
+                  className={`z-50 overflow-y-auto border border-[var(--color-rule)] rounded-lg p-2.5 shadow-2xl bg-[var(--color-paper-2)] animate-in fade-in zoom-in-95 duration-200 fixed ${
+                    inTelegram
+                      ? 'bottom-[calc(env(safe-area-inset-bottom,0px)+68px)] left-3 right-3 max-h-[72dvh] mx-auto max-w-sm'
+                      : 'max-sm:bottom-4 max-sm:left-3 max-sm:right-3 max-sm:max-h-[72dvh] max-sm:mx-auto max-sm:max-w-sm sm:w-[min(19rem,calc(100vw-1.5rem))] sm:max-h-[min(70dvh,28rem)]'
+                  }`}
+                >
+                  <div className="sm:hidden flex items-center justify-between px-3 py-1.5 border-b border-white/10 mb-1.5">
+                    <span className="text-[10px] font-mono uppercase tracking-widest text-gold-light font-bold">Luminara Suite</span>
+                    <button
+                      type="button"
+                      onClick={() => setShowSuiteMenu(false)}
+                      className="text-gray-400 hover:text-white p-1 text-xs"
+                      aria-label="Close menu"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <a href="/faq" className="w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold">Help: FAQ</a>
+                  <a href="/contact" className="w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold">Help: Contact</a>
+                  {!skipMarketing && <a href="/how-it-works" className="w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold">How Luminara works</a>}
+                  <button
+                    type="button"
+                    onClick={() => { setView(AppView.IDEA_SCOUT); setShowSuiteMenu(false); }}
+                    className="w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                  >
+                    <ICONS.Zap className="w-3.5 h-3.5 text-gold-light" />
+                    <span>Idea Scout</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setView(AppView.TRUST_CENTER); setShowSuiteMenu(false); }}
+                    className="w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                  >
+                    <ICONS.CheckCircle className="w-3.5 h-3.5 text-gold-light" />
+                    <span>Trust</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setView(AppView.BRAND_MEMORY); setShowSuiteMenu(false); }}
+                    className="lg:hidden w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                  >
+                    <ICONS.DNA className="w-3.5 h-3.5 text-gold-light" />
+                    <span>Memory</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setView(AppView.NOTEBOOK); setShowSuiteMenu(false); }}
+                    className="lg:hidden w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gold-light hover:text-white hover:bg-gold/20 transition-colors flex items-center gap-2 bg-gold/15 border border-gold/40 my-0.5 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                  >
+                    <ICONS.Notebook className="w-3.5 h-3.5 text-gold-light" />
+                    <div className="flex items-center justify-between flex-1 gap-2 min-w-0">
+                      <span className="font-bold truncate">Intelligence Studio</span>
+                      <span className="text-[8px] font-mono px-1.5 py-0.5 rounded bg-gold/20 text-gold-light font-bold shrink-0">STUDIO</span>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setView(AppView.BUSINESS_DNA); setShowSuiteMenu(false); }}
+                    className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                  >
+                    <ICONS.DNA className="w-3.5 h-3.5 text-gold-light" />
+                    <span>Business profile</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setView(AppView.ENQUIRY_DESK); setShowSuiteMenu(false); }}
+                    className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                  >
+                    <ICONS.Organizer className="w-3.5 h-3.5 text-gold-light" />
+                    <span>Enquiry Desk</span>
+                  </button>
+                  {advancedUi && (<>
+                  <button
+                    type="button"
+                    onClick={() => { setView(AppView.HARNESS); setShowSuiteMenu(false); }}
+                    className="w-full text-left px-3 py-2 rounded-xl text-xs text-gold-light hover:text-white hover:bg-gold/20 transition-colors flex items-center gap-2 bg-gold/15 border border-gold/40 my-0.5 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                  >
+                    <ICONS.Terminal className="w-3.5 h-3.5 text-gold-light" />
+                    <div className="flex items-center justify-between flex-1">
+                      <span className="font-bold">Developer harness</span>
+                      <span className="text-[8px] font-mono px-1.5 py-0.5 rounded bg-warning-500/20 text-warning-300 font-bold">LAB</span>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setView(AppView.ORACLE_MIND); setShowSuiteMenu(false); }}
+                    className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                  >
+                    <ICONS.Brain className="w-3.5 h-3.5 text-gold-light" />
+                    <span>OracleMind SLM Studio <span className="text-[8px] text-warning-300 font-mono">LAB</span></span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setView(AppView.TIMESFM_FORECAST); setShowSuiteMenu(false); }}
+                    className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                  >
+                    <ICONS.TimeSeries className="w-3.5 h-3.5 text-gold-light" />
+                    <span>TimesFM Forecaster <span className="text-[8px] text-warning-300 font-mono">LAB</span></span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setView(AppView.STRESS_TEST); setShowSuiteMenu(false); }}
+                    className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                  >
+                    <ICONS.Stress className="w-3.5 h-3.5 text-gold-light" />
+                    <span>Poke holes in my plan</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setView(AppView.DATA_ANALYST); setShowSuiteMenu(false); }}
+                    className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                  >
+                    <ICONS.Analyst className="w-3.5 h-3.5 text-gold-light" />
+                    <span>Analyse my data</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setView(AppView.ORGANIZER); setShowSuiteMenu(false); }}
+                    className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                  >
+                    <ICONS.Organizer className="w-3.5 h-3.5 text-gold-light" />
+                    <span>Turn notes into a plan</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setView(AppView.RESEARCH); setShowSuiteMenu(false); }}
+                    className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                  >
+                    <ICONS.Research className="w-3.5 h-3.5 text-gold-light" />
+                    <span>Research the market</span>
+                  </button>
+                  </>)}
+                  {!skipMarketing && <button
+                    type="button"
+                    onClick={() => { setView(AppView.INFRASTRUCTURE); setShowSuiteMenu(false); }}
+                    className="w-full text-left px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 border-t border-white/5 mt-1 pt-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                  >
+                    <ICONS.Sparkle className="w-3.5 h-3.5 text-gold-light" />
+                    <span>How Luminara works</span>
+                  </button>}
+                  <button
+                    type="button"
+                    onClick={() => { setShowSuiteMenu(false); setIsOmnibarOpen(true); }}
+                    className="w-full text-left px-3 py-2 rounded-xl text-xs text-gold-light hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 border-t border-white/5 mt-1 pt-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                  >
+                    <ICONS.Search className="w-3.5 h-3.5 text-gold-light" />
+                    <span className="truncate">Jump to any tool (Omnibar)</span>
+                    <kbd className="ml-auto hidden sm:inline text-[9px] px-1.5 py-0.5 rounded bg-white/10 text-gray-300">⌘K</kbd>
+                  </button>
+                  {!inTelegram && appAuth.authenticated && <ReplayTourButton onDone={() => setShowSuiteMenu(false)} goToAudit={() => setView(AppView.INSTANT_AUDIT)} />}
+                  {!inTelegram && appAuth.authenticated && (
+                    <button
+                      type="button"
+                      onClick={() => { setShowSuiteMenu(false); void logoutToLanding(); }}
+                      className="sm:hidden w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-400 hover:text-gold hover:bg-gold/10 transition-colors flex items-center gap-2 border-t border-white/5 mt-1 pt-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                    >
+                      <ICONS.Close className="w-3.5 h-3.5 text-gold-light" />
+                      <span>Log out</span>
+                    </button>
+                  )}
+                </div>
+              </>,
+              document.body,
+            )}
 
       {/* Global Modals */}
       <Suspense fallback={null}>

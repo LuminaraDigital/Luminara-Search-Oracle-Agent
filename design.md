@@ -13,7 +13,11 @@ Atmospheric dark visibility tool (Night Foundry register).
   - Landing: space story (sunrise globe hero with the inline live crawl check, statement, four-chapter globe story, report, value props, FAQ, closing horizon)
   - Pricing: Catalogue-within-Workbench
   - Why / How / AI: Narrative Workflow or Split Studio variants
-- App pages: util Workbench (tool chrome; atmosphere subtle only)
+- App pages: util Workbench (tool chrome; atmosphere subtle only), in the Ledger shell (`ledger.css`, `components/shell/AppShell.tsx`):
+  - Left rail from 1024px, a five-tab bar below it; one top bar with the view name and the agent's state
+  - Ask is a ledger: every turn is a dated row, an answer shows its steps, its sources and how it failed
+  - The landing's sunrise horizon sits under the Ask composer and shows the agent's state (idle, working, waiting for you). It is the only glass in the app
+  - Anything an agent wants to do outside Luminara waits in Review (the `mcp_action_requests` queue) with an approval card: what happens, the site, why it asks, what you allow, the details sent
 - Content pages (Privacy/Terms): Long Document (no blooms)
 
 ## Theme (custom, brand-mapped)
