@@ -42,4 +42,6 @@ Authorize never redirects to a URI that is not on that client's registered list.
 
 The allow screen grants `mcp:free`. `mcp:research` is for an Agency authorization that is not this hosted screen. A hosted client can still send `x-provider-key` with its own DataForSEO login.
 
+Clients that register `refresh_token` receive one with the access token. That access token lasts 1 hour. RFC 9700: a retry within 30 seconds returns the same new tokens. After that, presenting the old refresh token revokes the family. The daily call counter stays one key per account and UTC day.
+
 Discovery documents answer GET and OPTIONS with `Access-Control-Allow-Origin: *`. Each MCP POST stands alone. The server does not issue `mcp-session-id` and does not need the next request to hit the same machine.

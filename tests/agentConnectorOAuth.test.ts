@@ -135,6 +135,7 @@ describe('agent connector discovery', () => {
       revocation_endpoint: 'https://luminarasuite.com/api/oauth/mcp/revoke',
       revocation_endpoint_auth_methods_supported: ['none'],
       token_endpoint_auth_methods_supported: ['none'],
+      grant_types_supported: ['authorization_code', 'refresh_token'],
     });
     const alias = await call(prod, '/api/oauth/mcp/.well-known/oauth-authorization-server');
     expect(await alias.json()).toMatchObject({

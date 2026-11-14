@@ -13,6 +13,14 @@
     "crons": ["0 8 * * *"]
   },
 
+  // Ceiling for one Worker invocation, including the 08:00 UTC cron. Without this field the
+  // platform default is 30 seconds of CPU, shared by every scheduled job. 120 seconds is the
+  // ceiling, not a hold: HTTP requests still finish when they finish. Project checks also stop
+  // after MONITOR_TICK_CAP projects so this cron cannot spend the whole budget alone.
+  "limits": {
+    "cpu_ms": 120000
+  },
+
   // The Vite build output is served as static assets. Every request goes through the Worker first
   // so the HTML shell and API responses carry security headers (CSP, HSTS, nosniff, ...).
   "assets": {

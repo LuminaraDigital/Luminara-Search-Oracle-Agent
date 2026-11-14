@@ -146,6 +146,7 @@ import {
 import { handleAuditScoutRun } from './auditScoutRun';
 import { dispatchQueueBatch } from './queueDispatch';
 import { MCP_OAUTH_PUBLIC_CORS, handleMcpOAuthRoute, handleMcpRegistryAuth, handleOAuthDiscovery, listAgentConnections, revokeAgentConnection } from './mcpOAuth';
+import { pruneMcpOAuthRefreshRows } from './mcpOAuthRefresh';
 import { enforceMcpOauthIpLimit, MCP_OAUTH_REGISTER_PER_MIN, MCP_OAUTH_TOKEN_PER_MIN } from './mcpLimits';
 import { executeOracleGatewayTask, type OracleGatewayRequest } from './oracleGateway';
 import { createMemoryFact, listMemoryFacts } from './memoryService';
@@ -196,6 +197,7 @@ import { handleEmailUnsubscribe, runWithWaitUntil } from './welcomeEmail';
 export { DailyQuota } from './dailyQuota';
 import { createProject, listProjects, getProject } from './projectService';
 import { handleProjectHistoryRoute } from './projectHistoryRoute';
+import { handleProjectMonitorRoute, runProjectMonitorTick } from './projectMonitor';
 import { getProjectContext, updateProjectContext, seedContextFromDna } from './projectContextService';
 import { getAgentReport, listAgentReports, saveAgentReport, getAgentReportHtmlForAccount } from './agentReportService';
 import { createApiKey, listApiKeys, revokeApiKey } from './apiKeyService';
@@ -593,6 +595,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
         source: 'firebase',
         email: verified.user.email,
         name: verified.user.name,
+        emailVerified: verified.user.emailVerified === true,
       };
       const stored = await withAccountId(env, fbIdentity);
       const { org, membership } = await getOrCreateUserOrg(env, stored);
@@ -748,11 +751,13 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       }
     } else if ((event === 'user.created' || event === 'user.updated') && (data.uid || data.id)) {
       const uid = String(data.uid || data.id).replace(/^fb:/, '');
+      const verifiedFlag = data.emailVerified ?? data.email_verified;
       const userObj: HostedIdentity = {
         id: `fb:${uid}`,
         source: 'firebase',
         email: data.email,
         name: data.displayName || data.name,
+        ...(typeof verifiedFlag === 'boolean' ? { emailVerified: verifiedFlag } : {}),
       };
       await withAccountId(env, userObj);
     }
@@ -2074,6 +2079,8 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     const accountId = billingId(who.user);
     const historyResponse = await handleProjectHistoryRoute(request, env, path, accountId);
     if (historyResponse) return withCors(historyResponse);
+    const monitorResponse = await handleProjectMonitorRoute(request, env, path, accountId);
+    if (monitorResponse) return withCors(monitorResponse);
 
     if (path === '/projects' && request.method === 'GET') {
       const projects = await listProjects(env, accountId);
@@ -2687,6 +2694,21 @@ const handler = {
         sweepDueRecoveryRuns(env)
           .then(() => undefined)
           .catch((err) => console.error('[Recovery] scheduled sweep failed', err)),
+      );
+    }
+    if (jobs.includes('project_monitor')) {
+      const scheduledAt = controller.scheduledTime;
+      ctx.waitUntil(
+        runProjectMonitorTick(env, { scheduledAt })
+          .then(() => undefined)
+          .catch((err) => console.error('[Monitor] sweep failed', err)),
+      );
+    }
+    if (jobs.includes('mcp_oauth_refresh_prune')) {
+      ctx.waitUntil(
+        pruneMcpOAuthRefreshRows(env)
+          .then(() => undefined)
+          .catch((err) => console.error('[mcp-oauth] refresh prune failed', err)),
       );
     }
   },

@@ -46,6 +46,13 @@ export async function revokeSessionsForDeletedUser(env: Env, uid: string): Promi
   await env.LUMINARA_KV.put(deletedUserKvKey(uid), String(Date.now()), { expirationTtl: SESSION_TTL_SECONDS });
 }
 
+/** True when this login was deleted and its sessions were cut off. */
+export async function isSessionRevokedUser(env: Env, userId: string): Promise<boolean> {
+  if (!env.LUMINARA_KV || !userId) return false;
+  const uid = userId.startsWith('fb:') ? userId.slice(3) : userId;
+  return Boolean(await env.LUMINARA_KV.get(deletedUserKvKey(uid)));
+}
+
 export async function mintOpaqueSession(
   env: Env,
   user: { uid: string; email?: string; name?: string },

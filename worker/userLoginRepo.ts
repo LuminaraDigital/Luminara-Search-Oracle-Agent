@@ -57,19 +57,20 @@ export class D1UserLoginStore implements UserLoginStore {
 
   find(id: string): Promise<UserLoginRow | null> {
     return this.db.prepare(
-      `SELECT id, account_id, created_at, last_seen_at, email, display_name, welcome_sent_at, email_opt_out_at FROM users WHERE id = ?`,
+      `SELECT id, account_id, created_at, last_seen_at, email, display_name, welcome_sent_at, email_opt_out_at, email_verified FROM users WHERE id = ?`,
     ).bind(id).first<UserLoginRow>();
   }
 
   async save(row: UserLoginWrite): Promise<void> {
     await this.db.prepare(
-      `INSERT INTO users (id, source, email, display_name, telegram_id, firebase_uid, created_at, last_seen_at, account_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO users (id, source, email, display_name, telegram_id, firebase_uid, created_at, last_seen_at, account_id, email_verified)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
          email = excluded.email,
          display_name = excluded.display_name,
          last_seen_at = excluded.last_seen_at,
-         account_id = COALESCE(users.account_id, excluded.account_id)`,
+         account_id = COALESCE(users.account_id, excluded.account_id),
+         email_verified = COALESCE(excluded.email_verified, users.email_verified)`,
     ).bind(
       row.id,
       row.source,
@@ -80,6 +81,7 @@ export class D1UserLoginStore implements UserLoginStore {
       row.createdAt,
       row.lastSeenAt,
       row.accountId,
+      row.emailVerified ?? null,
     ).run();
   }
 

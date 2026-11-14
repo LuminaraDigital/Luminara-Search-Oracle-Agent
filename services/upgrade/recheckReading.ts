@@ -1,7 +1,7 @@
 /**
  * One check, read from one fetched homepage. A blocked or empty fetch stays not measured.
  */
-import { evaluateRealEstateChecks, type RealEstateCheck } from '../audit/realEstateChecks';
+import { evaluateRealEstateChecks, realEstatePageFromHtml, type RealEstateCheck } from '../audit/realEstateChecks';
 
 export type RecheckId = 'title' | 'schema' | 'nap' | 'agent_pages' | 'area_pages' | 'gbp' | 'reviews' | 'brand_mention';
 
@@ -27,51 +27,7 @@ export interface RecheckReading {
 }
 
 function passedFlag(check: RealEstateCheck): boolean | null {
-  if (check.status !== 'measured') return null;
-  switch (check.id) {
-    case 'schema':
-      return /RealEstateAgent|LocalBusiness/.test(check.detail) && !check.detail.includes('were not among them');
-    case 'nap':
-      return check.detail.includes('match on');
-    case 'agent_pages':
-      return check.detail.includes('Agent profile URL');
-    case 'area_pages':
-      return check.detail.includes('Suburb or area URL');
-    case 'gbp':
-      return check.detail.includes('Google Business Profile link:');
-    case 'reviews':
-      return check.detail.startsWith('Measured.') && !check.detail.includes('No Review');
-    default: {
-      const _exhaustive: never = check.id;
-      return _exhaustive;
-    }
-  }
-}
-
-function pageFromHtml(html: string, pageUrl: string, status: number) {
-  const title = html.match(/<title[^>]*>([^<]*)/i)?.[1]?.replace(/\s+/g, ' ').trim() || '';
-  const links: string[] = [];
-  for (const match of html.matchAll(/href=["']([^"']+)["']/gi)) {
-    if (links.length >= 40) break;
-    try {
-      links.push(new URL(match[1], pageUrl).toString());
-    } catch {
-      /* skip a bad href */
-    }
-  }
-  const schemas: Array<{ type?: string; rawJson?: string }> = [];
-  for (const match of html.matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
-    if (schemas.length >= 5) break;
-    schemas.push({ rawJson: match[1].slice(0, 20_000) });
-  }
-  return {
-    url: pageUrl,
-    httpStatus: status,
-    title,
-    rawTextSnippet: html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 2000),
-    outboundLinks: links,
-    schemasFound: schemas,
-  };
+  return check.status === 'measured' ? check.hit : null;
 }
 
 export function readRecheck(html: string, pageUrl: string, status: number, checkId: string, expect = ''): RecheckReading {
@@ -106,7 +62,7 @@ export function readRecheck(html: string, pageUrl: string, status: number, check
       detail: passed ? `Measured. The page mentions "${needle}".` : `Measured. The page does not mention "${needle}".`,
     };
   }
-  const checks = evaluateRealEstateChecks([pageFromHtml(html, pageUrl, status)]);
+  const checks = evaluateRealEstateChecks([realEstatePageFromHtml(html, pageUrl, status)]);
   const check = checks.find((item) => item.id === checkId);
   if (!check || check.status !== 'measured') {
     return { measured: false, passed: null, detail: check?.detail || 'Not measured. The page was not fetched.' };

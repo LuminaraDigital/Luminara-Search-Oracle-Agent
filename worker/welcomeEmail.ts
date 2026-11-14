@@ -371,6 +371,16 @@ export async function handleEmailUnsubscribe(request: Request, env: WelcomeEnv):
       if (!weekly?.id) return unsubscribePage('This unsubscribe link is not valid.', 400);
       return unsubscribePage('You are unsubscribed from the weekly visibility email.', 200);
     }
+    if (list === 'monitor') {
+      const owner = await env.DB.prepare(
+        `SELECT id, account_id FROM users WHERE email_unsub_token = ?`,
+      ).bind(token).first<{ id: string; account_id: string | null }>();
+      if (!owner?.id) return unsubscribePage('This unsubscribe link is not valid.', 400);
+      await env.DB.prepare(
+        `UPDATE project_monitors SET email_opt_in = 0, updated_at = ? WHERE account_id = ?`,
+      ).bind(Date.now(), owner.account_id || owner.id).run();
+      return unsubscribePage('You are unsubscribed from project check emails.', 200);
+    }
     if (list) return unsubscribePage('This unsubscribe link is not valid.', 400);
     const row = await env.DB.prepare(
       `UPDATE users SET email_opt_out_at = COALESCE(email_opt_out_at, ?), weekly_report_opt_in_at = NULL

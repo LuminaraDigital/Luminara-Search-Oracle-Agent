@@ -5,6 +5,8 @@ export type HostedIdentity = {
   source: 'telegram' | 'firebase';
   email?: string;
   name?: string;
+  /** Set from the Firebase token at login. Undefined leaves the stored flag alone. */
+  emailVerified?: boolean;
   /**
    * Shared billing + workspace id after upsert/link.
    * Stars, TON, and (later) Stripe all write `sub:{accountId}`.

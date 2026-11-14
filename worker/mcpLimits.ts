@@ -21,7 +21,7 @@ export const MCP_HOSTED_PAID_DAILY = 200;
 /** Dynamic client registration posts per minute per IP. */
 export const MCP_OAUTH_REGISTER_PER_MIN = 10;
 
-/** Authorization-code exchanges per minute per IP. */
+/** Token-endpoint posts per minute per IP. Authorization-code and refresh grants share this bucket. */
 export const MCP_OAUTH_TOKEN_PER_MIN = 30;
 
 export type McpDailyUsage = DailyUseMeter;
