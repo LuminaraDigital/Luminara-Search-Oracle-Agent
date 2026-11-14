@@ -305,3 +305,25 @@ textarea.lx-field { resize: vertical; }
   backdrop-filter: blur(16px) saturate(140%);
   border-bottom-color: rgb(252 246 186 / 0.1);
 }
+
+/* ---------- Gold cursor ----------
+   The arrow is the native cursor, so its tip (the hotspot) tracks the mouse with no lag.
+   The energy trail is a separate canvas layer: CursorTrail. Mouse pointers only. */
+@media (hover: hover) and (pointer: fine) {
+  .lx-root {
+    cursor: url('/brand/cursor-gold.png') 0 0, auto;
+    cursor: image-set(url('/brand/cursor-gold.png') 1x, url('/brand/cursor-gold-2x.png') 2x) 0 0, auto;
+  }
+  .lx-root :is(a, button:not(:disabled), summary, label, [role='button']) {
+    cursor: url('/brand/cursor-gold.png') 0 0, pointer;
+    cursor: image-set(url('/brand/cursor-gold.png') 1x, url('/brand/cursor-gold-2x.png') 2x) 0 0, pointer;
+  }
+}
+.lx-cursor-trail {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
