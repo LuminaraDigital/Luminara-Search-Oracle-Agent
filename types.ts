@@ -48,6 +48,8 @@ export enum AppView {
   VERIFY_AUDIT_RECEIPT = 'VERIFY_AUDIT_RECEIPT',
   ECOSYSTEM_HUB = 'ECOSYSTEM_HUB',
   ENQUIRY_DESK = 'ENQUIRY_DESK',
+  /** Agent actions waiting for the owner's approval. */
+  REVIEW = 'REVIEW',
   NOT_FOUND = 'NOT_FOUND',
 }
 
