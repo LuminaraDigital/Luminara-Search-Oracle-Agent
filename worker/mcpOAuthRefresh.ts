@@ -114,11 +114,13 @@ function isGrantType(value: unknown): value is OAuthGrantType {
 }
 
 /**
- * Unknown grant_types are ignored. A non-array is refused.
- * authorization_code is always kept: it is the only way to start a session here.
+ * RFC 7591 section 2: omitted grant_types means authorization_code only.
+ * Unknown names are ignored. authorization_code is always kept, because it is
+ * the only way to start a session here. refresh_token is kept only when the
+ * client named it.
  */
 export function parseRegisteredGrantTypes(raw: unknown): OAuthGrantType[] | null {
-  if (raw === undefined) return [...SUPPORTED_GRANT_TYPES];
+  if (raw === undefined) return ['authorization_code'];
   if (!Array.isArray(raw)) return null;
   const seen = new Set<OAuthGrantType>();
   for (const item of raw) {
@@ -128,9 +130,8 @@ export function parseRegisteredGrantTypes(raw: unknown): OAuthGrantType[] | null
   return SUPPORTED_GRANT_TYPES.filter((grant) => seen.has(grant));
 }
 
-/** Records written before refresh tokens shipped omit the field and receive both grants. */
+/** A stored client with no grant_types field was registered before refresh existed. It stays authorization_code only. */
 export function grantsFromStoredClient(raw: unknown): OAuthGrantType[] {
-  if (raw === undefined) return [...SUPPORTED_GRANT_TYPES];
   return parseRegisteredGrantTypes(raw) ?? ['authorization_code'];
 }
 
