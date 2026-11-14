@@ -36,6 +36,7 @@ import {
 } from './mcpLimits';
 import { clipText, MCP_RESULT_TEXT_CAP, MCP_STRUCTURED_CHAR_CAP, mcpToolAnnotations } from './mcpToolMeta';
 import { entitlementsFor } from '../services/plans/planEntitlements';
+import { gateMcpTenant } from './tenantGate';
 import {
   BYOK_PAID_CALL_COST_CENTS,
   HOSTED_PAID_CALL_COST_CENTS,
@@ -612,15 +613,17 @@ async function callTool(
       true,
     );
   }
+  const tenant = await gateMcpTenant(ctx.env, ctx.user, ctx.accountId, name, args, governanceFor(name).risk !== 'read');
+  if (!tenant.ok) return textResult(tenant.error, { code: tenant.code }, true);
   if (creditClass === 'paid') {
-    const contextGate = await requireProjectContextBeforePaid(ctx.env, ctx.accountId, projectId);
+    const contextGate = await requireProjectContextBeforePaid(ctx.env, tenant.dataAccountId, projectId);
     if (contextGate) return contextGate;
   }
 
   // Only a destructive call spends an approval: each one authorizes a single call with its args.
   const approved =
     governanceFor(name).risk === 'destructive' &&
-    (await consumeApprovedRequest(ctx.env, ctx.accountId, name, projectId, args));
+    (await consumeApprovedRequest(ctx.env, tenant.dataAccountId, name, projectId, args));
   const decision = decideToolCall(
     name,
     { subscriptionActive, creditClass, identityPlan: ctx.planId },
@@ -671,7 +674,7 @@ async function callTool(
   if (!tool) return textResult(`Unknown tool: ${name}`, { code: 'TOOL_NOT_FOUND' }, true);
   const inputError = missingRequiredInput(tool.inputSchema, args);
   if (inputError) return inputError;
-  const monitorRefusal = await refuseMonitorMeter(ctx.env, ctx.accountId, name, args);
+  const monitorRefusal = await refuseMonitorMeter(ctx.env, tenant.dataAccountId, name, args);
   if (monitorRefusal) return textResult(monitorRefusal, undefined, true);
   // Daily caps increment only after the gates above allow a known tool with usable input.
   const meter = await spendMcpDailyCall(ctx.env, ctx.accountId, mcpDailyCallLimit);
@@ -681,7 +684,10 @@ async function callTool(
     const paid = await spendMcpDailyCall(ctx.env, ctx.accountId, MCP_HOSTED_PAID_DAILY, 'mcp_paid', 'hosted paid MCP call');
     if (!paid.ok) return dailySpendRefusal(ctx, paid, 'MCP_PAID_DAILY_LIMIT', MCP_HOSTED_PAID_DAILY);
   }
+  const billingAccountId = ctx.accountId;
+  ctx.accountId = tenant.dataAccountId;
   const result = capToolResult(await tool.handler(args || {}, ctx));
+  ctx.accountId = billingAccountId;
 
   // Cost ingestion: cost events land only after a successful PAID tool
   // execution; free tools and error results record nothing. Interim rule per

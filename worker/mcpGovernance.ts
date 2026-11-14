@@ -23,6 +23,7 @@ export const TOOL_GOVERNANCE: Record<string, ToolGovernanceEntry> = {
   // Built-in MCP tools
   whoami: { risk: 'read', status: 'active' },
   get_guide: { risk: 'read', status: 'active' },
+  list_industries: { risk: 'read', status: 'active' },
   list_projects: { risk: 'read', status: 'active' },
   create_project: { risk: 'write', status: 'active' },
   get_project_context: { risk: 'read', status: 'active' },

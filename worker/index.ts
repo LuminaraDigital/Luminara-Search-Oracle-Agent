@@ -146,6 +146,7 @@ import {
 import { handleAuditScoutRun } from './auditScoutRun';
 import { dispatchQueueBatch } from './queueDispatch';
 import { MCP_OAUTH_PUBLIC_CORS, handleMcpOAuthRoute, handleMcpRegistryAuth, handleOAuthDiscovery, listAgentConnections, revokeAgentConnection } from './mcpOAuth';
+import { pruneMcpOAuthRefreshRows } from './mcpOAuthRefresh';
 import { enforceMcpOauthIpLimit, MCP_OAUTH_REGISTER_PER_MIN, MCP_OAUTH_TOKEN_PER_MIN } from './mcpLimits';
 import { executeOracleGatewayTask, type OracleGatewayRequest } from './oracleGateway';
 import { createMemoryFact, listMemoryFacts } from './memoryService';
@@ -194,7 +195,11 @@ import { settleFirebaseErase } from './accountDeletion';
 import { handleEmailUnsubscribe, runWithWaitUntil } from './welcomeEmail';
 
 export { DailyQuota } from './dailyQuota';
-import { createProject, listProjects, getProject } from './projectService';
+import { createProject, getProject, setProjectIndustry } from './projectService';
+import { handleIndustryWorkspaceRoute } from './workspaceRoutes';
+import { accountForProjectPath, accountForReportId, createTargetAccount, listVisibleProjects } from './tenantGate';
+import { assertNewClientAllowed } from './clientWorkspace';
+import { parseIndustryId, readOptionalIndustry } from '../services/industries/industryProfiles';
 import { handleProjectHistoryRoute } from './projectHistoryRoute';
 import { handleProjectMonitorRoute, runProjectMonitorTick } from './projectMonitor';
 import { getProjectContext, updateProjectContext, seedContextFromDna } from './projectContextService';
@@ -2069,30 +2074,52 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     return withCors(handleMcpRequest(request, env, resolved.user, resolved.credential));
   }
 
+  if (
+    path === '/industries'
+    || path === '/account/industry'
+    || path === '/workspaces/current'
+    || path.startsWith('/workspaces/current/')
+  ) {
+    const industryResponse = await handleIndustryWorkspaceRoute(request, env, path);
+    if (industryResponse) return withCors(industryResponse);
+  }
+
   // APS: projects + context
   if (path === '/projects' || path.startsWith('/projects/')) {
     const who = await identify(request, env);
     if (who.error || !who.user) {
       return withCors(json({ ok: false, error: who.error || 'Unauthorized', code: 'AUTH_REQUIRED' }, 401));
     }
-    const accountId = billingId(who.user);
+    const scoped = await accountForProjectPath(env, who.user, path, request.method);
+    if (!scoped.ok) return withCors(json({ ok: false, error: scoped.error }, scoped.status));
+    const accountId = scoped.accountId;
     const historyResponse = await handleProjectHistoryRoute(request, env, path, accountId);
     if (historyResponse) return withCors(historyResponse);
     const monitorResponse = await handleProjectMonitorRoute(request, env, path, accountId);
     if (monitorResponse) return withCors(monitorResponse);
 
     if (path === '/projects' && request.method === 'GET') {
-      const projects = await listProjects(env, accountId);
+      const projects = await listVisibleProjects(env, who.user);
       return withCors(json({ ok: true, projects }));
     }
     if (path === '/projects' && request.method === 'POST') {
       const body = await readBody(request, MAX_SMALL_BODY_BYTES);
       if (!body.ok) return withCors(json({ error: body.error }, body.status));
       const raw = (body.value || {}) as Record<string, unknown>;
-      const created = await createProject(env, accountId, {
+      const industryId = readOptionalIndustry(raw.industryId);
+      if (industryId === null) {
+        return withCors(json({ ok: false, error: 'industryId is not a known industry.' }, 400));
+      }
+      const target = await createTargetAccount(env, who.user, typeof raw.workspaceId === 'string' ? raw.workspaceId : null);
+      if (!target.ok) return withCors(json({ ok: false, error: target.error }, target.status));
+      const clientId = typeof raw.clientId === 'string' ? raw.clientId : undefined;
+      const slot = await assertNewClientAllowed(env, target.accountId, clientId);
+      if (!slot.ok) return withCors(json({ ok: false, error: slot.error }, slot.status));
+      const created = await createProject(env, target.accountId, {
         domain: String(raw.domain || ''),
         name: typeof raw.name === 'string' ? raw.name : undefined,
-        clientId: typeof raw.clientId === 'string' ? raw.clientId : undefined,
+        clientId,
+        industryId,
       });
       if (!created.ok) return withCors(json({ ok: false, error: created.error }, created.status));
       if (raw.dna && typeof raw.dna === 'object') {
@@ -2109,6 +2136,18 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
         const project = await getProject(env, accountId, projectId);
         if (!project) return withCors(json({ ok: false, error: 'Not found' }, 404));
         return withCors(json({ ok: true, project }));
+      }
+      if (!isContext && request.method === 'PATCH') {
+        const body = await readBody(request, MAX_SMALL_BODY_BYTES);
+        if (!body.ok) return withCors(json({ error: body.error }, body.status));
+        const raw = (body.value || {}) as Record<string, unknown>;
+        const industryId = parseIndustryId(raw.industryId);
+        if (!industryId) return withCors(json({ ok: false, error: 'industryId is not a known industry.' }, 400));
+        const project = await getProject(env, accountId, projectId);
+        if (!project) return withCors(json({ ok: false, error: 'Not found' }, 404));
+        await setProjectIndustry(env, project.id, industryId);
+        const updated = await getProject(env, accountId, projectId);
+        return withCors(json({ ok: true, project: updated }));
       }
       if (isContext && request.method === 'GET') {
         const context = await getProjectContext(env, accountId, projectId);
@@ -2139,10 +2178,13 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     if (who.error || !who.user) {
       return withCors(json({ ok: false, error: who.error || 'Unauthorized', code: 'AUTH_REQUIRED' }, 401));
     }
-    const accountId = billingId(who.user);
+    let accountId = billingId(who.user);
     if (path === '/reports' && request.method === 'GET') {
       const projectId = url.searchParams.get('projectId') || '';
       if (!projectId) return withCors(json({ ok: false, error: 'projectId required' }, 400));
+      const opened = await accountForProjectPath(env, who.user, `/projects/${projectId}`, 'GET');
+      if (!opened.ok) return withCors(json({ ok: false, error: opened.error }, opened.status));
+      accountId = opened.accountId;
       const reports = await listAgentReports(env, accountId, projectId);
       if (!reports) return withCors(json({ ok: false, error: 'Project not found' }, 404));
       return withCors(json({ ok: true, reports }));
@@ -2151,6 +2193,10 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       const body = await readBody(request, 600_000);
       if (!body.ok) return withCors(json({ error: body.error }, body.status));
       const raw = (body.value || {}) as Record<string, unknown>;
+      const projectId = String(raw.projectId || '');
+      const opened = await accountForProjectPath(env, who.user, `/projects/${projectId}`, 'POST');
+      if (!opened.ok) return withCors(json({ ok: false, error: opened.error }, opened.status));
+      accountId = opened.accountId;
       const saved = await saveAgentReport(env, accountId, {
         projectId: String(raw.projectId || ''),
         title: String(raw.title || ''),
@@ -2167,6 +2213,9 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     const rptMatch = path.match(/^\/reports\/([^/]+)(?:\/(html))?$/);
     if (rptMatch && request.method === 'GET') {
       const reportId = decodeURIComponent(rptMatch[1]);
+      const opened = await accountForReportId(env, who.user, reportId, false);
+      if (!opened.ok) return withCors(json({ ok: false, error: opened.error }, opened.status));
+      accountId = opened.accountId;
       if (rptMatch[2] === 'html') {
         const doc = await getAgentReportHtmlForAccount(env, accountId, reportId);
         if (!doc) return withCors(json({ ok: false, error: 'Not found' }, 404));
@@ -2701,6 +2750,13 @@ const handler = {
         runProjectMonitorTick(env, { scheduledAt })
           .then(() => undefined)
           .catch((err) => console.error('[Monitor] sweep failed', err)),
+      );
+    }
+    if (jobs.includes('mcp_oauth_refresh_prune')) {
+      ctx.waitUntil(
+        pruneMcpOAuthRefreshRows(env)
+          .then(() => undefined)
+          .catch((err) => console.error('[mcp-oauth] refresh prune failed', err)),
       );
     }
   },

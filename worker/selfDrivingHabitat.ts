@@ -58,7 +58,7 @@ const MAX_RULE_CHARS = 480;
 const MAX_PREFERENCES_CHARS = 3900;
 
 /** Read nothing beyond the token's own project, so they need no project argument. */
-const HABITAT_ACCOUNT_SAFE_TOOLS = new Set(['whoami', 'list_projects', 'get_report', 'get_guide']);
+const HABITAT_ACCOUNT_SAFE_TOOLS = new Set(['whoami', 'list_industries', 'list_projects', 'get_report', 'get_guide']);
 /**
  * Would widen the token's reach or let an agent write rules for other agents. Browser
  * sessions are not tied to a project and can navigate off the bound domain.

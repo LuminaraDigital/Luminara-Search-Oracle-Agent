@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import './space.css';
 import { MarketingNav } from '../MarketingNav';
 import { MarketingAtmosphere } from './MarketingAtmosphere';
+import { CursorTrail } from './CursorTrail';
 import { MarketingFooter } from './MarketingFooter';
 import { useMarketingChrome } from './marketingChrome';
 import { prefersReducedMotion } from './deviceCapability';
@@ -115,6 +116,7 @@ export const MarketingPageShell: React.FC<MarketingPageShellProps> = ({
       className="lx-root isolate relative min-h-[100dvh] overflow-x-clip font-sans antialiased selection:bg-gold selection:text-black"
     >
       <MarketingAtmosphere intensity="page" />
+      <CursorTrail />
       <MarketingNav
         brandLabel="Luminara Suite"
         onBrandClick={chrome.onHome}

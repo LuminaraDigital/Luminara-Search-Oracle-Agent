@@ -23,6 +23,8 @@ export interface SeoProject {
   clientId: string;
   domain: string;
   name: string;
+  /** Config id from services/industries. Missing rows read as real_estate_agency. */
+  industryId: string;
   defaultLocationCode: string | null;
   defaultLanguageCode: string | null;
   createdAt: number;

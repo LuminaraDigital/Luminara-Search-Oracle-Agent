@@ -13,6 +13,7 @@ import { getInitDataRaw, isInTelegram } from '../../services/telegram/tma';
 import { TELEGRAM_MINI_APP_URL } from '../paywall/paymentOptions';
 import { checksLeftLine, planDetailLine, planTitle } from '../../services/account/accountSummary';
 import { Button } from '../ui/Button';
+import { flushPendingIndustry } from '../../services/industries/industryClient';
 import { GscConnectPanel, WeeklyReportToggle } from './AgencyConnectPanels';
 
 type DeleteProof = { idToken?: string; initData?: string };
@@ -89,6 +90,7 @@ export const AccountPanel: React.FC = () => {
 
   useEffect(() => {
     void fetchQuotaStatus().then(setQuota);
+    void flushPendingIndustry();
   }, []);
 
   const usage = quota

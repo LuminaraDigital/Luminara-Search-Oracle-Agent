@@ -16,6 +16,11 @@ export interface PlanEntitlements {
   sentinelLimit: number;
   auditHistoryDepth: number; // 0 = unlimited
   agencyClientLimit: number;
+  /**
+   * How many client projects a workspace may add.
+   * Placeholder until a workspace price exists. Not a Stripe price and not a billed quantity.
+   */
+  workspaceClientLimit: number;
   competitorWatchLimit: number;
   scheduledReaudit: 'none' | 'monthly' | 'weekly' | 'daily';
   apiAccess: boolean;
@@ -39,6 +44,7 @@ export const PLAN_ENTITLEMENTS: Record<PlanId, PlanEntitlements> = {
     sentinelLimit: 0,
     auditHistoryDepth: 5,
     agencyClientLimit: 0,
+    workspaceClientLimit: 1,
     competitorWatchLimit: 3,
     scheduledReaudit: 'none',
     apiAccess: false,
@@ -56,6 +62,7 @@ export const PLAN_ENTITLEMENTS: Record<PlanId, PlanEntitlements> = {
     sentinelLimit: 2,
     auditHistoryDepth: 30,
     agencyClientLimit: 0,
+    workspaceClientLimit: 2,
     competitorWatchLimit: 10,
     scheduledReaudit: 'monthly',
     apiAccess: false,
@@ -73,6 +80,7 @@ export const PLAN_ENTITLEMENTS: Record<PlanId, PlanEntitlements> = {
     sentinelLimit: 10,
     auditHistoryDepth: 90,
     agencyClientLimit: 0,
+    workspaceClientLimit: 5,
     competitorWatchLimit: 25,
     scheduledReaudit: 'weekly',
     apiAccess: false,
@@ -90,6 +98,7 @@ export const PLAN_ENTITLEMENTS: Record<PlanId, PlanEntitlements> = {
     sentinelLimit: 25,
     auditHistoryDepth: 0,
     agencyClientLimit: 10,
+    workspaceClientLimit: 10,
     competitorWatchLimit: 100,
     scheduledReaudit: 'daily',
     apiAccess: true,

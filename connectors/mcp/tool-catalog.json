@@ -1,5 +1,21 @@
 [
   {
+    "name": "list_industries",
+    "title": "List industries",
+    "description": "Lists industries a project can use, with default checks, the keyword template, competitor hints, and report wording. Uses no credits.",
+    "creditClass": "free",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "List industries",
+      "readOnlyHint": true,
+      "destructiveHint": false
+    }
+  },
+  {
     "name": "whoami",
     "title": "Account and usage",
     "description": "Read this first. Returns the account, plan, and MCP calls used and remaining today. Uses no credits. A new token does not reset the daily count.",
@@ -58,6 +74,14 @@
         },
         "clientId": {
           "type": "string"
+        },
+        "industryId": {
+          "type": "string",
+          "description": "Industry id from list_industries. Omit to keep the account default."
+        },
+        "workspaceId": {
+          "type": "string",
+          "description": "Workspace id when a staff member is adding a client to that workspace."
         }
       },
       "required": [
