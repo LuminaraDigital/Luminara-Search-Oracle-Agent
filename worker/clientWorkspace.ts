@@ -266,13 +266,32 @@ export async function listMembers(env: Env, workspaceId: string): Promise<Worksp
   return members;
 }
 
-async function verifiedEmail(env: Env, userId: string): Promise<string | null> {
+async function accountEmail(env: Env, userId: string): Promise<{ email: string; verified: boolean } | null> {
   const row = await env.DB!.prepare(`SELECT email, email_verified FROM users WHERE id = ?`)
     .bind(userId)
     .first<{ email: string | null; email_verified: number | null }>();
-  if (!row?.email || row.email_verified !== 1) return null;
+  if (!row?.email) return null;
   const email = normalizeEmail(row.email);
-  return isEmail(email) ? email : null;
+  if (!isEmail(email)) return null;
+  return { email, verified: row.email_verified === 1 };
+}
+
+async function verifiedEmail(env: Env, userId: string): Promise<string | null> {
+  const account = await accountEmail(env, userId);
+  return account?.verified ? account.email : null;
+}
+
+const OPEN_INVITE_SQL = `m.status = 'invited' AND m.declined_at IS NULL
+       AND m.role IN ('staff', 'client_viewer')
+       AND (m.expires_at IS NULL OR m.expires_at > ?)`;
+
+async function countOpenInvites(env: Env, email: string): Promise<number> {
+  const row = await env.DB!.prepare(
+    `SELECT COUNT(*) AS n FROM client_workspace_members m WHERE m.email = ? AND ${OPEN_INVITE_SQL}`,
+  )
+    .bind(email, Date.now())
+    .first<{ n: number }>();
+  return Number(row?.n || 0);
 }
 
 export async function inviteMember(
@@ -363,18 +382,17 @@ function inviteClosed(row: InviteRow, now: number): { error: string; status: num
   return null;
 }
 
-export async function listPendingInvites(env: Env, user: HostedIdentity): Promise<PendingInvite[]> {
-  if (!env.DB) return [];
-  const email = await verifiedEmail(env, user.id);
-  if (!email) return [];
+export type InviteInbox =
+  | { emailVerified: true; invites: PendingInvite[] }
+  | { emailVerified: false; pendingInviteCount: number };
+
+async function openInvitesForEmail(env: Env, email: string): Promise<PendingInvite[]> {
   const now = Date.now();
-  const res = await env.DB.prepare(
+  const res = await env.DB!.prepare(
     `SELECT m.id, m.workspace_id, w.name, m.role, m.client_id, m.expires_at, m.invited_at
      FROM client_workspace_members m
      JOIN client_workspaces w ON w.id = m.workspace_id
-     WHERE m.email = ? AND m.status = 'invited' AND m.declined_at IS NULL
-       AND m.role IN ('staff', 'client_viewer')
-       AND (m.expires_at IS NULL OR m.expires_at > ?)
+     WHERE m.email = ? AND ${OPEN_INVITE_SQL}
      ORDER BY m.invited_at ASC`,
   )
     .bind(email, now)
@@ -402,6 +420,19 @@ export async function listPendingInvites(env: Env, user: HostedIdentity): Promis
     });
   }
   return invites;
+}
+
+/** Verified callers get invite rows. Unverified callers get a count and no workspace fields. */
+export async function inviteInbox(env: Env, user: HostedIdentity): Promise<InviteInbox> {
+  if (!env.DB) return { emailVerified: false, pendingInviteCount: 0 };
+  const account = await accountEmail(env, user.id);
+  if (!account?.verified) {
+    return {
+      emailVerified: false,
+      pendingInviteCount: account ? await countOpenInvites(env, account.email) : 0,
+    };
+  }
+  return { emailVerified: true, invites: await openInvitesForEmail(env, account.email) };
 }
 
 export async function respondToInvite(

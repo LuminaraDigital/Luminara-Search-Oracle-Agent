@@ -10,7 +10,7 @@
  *   POST /workspaces/current/invites { email, role, clientId? }
  *   DELETE /workspaces/current/invites/:id      owner, pending invite (id or email)
  *   DELETE /workspaces/current/members/:id      owner, cannot remove the last owner (id or email)
- *   GET  /workspaces/invites                    signed-in user's pending invites
+ *   GET  /workspaces/invites                    pending invites, or a count when email is unverified
  *   POST /workspaces/invites/:id/accept
  *   POST /workspaces/invites/:id/decline
  *   GET  /workspaces/current/clients
@@ -39,7 +39,7 @@ import {
   deleteWorkspaceClient,
   inviteMember,
   listMembers,
-  listPendingInvites,
+  inviteInbox,
   listWorkspaceClients,
   membershipsForUser,
   parseBrandPatch,
@@ -223,7 +223,16 @@ export async function handleIndustryWorkspaceRoute(
 
 async function answerInvite(request: Request, env: Env, path: string, user: HostedIdentity): Promise<Response> {
   if (path === '/workspaces/invites' && request.method === 'GET') {
-    return json({ ok: true, invites: await listPendingInvites(env, user) });
+    const inbox = await inviteInbox(env, user);
+    if (!inbox.emailVerified) {
+      return json({
+        ok: true,
+        emailVerified: false,
+        pendingInviteCount: inbox.pendingInviteCount,
+        invites: [],
+      });
+    }
+    return json({ ok: true, invites: inbox.invites });
   }
   const decision = path.match(/^\/workspaces\/invites\/([^/]+)\/(accept|decline)$/);
   if (decision && request.method === 'POST') {
