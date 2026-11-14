@@ -675,7 +675,11 @@ async function callTool(
   const inputError = missingRequiredInput(tool.inputSchema, args);
   if (inputError) return inputError;
   const monitorRefusal = await refuseMonitorMeter(ctx.env, tenant.dataAccountId, name, args);
-  if (monitorRefusal) return textResult(monitorRefusal, undefined, true);
+  if (monitorRefusal) {
+    // The meter refuses an unknown project, or a check faster than the plan allows.
+    const code = monitorRefusal === 'Project not found' ? 'NOT_FOUND' : 'BAD_INPUT';
+    return textResult(monitorRefusal, { code }, true);
+  }
   // Daily caps increment only after the gates above allow a known tool with usable input.
   const meter = await spendMcpDailyCall(ctx.env, ctx.accountId, mcpDailyCallLimit);
   ctx.dailyUsage = meter.usage;
