@@ -32,6 +32,7 @@ export const CmsMcpRemediationPanel: React.FC<CmsMcpRemediationPanelProps> = ({
   const [copiedBrief, setCopiedBrief] = useState(false);
   const [copiedSqsp, setCopiedSqsp] = useState(false);
   const [mcpEnvelopePreview, setMcpEnvelopePreview] = useState<string | null>(null);
+  const [snapshotTaken, setSnapshotTaken] = useState(false);
   const [mcpErrorNote, setMcpErrorNote] = useState<string | null>(null);
   const [serverEscalation, setServerEscalation] = useState<RemediationTierDecision | null>(null);
   const [preparingEnvelope, setPreparingEnvelope] = useState(false);
@@ -66,6 +67,7 @@ export const CmsMcpRemediationPanel: React.FC<CmsMcpRemediationPanelProps> = ({
   useEffect(() => {
     setServerEscalation(null);
     setMcpEnvelopePreview(null);
+    setSnapshotTaken(false);
     setMcpErrorNote(null);
     if (!expanded || typeof fetch !== 'function') return;
     void fetchCmsMcpCatalogApi().catch(() => null);
@@ -112,11 +114,11 @@ export const CmsMcpRemediationPanel: React.FC<CmsMcpRemediationPanelProps> = ({
         toolName: targetToolName,
         pageMetaKeys: findingCategory === 'page_builder_layout' ? ['_elementor_edit_mode'] : [],
         userConfirmed: true,
-        snapshotCreated: true,
         schemaJsonLd: payload.schemaJsonLd,
       });
       if (res.ok && (res.envelope || res.pack)) {
         setMcpEnvelopePreview(JSON.stringify(res.envelope || res.pack, null, 2));
+        setSnapshotTaken(JSON.stringify(res.envelope).includes('"snapshot_before_write":true'));
       } else if (!res.ok && res.error) {
         setMcpErrorNote(res.error);
         if (res.escalationDecision) {
@@ -130,7 +132,7 @@ export const CmsMcpRemediationPanel: React.FC<CmsMcpRemediationPanelProps> = ({
               domain: payload.domain,
               endpoint: CMS_MCP_CONNECTOR_CATALOG[selectedConnector]?.endpointHint,
               user_confirmed: true,
-              snapshot_before_write: true,
+              snapshot_before_write: false,
             },
             null,
             2,
@@ -277,6 +279,11 @@ export const CmsMcpRemediationPanel: React.FC<CmsMcpRemediationPanelProps> = ({
               <div className="mt-1 p-2 rounded bg-danger-500/10 border border-danger-500/30 text-[10px] text-danger-200">
                 {mcpErrorNote}
               </div>
+            )}
+            {mcpEnvelopePreview && !snapshotTaken && (
+              <p className="mt-2 text-[10px] text-amber-300">
+                No backup snapshot is taken. Back up the page first.
+              </p>
             )}
             {mcpEnvelopePreview && (
               <pre className="mt-2 p-2 rounded bg-black/80 border border-white/10 text-[10px] font-mono text-gray-300 overflow-x-auto max-h-36">
