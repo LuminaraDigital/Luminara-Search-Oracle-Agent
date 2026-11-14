@@ -13,6 +13,7 @@ import { bearerFromAuthorization } from './firebaseAuth';
 import { identifyMcpOAuthToken, mcpResourceMetadataUrl } from './mcpOAuth';
 import { logMcpAbuse } from './mcpLimits';
 import { identifyHabitatToken } from './selfDrivingHabitat';
+import { AGENT_SESSION_ACTIONS } from './oracleAgent/approvals';
 
 /** Paths that require an Agency (apiAccess) plan in addition to authentication. */
 export const API_ACCESS_PATH_PATTERNS: RegExp[] = [
@@ -28,6 +29,17 @@ export function isApiAccessRoute(path: string): boolean {
   // Instant Audit and the one free AI answer are for every signed-in plan. The Agency audit queue stays gated.
   if (path === '/audit/scout-run' || path === '/audit/free-answer') return false;
   return API_ACCESS_PATH_PATTERNS.some((re) => re.test(path));
+}
+
+/**
+ * With ORACLE_AGENT_ENABLED, every signed-in plan may use Oracle chat and decide its approval
+ * cards. Only these paths; the session route narrows non-Agency plans further (worker/oracleChat.ts).
+ */
+export function isAgentChatExemptRoute(env: Env, path: string): boolean {
+  if (String(env.ORACLE_AGENT_ENABLED || '').toLowerCase() !== 'true') return false;
+  if (path === '/oracle/chat') return true;
+  const m = /^\/oracle\/session\/[^/]+\/([a-z/]+)$/.exec(path);
+  return Boolean(m && (AGENT_SESSION_ACTIONS as readonly string[]).includes(m[1]!));
 }
 
 export function isMcpAccessRoute(path: string): boolean {
@@ -94,6 +106,7 @@ export async function guardApiAccessRoute(
       { 'WWW-Authenticate': 'Bearer error="invalid_token", Cookie name="__session"' },
     );
   }
+  if (isAgentChatExemptRoute(env, path)) return null;
   return requireApiAccess(env, who.user);
 }
 

@@ -10,6 +10,7 @@ export function ChatTranscript(props: {
   isThinking?: boolean;
   activeTool?: { name: string; stage: string; output?: string } | null;
   onSimplify?: (content: string) => void;
+  onDecideAction?: (messageId: string, actionId: string, approved: boolean) => void;
 }) {
   return (
     <Suspense fallback={null}>
