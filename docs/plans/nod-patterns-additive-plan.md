@@ -351,4 +351,13 @@ Settled in this plan, not left open: a broken schema block does not become a hea
 | New finding id missing from report labels and the critic | Added as work and as acceptance 6 |
 | Billing id can fall back to `users.id` | Join uses `COALESCE(u.account_id, u.id)` |
 
+**Build record, 2026-11-14.** Each item is a draft PR to `staging`: ND0-1 #382, ND0-2 #383, ND0-3 #384, ND0-4 #385, ND1 stacked on ND0-4. What differed from the text above:
+
+- ND0-1: the migration is `0052_weekly_decision_sent.sql`. Every migration file is numbered and the test helper applies them in sorted order, so a name alone would not do. The tests call `sendWeeklyDecisionDigest` twice, not the whole `scheduled()` handler.
+- ND0-2: a failed enqueue clears `lastAuditEnqueuedAt`, so the next scan tries again. The competitor baseline is kept on a failed provider scan, which also stops a false competitor alert. The tests drive `runSentinelScan`.
+- ND0-3: `enquiryApiClient.ts` already had the field optional. `tool-catalog.json` is generated, so the wording lives in `worker/mcpConversionTools.ts`. The panel always shows the warning with the envelope preview, because it never sends the flag.
+- ND0-4: the larger-count merge is in `keepDiscoveredSchemas`, which `siteEvidencePack.ts` calls. The honesty test is at `tests/agentCore/auditHonesty.test.ts`. The fix heading for `finding-schema-org` still reads "Add a business identity tag" when the only block is broken.
+- ND1-0: nothing reused. The visibility unit tests work is uncommitted in its own worktree and covers model answer probes (`evals/visibility/`), not crawler files or schema.
+- ND1: `forbid` was dropped. `expect` lists the complete set of fixes and findings, so anything else counts as invented. The fake host is `example-co.com`, because the public-host check refuses `.test`. Promote runs through `evals/outcome/promote.mjs`, because an inline environment variable in an npm script fails on Windows. All six expectations were written before the first run and matched it.
+
 **Owner sign-off, 2026-11-14.** "Go, as recommended": decision 1 yes (7-day cap), decision 2 stop claiming, decision 3 yes (amendment proposed in Track SW). Each item is opened as its own draft PR to `staging`. Still pending: the owner's confirmation of the six `says` rows (ND1-3).
