@@ -21,6 +21,7 @@ import { MarketingFaq } from './marketing/MarketingFaq';
 import { TrustStrip } from './marketing/TrustStrip';
 import { PlatformHeroLinks, PlatformSurfaces } from './marketing/PlatformSurfaces';
 import { SpaceStage } from './marketing/SpaceStage';
+import { CursorTrail } from './marketing/CursorTrail';
 import { DomainCheck } from './marketing/DomainCheck';
 import { EvidenceGlyph } from './marketing/EvidenceGlyph';
 import { useMarketingChrome } from './marketing/marketingChrome';
@@ -206,6 +207,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
       ref={rootRef}
       className="lx-root relative min-h-[100dvh] overflow-x-clip font-sans antialiased selection:bg-gold selection:text-black"
     >
+      <CursorTrail />
       <MarketingNav
         brandLabel="Luminara Suite"
         onBrandClick={() => window.scrollTo({ top: 0, behavior: prefersReducedMotion() ? 'auto' : 'smooth' })}
