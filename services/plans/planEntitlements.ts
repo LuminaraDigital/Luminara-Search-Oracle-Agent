@@ -25,7 +25,12 @@ export interface PlanEntitlements {
   scheduledReaudit: 'none' | 'monthly' | 'weekly' | 'daily';
   apiAccess: boolean;
   whiteLabelPdf: boolean;
-  /** Public report URLs, every plan. Custom branding needs whiteLabelPdf. Redacted scout teasers are a separate artifact. */
+  /**
+   * Placeholder until a white-label price exists. Not a Stripe price and not a billed quantity.
+   * Reports keep the "Powered by Luminara Suite" line unless this is true.
+   */
+  whiteLabelRemovePoweredBy: boolean;
+  /** Public report URLs, every plan. Client-supplied branding needs whiteLabelPdf. A workspace brand applies on every plan. */
   shareLinks: boolean;
   /** MCP free tools (projects, context, reports), every plan. Paid research stays Agency or BYOK. */
   mcpAccess: boolean;
@@ -49,6 +54,7 @@ export const PLAN_ENTITLEMENTS: Record<PlanId, PlanEntitlements> = {
     scheduledReaudit: 'none',
     apiAccess: false,
     whiteLabelPdf: false,
+    whiteLabelRemovePoweredBy: false,
     shareLinks: true,
     mcpAccess: true,
     teamSeats: 1,
@@ -67,6 +73,7 @@ export const PLAN_ENTITLEMENTS: Record<PlanId, PlanEntitlements> = {
     scheduledReaudit: 'monthly',
     apiAccess: false,
     whiteLabelPdf: true,
+    whiteLabelRemovePoweredBy: false,
     shareLinks: true,
     mcpAccess: true,
     teamSeats: 1,
@@ -85,6 +92,7 @@ export const PLAN_ENTITLEMENTS: Record<PlanId, PlanEntitlements> = {
     scheduledReaudit: 'weekly',
     apiAccess: false,
     whiteLabelPdf: true,
+    whiteLabelRemovePoweredBy: false,
     shareLinks: true,
     mcpAccess: true,
     teamSeats: 3,
@@ -103,6 +111,7 @@ export const PLAN_ENTITLEMENTS: Record<PlanId, PlanEntitlements> = {
     scheduledReaudit: 'daily',
     apiAccess: true,
     whiteLabelPdf: true,
+    whiteLabelRemovePoweredBy: true,
     shareLinks: true,
     mcpAccess: true,
     teamSeats: 10,

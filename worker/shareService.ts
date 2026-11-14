@@ -1,6 +1,7 @@
 /**
- * Tokenized shareable audit reports (Growth+ / Agency).
+ * Tokenized shareable audit reports.
  * Tokens are random; only SHA-256 hashes are stored in D1.
+ * A project in a workspace is branded from that workspace. The powered-by line follows the plan.
  */
 import type { Env } from './env';
 import { MAX_SMALL_BODY_BYTES, readBody, safePublicHostname } from './security';
@@ -13,18 +14,13 @@ import { entitlementsFor } from '../services/plans/planEntitlements';
 import { PRODUCTION_MINI_APP_URL, resolveMiniAppUrl } from '../services/referrals/rules';
 import { handleWinRoute } from './winShare';
 import { stripUntrustedFences } from '../utils/untrustedContent';
+import { presentShareBranding, resolveShareBranding, type ShareBranding } from './reportBrand';
 
 const DEFAULT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const MAX_MARKDOWN_CHARS = 400_000;
 const MAX_SOURCES = 50;
 
-export interface SharedReportBranding {
-  agencyName?: string;
-  logoUrl?: string;
-  accentColor?: string;
-  preparedBy?: string;
-  clientName?: string;
-}
+export type SharedReportBranding = ShareBranding;
 
 export interface SharedReportPublic {
   version: 1;
@@ -43,6 +39,7 @@ type SharedReportRow = {
   token_hash: string;
   owner_account_id: string;
   client_id: string | null;
+  project_id: string | null;
   report_json: string;
   branding_json: string | null;
   password_hash: string | null;
@@ -316,6 +313,7 @@ function parseCreateBody(raw: unknown): {
   payload: SharedReportPublic;
   password?: string;
   clientId?: string;
+  projectId?: string;
   expiresInMs: number;
 } | { ok: false; error: string; status: number } {
   if (!raw || typeof raw !== 'object') return { ok: false, error: 'JSON body required', status: 400 };
@@ -352,6 +350,8 @@ function parseCreateBody(raw: unknown): {
     };
   }
 
+  const projectId = typeof body.projectId === 'string' ? body.projectId.trim().slice(0, 80) : undefined;
+
   const password = typeof body.password === 'string' && body.password.trim() ? body.password.trim() : undefined;
   if (password && password.length > 128) return { ok: false, error: 'password too long', status: 400 };
 
@@ -378,6 +378,7 @@ function parseCreateBody(raw: unknown): {
     payload: sanitizeSharePayload(payload) as SharedReportPublic,
     password,
     clientId: typeof body.clientId === 'string' ? body.clientId.slice(0, 64) : undefined,
+    projectId,
     expiresInMs,
   };
 }
@@ -442,7 +443,7 @@ export async function handleShareRoute(request: Request, env: Env, path: string)
     const token = getMatch[1].toLowerCase();
     const tokenHash = await sha256Hex(token);
     const row = (await env.DB.prepare(
-      `SELECT id, token_hash, owner_account_id, client_id, report_json, branding_json, password_hash, expires_at, revoked_at, created_at
+      `SELECT id, token_hash, owner_account_id, client_id, project_id, report_json, branding_json, password_hash, expires_at, revoked_at, created_at
        FROM shared_reports WHERE token_hash = ? LIMIT 1`,
     )
       .bind(tokenHash)
@@ -512,6 +513,7 @@ export async function handleShareRoute(request: Request, env: Env, path: string)
 
     const publicReport: SharedReportPublic = {
       ...report,
+      branding: await presentShareBranding(env, row.owner_account_id, row.project_id, report.branding),
       passwordRequired: Boolean(row.password_hash),
       expiresAt: row.expires_at,
     };
@@ -543,8 +545,9 @@ export async function handleShareRoute(request: Request, env: Env, path: string)
 
     const accountId = billingId(who.user);
     const ent = entitlementsFor(sub?.plan);
-    // Without white-label, the page carries Luminara's badge and CTA: that is what makes free sharing pay.
-    if (!ent.whiteLabelPdf) parsed.payload.branding = undefined;
+    const branded = await resolveShareBranding(env, who.user, parsed.projectId, parsed.payload.branding);
+    if (!branded.ok) return json({ ok: false, error: branded.error }, branded.status);
+    parsed.payload.branding = branded.branding;
     const meter = await meterDailyUse(env, 'share', accountId, ent.shareDailyLimit, 'Share link');
     if (!meter.ok) {
       return json({ ok: false, error: meter.error, code: 'SHARE_QUOTA', requiredPlan: 'growth' }, 429);
@@ -558,14 +561,15 @@ export async function handleShareRoute(request: Request, env: Env, path: string)
 
     await env.DB.prepare(
       `INSERT INTO shared_reports
-        (id, token_hash, owner_account_id, client_id, report_json, branding_json, password_hash, expires_at, revoked_at, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
+        (id, token_hash, owner_account_id, client_id, project_id, report_json, branding_json, password_hash, expires_at, revoked_at, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
     )
       .bind(
         id,
         tokenHash,
         accountId,
         parsed.clientId ?? null,
+        branded.projectId,
         JSON.stringify(parsed.payload),
         parsed.payload.branding ? JSON.stringify(parsed.payload.branding) : null,
         passwordHash,

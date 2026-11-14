@@ -3,6 +3,7 @@
  *   GET  /projects/:id/history
  *   GET  /projects/:id/history/compare?earlierId=&laterId=
  *   GET  /projects/:id/outcomes
+ *   GET  /projects/:id/outcomes/report
  *   POST /projects/:id/outcomes                 { actionKey, title, kind }
  *   POST /projects/:id/outcomes/:actionId/done
  */
@@ -17,6 +18,7 @@ import {
   markActionDone,
   recordRecommendedAction,
 } from './projectHistoryService';
+import { attachOutcomeFollowUps } from './outcomeFollowups';
 
 const ACTION_KEY_RE = /^[A-Za-z0-9_.:-]{1,128}$/;
 const ID_RE = /^[A-Za-z0-9_-]{1,80}$/;
@@ -32,11 +34,16 @@ function decodeId(value: string): string | null {
 
 type HistoryMatch = {
   projectId: string;
-  section: 'history' | 'compare' | 'outcomes' | 'done';
+  section: 'history' | 'compare' | 'outcomes' | 'report' | 'done';
   actionId: string | null;
 };
 
 function matchPath(path: string): HistoryMatch | null {
+  const report = path.match(/^\/projects\/([^/]+)\/outcomes\/report$/);
+  if (report) {
+    const projectId = decodeId(report[1] || '');
+    return projectId ? { projectId, section: 'report', actionId: null } : null;
+  }
   const matched = path.match(/^\/projects\/([^/]+)\/(history(?:\/compare)?|outcomes(?:\/([^/]+)\/done)?)$/);
   if (!matched) return null;
   const projectId = decodeId(matched[1] || '');
@@ -83,7 +90,17 @@ export async function handleProjectHistoryRoute(
   if (matched.section === 'outcomes' && request.method === 'GET') {
     const outcomes = await listProjectOutcomes(env, accountId, matched.projectId);
     if (!outcomes) return json({ ok: false, error: 'Project not found' }, 404);
-    return json({ ok: true, outcomes });
+    return json({ ok: true, outcomes: await attachOutcomeFollowUps(env, accountId, matched.projectId, outcomes) });
+  }
+
+  if (matched.section === 'report' && request.method === 'GET') {
+    const outcomes = await listProjectOutcomes(env, accountId, matched.projectId);
+    if (!outcomes) return json({ ok: false, error: 'Project not found' }, 404);
+    const report = {
+      projectId: matched.projectId,
+      outcomes: await attachOutcomeFollowUps(env, accountId, matched.projectId, outcomes),
+    };
+    return json({ ok: true, report });
   }
 
   if (matched.section === 'outcomes' && request.method === 'POST') {
@@ -107,13 +124,15 @@ export async function handleProjectHistoryRoute(
       kind,
     });
     if (!outcome) return json({ ok: false, error: 'Project not found' }, 404);
-    return json({ ok: true, outcome });
+    const [withFollowUps] = await attachOutcomeFollowUps(env, accountId, matched.projectId, [outcome]);
+    return json({ ok: true, outcome: withFollowUps ?? outcome });
   }
 
   if (matched.section === 'done' && request.method === 'POST') {
     const outcome = await markActionDone(env, accountId, matched.projectId, matched.actionId || '');
     if (!outcome) return json({ ok: false, error: 'Action not found' }, 404);
-    return json({ ok: true, outcome });
+    const [withFollowUps] = await attachOutcomeFollowUps(env, accountId, matched.projectId, [outcome]);
+    return json({ ok: true, outcome: withFollowUps ?? outcome });
   }
 
   return json({ ok: false, error: 'Method not allowed' }, 405);

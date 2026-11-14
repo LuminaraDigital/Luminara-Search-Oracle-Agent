@@ -15,18 +15,22 @@ const UNCODED: Recovery = {
   nextSteps: ['Do not repeat this call unchanged. Tell the user what failed, using the message above.'],
 };
 
+const NOT_FOUND: Recovery = {
+  retry: 'after_fix',
+  nextSteps: [
+    'Get valid ids from list_projects, list_reports or get_project_history.',
+    'Call again with an id from that list. Do not guess ids.',
+  ],
+};
+
 const RECOVERY: Record<string, Recovery> = {
   BAD_INPUT: {
     retry: 'after_fix',
     nextSteps: ['Fix the arguments to match this tool\'s inputSchema from tools/list, then call again.'],
   },
-  NOT_FOUND: {
-    retry: 'after_fix',
-    nextSteps: [
-      'Get valid ids from list_projects, list_reports or get_project_history.',
-      'Call again with an id from that list. Do not guess ids.',
-    ],
-  },
+  NOT_FOUND,
+  // The tenant gate's code for a project the caller cannot open.
+  PROJECT_NOT_FOUND: NOT_FOUND,
   TOOL_NOT_FOUND: {
     retry: 'after_fix',
     nextSteps: ['Call tools/list and use a tool name from it.'],

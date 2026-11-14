@@ -3,6 +3,7 @@
  */
 import type { McpToolDef, McpToolResult } from './mcpServer';
 import { MCP_PROJECT_ID_RE, requireProjectId } from './mcpProjectArgs';
+import { followUpSentence, type OutcomeFollowUpView } from '../services/history/outcomeFollowUp';
 import {
   compareProjectSnapshots,
   getProjectHistory,
@@ -10,6 +11,7 @@ import {
   markActionDone,
   type ProjectOutcome,
 } from './projectHistoryService';
+import { attachOutcomeFollowUps } from './outcomeFollowups';
 
 function textResult(text: string, structured?: Record<string, unknown>, isError = false): McpToolResult {
   return { text, structuredContent: structured, isError };
@@ -27,6 +29,12 @@ function formatLift(outcome: ProjectOutcome): string {
   const text = Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
   const signed = rounded > 0 ? `+${text}` : text;
   return `${outcome.title}: ${outcome.status}. Measured lift ${signed} on ${outcome.kind} ${outcome.metric} (${outcome.beforeValue} to ${outcome.afterValue}).`;
+}
+
+function formatOutcomeBlock(outcome: ProjectOutcome & { followUps?: OutcomeFollowUpView[] }): string {
+  const lines = [formatLift(outcome)];
+  for (const row of outcome.followUps ?? []) lines.push(followUpSentence(row));
+  return lines.join('\n');
 }
 
 export const PROJECT_HISTORY_MCP_TOOLS: McpToolDef[] = [
@@ -120,8 +128,31 @@ export const PROJECT_HISTORY_MCP_TOOLS: McpToolDef[] = [
       if (!projectId) return textResult('Project not found', { code: 'NOT_FOUND' }, true);
       const outcomes = await listProjectOutcomes(ctx.env, ctx.accountId, projectId);
       if (!outcomes) return textResult('Project not found', { code: 'NOT_FOUND' }, true);
-      if (!outcomes.length) return textResult('No recommended actions yet.', { outcomes });
-      return textResult(outcomes.map(formatLift).join('\n'), { outcomes });
+      const withFollowUps = await attachOutcomeFollowUps(ctx.env, ctx.accountId, projectId, outcomes);
+      if (!withFollowUps.length) return textResult('No recommended actions yet.', { outcomes: withFollowUps });
+      return textResult(withFollowUps.map(formatOutcomeBlock).join('\n'), { outcomes: withFollowUps });
+    },
+  },
+  {
+    name: 'get_outcome_report',
+    description:
+      'Uses no credits. Reports each recorded action with its 30, 60 and 90 day follow-ups. A change is included only when both scores were measured. Otherwise the row says Not measured.',
+    creditClass: 'free',
+    inputSchema: {
+      type: 'object',
+      properties: { projectId: { type: 'string' } },
+      required: ['projectId'],
+      additionalProperties: false,
+    },
+    handler: async (args, ctx) => {
+      const projectId = requireProject(args, ctx);
+      if (!projectId) return textResult('Project not found', { code: 'NOT_FOUND' }, true);
+      const outcomes = await listProjectOutcomes(ctx.env, ctx.accountId, projectId);
+      if (!outcomes) return textResult('Project not found', { code: 'NOT_FOUND' }, true);
+      const withFollowUps = await attachOutcomeFollowUps(ctx.env, ctx.accountId, projectId, outcomes);
+      const report = { projectId, outcomes: withFollowUps };
+      if (!withFollowUps.length) return textResult('No recommended actions yet.', { report });
+      return textResult(withFollowUps.map(formatOutcomeBlock).join('\n'), { report });
     },
   },
   {
@@ -144,7 +175,9 @@ export const PROJECT_HISTORY_MCP_TOOLS: McpToolDef[] = [
       if (!projectId || !MCP_PROJECT_ID_RE.test(actionId)) return textResult('Action not found', { code: 'NOT_FOUND' }, true);
       const outcome = await markActionDone(ctx.env, ctx.accountId, projectId, actionId);
       if (!outcome) return textResult('Action not found', { code: 'NOT_FOUND' }, true);
-      return textResult(formatLift(outcome), { outcome });
+      const [withFollowUps] = await attachOutcomeFollowUps(ctx.env, ctx.accountId, projectId, [outcome]);
+      const saved = withFollowUps ?? outcome;
+      return textResult(formatOutcomeBlock(saved), { outcome: saved });
     },
   },
 ];

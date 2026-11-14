@@ -821,6 +821,29 @@
     }
   },
   {
+    "name": "get_outcome_report",
+    "title": "Outcome report",
+    "description": "Uses no credits. Reports each recorded action with its 30, 60 and 90 day follow-ups. A change is included only when both scores were measured. Otherwise the row says Not measured.",
+    "creditClass": "free",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "projectId"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Outcome report",
+      "readOnlyHint": true,
+      "destructiveHint": false
+    }
+  },
+  {
     "name": "mark_project_action_done",
     "title": "Mark an action done",
     "description": "Uses no credits. Marks a recommended action done and records before/after from stored snapshots. Lift stays empty when a later measured score is missing.",

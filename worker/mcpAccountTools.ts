@@ -5,6 +5,7 @@ import { listVisibleProjects } from './tenantGate';
 import { readOptionalIndustry, listIndustryProfiles, industryProfile, fillKeywordTemplate, competitorDiscoveryHints } from '../services/industries/industryProfiles';
 import { getProjectContext, updateProjectContext } from './projectContextService';
 import { getAgentReport, listAgentReports, saveAgentReport } from './agentReportService';
+import { reportBrandForAccount } from './reportBrand';
 import type { ProjectContextPatch } from '../services/projects/types';
 import { clipText, MCP_PAGE_PROPERTIES, MCP_RESULT_TEXT_CAP, pageList } from './mcpToolMeta';
 
@@ -241,16 +242,18 @@ export const ACCOUNT_MCP_TOOLS: McpToolDef[] = [
           true,
         );
       }
+      const brand = (await reportBrandForAccount(ctx.env, ctx.accountId)).brand;
       if ('html' in report && report.html.length > MCP_RESULT_TEXT_CAP) {
         return textResult(`${report.summary}\nRESULT_TRUNCATED`, {
           code: 'RESULT_TRUNCATED',
           limit: MCP_RESULT_TEXT_CAP,
           report: { ...report, html: clipText(report.html, MCP_RESULT_TEXT_CAP) },
+          brand,
           htmlTruncated: true,
           htmlCap: MCP_RESULT_TEXT_CAP,
         });
       }
-      return textResult(report.summary, { report });
+      return textResult(report.summary, { report, brand });
     },
   },
   {

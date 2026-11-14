@@ -202,8 +202,10 @@ import { assertNewClientAllowed } from './clientWorkspace';
 import { parseIndustryId, readOptionalIndustry } from '../services/industries/industryProfiles';
 import { handleProjectHistoryRoute } from './projectHistoryRoute';
 import { handleProjectMonitorRoute, runProjectMonitorTick } from './projectMonitor';
+import { runOutcomeFollowUpTick } from './outcomeFollowups';
 import { getProjectContext, updateProjectContext, seedContextFromDna } from './projectContextService';
 import { getAgentReport, listAgentReports, saveAgentReport, getAgentReportHtmlForAccount } from './agentReportService';
+import { reportBrandForAccount } from './reportBrand';
 import { createApiKey, listApiKeys, revokeApiKey } from './apiKeyService';
 import { loadAgentSkill, setAgentSkillEnabled, upsertAgentSkillVersion, type AgentSkill } from './agentSkills';
 import type { ProjectContextPatch } from '../services/projects/types';
@@ -2135,7 +2137,8 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       if (!isContext && request.method === 'GET') {
         const project = await getProject(env, accountId, projectId);
         if (!project) return withCors(json({ ok: false, error: 'Not found' }, 404));
-        return withCors(json({ ok: true, project }));
+        const live = await reportBrandForAccount(env, project.accountId);
+        return withCors(json({ ok: true, project, reportBrand: live.brand }));
       }
       if (!isContext && request.method === 'PATCH') {
         const body = await readBody(request, MAX_SMALL_BODY_BYTES);
@@ -2225,7 +2228,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
             headers: {
               'content-type': 'text/html; charset=utf-8',
               'content-security-policy':
-                "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox allow-popups allow-popups-to-escape-sandbox",
+                "default-src 'none'; style-src 'unsafe-inline'; img-src https: data:; sandbox allow-popups allow-popups-to-escape-sandbox",
               'x-content-type-options': 'nosniff',
             },
           }),
@@ -2750,6 +2753,14 @@ const handler = {
         runProjectMonitorTick(env, { scheduledAt })
           .then(() => undefined)
           .catch((err) => console.error('[Monitor] sweep failed', err)),
+      );
+    }
+    if (jobs.includes('outcome_followup')) {
+      const scheduledAt = controller.scheduledTime;
+      ctx.waitUntil(
+        runOutcomeFollowUpTick(env, { now: scheduledAt })
+          .then(() => undefined)
+          .catch((err) => console.error('[outcome-followup] sweep failed', err)),
       );
     }
     if (jobs.includes('mcp_oauth_refresh_prune')) {
