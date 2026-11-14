@@ -45,12 +45,20 @@ export function addPoint(
   random: () => number = Math.random,
 ): void {
   const last = state.points[state.points.length - 1];
-  const dx = last ? x - last.x : 0;
-  const dy = last ? y - last.y : 0;
+  const point = { x, y, born: now };
+  if (!last) {
+    state.points.push(point);
+    return;
+  }
+  const dx = x - last.x;
+  const dy = y - last.y;
   const dist = Math.hypot(dx, dy);
-  if (dist > JUMP_PX) state.points.length = 0;
-  state.points.push({ x, y, born: now });
-  if (!last || dist === 0 || dist > JUMP_PX) return;
+  if (dist > JUMP_PX) {
+    state.points = [point];
+    return;
+  }
+  state.points.push(point);
+  if (dist === 0) return;
 
   state.carry += dist;
   while (state.carry >= SPARK_SPACING_PX && state.sparks.length < MAX_SPARKS) {
