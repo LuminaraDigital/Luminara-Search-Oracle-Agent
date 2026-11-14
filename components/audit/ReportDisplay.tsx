@@ -44,6 +44,8 @@ import { measuredChecks } from '../../services/share/winShare';
 import { productTelemetry } from '../../services/analytics/productTelemetry';
 import { liveDataUnavailableCopy } from '../../services/audit/guestScoutSummary';
 import { buildAuditDossierHtml } from '../../services/reports/portableDossierService';
+import { fetchProjectReportBrand } from '../../services/reports/reportBrandClient';
+import type { ReportBrand } from '../../services/reports/reportBrand';
 import type { HostedScoutRail } from '../../services/audit/hostedScoutRail';
 import type { RLMTrajectoryMetadata } from '../../services/rlm/types';
 import { RlmTrajectoryViewer } from '../rlm/RlmTrajectoryViewer';
@@ -73,6 +75,8 @@ interface ReportDisplayProps {
   boardFindings?: BoardFinding[];
   /** Hide PDF / share / deploy chrome (public share pages). */
   hideAgencyActions?: boolean;
+  /** Set when this audit is saved on a project, so the workspace brand can apply. */
+  projectId?: string;
   /** AI crawler rows from this run, so the written report and the fix list name the same fixes. */
   crawlerChecks?: ReadonlyArray<{ id: string; status: string }>;
   /** Crew said this run was not measured. Hide numeric citation, share of voice, and health. */
@@ -121,6 +125,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
   rlmTrajectory,
   boardFindings: boardFindingsProp,
   hideAgencyActions = false,
+  projectId,
   crawlerChecks,
   suppressLiveMetrics = false,
   hostedRail,
@@ -170,6 +175,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
   const [showWhiteLabelModal, setShowWhiteLabelModal] = useState(false);
   const [whiteLabelAsk, setWhiteLabelAsk] = useState(false);
   const [showRlmModal, setShowRlmModal] = useState(false);
+  const [reportBrand, setReportBrand] = useState<ReportBrand | null>(null);
   const [shareBusy, setShareBusy] = useState(false);
   const [shareMessage, setShareMessage] = useState<string | null>(null);
   const [shipCommitment, setShipCommitment] = useState<ShipCommitment | null>(() =>
@@ -180,6 +186,20 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
   React.useEffect(() => {
     if (boardFindingsProp) setBoardFindings(boardFindingsProp);
   }, [boardFindingsProp]);
+
+  React.useEffect(() => {
+    if (!projectId) {
+      setReportBrand(null);
+      return;
+    }
+    let cancelled = false;
+    void fetchProjectReportBrand(projectId).then((brand) => {
+      if (!cancelled) setReportBrand(brand);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
 
   const primaryFinding = useMemo(() => pickPrimaryFinding(boardFindings), [boardFindings]);
 
@@ -213,7 +233,8 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
         domain: targetDomain,
         dnaName,
         sources,
-        branding,
+        projectId,
+        branding: reportBrand?.kind === 'workspace' ? undefined : branding,
       });
       if (!res.ok || !res.url) {
         setShareMessage(res.error || 'Could not create share link');
@@ -238,6 +259,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
       domain,
       markdownText: markdownText || '',
       generatedAt: Date.now(),
+      brand: reportBrand ?? undefined,
     });
 
     const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
@@ -332,6 +354,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
         checkLine={checkLine}
         onShare={hideAgencyActions || !canShare ? undefined : () => void handleCopyShareLink()}
         onFindings={setBoardFindings}
+        projectId={projectId}
       />
 
       <UpgradeSurfaces
@@ -590,6 +613,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
         dnaName={dnaName}
         measured={!hideLiveNumbers}
         findings={boardFindings}
+        brand={reportBrand}
       />
 
       {showRlmModal && rlmTrajectory && (

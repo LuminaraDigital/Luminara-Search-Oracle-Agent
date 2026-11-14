@@ -1,7 +1,7 @@
 /**
  * One workspace per billing account. The account owner is the owner.
  * Staff can work every client. A client-viewer can only read one client_id.
- * Brand fields are stored for a later white-label report. This file does not render them.
+ * Brand fields are stored here. Report render reads them. The custom report domain is stored and not used yet.
  */
 import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
@@ -9,6 +9,7 @@ import { billingId } from './workerUtils';
 import { randomId } from '../services/projects/projectUtils';
 import { createProject, listProjects } from './projectService';
 import { entitlementsFor } from '../services/plans/planEntitlements';
+import { parseLogoUrl } from '../services/reports/reportBrand';
 import { getActiveSubscription } from './quotaMiddleware';
 import type { IndustryId } from '../services/industries/industryProfiles';
 
@@ -130,14 +131,10 @@ export function parseBrandPatch(raw: Record<string, unknown>): { ok: true; patch
   if (displayName === undefined) return { ok: false, error: 'displayName must be text or null.' };
   let logoUrl: string | null = null;
   if (raw.logoUrl !== null && raw.logoUrl !== undefined && raw.logoUrl !== '') {
-    if (typeof raw.logoUrl !== 'string' || raw.logoUrl.length > 500) return { ok: false, error: 'logoUrl must be an https URL or null.' };
-    try {
-      const url = new URL(raw.logoUrl);
-      if (url.protocol !== 'https:') return { ok: false, error: 'logoUrl must be an https URL or null.' };
-      logoUrl = url.toString();
-    } catch {
-      return { ok: false, error: 'logoUrl must be an https URL or null.' };
-    }
+    if (typeof raw.logoUrl !== 'string') return { ok: false, error: 'logoUrl must be an https URL or null.' };
+    const parsed = parseLogoUrl(raw.logoUrl);
+    if (!parsed.ok) return parsed;
+    logoUrl = parsed.url;
   }
   let primaryColour: string | null = null;
   if (raw.primaryColour !== null && raw.primaryColour !== undefined && raw.primaryColour !== '') {
