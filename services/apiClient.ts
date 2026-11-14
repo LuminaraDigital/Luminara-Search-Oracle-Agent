@@ -44,6 +44,8 @@ export interface ServerHealth {
   /** Stripe card Checkout is live when health.stripeCheckout is true (env.STRIPE_CHECKOUT_LIVE === 'true' and the key mode matches). Absent or false hides the Card rail. */
   stripeCheckout?: boolean;
   lumens?: boolean;
+  /** Oracle chat runs its tool loop for every signed-in plan. Absent or false: Agency-only server chat. */
+  oracleAgent?: boolean;
   tiers?: { free?: string[]; paid?: string[] };
   /** Trust Receipts / domain verification flags. Absent on older Workers (treat as off). */
   trust?: { receiptsEnabled?: boolean; receiptSigningConfigured?: boolean; domainVerifyEnabled?: boolean };
@@ -1102,11 +1104,29 @@ export async function* streamOracleChat(input: {
   invokeTool?: 'research_keywords';
   /** Confirms paid tool side effects when invokeTool is set. */
   confirmTool?: boolean;
+  /** A continue turn after an approval card: only the action id is sent, never text. */
+  continueAfterAction?: string;
   signal?: AbortSignal;
 }): AsyncGenerator<
   | { type: 'token'; text: string }
-  | { type: 'tool'; tool: string; stage: string; output?: string; reason?: string }
-  | { type: 'status'; stage: string }
+  | {
+      type: 'tool';
+      tool: string;
+      stage: string;
+      output?: string;
+      reason?: string;
+      toolId?: string;
+      /** Code-built receipt line ("Searched ... (5 results)"). */
+      summary?: string;
+      measured?: boolean;
+      /** Approval card fields (stage needs_approval). */
+      actionId?: string;
+      preview?: string;
+      costNote?: string;
+      expiresAt?: number;
+      tainted?: boolean;
+    }
+  | { type: 'status'; stage: string; text?: string }
   | { type: 'monitor'; ok: boolean; flags: string[]; notes?: string[] }
   | {
       type: 'provenance';
@@ -1119,8 +1139,16 @@ export async function* streamOracleChat(input: {
         findings?: Array<Record<string, unknown>>;
       };
     }
-  | { type: 'error'; error: string; code?: string }
-  | { type: 'done'; ok: boolean; sessionId?: string; monitor?: { ok: boolean; flags: string[] } }
+  | { type: 'error'; error: string; code?: string; fallback?: boolean }
+  | {
+      type: 'done';
+      ok: boolean;
+      sessionId?: string;
+      monitor?: { ok: boolean; flags: string[] };
+      /** What Oracle checked this turn (agent mode). */
+      receipts?: Array<{ tool: string; status: string; summary: string; measured: boolean }>;
+      fallback?: boolean;
+    }
 > {
   const base = apiBase();
   if (!base) {
@@ -1138,11 +1166,12 @@ export async function* streamOracleChat(input: {
       method: 'POST',
       headers: { 'content-type': 'application/json', Accept: 'text/event-stream' },
       body: JSON.stringify({
-        message: input.message,
+        message: input.continueAfterAction ? '' : input.message,
         sessionId: input.sessionId,
         projectId: input.projectId,
         history: input.history,
         ...(input.invokeTool ? { invokeTool: input.invokeTool, confirmTool: Boolean(input.confirmTool) } : {}),
+        ...(input.continueAfterAction ? { kind: 'continue', actionId: input.continueAfterAction } : {}),
       }),
       signal: input.signal,
     });
@@ -1157,6 +1186,7 @@ export async function* streamOracleChat(input: {
       type: 'error',
       error: String((data as { error?: string }).error || `Oracle chat failed (${r.status})`),
       code: String((data as { code?: string }).code || 'ORACLE_HTTP'),
+      fallback: Boolean((data as { fallback?: boolean }).fallback),
     };
     return;
   }
@@ -1199,9 +1229,17 @@ export async function* streamOracleChat(input: {
             stage: String(data.stage || 'running'),
             output: typeof data.output === 'string' ? data.output : undefined,
             reason: typeof data.reason === 'string' ? data.reason : undefined,
+            toolId: typeof data.toolId === 'string' ? data.toolId : undefined,
+            summary: typeof data.summary === 'string' ? data.summary : undefined,
+            measured: typeof data.measured === 'boolean' ? data.measured : undefined,
+            actionId: typeof data.actionId === 'string' ? data.actionId : undefined,
+            preview: typeof data.preview === 'string' ? data.preview : undefined,
+            costNote: typeof data.costNote === 'string' ? data.costNote : undefined,
+            expiresAt: typeof data.expiresAt === 'number' ? data.expiresAt : undefined,
+            tainted: typeof data.tainted === 'boolean' ? data.tainted : undefined,
           };
         } else if (eventName === 'status') {
-          yield { type: 'status', stage: String(data.stage || '') };
+          yield { type: 'status', stage: String(data.stage || ''), text: typeof data.text === 'string' ? data.text : undefined };
         } else if (eventName === 'monitor') {
           yield {
             type: 'monitor',
@@ -1235,9 +1273,25 @@ export async function* streamOracleChat(input: {
             type: 'error',
             error: String(data.error || 'Oracle error'),
             code: typeof data.code === 'string' ? data.code : undefined,
+            fallback: Boolean(data.fallback),
           };
         } else if (eventName === 'done') {
           const mon = data.monitor as { ok?: boolean; flags?: unknown } | undefined;
+          const agent = data.agent as { receipts?: unknown } | undefined;
+          const receipts = Array.isArray(agent?.receipts)
+            ? agent.receipts.flatMap((r) => {
+                if (!r || typeof r !== 'object') return [];
+                const row = r as Record<string, unknown>;
+                return [
+                  {
+                    tool: String(row.tool || ''),
+                    status: String(row.status || ''),
+                    summary: String(row.summary || ''),
+                    measured: Boolean(row.measured),
+                  },
+                ];
+              })
+            : undefined;
           yield {
             type: 'done',
             ok: Boolean(data.ok),
@@ -1248,6 +1302,8 @@ export async function* streamOracleChat(input: {
                   flags: Array.isArray(mon.flags) ? mon.flags.map(String) : [],
                 }
               : undefined,
+            receipts,
+            fallback: Boolean(data.fallback),
           };
         }
       } catch {
@@ -1255,6 +1311,54 @@ export async function* streamOracleChat(input: {
       }
       eventName = 'message';
     }
+  }
+}
+
+/** An approval card as the server shows it (no arguments). */
+export type OracleActionCard = {
+  actionId: string;
+  toolName: string;
+  preview: string;
+  costNote: string;
+  tainted: boolean;
+  status: string;
+  summary: string | null;
+  createdAt: number;
+  expiresAt: number;
+};
+
+/** Approve or reject an Oracle approval card. The server runs the stored action, never request data. */
+export async function decideOracleAction(
+  actionId: string,
+  approved: boolean,
+  sessionId = 'default',
+): Promise<{ ok: boolean; status: string; summary?: string; action?: OracleActionCard }> {
+  const base = apiBase();
+  if (!base) return { ok: false, status: 'unavailable' };
+  try {
+    const r = await workerFetchWithAuthRetry(`${base}/api/oracle/session/${encodeURIComponent(sessionId)}/approval`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ actionId, approved }),
+    });
+    const data = (await r.json().catch(() => ({}))) as { ok?: boolean; status?: string; summary?: string; action?: OracleActionCard };
+    return { ok: Boolean(data.ok), status: String(data.status || (r.ok ? 'ok' : 'error')), summary: data.summary, action: data.action };
+  } catch {
+    return { ok: false, status: 'network' };
+  }
+}
+
+/** Approval cards that survive a reload: the session's recent cards, newest first. */
+export async function loadOracleActions(sessionId = 'default'): Promise<OracleActionCard[]> {
+  const base = apiBase();
+  if (!base) return [];
+  try {
+    const r = await workerFetchWithAuthRetry(`${base}/api/oracle/session/${encodeURIComponent(sessionId)}/history`, { method: 'GET' });
+    if (!r.ok) return [];
+    const data = (await r.json().catch(() => ({}))) as { actions?: OracleActionCard[] };
+    return Array.isArray(data.actions) ? data.actions : [];
+  } catch {
+    return [];
   }
 }
 

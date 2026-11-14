@@ -7,12 +7,15 @@ import { HybridMessageBody } from './genui/HybridMessageBody';
 import { fallbackAnswerLine } from '../services/llm/fallbackAnswer';
 import { gateReportText, looksLikeAuditReport } from '../services/audit/reportColumnGate';
 import { LIVE_ANSWER_CHECKS } from '../services/marketing/engineCoverage';
+import { OracleTurnExtras } from './oracle/OracleTurnExtras';
 
 interface MessageListProps {
   messages: Message[];
   isThinking?: boolean;
   activeTool?: { name: string; stage: string; output?: string } | null;
   onSimplify?: (content: string) => void;
+  /** Approve or reject an Oracle approval card on a message. */
+  onDecideAction?: (messageId: string, actionId: string, approved: boolean) => void;
 }
 
 /**
@@ -26,7 +29,7 @@ export function chatMessageText(msg: Pick<Message, 'role' | 'content'>): string 
     : msg.content;
 }
 
-const MessageList: React.FC<MessageListProps> = ({ messages, isThinking, activeTool, onSimplify }) => {
+const MessageList: React.FC<MessageListProps> = ({ messages, isThinking, activeTool, onSimplify, onDecideAction }) => {
   const bottomRef = useRef<HTMLDivElement>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
@@ -209,6 +212,14 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isThinking, activeT
                     })()
                   ) : (
                     msg.content
+                  )}
+
+                  {msg.role === 'model' && !showStreamingIndicator && (
+                    <OracleTurnExtras
+                      steps={msg.oracleSteps}
+                      cards={msg.approvalCards}
+                      onDecide={onDecideAction ? (actionId, approved) => onDecideAction(msg.id, actionId, approved) : undefined}
+                    />
                   )}
 
                   {isError && (
