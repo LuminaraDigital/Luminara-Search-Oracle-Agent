@@ -32,7 +32,6 @@ export const CmsMcpRemediationPanel: React.FC<CmsMcpRemediationPanelProps> = ({
   const [copiedBrief, setCopiedBrief] = useState(false);
   const [copiedSqsp, setCopiedSqsp] = useState(false);
   const [mcpEnvelopePreview, setMcpEnvelopePreview] = useState<string | null>(null);
-  const [snapshotTaken, setSnapshotTaken] = useState(false);
   const [mcpErrorNote, setMcpErrorNote] = useState<string | null>(null);
   const [serverEscalation, setServerEscalation] = useState<RemediationTierDecision | null>(null);
   const [preparingEnvelope, setPreparingEnvelope] = useState(false);
@@ -67,7 +66,6 @@ export const CmsMcpRemediationPanel: React.FC<CmsMcpRemediationPanelProps> = ({
   useEffect(() => {
     setServerEscalation(null);
     setMcpEnvelopePreview(null);
-    setSnapshotTaken(false);
     setMcpErrorNote(null);
     if (!expanded || typeof fetch !== 'function') return;
     void fetchCmsMcpCatalogApi().catch(() => null);
@@ -118,7 +116,6 @@ export const CmsMcpRemediationPanel: React.FC<CmsMcpRemediationPanelProps> = ({
       });
       if (res.ok && (res.envelope || res.pack)) {
         setMcpEnvelopePreview(JSON.stringify(res.envelope || res.pack, null, 2));
-        setSnapshotTaken(JSON.stringify(res.envelope).includes('"snapshot_before_write":true'));
       } else if (!res.ok && res.error) {
         setMcpErrorNote(res.error);
         if (res.escalationDecision) {
@@ -280,7 +277,7 @@ export const CmsMcpRemediationPanel: React.FC<CmsMcpRemediationPanelProps> = ({
                 {mcpErrorNote}
               </div>
             )}
-            {mcpEnvelopePreview && !snapshotTaken && (
+            {mcpEnvelopePreview && (
               <p className="mt-2 text-[10px] text-amber-300">
                 No backup snapshot is taken. Back up the page first.
               </p>
