@@ -1,6 +1,6 @@
 # Track GD: Is Gemini Decision good enough to stand in for Jev? Probe and offline replay
 
-Status: reviewed, verdict go after three rounds (2026-11-15). The owner approved building the script; it is built (section 10). The probe, the site list and the replay are not done.
+Status: reviewed, verdict go after three rounds (2026-11-15). The owner approved building the script; it is built, and the probe passed (section 10). The site list awaits approval (section 11). The staging audits, replay and marking are not done.
 
 **Which code this describes.** Every `file:line` citation is against `origin/staging` at commit `477c5160`. The main checkout was 198 commits behind staging on that date, so line numbers there differ. Read cited files with `git show origin/staging:<path>`.
 
@@ -44,7 +44,7 @@ While checking the command line, the agent ran `replay` expecting a "key not set
 
 ### Not verified
 
-- The response to `choice` and `score` questions, and to a full audit request. The probe (GD-1) settles this.
+- The response to a full audit request. The probe (GD-1, section 10) confirmed all three question types on a small made-up request.
 - Price and data terms. A summary of the pricing page says about $0.10 per million input tokens on the paid tier, free of charge on the free tier, and that free-tier content may be used to improve Google's products.
 - Accuracy and latency. Google publishes neither for this model.
 - Whether the model is a preview.
@@ -207,6 +207,23 @@ Applied: keep the last entry when a 401 retry produces two; a capture with no re
 ## 10. Execution log
 
 **2026-11-15. Script built (owner approved building it).** `scripts/decision-probe.mjs` with five modes: `snippet`, `save`, `probe`, `replay`, `decide`. The GD-1b checks are the exported `validAnswers`, which Track TD reuses. `replay` refuses to run while a `to-mark.csv` exists, so a re-run cannot overwrite marks. `tests/decisionProbe.test.ts` covers the checks, the capture wrapper in a fake page, saving, the section 5 outcomes, replay with a fake network, and the missing-key message; no test calls Google or TypeSafe. Full gates passed. One unplanned live call is recorded in section 1. Not done: the probe (GD-1c), the site list, the staging audits, the replay and the marking.
+
+**2026-11-15. Probe run (GD-1c), at the owner's request, by the agent with the key already in the shell environment.** Passed. Three tries: HTTP 200 in 723, 440 and 291 ms, all valid. The yes/no, pick-one and rubric answers all match section 1. The rubric answer also carries `legend` and `probabilities`; the pick-one answer carries `probabilities`. Each call used 312 input tokens and 0 output tokens. The three answers were identical. No `model` field in the response, so `model_returned` will be null for Gemini. Stop rules not triggered.
+
+**2026-11-15. Site list drafted (section 11).** Awaiting the owner's approval, which is owner decision 1.
+
+## 11. Site list (draft, not approved)
+
+Public sites only. Checked 2026-11-15 with a plain HTTPS request. A 403 or 429 means the site turned that request away; our audit's own fetcher may still get through. No answer means the address may be wrong.
+
+Real-estate agencies, large to mid-size (18: 12 answered, 6 turned the request away):
+`ljhooker.com.au`, `barryplant.com.au`, `jelliscraig.com.au`, `marshallwhite.com.au`, `nelsonalexander.com.au`, `bigginscott.com.au`, `century21.com.au`, `prd.com.au`, `knightfrank.com.au`, `fletchers.net.au`, `buxton.com.au`, `kayburton.com.au`, plus 403/429: `raywhite.com`, `mcgrath.com.au`, `belleproperty.com`, `harcourts.com.au`, `firstnational.com.au`, `raineandhorne.com.au`.
+
+Other kinds, for `site_type: other` (5): `mirvac.com` and `stockland.com.au` (developers), `bakersdelight.com.au`, plus 403: `jimsmowing.com.au`, `pacificsmilesdental.com.au`.
+
+That is 23 sites. Missing: small independent agencies. The plan asks for mixed sizes. The owner adds about 5 they know, or approves the 23 as they are.
+
+Dropped, no answer: `richardsonandwrench.com.au`, `place.com.au`, `laingsimmons.com.au`, `doneganrealestate.com.au`.
 
 ## Appendix: traps found while checking the relay shadow idea
 
