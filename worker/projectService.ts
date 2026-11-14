@@ -5,6 +5,7 @@ import type { Env } from './env';
 import type { SeoProject } from '../services/projects/types';
 import { normalizeProjectDomain, randomId } from '../services/projects/projectUtils';
 import { DEFAULT_INDUSTRY_ID, parseIndustryId, type IndustryId } from '../services/industries/industryProfiles';
+import { auditOrgIdFor, recordAuditLogBestEffort } from './auditLog';
 
 type ProjectRow = {
   id: string;
@@ -154,6 +155,60 @@ export async function createProject(
 
   const project = await getProject(env, accountId, id);
   if (!project) return { ok: false, error: 'Project created but not readable', status: 500 };
+  return { ok: true, project };
+}
+
+/**
+ * Removes one project and the rows crons read without joining `projects`:
+ * monitors, measurement history, 30/60/90 day follow-ups, recovery runs, and citation watches for this domain and client.
+ * Child memory rows go in the same batch so a failed delete leaves the project in place.
+ */
+export async function deleteProject(
+  env: Env,
+  accountId: string,
+  projectId: string,
+  actorId: string,
+): Promise<{ ok: true; project: SeoProject } | { ok: false; error: string; status: number }> {
+  if (!env.DB) return { ok: false, error: 'Database unavailable', status: 503 };
+  const project = await getProject(env, accountId, projectId);
+  if (!project) return { ok: false, error: 'Not found', status: 404 };
+  const db = env.DB;
+  const id = project.id;
+  const clientId = project.clientId;
+  const domain = project.domain;
+  try {
+    await db.batch([
+      db.prepare(`DELETE FROM project_context_sections WHERE project_id = ?`).bind(id),
+      db.prepare(`DELETE FROM project_competitors WHERE project_id = ?`).bind(id),
+      db.prepare(`DELETE FROM project_key_pages WHERE project_id = ?`).bind(id),
+      db.prepare(`DELETE FROM project_research_log WHERE project_id = ?`).bind(id),
+      db.prepare(`DELETE FROM agent_reports WHERE account_id = ? AND project_id = ?`).bind(accountId, id),
+      db.prepare(`DELETE FROM project_measurement_snapshots WHERE account_id = ? AND project_id = ?`).bind(accountId, id),
+      db.prepare(`DELETE FROM project_outcome_followups WHERE account_id = ? AND project_id = ?`).bind(accountId, id),
+      db.prepare(`DELETE FROM project_action_outcomes WHERE account_id = ? AND project_id = ?`).bind(accountId, id),
+      db.prepare(`DELETE FROM project_monitor_alerts WHERE account_id = ? AND project_id = ?`).bind(accountId, id),
+      db.prepare(`DELETE FROM project_monitors WHERE account_id = ? AND project_id = ?`).bind(accountId, id),
+      db.prepare(`DELETE FROM project_industries WHERE project_id = ?`).bind(id),
+      db.prepare(`DELETE FROM recovery_runs WHERE account_id = ? AND project_id = ?`).bind(accountId, id),
+      db.prepare(
+        `DELETE FROM citation_watch_runs WHERE account_id = ? AND watch_id IN (
+           SELECT id FROM citation_watches WHERE account_id = ? AND client_id = ? AND domain = ?
+         )`,
+      ).bind(accountId, accountId, clientId, domain),
+      db.prepare(`DELETE FROM citation_watches WHERE account_id = ? AND client_id = ? AND domain = ?`).bind(accountId, clientId, domain),
+      db.prepare(`DELETE FROM projects WHERE id = ? AND account_id = ?`).bind(id, accountId),
+    ]);
+  } catch (err) {
+    console.error('[projects] delete failed', err instanceof Error ? err.message : err);
+    return { ok: false, error: 'Could not delete project', status: 500 };
+  }
+  await recordAuditLogBestEffort(env, {
+    org_id: auditOrgIdFor(accountId),
+    actor_id: actorId,
+    action: 'project_deleted',
+    target_id: id,
+    details: { domain, clientId },
+  });
   return { ok: true, project };
 }
 

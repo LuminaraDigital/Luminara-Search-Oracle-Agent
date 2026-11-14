@@ -38,6 +38,7 @@ import { draftPersistenceService, DRAFT_KEYS } from './services/state/draftPersi
 import { apiBase, getCurrentQuotaSync, setAccountSignedIn, streamOracleChat } from './services/apiClient';
 import { agentConnectTarget, resumeAgentConnect } from './services/auth/agentConnect';
 import { useMcpApproval } from './components/settings/McpApprovalDialog';
+import { WorkspaceInviteBanner } from './components/suite/WorkspaceInviteBanner';
 import { entitlementsFor } from './services/plans/planEntitlements';
 import { hasPersistedAuthSession } from './services/auth/firebaseIdToken';
 import type { AuditHandoff } from './services/activation/auditHandoff';
@@ -1725,6 +1726,7 @@ const App: React.FC = () => {
           )}
         </div>
       </header>
+      {appAuth.authenticated ? <WorkspaceInviteBanner /> : null}
 
       {/* Main App Container - min-h-0 ensures flex child heights and scrollbars calculate cleanly */}
       <main id="main" tabIndex={-1} className="flex-1 min-h-0 relative z-10 flex flex-col overflow-y-auto outline-none">
