@@ -72,7 +72,8 @@ export type WordPressMutationCheckResult =
  * - Blocks raw PHP/SQL/plugin-deletion tools.
  * - Refuses generic REST content writes on pages owned by Elementor, Bricks, Divi, Beaver Builder, or Oxygen.
  * - Requires userConfirmed = true on mutating calls.
- * - Requires snapshotCreated = true on Respira builder mutations.
+ * - Refuses Respira builder mutations when the caller says snapshotCreated = false.
+ * - No code takes a snapshot, so snapshot_before_write is true only when the caller says so.
  */
 export function validateCmsMcpMutation(
   input: WordPressMutationCheckInput,
@@ -137,7 +138,7 @@ export function validateCmsMcpMutation(
     detectedBuilder,
     enforcedFlags: {
       user_confirmed: Boolean(input.userConfirmed),
-      snapshot_before_write: input.connectorId === 'respira_mcp' ? true : Boolean(input.snapshotCreated),
+      snapshot_before_write: input.snapshotCreated === true,
     },
   };
 }

@@ -662,7 +662,8 @@
           "type": "string"
         },
         "snapshotCreated": {
-          "type": "boolean"
+          "type": "boolean",
+          "description": "Set true only if you took a backup snapshot yourself. Luminara takes none."
         },
         "userConfirmed": {
           "type": "boolean"

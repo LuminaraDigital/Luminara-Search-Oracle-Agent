@@ -312,7 +312,7 @@ export const CONVERSION_SPINE_MCP_TOOLS: McpToolDef[] = [
         toolName: { type: 'string' },
         domain: { type: 'string' },
         title: { type: 'string' },
-        snapshotCreated: { type: 'boolean' },
+        snapshotCreated: { type: 'boolean', description: 'Set true only if you took a backup snapshot yourself. Luminara takes none.' },
         userConfirmed: { type: 'boolean' },
         pageMetaKeys: { type: 'array', items: { type: 'string' } },
         schemaJsonLd: { type: 'string' },
@@ -345,7 +345,7 @@ export const CONVERSION_SPINE_MCP_TOOLS: McpToolDef[] = [
         title: requireStr(args, 'title') || undefined,
         toolName,
         userConfirmed: typeof args.userConfirmed === 'boolean' ? args.userConfirmed : true,
-        snapshotCreated: typeof args.snapshotCreated === 'boolean' ? args.snapshotCreated : true,
+        snapshotCreated: typeof args.snapshotCreated === 'boolean' ? args.snapshotCreated : undefined,
         pageMetaKeys: Array.isArray(args.pageMetaKeys)
           ? args.pageMetaKeys.filter((k): k is string => typeof k === 'string')
           : undefined,
