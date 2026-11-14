@@ -19,7 +19,12 @@ import {
   withRateLimitHeaders,
   type DualRateLimitResult,
 } from './securityHardening';
-import { padMinLatency, normalizeResetEmail, PASSWORD_RESET_MIN_LATENCY_MS } from './authTollFraud';
+import {
+  handleSendVerification,
+  padMinLatency,
+  normalizeResetEmail,
+  PASSWORD_RESET_MIN_LATENCY_MS,
+} from './authTollFraud';
 import { enforceAppCheckIfRequired, extractAppCheckToken } from './appCheck';
 import { identityToolkitHeaders } from './identityToolkit';
 
@@ -257,6 +262,18 @@ export async function handleSignUp(
     { email: parsed.email, password: parsed.password, returnSecureToken: true },
     { fetchImpl: opts?.fetchImpl, appCheckToken: resolvedAppCheck },
   );
+
+  if (result.ok) {
+    // Firebase sends the only verification mail. The welcome email stays a product note.
+    try {
+      await handleSendVerification(request, env, ip, `fb:${result.localId}`, result.idToken, {
+        fetchImpl: opts?.fetchImpl,
+        minLatencyMs: 0,
+      });
+    } catch {
+      console.warn(JSON.stringify({ event: 'email_verify_provider_error', code: 'signup' }));
+    }
+  }
 
   await padMinLatency(started, minLatency);
 

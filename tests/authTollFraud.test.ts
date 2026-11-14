@@ -616,6 +616,109 @@ describe('Worker-mediated sign-up / sign-in', () => {
     expect(body.code).toBe('SIGN_UP_FAILED');
     expect(JSON.stringify(body).toLowerCase()).not.toContain('already');
     expect(JSON.stringify(body)).not.toMatch(/EMAIL_EXISTS/i);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('sign-up sends one verification email and uses the environment continue URL', async () => {
+    for (const webapp of ['https://staging.luminarasuite.com/', 'https://www.luminarasuite.com/']) {
+      const store = new Map<string, string>();
+      const env = {
+        LUMINARA_KV: mockKv(store),
+        FIREBASE_WEB_API_KEY: 'k',
+        WEBAPP_URL: webapp,
+        OUTBOUND_EMAIL_DAILY_LIMIT: '50',
+        REQUIRE_TG_AUTH: 'true',
+      } as Env;
+      const seen: Array<{ url: string; body: Record<string, unknown> }> = [];
+      const fetchImpl = vi.fn(async (url: string, init?: RequestInit) => {
+        const href = String(url);
+        const body = JSON.parse(String(init?.body || '{}')) as Record<string, unknown>;
+        seen.push({ url: href, body });
+        if (href.includes('accounts:signUp')) {
+          return new Response(
+            JSON.stringify({
+              idToken: 'id-token',
+              refreshToken: 'rt',
+              localId: 'uid-new',
+              email: 'new@example.com',
+              expiresIn: '3600',
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response('{}', { status: 200 });
+      });
+      const res = await handleSignUp(credReq('new@example.com', 'password123'), env, `203.0.113.${webapp.includes('staging') ? 160 : 161}`, {
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+        minLatencyMs: 0,
+      });
+      expect(res.status).toBe(200);
+      const verify = seen.filter((call) => call.url.includes('accounts:sendOobCode'));
+      expect(verify).toHaveLength(1);
+      expect(verify[0].body).toMatchObject({
+        requestType: 'VERIFY_EMAIL',
+        idToken: 'id-token',
+        continueUrl: webapp,
+      });
+    }
+  });
+
+  it('sign-up verification shares the resend dual-key limit and does not send when that limit is full', async () => {
+    const store = new Map<string, string>();
+    const env = {
+      LUMINARA_KV: mockKv(store),
+      FIREBASE_WEB_API_KEY: 'k',
+      WEBAPP_URL: 'https://www.luminarasuite.com/',
+      OUTBOUND_EMAIL_DAILY_LIMIT: '50',
+      REQUIRE_TG_AUTH: 'true',
+    } as Env;
+    const allow = vi.fn(async () => new Response('{}', { status: 200 }));
+    for (let i = 0; i < 5; i++) {
+      const sent = await handleSendVerification(
+        new Request('https://luminarasuite.com/api/auth/send-verification', { method: 'POST' }),
+        env,
+        `198.51.100.${20 + i}`,
+        'fb:uid-new',
+        'tok',
+        { fetchImpl: allow as unknown as typeof fetch, minLatencyMs: 0 },
+      );
+      expect(sent.status).toBe(200);
+    }
+    expect(allow).toHaveBeenCalledTimes(5);
+
+    let oob = 0;
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (String(url).includes('accounts:sendOobCode')) {
+        oob += 1;
+        return new Response('{}', { status: 200 });
+      }
+      return new Response(
+        JSON.stringify({
+          idToken: 'id',
+          refreshToken: 'rt',
+          localId: 'uid-new',
+          email: 'new@example.com',
+          expiresIn: '3600',
+        }),
+        { status: 200 },
+      );
+    });
+    const res = await handleSignUp(credReq('new@example.com', 'password123'), env, '203.0.113.162', {
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      minLatencyMs: 0,
+    });
+    expect(res.status).toBe(200);
+    expect(oob).toBe(0);
+    const blocked = await handleSendVerification(
+      new Request('https://luminarasuite.com/api/auth/send-verification', { method: 'POST' }),
+      env,
+      '198.51.100.90',
+      'fb:uid-new',
+      'tok',
+      { fetchImpl: allow as unknown as typeof fetch, minLatencyMs: 0 },
+    );
+    expect(blocked.status).toBe(429);
+    expect(allow).toHaveBeenCalledTimes(5);
   });
 
   it('sign-in succeeds and returns tokens when Toolkit accepts', async () => {

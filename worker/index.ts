@@ -6,7 +6,7 @@
  *   GET  /api/auth/session                current Telegram or Firebase identity (if signed in)
  *   GET  /api/boot                        signed-in workspace, quota, and session cookie
  *   POST /api/auth/reset-password         IP-throttled password reset (anti-enumeration)
- *   POST /api/auth/sign-up                IP-throttled Identity Toolkit sign-up
+ *   POST /api/auth/sign-up                IP-throttled Identity Toolkit sign-up, then verification mail
  *   POST /api/auth/sign-in                IP-throttled Identity Toolkit sign-in
  *   POST /api/auth/refresh                IP-throttled ID token renewal for native clients
  *   POST /api/auth/google                 IP-throttled Google ID token exchange for native clients
