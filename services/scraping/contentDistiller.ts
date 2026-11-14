@@ -25,6 +25,8 @@ export interface DistilledContentResult {
   openGraph: Record<string, string>;
   schemas: StructuredSchema[];
   schemaTypes: string[];
+  /** application/ld+json blocks that failed to parse. Omitted when none did. */
+  schemaParseFailures?: number;
   headings: { level: number; text: string }[];
   distilledText: string;
   formattedEvidence: string;
@@ -77,16 +79,17 @@ function rememberNode(node: unknown, out: StructuredSchema[]): void {
  * charset is ignored.
  * shortcut: a ">" inside an attribute value ends the tag early. Use the deploy read-back scanner if a page does that.
  */
-function collectJsonLd(html: string, out: StructuredSchema[]): void {
+function collectJsonLd(html: string, out: StructuredSchema[], broken: Set<string>): void {
   const re = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
   let match: RegExpExecArray | null;
   while ((match = re.exec(html)) !== null) {
     if (scriptMime(match[1] || '') !== 'application/ld+json') continue;
+    const body = (match[2] || '').trim();
     try {
-      const parsed: unknown = JSON.parse((match[2] || '').trim());
-      rememberNode(parsed, out);
+      rememberNode(JSON.parse(body), out);
     } catch {
-      // Malformed JSON-LD is not a schema.
+      // Malformed JSON-LD is not a schema. The set counts the same block once when both inputs hold it.
+      broken.add(body);
     }
   }
 }
@@ -131,6 +134,7 @@ export class ContentDistiller {
     let canonicalUrl = '';
     const openGraph: Record<string, string> = {};
     const schemas: StructuredSchema[] = [];
+    const brokenJsonLd = new Set<string>();
     const headings: { level: number; text: string }[] = [];
     let cleanedBody = '';
 
@@ -154,7 +158,7 @@ export class ContentDistiller {
         if (flipped?.[1]) openGraph.site_name = flipped[1].trim();
       }
 
-      collectJsonLd(rawHtml, schemas);
+      collectJsonLd(rawHtml, schemas, brokenJsonLd);
 
       // 3. Extract Headings Hierarchy
       const headingRegex = /<(h[1-3])[^>]*>([\s\S]*?)<\/\1>/gi;
@@ -187,7 +191,7 @@ export class ContentDistiller {
     // 5. PII Redaction Gate
     cleanedBody = sanitizePii(cleanedBody).sanitized;
 
-    if (options.schemaHtml) collectJsonLd(options.schemaHtml, schemas);
+    if (options.schemaHtml) collectJsonLd(options.schemaHtml, schemas, brokenJsonLd);
     const foundSchemas = dedupeSchemas(schemas);
 
     // Deduplicate and summarize schema types
@@ -233,6 +237,7 @@ export class ContentDistiller {
       openGraph,
       schemas: foundSchemas,
       schemaTypes,
+      ...(brokenJsonLd.size > 0 ? { schemaParseFailures: brokenJsonLd.size } : {}),
       headings,
       distilledText: truncatedBody,
       formattedEvidence,
@@ -308,15 +313,17 @@ export function keepDiscoveredSchemas(
   fresh: DistilledContentResult,
   prior: DistilledContentResult | undefined,
 ): DistilledContentResult {
-  if (!prior || prior.schemas.length === 0) return fresh;
+  if (!prior) return fresh;
+  const failures = Math.max(fresh.schemaParseFailures ?? 0, prior.schemaParseFailures ?? 0);
+  const withFailures = failures > 0 ? { ...fresh, schemaParseFailures: failures } : fresh;
   const schemas = dedupeSchemas([...fresh.schemas, ...prior.schemas]);
-  if (schemas.length === fresh.schemas.length) return fresh;
+  if (schemas.length === fresh.schemas.length) return withFailures;
   const schemaTypes = Array.from(new Set(schemas.map((schema) => schema.type)));
   const line = `[STRUCTURED DATA / JSON-LD]: Detected schemas: ${schemaTypes.join(', ')}`;
   const formattedEvidence = fresh.formattedEvidence.includes('[STRUCTURED DATA / JSON-LD]:')
     ? fresh.formattedEvidence.replace(/\[STRUCTURED DATA \/ JSON-LD\]:[^\n]*/, line)
     : `${line}\n${fresh.formattedEvidence}`;
-  return { ...fresh, schemas, schemaTypes, formattedEvidence };
+  return { ...withFailures, schemas, schemaTypes, formattedEvidence };
 }
 
 export const contentDistiller = ContentDistiller.getInstance();
