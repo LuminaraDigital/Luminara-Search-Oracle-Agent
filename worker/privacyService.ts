@@ -58,6 +58,21 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
     accountId,
   );
   const projects = await q<Record<string, unknown>>(`SELECT * FROM projects WHERE account_id = ?`, accountId);
+  const accountIndustry = await q<Record<string, unknown>>(
+    `SELECT industry_id, updated_at FROM account_industries WHERE account_id = ?`,
+    accountId,
+  ).catch((err) => {
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+    return [] as Record<string, unknown>[];
+  });
+  const workspaces = await q<Record<string, unknown>>(
+    `SELECT id, name, display_name, logo_url, primary_colour, report_domain, created_at, updated_at
+       FROM client_workspaces WHERE account_id = ?`,
+    accountId,
+  ).catch((err) => {
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+    return [] as Record<string, unknown>[];
+  });
   const reports = await q<Record<string, unknown>>(
     `SELECT id, project_id, title, summary, skill, created_at FROM agent_reports WHERE account_id = ?`,
     accountId,
@@ -334,6 +349,8 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
       'project_outcome_followups',
       'project_monitors',
       'project_monitor_alerts',
+      'account_industries',
+      'client_workspaces',
     ],
     users,
     workspace: workspace.map((w) => ({
@@ -348,6 +365,8 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
       })(),
     })),
     projects,
+    accountIndustry,
+    workspaces,
     agentReports: reports,
     memoryFacts: facts,
     memoryEdges,
@@ -498,7 +517,14 @@ async function softDeleteAccount(env: Env, accountId: string, deps?: DataPlaneDe
   await drop('project_monitor_alerts', `DELETE FROM project_monitor_alerts WHERE account_id = ?`);
   await drop('project_monitors', `DELETE FROM project_monitors WHERE account_id = ?`);
   await drop('agent_reports', `DELETE FROM agent_reports WHERE account_id = ?`);
+  await drop('project_industries', `DELETE FROM project_industries WHERE project_id IN (SELECT id FROM projects WHERE account_id = ?)`);
   await drop('projects', `DELETE FROM projects WHERE account_id = ?`);
+  await drop('account_industries', `DELETE FROM account_industries WHERE account_id = ?`);
+  await drop(
+    'client_workspace_members',
+    `DELETE FROM client_workspace_members WHERE workspace_id IN (SELECT id FROM client_workspaces WHERE account_id = ?)`,
+  );
+  await drop('client_workspaces', `DELETE FROM client_workspaces WHERE account_id = ?`);
   await drop('win_shares', `DELETE FROM win_shares WHERE owner_id = ?`);
   await drop('shared_reports', `DELETE FROM shared_reports WHERE owner_account_id = ?`);
   // Anonymize login rows; keep account_id for ledger FK honesty (anonymize path when legal holds exist).
