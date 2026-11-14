@@ -311,6 +311,7 @@ function howToKnow(sentence: string): string {
 const CHECK_TITLE: Record<string, string> = {
   'finding-schema-org': 'Add a business identity tag',
   'finding-schema-org-partial': 'Add a business identity tag',
+  'finding-schema-org-broken': 'Fix the schema block that cannot be read',
   'finding-thin-content': 'Write fuller answers on thin pages',
   'finding-zero-citations': 'Say plainly what you offer',
   'finding-deprecated-howto': 'Remove the HowTo markup',
@@ -320,6 +321,7 @@ const CHECK_TITLE: Record<string, string> = {
 const CHECK_PHRASE: Record<string, string> = {
   'finding-schema-org': 'A business identity tag is missing',
   'finding-schema-org-partial': 'The business identity tag is incomplete',
+  'finding-schema-org-broken': 'A schema block on the site cannot be read',
   'finding-thin-content': 'This page is too short',
   'finding-zero-citations': 'None of the web results name the brand',
   'finding-deprecated-howto': 'The page still uses HowTo markup',

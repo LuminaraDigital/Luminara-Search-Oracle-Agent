@@ -22,7 +22,7 @@ function withFallbackNote(message: string, note: string): string {
   return extra ? `${message} ${extra}` : message;
 }
 
-function toCrewPage(p: ProviderPage, fallbackUrl: string): ScrapedPageEvidence {
+export function toCrewPage(p: ProviderPage, fallbackUrl: string): ScrapedPageEvidence {
   const markdown = p.markdown || '';
   const schemasFound = (p.distilled?.schemas || []).map((s) => ({
     type: s.type || 'UnknownSchema',
@@ -38,6 +38,7 @@ function toCrewPage(p: ProviderPage, fallbackUrl: string): ScrapedPageEvidence {
     httpStatus: p.statusCode,
     h1s: (p.distilled?.headings || []).filter((h) => h.level === 1).map((h) => h.text),
     schemasFound,
+    ...(p.distilled?.schemaParseFailures ? { schemaParseFailures: p.distilled.schemaParseFailures } : {}),
     wordCount: markdown.trim() ? markdown.trim().split(/\s+/).filter(Boolean).length : 0,
     loadTimeMs: p.latencyMs,
     rawTextSnippet: markdown ? markdown.slice(0, 1500) : '',
