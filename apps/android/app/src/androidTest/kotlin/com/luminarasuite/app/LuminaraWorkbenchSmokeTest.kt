@@ -181,6 +181,8 @@ class StubInstrumentationRepository : LuminaraRepository {
 
     override suspend fun signInWithGoogle(googleIdToken: String): Result<QuotaStatus?> = Result.success(null)
 
+    override suspend fun requestPasswordReset(email: String): Result<String> = Result.success("Sent")
+
     override suspend fun signUp(
         email: String,
         password: String,

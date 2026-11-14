@@ -310,7 +310,7 @@ data class PrivacyExportResponse(
 @Serializable
 data class GroqMessage(
     val role: String,
-    val content: String,
+    val content: String = "",
 )
 
 @Serializable
