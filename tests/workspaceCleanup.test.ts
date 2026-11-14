@@ -190,6 +190,11 @@ describe('safe deletes', () => {
        VALUES ('out_solo', '701', ?, 'k', 'Title', 'audit', 'recommended', 'score', 'too_little_data', ?)`,
     ).bind(projectId, now).run();
     await env.DB!.prepare(
+      `INSERT INTO project_outcome_followups
+        (id, account_id, project_id, outcome_id, horizon_days, due_at, status, created_at, updated_at)
+       VALUES ('fu_solo', '701', ?, 'out_solo', 30, ?, 'pending', ?, ?)`,
+    ).bind(projectId, now, now, now).run();
+    await env.DB!.prepare(
       `INSERT INTO recovery_runs
         (id, account_id, project_id, enquiry_id, contact_id, playbook_id, status, next_wake_at, created_at, updated_at)
        VALUES ('run_solo', '701', ?, 'enq', 'con', 'play', 'active', ?, ?, ?)`,
@@ -226,6 +231,7 @@ describe('safe deletes', () => {
     expect(await count(env, `SELECT COUNT(*) AS n FROM project_monitors WHERE project_id = ?`, projectId)).toBe(0);
     expect(await count(env, `SELECT COUNT(*) AS n FROM project_measurement_snapshots WHERE project_id = ?`, projectId)).toBe(0);
     expect(await count(env, `SELECT COUNT(*) AS n FROM project_action_outcomes WHERE project_id = ?`, projectId)).toBe(0);
+    expect(await count(env, `SELECT COUNT(*) AS n FROM project_outcome_followups WHERE project_id = ?`, projectId)).toBe(0);
     expect(await count(env, `SELECT COUNT(*) AS n FROM recovery_runs WHERE project_id = ?`, projectId)).toBe(0);
     expect(await count(env, `SELECT COUNT(*) AS n FROM citation_watches WHERE id = 'watch_solo'`)).toBe(0);
     expect(await count(env, `SELECT COUNT(*) AS n FROM project_monitors WHERE id = 'mon_kept'`)).toBe(1);

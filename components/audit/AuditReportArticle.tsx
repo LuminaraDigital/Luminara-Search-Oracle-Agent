@@ -214,6 +214,7 @@ export function AuditReportArticle({
   mode = 'Instant Audit',
   onShare,
   onFindings,
+  projectId,
 }: {
   markdown: string;
   measured: boolean;
@@ -236,6 +237,7 @@ export function AuditReportArticle({
   mode?: string;
   onShare?: () => void;
   onFindings?: (findings: BoardFinding[]) => void;
+  projectId?: string;
 }) {
   const [historyRevision, setHistoryRevision] = useState(0);
   useEffect(() => {
@@ -344,6 +346,7 @@ export function AuditReportArticle({
                 clientName={clientName}
                 measured={measured}
                 findings={findings}
+                projectId={projectId}
               />
             </div>
           )}

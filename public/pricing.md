@@ -44,6 +44,7 @@ API access for paid research, 10 client workspaces, daily re-audit reminders in 
 - White-label PDF exports
 - IDE access (Cursor / Claude / Codex), no daily MCP cap
 - Public share links, no daily cap
+- Reports can leave off Powered by Luminara Suite
 - Paid research API (Agency plan or your own DataForSEO login)
 - 10 client workspaces
 

@@ -2,7 +2,7 @@ import { createHmac } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { IndustrySelect } from '../components/industries/IndustrySelect';
 import worker from '../worker/index';
 import type { Env } from '../worker/env';
@@ -110,6 +110,9 @@ describe('industry profiles', () => {
 });
 
 describe('industry and client workspaces', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
   it('backfills existing accounts and does not overwrite a later choice', async () => {
     const env = makeEnv();
     await insertUser(env, 'acct_old', 'old@example.com');
@@ -130,6 +133,17 @@ describe('industry and client workspaces', () => {
   });
 
   it('stores industry on create and get, and blocks a second client on the free placeholder', async () => {
+    const png = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('cloudflare-dns.com')) {
+        return new Response(JSON.stringify({ Status: 0, Answer: [{ type: 1, data: '1.1.1.1' }] }), {
+          status: 200,
+          headers: { 'content-type': 'application/dns-json' },
+        });
+      }
+      return new Response(png, { status: 200, headers: { 'content-type': 'image/png' } });
+    });
     const env = makeEnv();
     const created = await call(env, 701, '/workspaces/current', {
       method: 'POST',
@@ -145,7 +159,7 @@ describe('industry and client workspaces', () => {
       method: 'PATCH',
       body: JSON.stringify({
         displayName: 'Harbour',
-        logoUrl: 'https://cdn.example/logo.png',
+        logoUrl: 'https://cdn.harbour.co/logo.png',
         primaryColour: '#1B4D3E',
         reportDomain: null,
       }),
@@ -171,6 +185,7 @@ describe('industry and client workspaces', () => {
     const industries = await call(env, 701, '/industries');
     const listed = (await industries.json()) as { industries: Array<{ id: string }> };
     expect(listed.industries.map((row) => row.id)).toEqual([...INDUSTRY_IDS]);
+    vi.unstubAllGlobals();
   });
 
   it('stops a client viewer reading another client, and lets staff read both', async () => {

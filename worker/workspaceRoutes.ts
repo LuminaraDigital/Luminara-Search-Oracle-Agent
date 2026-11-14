@@ -53,6 +53,7 @@ import {
 } from './clientWorkspace';
 import { entitlementsFor } from '../services/plans/planEntitlements';
 import { getActiveSubscription } from './quotaMiddleware';
+import { inspectLogoUrl } from './logoInspect';
 
 function industryPayload() {
   return listIndustryProfiles().map((profile) => ({
@@ -132,6 +133,10 @@ export async function handleIndustryWorkspaceRoute(
     if (!body.ok) return json({ error: body.error }, body.status);
     const parsed = parseBrandPatch((body.value || {}) as Record<string, unknown>);
     if (!parsed.ok) return json({ ok: false, error: parsed.error }, 400);
+    if (parsed.patch.logoUrl) {
+      const logo = await inspectLogoUrl(parsed.patch.logoUrl);
+      if (!logo.ok) return json({ ok: false, error: logo.error }, 400);
+    }
     const updated = await updateWorkspaceBrand(env, workspace, parsed.patch);
     return json({ ok: true, workspace: updated });
   }

@@ -160,7 +160,7 @@ export async function createProject(
 
 /**
  * Removes one project and the rows crons read without joining `projects`:
- * monitors, measurement history, recovery runs, and citation watches for this domain and client.
+ * monitors, measurement history, 30/60/90 day follow-ups, recovery runs, and citation watches for this domain and client.
  * Child memory rows go in the same batch so a failed delete leaves the project in place.
  */
 export async function deleteProject(
@@ -184,6 +184,7 @@ export async function deleteProject(
       db.prepare(`DELETE FROM project_research_log WHERE project_id = ?`).bind(id),
       db.prepare(`DELETE FROM agent_reports WHERE account_id = ? AND project_id = ?`).bind(accountId, id),
       db.prepare(`DELETE FROM project_measurement_snapshots WHERE account_id = ? AND project_id = ?`).bind(accountId, id),
+      db.prepare(`DELETE FROM project_outcome_followups WHERE account_id = ? AND project_id = ?`).bind(accountId, id),
       db.prepare(`DELETE FROM project_action_outcomes WHERE account_id = ? AND project_id = ?`).bind(accountId, id),
       db.prepare(`DELETE FROM project_monitor_alerts WHERE account_id = ? AND project_id = ?`).bind(accountId, id),
       db.prepare(`DELETE FROM project_monitors WHERE account_id = ? AND project_id = ?`).bind(accountId, id),

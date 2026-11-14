@@ -29,6 +29,7 @@ export const TOOL_GOVERNANCE: Record<string, ToolGovernanceEntry> = {
   get_project_history: { risk: 'read', status: 'active' },
   compare_snapshots: { risk: 'read', status: 'active' },
   get_project_outcomes: { risk: 'read', status: 'active' },
+  get_outcome_report: { risk: 'read', status: 'active' },
   mark_project_action_done: { risk: 'write', status: 'active' },
   get_project_monitor: { risk: 'read', status: 'active' },
   set_project_monitor: { risk: 'write', status: 'active' },
