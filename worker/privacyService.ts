@@ -259,6 +259,15 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
     if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
     return [] as Record<string, unknown>[];
   });
+  const projectOutcomeFollowUps = await q<Record<string, unknown>>(
+    `SELECT id, project_id, outcome_id, horizon_days, due_at, status, attempts, before_value, after_value, delta,
+            source_ref, baseline_measured_at, measured_at, judged_at, note
+       FROM project_outcome_followups WHERE account_id = ? ORDER BY due_at DESC LIMIT 500`,
+    accountId,
+  ).catch((err) => {
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+    return [] as Record<string, unknown>[];
+  });
   const projectMonitors = await q<Record<string, unknown>>(
     `SELECT id, project_id, enabled, cadence, email_opt_in, query_list_json, last_run_at, next_run_at, created_at, updated_at
        FROM project_monitors WHERE account_id = ?`,
@@ -322,6 +331,7 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
       'external_effects',
       'project_measurement_snapshots',
       'project_action_outcomes',
+      'project_outcome_followups',
       'project_monitors',
       'project_monitor_alerts',
     ],
@@ -372,6 +382,7 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
     externalEffects,
     projectMeasurementSnapshots,
     projectActionOutcomes,
+    projectOutcomeFollowUps,
     projectMonitors,
     projectMonitorAlerts,
     note: 'Financial ledger rows may be retained in minimized form for legal obligations.',
@@ -482,6 +493,7 @@ async function softDeleteAccount(env: Env, accountId: string, deps?: DataPlaneDe
   await drop('project_key_pages', `DELETE FROM project_key_pages WHERE project_id IN (SELECT id FROM projects WHERE account_id = ?)`);
   await drop('project_research_log', `DELETE FROM project_research_log WHERE project_id IN (SELECT id FROM projects WHERE account_id = ?)`);
   await drop('project_measurement_snapshots', `DELETE FROM project_measurement_snapshots WHERE account_id = ?`);
+  await drop('project_outcome_followups', `DELETE FROM project_outcome_followups WHERE account_id = ?`);
   await drop('project_action_outcomes', `DELETE FROM project_action_outcomes WHERE account_id = ?`);
   await drop('project_monitor_alerts', `DELETE FROM project_monitor_alerts WHERE account_id = ?`);
   await drop('project_monitors', `DELETE FROM project_monitors WHERE account_id = ?`);

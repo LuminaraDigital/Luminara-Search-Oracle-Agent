@@ -13,6 +13,7 @@ import {
   type ProjectMonitorPayload,
   type ProjectOutcomePayload,
 } from '../../services/projects/projectClient';
+import { followUpSentence } from '../../services/history/outcomeFollowUp';
 import type { SnapshotSignals } from '../../services/history/snapshotCompare';
 import type { SeoProject } from '../../services/projects/types';
 
@@ -326,6 +327,9 @@ export function ProjectHistoryOutcomes({ signedIn }: { signedIn: boolean }) {
       )}
 
       <h3 className="mt-6 text-xs font-mono uppercase tracking-[0.14em] text-[var(--color-accent)]">Outcomes</h3>
+      <p className="text-sm text-[var(--color-ink-2)] mt-2">
+        Each recorded action is checked again at 30, 60 and 90 days. Pending means the check has not run. Not measured means that check had no score.
+      </p>
       {outcomes && outcomes.length === 0 && <p className="text-sm text-[var(--color-ink)] mt-2">No recommended actions yet.</p>}
       {outcomes && outcomes.length > 0 && (
         <ul className="mt-3 space-y-3">
@@ -339,6 +343,15 @@ export function ProjectHistoryOutcomes({ signedIn }: { signedIn: boolean }) {
                     ? `Measured lift ${liftText(outcome.lift)} (${outcome.beforeValue} to ${outcome.afterValue}).`
                     : 'Too little data to measure lift.'}
                 </p>
+                {(outcome.followUps?.length ?? 0) > 0 && (
+                  <ul className="mt-2 space-y-1" aria-label={`${outcome.title} follow-ups`}>
+                    {outcome.followUps?.map((row) => (
+                      <li key={row.horizonDays} className="text-xs text-[var(--color-ink-2)]">
+                        {followUpSentence(row)}
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
               {outcome.status === 'recommended' && (
                 <button

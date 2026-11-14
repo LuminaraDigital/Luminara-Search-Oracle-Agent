@@ -198,6 +198,7 @@ export { DailyQuota } from './dailyQuota';
 import { createProject, listProjects, getProject } from './projectService';
 import { handleProjectHistoryRoute } from './projectHistoryRoute';
 import { handleProjectMonitorRoute, runProjectMonitorTick } from './projectMonitor';
+import { runOutcomeFollowUpTick } from './outcomeFollowups';
 import { getProjectContext, updateProjectContext, seedContextFromDna } from './projectContextService';
 import { getAgentReport, listAgentReports, saveAgentReport, getAgentReportHtmlForAccount } from './agentReportService';
 import { createApiKey, listApiKeys, revokeApiKey } from './apiKeyService';
@@ -2702,6 +2703,14 @@ const handler = {
         runProjectMonitorTick(env, { scheduledAt })
           .then(() => undefined)
           .catch((err) => console.error('[Monitor] sweep failed', err)),
+      );
+    }
+    if (jobs.includes('outcome_followup')) {
+      const scheduledAt = controller.scheduledTime;
+      ctx.waitUntil(
+        runOutcomeFollowUpTick(env, { now: scheduledAt })
+          .then(() => undefined)
+          .catch((err) => console.error('[outcome-followup] sweep failed', err)),
       );
     }
     if (jobs.includes('mcp_oauth_refresh_prune')) {

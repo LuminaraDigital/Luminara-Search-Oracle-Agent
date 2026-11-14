@@ -56,7 +56,7 @@ describe('tool governance catalogue', () => {
   it('covers every MCP-exposed tool name', () => {
     const known = [
       'whoami', 'list_projects', 'create_project', 'get_project_context',
-      'get_project_history', 'compare_snapshots', 'get_project_outcomes', 'mark_project_action_done',
+      'get_project_history', 'compare_snapshots', 'get_project_outcomes', 'get_outcome_report', 'mark_project_action_done',
       'get_project_monitor', 'set_project_monitor', 'list_project_alerts', 'ack_project_alert',
       'update_project_context', 'list_reports', 'get_report', 'save_report',
       'research_keywords', 'get_domain_overview', 'get_serp_results',
