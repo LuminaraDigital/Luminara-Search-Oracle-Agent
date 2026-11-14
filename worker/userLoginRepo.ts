@@ -66,7 +66,7 @@ export class D1UserLoginStore implements UserLoginStore {
       `INSERT INTO users (id, source, email, display_name, telegram_id, firebase_uid, created_at, last_seen_at, account_id, email_verified)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
-         email = excluded.email,
+         email = COALESCE(excluded.email, users.email),
          display_name = excluded.display_name,
          last_seen_at = excluded.last_seen_at,
          account_id = COALESCE(users.account_id, excluded.account_id),

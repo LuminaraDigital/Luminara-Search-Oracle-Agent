@@ -13,8 +13,12 @@ import {
   type ProjectMonitorPayload,
   type ProjectOutcomePayload,
 } from '../../services/projects/projectClient';
+import { followUpSentence } from '../../services/history/outcomeFollowUp';
 import type { SnapshotSignals } from '../../services/history/snapshotCompare';
 import type { SeoProject } from '../../services/projects/types';
+import { IndustrySelect } from '../industries/IndustrySelect';
+import { DEFAULT_INDUSTRY_ID } from '../../services/industries/industryProfiles';
+import { saveProjectIndustry } from '../../services/industries/industryClient';
 
 const KIND_LABEL: Record<string, string> = {
   audit: 'Audit',
@@ -176,21 +180,37 @@ export function ProjectHistoryOutcomes({ signedIn }: { signedIn: boolean }) {
           </h2>
           <p className="text-sm text-[var(--color-ink-2)] mt-1">Checks saved for this project, and whether a fix moved a measured score.</p>
         </div>
-        {projects.length > 1 && (
-          <label className="text-xs text-[var(--color-ink-2)] flex flex-col gap-1">
-            Project
-            <select
-              className="bg-black/60 border border-[var(--color-rule)] text-[var(--color-ink)] text-sm px-2 py-2 min-h-11"
-              value={projectId}
-              onChange={(event) => setProjectId(event.target.value)}
-            >
-              {projects.map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.name} ({project.domain})
-                </option>
-              ))}
-            </select>
-          </label>
+        {projectId && (
+          <div className="flex flex-col sm:flex-row gap-3">
+            {projects.length > 1 && (
+              <label className="text-xs text-[var(--color-ink-2)] flex flex-col gap-1">
+                Project
+                <select
+                  className="bg-black/60 border border-[var(--color-rule)] text-[var(--color-ink)] text-sm px-2 py-2 min-h-11"
+                  value={projectId}
+                  onChange={(event) => setProjectId(event.target.value)}
+                >
+                  {projects.map((project) => (
+                    <option key={project.id} value={project.id}>
+                      {project.name} ({project.domain})
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            <label className="text-xs text-[var(--color-ink-2)] flex flex-col gap-1">
+              Industry
+              <IndustrySelect
+                id="project-industry"
+                value={projects.find((project) => project.id === projectId)?.industryId || DEFAULT_INDUSTRY_ID}
+                onChange={(industryId) => {
+                  setProjects((rows) => rows.map((project) => (project.id === projectId ? { ...project, industryId } : project)));
+                  void saveProjectIndustry(projectId, industryId);
+                }}
+                className="bg-black/60 border border-[var(--color-rule)] text-[var(--color-ink)] text-sm px-2 py-2 min-h-11"
+              />
+            </label>
+          </div>
         )}
       </div>
 
@@ -326,6 +346,9 @@ export function ProjectHistoryOutcomes({ signedIn }: { signedIn: boolean }) {
       )}
 
       <h3 className="mt-6 text-xs font-mono uppercase tracking-[0.14em] text-[var(--color-accent)]">Outcomes</h3>
+      <p className="text-sm text-[var(--color-ink-2)] mt-2">
+        Each recorded action is checked again at 30, 60 and 90 days. Pending means the check has not run. Not measured means that check had no score.
+      </p>
       {outcomes && outcomes.length === 0 && <p className="text-sm text-[var(--color-ink)] mt-2">No recommended actions yet.</p>}
       {outcomes && outcomes.length > 0 && (
         <ul className="mt-3 space-y-3">
@@ -339,6 +362,15 @@ export function ProjectHistoryOutcomes({ signedIn }: { signedIn: boolean }) {
                     ? `Measured lift ${liftText(outcome.lift)} (${outcome.beforeValue} to ${outcome.afterValue}).`
                     : 'Too little data to measure lift.'}
                 </p>
+                {(outcome.followUps?.length ?? 0) > 0 && (
+                  <ul className="mt-2 space-y-1" aria-label={`${outcome.title} follow-ups`}>
+                    {outcome.followUps?.map((row) => (
+                      <li key={row.horizonDays} className="text-xs text-[var(--color-ink-2)]">
+                        {followUpSentence(row)}
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
               {outcome.status === 'recommended' && (
                 <button

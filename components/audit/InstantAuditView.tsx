@@ -152,6 +152,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
   const [showAttestationModal, setShowAttestationModal] = useState(false);
   const [persistHint, setPersistHint] = useState<string | null>(null);
   const [strategySaved, setStrategySaved] = useState(false);
+  const [savedProjectId, setSavedProjectId] = useState<string | undefined>(undefined);
   const [mcpMinting, setMcpMinting] = useState(false);
   const [mcpKey, setMcpKey] = useState<string | null>(null);
   const [mcpError, setMcpError] = useState<string | null>(null);
@@ -421,6 +422,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
           productTelemetry.recordOnboardingStep('strategy_saved');
           productTelemetry.track('strategy_saved', { projectIdPrefix: saved.projectId.slice(0, 8) });
           setStrategySaved(true);
+          setSavedProjectId(saved.projectId);
           setPersistHint(withInvite(`Strategy saved to project ${saved.projectId.slice(0, 12)}…`));
         } else if (isGuest) {
           setStrategySaved(false);
@@ -958,7 +960,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
             >
               {briefing ? 'Speaking…' : 'Brief aloud'}
             </button>
-            <ReportPdfButton markdownText={report.text} domain={url} clientName={dna?.name} measured={crewMeasurement !== 'not_measured'} findings={boardFindings} />
+            <ReportPdfButton markdownText={report.text} domain={url} clientName={dna?.name} measured={crewMeasurement !== 'not_measured'} findings={boardFindings} projectId={savedProjectId} />
             <button
               type="button"
               onClick={handleReset}
@@ -995,6 +997,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
             trustPack={report.trustPack}
             shareOfVoice={report.shareOfVoice}
             suppressLiveMetrics={crewMeasurement === 'not_measured'}
+            projectId={savedProjectId}
             hostedRail={hostedRail}
             sourceGraph={report.sourceGraph}
             enterpriseTrust={report.enterpriseTrust}

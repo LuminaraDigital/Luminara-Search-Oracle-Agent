@@ -22,12 +22,15 @@ export type ToolGovernanceEntry = { risk: ToolRisk; status: ToolStatus };
 export const TOOL_GOVERNANCE: Record<string, ToolGovernanceEntry> = {
   // Built-in MCP tools
   whoami: { risk: 'read', status: 'active' },
+  get_guide: { risk: 'read', status: 'active' },
+  list_industries: { risk: 'read', status: 'active' },
   list_projects: { risk: 'read', status: 'active' },
   create_project: { risk: 'write', status: 'active' },
   get_project_context: { risk: 'read', status: 'active' },
   get_project_history: { risk: 'read', status: 'active' },
   compare_snapshots: { risk: 'read', status: 'active' },
   get_project_outcomes: { risk: 'read', status: 'active' },
+  get_outcome_report: { risk: 'read', status: 'active' },
   mark_project_action_done: { risk: 'write', status: 'active' },
   get_project_monitor: { risk: 'read', status: 'active' },
   set_project_monitor: { risk: 'write', status: 'active' },
