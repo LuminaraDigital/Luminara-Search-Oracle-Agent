@@ -34,6 +34,9 @@ import com.luminarasuite.app.core.model.IdeaCreateRequest
 import com.luminarasuite.app.core.model.IdeaCreateResponse
 import com.luminarasuite.app.core.model.IdeaDetailResponse
 import com.luminarasuite.app.core.model.IdeaListResponse
+import com.luminarasuite.app.core.model.OracleChatRequest
+import com.luminarasuite.app.core.model.PasswordResetRequest
+import com.luminarasuite.app.core.model.PasswordResetResponse
 import com.luminarasuite.app.core.model.PrivacyExportResponse
 import com.luminarasuite.app.core.model.ProbeCrawlResponse
 import com.luminarasuite.app.core.model.ScoutRecheckRequest
@@ -156,6 +159,11 @@ interface LuminaraApi {
         @Body body: AuthCredentialsRequest,
     ): AuthTokenResponse
 
+    @POST("api/auth/reset-password")
+    suspend fun requestPasswordReset(
+        @Body body: PasswordResetRequest,
+    ): PasswordResetResponse
+
     @POST("api/auth/google")
     suspend fun signInWithGoogle(
         @Body body: GoogleSignInRequest,
@@ -254,6 +262,13 @@ interface LuminaraApi {
         @Header("x-audit-domain") auditDomain: String? = null,
         @Body body: GroqChatRequest,
     ): GroqChatResponse
+
+    @Streaming
+    @POST("api/oracle/chat")
+    suspend fun streamOracleChat(
+        @Header("Accept") accept: String = "text/event-stream",
+        @Body body: OracleChatRequest,
+    ): ResponseBody
 
     @Streaming
     @POST("api/providers/groq/chat/completions")

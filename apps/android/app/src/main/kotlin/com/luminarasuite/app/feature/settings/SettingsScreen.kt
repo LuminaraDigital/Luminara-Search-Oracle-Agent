@@ -21,6 +21,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -113,10 +114,6 @@ class SettingsViewModel(
 
     fun updateGroqKey(value: String) = _uiState.update { it.copy(groqKeyInput = value) }
 
-    fun updateNimKey(value: String) = _uiState.update { it.copy(nimKeyInput = value) }
-
-    fun updateGeminiKey(value: String) = _uiState.update { it.copy(geminiKeyInput = value) }
-
     fun updateTavilyKey(value: String) = _uiState.update { it.copy(tavilyKeyInput = value) }
 
     fun updateDeleteConfirm(value: String) = _uiState.update { it.copy(deleteConfirmInput = value) }
@@ -159,7 +156,12 @@ class SettingsViewModel(
             when {
                 result.isFailure ->
                     _uiState.update {
-                        it.copy(isBusy = false, errorBanner = "Google sign-in is unavailable on this device.")
+                        it.copy(
+                            isBusy = false,
+                            errorBanner =
+                            result.exceptionOrNull()?.message
+                                ?: "Google sign-in is unavailable on this device.",
+                        )
                     }
                 token == null -> _uiState.update { it.copy(isBusy = false) }
                 else ->
@@ -174,6 +176,19 @@ class SettingsViewModel(
                             }
                         }
             }
+        }
+    }
+
+    fun forgotPassword() {
+        _uiState.update { it.copy(isBusy = true, errorBanner = null, statusBanner = null) }
+        viewModelScope.launch {
+            repository.requestPasswordReset(_uiState.value.emailInput)
+                .onSuccess { msg -> _uiState.update { it.copy(isBusy = false, statusBanner = msg) } }
+                .onFailure { err ->
+                    _uiState.update {
+                        it.copy(isBusy = false, errorBanner = err.message ?: "That did not go through. Try again.")
+                    }
+                }
         }
     }
 
@@ -470,6 +485,13 @@ private fun AccountSection(
                 enabled = !state.isBusy,
                 testTag = "sign_in_button",
             )
+            TextButton(
+                onClick = viewModel::forgotPassword,
+                enabled = !state.isBusy,
+                modifier = Modifier.fillMaxWidth().testTag("forgot_password_button"),
+            ) {
+                Text("Forgot password?")
+            }
             OutlinedButton(
                 onClick = viewModel::signUp,
                 enabled = !state.isBusy,
@@ -530,16 +552,6 @@ private fun DeveloperByokSection(
                 onValueChange = viewModel::updateTavilyKey,
                 label = "Tavily search key (tvly-...)",
                 testTag = "byok_tavily_input",
-            )
-            SecretField(
-                value = state.geminiKeyInput,
-                onValueChange = viewModel::updateGeminiKey,
-                label = "Google Gemini API key",
-            )
-            SecretField(
-                value = state.nimKeyInput,
-                onValueChange = viewModel::updateNimKey,
-                label = "NVIDIA NIM API key (nvapi-...)",
             )
             FoundryButton(
                 text = "Save encrypted keys",

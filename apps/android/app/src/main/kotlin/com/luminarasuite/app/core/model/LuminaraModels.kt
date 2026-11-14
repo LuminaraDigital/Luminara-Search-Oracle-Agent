@@ -310,7 +310,7 @@ data class PrivacyExportResponse(
 @Serializable
 data class GroqMessage(
     val role: String,
-    val content: String,
+    val content: String = "",
 )
 
 @Serializable
@@ -321,6 +321,12 @@ data class GroqChatRequest(
     @SerialName("max_tokens")
     val maxTokens: Int = 1024,
     val stream: Boolean = false,
+)
+
+/** Body for `/api/oracle/chat`. The server keeps the session by account, so only the question is sent. */
+@Serializable
+data class OracleChatRequest(
+    val message: String,
 )
 
 @Serializable

@@ -25,12 +25,14 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
@@ -106,6 +108,7 @@ class AuditViewModel(
             it.copy(
                 domainInput = target,
                 isLoading = true,
+                report = null,
                 errorMessage = null,
                 recheckBanner = null,
                 isVerdictReported = false,
@@ -269,6 +272,16 @@ fun AuditScreen(
     val scope = rememberCoroutineScope()
     val beacons = probeBeacons(state.isLoading, state.report?.evaluation?.checks)
     val showReport = state.report != null && !state.isLoading
+    val keyboard = LocalSoftwareKeyboardController.current
+    val run = { domain: String? ->
+        keyboard?.hide()
+        viewModel.runAudit(domain)
+    }
+
+    // Both messages render above the report, out of view of the buttons that raise them.
+    LaunchedEffect(state.errorMessage, state.recheckBanner) {
+        if (state.errorMessage != null || state.recheckBanner != null) scrollState.animateScrollTo(0)
+    }
 
     Column(
         modifier =
@@ -296,7 +309,7 @@ fun AuditScreen(
                 singleLine = true,
                 shape = RoundedCornerShape(16.dp),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
-                keyboardActions = KeyboardActions(onGo = { viewModel.runAudit() }),
+                keyboardActions = KeyboardActions(onGo = { run(null) }),
                 colors = FoundryFieldColors(),
                 modifier =
                 Modifier
@@ -311,13 +324,13 @@ fun AuditScreen(
                     PillChip(
                         text = preset,
                         selected = false,
-                        onClick = { if (!state.isLoading) viewModel.runAudit(preset) },
+                        onClick = { if (!state.isLoading) run(preset) },
                     )
                 }
             }
             FoundryButton(
                 text = if (state.isLoading) state.stage ?: "Reading live files" else "Run Instant Audit",
-                onClick = { viewModel.runAudit() },
+                onClick = { run(null) },
                 enabled = !state.isLoading,
                 testTag = "run_audit_button",
             )
@@ -334,7 +347,7 @@ fun AuditScreen(
         state.errorMessage?.let { errorMsg ->
             if (!GuestTrial.isHostedSignInGate(errorMsg)) {
                 WorkbenchCard(railColor = LuminaraColors.ErrorRed) {
-                    EyebrowKicker("Could not read that site")
+                    EyebrowKicker("That did not go through")
                     Text(text = errorMsg, style = LuminaraTextStyles.Body, color = LuminaraColors.ErrorRed)
                 }
             }
