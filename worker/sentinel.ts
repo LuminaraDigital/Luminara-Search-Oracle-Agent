@@ -28,7 +28,15 @@ export interface SentinelTarget {
   /** Competitors to watch for citation presence in SERP snippets. */
   competitorNames?: string[];
   lastCompetitorHits?: Record<string, boolean>;
+  /** Lasting drift condition seen on the last scan ('not_cited'); cleared only by a measured, cited scan. */
+  lastDriftKey?: string;
+  driftSince?: number;
+  /** Set only when a queued audit was actually created. Unset counts as due. */
+  lastAuditEnqueuedAt?: number;
 }
+
+// Unchanged drift is re-audited weekly. An hour of slack covers a cron that fires early.
+const REAUDIT_INTERVAL_MS = 7 * 24 * 3600 * 1000 - 3600 * 1000;
 
 export interface EdgeSecurityPosture {
   httpsEnforced: boolean;
@@ -158,6 +166,8 @@ export async function runSentinelScan(env: Env): Promise<{ scanned: number; aler
       const keyword = target.keywords?.[0] || `${target.brandName || target.domain} solutions`;
       let cited = true;
       let serpBlob = '';
+      // True only when the provider returned results. A missing key, a failure or a throw is not a measurement.
+      let answered = false;
 
       if (env.TAVILY_API_KEY) {
         try {
@@ -176,6 +186,7 @@ export async function runSentinelScan(env: Env): Promise<{ scanned: number; aler
             const cleanDomain = target.domain.replace(/^https?:\/\//i, '').replace(/^www\./i, '').toLowerCase();
             cited = (data.results || []).some(r => r.url.toLowerCase().includes(cleanDomain));
             serpBlob = (data.results || []).map(r => `${r.url} ${r.content || ''}`).join('\n').toLowerCase();
+            answered = true;
           }
         } catch (e) {
           console.warn('[Sentinel] Tavily search fallback', e);
@@ -200,7 +211,8 @@ export async function runSentinelScan(env: Env): Promise<{ scanned: number; aler
       const now = Date.now();
       const competitorHits: Record<string, boolean> = { ...(target.lastCompetitorHits || {}) };
       const competitorChanges: string[] = [];
-      for (const name of target.competitorNames || []) {
+      // A failed call leaves no search text: keep the old baseline so the next good scan does not see a false change.
+      for (const name of answered ? target.competitorNames || [] : []) {
         const hit = serpBlob.includes(name.toLowerCase());
         const prev = target.lastCompetitorHits?.[name];
         if (typeof prev === 'boolean' && prev !== hit) {
@@ -260,12 +272,30 @@ export async function runSentinelScan(env: Env): Promise<{ scanned: number; aler
       // Chain drift detection into a queued audit so the audit's provenance run
       // links back to this sentinel tick. No-op without DB/AUDIT_JOBS bindings.
       const sentinelRunId = sentinelRuns.get(target.ownerId || '') || null;
-      if (needsAlert && sentinelRunId && target.ownerId) {
-        await enqueueAuditJob(env, {
+      const driftKey = answered && !cited ? 'not_cited' : undefined;
+      let lastDriftKey = target.lastDriftKey;
+      let driftSince = target.driftSince;
+      let lastAuditEnqueuedAt = target.lastAuditEnqueuedAt;
+      const isEvent = trustRegression || competitorChanges.length > 0;
+      const keyChanged = driftKey !== undefined && driftKey !== target.lastDriftKey;
+      const weeklyDue = !lastAuditEnqueuedAt || now - lastAuditEnqueuedAt >= REAUDIT_INTERVAL_MS;
+      if (needsAlert && (isEvent || keyChanged || weeklyDue) && sentinelRunId && target.ownerId) {
+        const job = await enqueueAuditJob(env, {
           accountId: target.ownerId,
           targetUrl: `https://${target.domain}`,
           parentRunId: sentinelRunId,
-        }).catch((e) => console.warn('[Sentinel] audit enqueue failed (continuing)', e));
+        }).catch((e) => {
+          console.warn('[Sentinel] audit enqueue failed (continuing)', e);
+          return null;
+        });
+        if (job) lastAuditEnqueuedAt = now;
+      }
+      if (driftKey) {
+        if (!lastDriftKey) driftSince = now;
+        lastDriftKey = driftKey;
+      } else if (answered) {
+        lastDriftKey = undefined;
+        driftSince = undefined;
       }
 
       updatedTargets.push({
@@ -276,6 +306,9 @@ export async function runSentinelScan(env: Env): Promise<{ scanned: number; aler
         lastCompetitorHits: competitorHits,
         lastReauditNudgeAt,
         driftAlertSentAt: target.driftAlertSentAt,
+        lastDriftKey,
+        driftSince,
+        lastAuditEnqueuedAt,
       });
     }
 
