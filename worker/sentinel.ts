@@ -288,7 +288,8 @@ export async function runSentinelScan(env: Env): Promise<{ scanned: number; aler
           console.warn('[Sentinel] audit enqueue failed (continuing)', e);
           return null;
         });
-        if (job) lastAuditEnqueuedAt = now;
+        // A failed enqueue clears the stamp, so the next scan tries again instead of waiting a week.
+        lastAuditEnqueuedAt = job ? now : undefined;
       }
       if (driftKey) {
         if (!lastDriftKey) driftSince = now;
