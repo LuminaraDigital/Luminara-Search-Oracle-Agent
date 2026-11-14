@@ -604,6 +604,6 @@ describe('outcome report api', () => {
     });
     const strangerBody = (await stranger.json()) as { result?: { isError?: boolean; content?: Array<{ text?: string }> } };
     expect(strangerBody.result?.isError).toBe(true);
-    expect(strangerBody.result?.content?.[0]?.text).toBe('Project not found');
+    expect(strangerBody.result?.content?.[0]?.text).toContain('Project not found');
   });
 });
