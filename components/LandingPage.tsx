@@ -218,7 +218,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
 
       <main id="main" tabIndex={-1} className="outline-none">
       {/* Story sequence: the sticky globe stage sits behind hero, statement and chapters. */}
-      <div className="relative">
+      <div className="relative" data-globe-surface>
         <SpaceStage anchors={anchorsRef} onChapterChange={setChapter} />
 
         <section

@@ -10,6 +10,7 @@ import {
   applyMatrix,
   clamp,
   dotLevel,
+  dragToLon,
   fromLatLon,
   liftedArc,
   viewMatrix,
@@ -70,6 +71,10 @@ export interface GlobeRenderer {
   setVisible(visible: boolean): void;
   /** Request a frame (reduced motion renders on demand only). */
   invalidate(): void;
+  /** Turn the globe with a horizontal drag, in CSS px. */
+  dragBy(dxCss: number): void;
+  /** While held, the spin and the chapter focus leave the longitude alone. */
+  setHeld(held: boolean): void;
   destroy(): void;
 }
 
@@ -394,6 +399,7 @@ export function createGlobeRenderer(
   let last = 0;
   let clock = 12;
   let ready = false;
+  let held = false;
 
   // Damped view state.
   const state = {
@@ -692,8 +698,8 @@ export function createGlobeRenderer(
     }
     state.lat += (target.lat - state.lat) * kSlow;
     if (target.lon === null) {
-      if (!opts.reducedMotion) state.lon = (state.lon + SPIN_DEG_PER_S * dt) % 360;
-    } else {
+      if (!opts.reducedMotion && !held) state.lon = (state.lon + SPIN_DEG_PER_S * dt) % 360;
+    } else if (!held) {
       state.lon += angleDelta(state.lon, target.lon) * kSlow;
     }
     const L = state.layers;
@@ -771,6 +777,16 @@ export function createGlobeRenderer(
       else stop();
     },
     invalidate,
+    dragBy(dxCss: number) {
+      if (!state.pose || lost || destroyed) return;
+      state.lon += dragToLon(dxCss, state.pose.r, state.lat);
+      invalidate();
+    },
+    setHeld(next: boolean) {
+      held = next;
+      // Reduced motion has no loop, so ask for the frame that returns a chapter to its focus.
+      if (!held) invalidate();
+    },
     destroy() {
       destroyed = true;
       stop();
