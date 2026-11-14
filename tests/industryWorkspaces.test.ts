@@ -207,11 +207,16 @@ describe('industry and client workspaces', () => {
       body: JSON.stringify({ email: 'viewer@example.com', role: 'client_viewer', clientId: adaBody.clientId }),
     });
     expect(inviteViewer.status).toBe(200);
+    const viewerBody = (await inviteViewer.json()) as { member: { id: string; status: string } };
+    expect(viewerBody.member.status).toBe('invited');
     const inviteStaff = await call(env, 701, '/workspaces/current/invites', {
       method: 'POST',
       body: JSON.stringify({ email: 'staff@example.com', role: 'staff' }),
     });
     expect(inviteStaff.status).toBe(200);
+    const staffBody = (await inviteStaff.json()) as { member: { id: string } };
+    expect((await call(env, 802, `/workspaces/invites/${viewerBody.member.id}/accept`, { method: 'POST' })).status).toBe(200);
+    expect((await call(env, 803, `/workspaces/invites/${staffBody.member.id}/accept`, { method: 'POST' })).status).toBe(200);
 
     const own = await call(env, 802, `/projects/${adaBody.projectId}`);
     expect(own.status).toBe(200);

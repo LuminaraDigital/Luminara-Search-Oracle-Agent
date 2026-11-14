@@ -195,7 +195,7 @@ import { settleFirebaseErase } from './accountDeletion';
 import { handleEmailUnsubscribe, runWithWaitUntil } from './welcomeEmail';
 
 export { DailyQuota } from './dailyQuota';
-import { createProject, getProject, setProjectIndustry } from './projectService';
+import { createProject, deleteProject, getProject, setProjectIndustry } from './projectService';
 import { handleIndustryWorkspaceRoute } from './workspaceRoutes';
 import { accountForProjectPath, accountForReportId, createTargetAccount, listVisibleProjects } from './tenantGate';
 import { assertNewClientAllowed } from './clientWorkspace';
@@ -2079,8 +2079,10 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
   if (
     path === '/industries'
     || path === '/account/industry'
-    || path === '/workspaces/current'
+    ||     path === '/workspaces/current'
     || path.startsWith('/workspaces/current/')
+    || path === '/workspaces/invites'
+    || path.startsWith('/workspaces/invites/')
   ) {
     const industryResponse = await handleIndustryWorkspaceRoute(request, env, path);
     if (industryResponse) return withCors(industryResponse);
@@ -2139,6 +2141,11 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
         if (!project) return withCors(json({ ok: false, error: 'Not found' }, 404));
         const live = await reportBrandForAccount(env, project.accountId);
         return withCors(json({ ok: true, project, reportBrand: live.brand }));
+      }
+      if (!isContext && request.method === 'DELETE') {
+        const deleted = await deleteProject(env, accountId, projectId, who.user.id);
+        if (!deleted.ok) return withCors(json({ ok: false, error: deleted.error }, deleted.status));
+        return withCors(json({ ok: true }));
       }
       if (!isContext && request.method === 'PATCH') {
         const body = await readBody(request, MAX_SMALL_BODY_BYTES);

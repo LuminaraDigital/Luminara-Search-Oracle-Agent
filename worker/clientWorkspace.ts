@@ -1,19 +1,24 @@
 /**
  * One workspace per billing account. The account owner is the owner.
  * Staff can work every client. A client-viewer can only read one client_id.
+ * An invite stays pending until that person accepts. A pending invite grants nothing.
  * Brand fields are stored here. Report render reads them. The custom report domain is stored and not used yet.
  */
 import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
 import { billingId } from './workerUtils';
 import { randomId } from '../services/projects/projectUtils';
-import { createProject, listProjects } from './projectService';
+import { createProject, deleteProject, listProjects } from './projectService';
+import { auditOrgIdFor, recordAuditLogBestEffort } from './auditLog';
 import { entitlementsFor } from '../services/plans/planEntitlements';
 import { parseLogoUrl } from '../services/reports/reportBrand';
 import { getActiveSubscription } from './quotaMiddleware';
 import type { IndustryId } from '../services/industries/industryProfiles';
 
 export type WorkspaceRole = 'owner' | 'staff' | 'client_viewer';
+
+/** New invites expire after 14 days. Rows from before this column have no expiry. */
+export const INVITE_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 
 export interface ClientWorkspace {
   id: string;
@@ -28,12 +33,24 @@ export interface ClientWorkspace {
 }
 
 export interface WorkspaceMember {
+  id: string;
   workspaceId: string;
   email: string;
   userId: string | null;
   role: WorkspaceRole;
   clientId: string | null;
   status: 'invited' | 'active';
+  expiresAt: number | null;
+}
+
+export interface PendingInvite {
+  id: string;
+  workspaceId: string;
+  workspaceName: string;
+  role: 'staff' | 'client_viewer';
+  clientId: string | null;
+  expiresAt: number | null;
+  invitedAt: number;
 }
 
 type WorkspaceRow = {
@@ -105,10 +122,10 @@ export async function createWorkspace(env: Env, user: HostedIdentity, name: stri
   const email = user.email ? normalizeEmail(user.email) : `user:${user.id}`;
   await env.DB!.prepare(
     `INSERT INTO client_workspace_members
-      (workspace_id, email, user_id, role, client_id, status, invited_at, accepted_at)
-     VALUES (?, ?, ?, 'owner', NULL, 'active', ?, ?)`,
+      (id, workspace_id, email, user_id, role, client_id, status, invited_at, accepted_at)
+     VALUES (?, ?, ?, ?, 'owner', NULL, 'active', ?, ?)`,
   )
-    .bind(id, email, user.id, now, now)
+    .bind(randomId('inv'), id, email, user.id, now, now)
     .run();
   const created = await workspaceForAccount(env, accountId);
   if (!created) throw new Error('Workspace created but not readable');
@@ -169,26 +186,15 @@ export async function updateWorkspaceBrand(env: Env, workspace: ClientWorkspace,
   return next;
 }
 
-export async function acceptPendingInvites(env: Env, user: HostedIdentity): Promise<void> {
-  if (!env.DB || !user.email) return;
-  const email = normalizeEmail(user.email);
-  if (!isEmail(email)) return;
-  await env.DB.prepare(
-    `UPDATE client_workspace_members
-     SET user_id = ?, status = 'active', accepted_at = COALESCE(accepted_at, ?)
-     WHERE email = ? AND status = 'invited'`,
-  )
-    .bind(user.id, Date.now(), email)
-    .run();
-}
-
 type MemberRow = {
+  id: string | null;
   workspace_id: string;
   email: string;
   user_id: string | null;
   role: string;
   client_id: string | null;
   status: string;
+  expires_at?: number | null;
   account_id: string;
 };
 
@@ -199,7 +205,7 @@ function isRole(value: string): value is WorkspaceRole {
 export async function membershipsForUser(env: Env, userId: string): Promise<Array<WorkspaceMember & { accountId: string }>> {
   if (!env.DB) return [];
   const res = await env.DB.prepare(
-    `SELECT m.workspace_id, m.email, m.user_id, m.role, m.client_id, m.status, w.account_id
+    `SELECT m.id, m.workspace_id, m.email, m.user_id, m.role, m.client_id, m.status, m.expires_at, w.account_id
      FROM client_workspace_members m
      JOIN client_workspaces w ON w.id = m.workspace_id
      WHERE m.user_id = ? AND m.status = 'active'`,
@@ -210,12 +216,14 @@ export async function membershipsForUser(env: Env, userId: string): Promise<Arra
   for (const row of res.results || []) {
     if (!isRole(row.role) || (row.status !== 'active' && row.status !== 'invited')) continue;
     rows.push({
+      id: row.id || row.email,
       workspaceId: row.workspace_id,
       email: row.email,
       userId: row.user_id,
       role: row.role,
       clientId: row.client_id,
       status: row.status,
+      expiresAt: row.expires_at ?? null,
       accountId: row.account_id,
     });
   }
@@ -225,38 +233,46 @@ export async function membershipsForUser(env: Env, userId: string): Promise<Arra
 export async function listMembers(env: Env, workspaceId: string): Promise<WorkspaceMember[]> {
   if (!env.DB) return [];
   const res = await env.DB.prepare(
-    `SELECT workspace_id, email, user_id, role, client_id, status
-     FROM client_workspace_members WHERE workspace_id = ? ORDER BY invited_at ASC`,
+    `SELECT id, workspace_id, email, user_id, role, client_id, status, expires_at
+     FROM client_workspace_members
+     WHERE workspace_id = ? AND declined_at IS NULL
+     ORDER BY invited_at ASC`,
   )
     .bind(workspaceId)
     .all<{
+      id: string | null;
       workspace_id: string;
       email: string;
       user_id: string | null;
       role: string;
       client_id: string | null;
       status: string;
+      expires_at: number | null;
     }>();
   const members: WorkspaceMember[] = [];
   for (const row of res.results || []) {
     if (!isRole(row.role) || (row.status !== 'active' && row.status !== 'invited')) continue;
     members.push({
+      id: row.id || row.email,
       workspaceId: row.workspace_id,
       email: row.email,
       userId: row.user_id,
       role: row.role,
       clientId: row.client_id,
       status: row.status,
+      expiresAt: row.expires_at,
     });
   }
   return members;
 }
 
-async function userIdForEmail(env: Env, email: string): Promise<string | null> {
-  const row = await env.DB!.prepare(`SELECT id FROM users WHERE lower(email) = ? LIMIT 1`)
-    .bind(email)
-    .first<{ id: string }>();
-  return row?.id || null;
+async function verifiedEmail(env: Env, userId: string): Promise<string | null> {
+  const row = await env.DB!.prepare(`SELECT email, email_verified FROM users WHERE id = ?`)
+    .bind(userId)
+    .first<{ email: string | null; email_verified: number | null }>();
+  if (!row?.email || row.email_verified !== 1) return null;
+  const email = normalizeEmail(row.email);
+  return isEmail(email) ? email : null;
 }
 
 export async function inviteMember(
@@ -274,33 +290,198 @@ export async function inviteMember(
     const projects = await listProjects(env, workspace.accountId, clientId);
     if (projects.length === 0) return { ok: false, error: 'That client has no project yet.', status: 400 };
   }
-  const existingUser = await userIdForEmail(env, email);
+  const existing = await env.DB!.prepare(
+    `SELECT status FROM client_workspace_members WHERE workspace_id = ? AND email = ?`,
+  )
+    .bind(workspace.id, email)
+    .first<{ status: string }>();
+  if (existing?.status === 'active') {
+    return { ok: false, error: 'That email is already a member of this workspace.', status: 409 };
+  }
   const now = Date.now();
-  const status = existingUser ? 'active' : 'invited';
+  const id = randomId('inv');
+  const expiresAt = now + INVITE_TTL_MS;
   await env.DB!.prepare(
     `INSERT INTO client_workspace_members
-      (workspace_id, email, user_id, role, client_id, status, invited_at, accepted_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      (id, workspace_id, email, user_id, role, client_id, status, invited_at, accepted_at, expires_at, declined_at)
+     VALUES (?, ?, ?, NULL, ?, ?, 'invited', ?, NULL, ?, NULL)
      ON CONFLICT(workspace_id, email) DO UPDATE SET
-       user_id = excluded.user_id,
-       role = excluded.role,
-       client_id = excluded.client_id,
-       status = excluded.status,
-       accepted_at = excluded.accepted_at`,
+       id = CASE WHEN client_workspace_members.status = 'active' THEN client_workspace_members.id ELSE excluded.id END,
+       user_id = CASE WHEN client_workspace_members.status = 'active' THEN client_workspace_members.user_id ELSE NULL END,
+       role = CASE WHEN client_workspace_members.status = 'active' THEN client_workspace_members.role ELSE excluded.role END,
+       client_id = CASE WHEN client_workspace_members.status = 'active' THEN client_workspace_members.client_id ELSE excluded.client_id END,
+       status = CASE WHEN client_workspace_members.status = 'active' THEN client_workspace_members.status ELSE 'invited' END,
+       invited_at = CASE WHEN client_workspace_members.status = 'active' THEN client_workspace_members.invited_at ELSE excluded.invited_at END,
+       accepted_at = CASE WHEN client_workspace_members.status = 'active' THEN client_workspace_members.accepted_at ELSE NULL END,
+       expires_at = CASE WHEN client_workspace_members.status = 'active' THEN client_workspace_members.expires_at ELSE excluded.expires_at END,
+       declined_at = CASE WHEN client_workspace_members.status = 'active' THEN client_workspace_members.declined_at ELSE NULL END`,
   )
-    .bind(workspace.id, email, existingUser, input.role, clientId, status, now, existingUser ? now : null)
+    .bind(id, workspace.id, email, input.role, clientId, now, expiresAt)
     .run();
+  const saved = await env.DB!.prepare(
+    `SELECT id, status FROM client_workspace_members WHERE workspace_id = ? AND email = ?`,
+  )
+    .bind(workspace.id, email)
+    .first<{ id: string; status: string }>();
+  if (saved?.status === 'active') {
+    return { ok: false, error: 'That email is already a member of this workspace.', status: 409 };
+  }
   return {
     ok: true,
     member: {
+      id: saved?.id || id,
       workspaceId: workspace.id,
       email,
-      userId: existingUser,
+      userId: null,
       role: input.role,
       clientId,
-      status,
+      status: 'invited',
+      expiresAt,
     },
   };
+}
+
+type InviteRow = {
+  id: string;
+  workspace_id: string;
+  account_id: string;
+  email: string;
+  role: string;
+  client_id: string | null;
+  status: string;
+  expires_at: number | null;
+  declined_at: number | null;
+  invited_at: number;
+  name: string;
+};
+
+function inviteClosed(row: InviteRow, now: number): { error: string; status: number; code: string } | null {
+  if (row.status === 'active') return { error: 'This invite was already accepted.', status: 409, code: 'INVITE_ACCEPTED' };
+  if (row.declined_at != null) return { error: 'This invite was declined.', status: 409, code: 'INVITE_DECLINED' };
+  if (row.expires_at != null && row.expires_at <= now) return { error: 'This invite has expired.', status: 409, code: 'INVITE_EXPIRED' };
+  if (row.status !== 'invited') return { error: 'This invite can no longer be used.', status: 409, code: 'INVITE_CLOSED' };
+  return null;
+}
+
+export async function listPendingInvites(env: Env, user: HostedIdentity): Promise<PendingInvite[]> {
+  if (!env.DB) return [];
+  const email = await verifiedEmail(env, user.id);
+  if (!email) return [];
+  const now = Date.now();
+  const res = await env.DB.prepare(
+    `SELECT m.id, m.workspace_id, w.name, m.role, m.client_id, m.expires_at, m.invited_at
+     FROM client_workspace_members m
+     JOIN client_workspaces w ON w.id = m.workspace_id
+     WHERE m.email = ? AND m.status = 'invited' AND m.declined_at IS NULL
+       AND m.role IN ('staff', 'client_viewer')
+       AND (m.expires_at IS NULL OR m.expires_at > ?)
+     ORDER BY m.invited_at ASC`,
+  )
+    .bind(email, now)
+    .all<{
+      id: string;
+      workspace_id: string;
+      name: string;
+      role: string;
+      client_id: string | null;
+      expires_at: number | null;
+      invited_at: number;
+    }>();
+  const invites: PendingInvite[] = [];
+  for (const row of res.results || []) {
+    const role = row.role === 'staff' || row.role === 'client_viewer' ? row.role : null;
+    if (!role) continue;
+    invites.push({
+      id: row.id,
+      workspaceId: row.workspace_id,
+      workspaceName: row.name,
+      role,
+      clientId: row.client_id,
+      expiresAt: row.expires_at,
+      invitedAt: row.invited_at,
+    });
+  }
+  return invites;
+}
+
+export async function respondToInvite(
+  env: Env,
+  user: HostedIdentity,
+  inviteId: string,
+  decision: 'accept' | 'decline',
+): Promise<{ ok: true; invite: PendingInvite } | { ok: false; error: string; status: number; code: string }> {
+  if (!env.DB) return { ok: false, error: 'Database unavailable', status: 503, code: 'DB_UNBOUND' };
+  const email = await verifiedEmail(env, user.id);
+  if (!email) {
+    return { ok: false, error: 'Verify your email before answering an invite.', status: 403, code: 'EMAIL_UNVERIFIED' };
+  }
+  const row = await env.DB.prepare(
+    `SELECT m.id, m.workspace_id, w.account_id, m.email, m.role, m.client_id, m.status, m.expires_at, m.declined_at, m.invited_at, w.name
+     FROM client_workspace_members m
+     JOIN client_workspaces w ON w.id = m.workspace_id
+     WHERE m.id = ?`,
+  )
+    .bind(inviteId)
+    .first<InviteRow>();
+  const role = row?.role === 'staff' || row?.role === 'client_viewer' ? row.role : null;
+  if (!row || !role) {
+    return { ok: false, error: 'Not found', status: 404, code: 'NOT_FOUND' };
+  }
+  if (row.email !== email) {
+    return { ok: false, error: 'This invite is for a different email.', status: 403, code: 'INVITE_EMAIL_MISMATCH' };
+  }
+  const now = Date.now();
+  const closed = inviteClosed(row, now);
+  if (closed) return { ok: false, ...closed };
+  const invite: PendingInvite = {
+    id: row.id,
+    workspaceId: row.workspace_id,
+    workspaceName: row.name,
+    role,
+    clientId: row.client_id,
+    expiresAt: row.expires_at,
+    invitedAt: row.invited_at,
+  };
+  if (decision === 'decline') {
+    const result = await env.DB.prepare(
+      `UPDATE client_workspace_members
+       SET declined_at = ?
+       WHERE id = ? AND email = ? AND status = 'invited' AND declined_at IS NULL
+         AND (expires_at IS NULL OR expires_at > ?)`,
+    )
+      .bind(now, row.id, email, now)
+      .run();
+    if (Number(result.meta?.changes ?? 0) !== 1) {
+      return { ok: false, error: 'This invite can no longer be used.', status: 409, code: 'INVITE_CLOSED' };
+    }
+    await recordAuditLogBestEffort(env, {
+      org_id: auditOrgIdFor(row.account_id),
+      actor_id: user.id,
+      action: 'workspace_invite_declined',
+      target_id: row.id,
+      details: { email, role: row.role },
+    });
+    return { ok: true, invite };
+  }
+  const result = await env.DB.prepare(
+    `UPDATE client_workspace_members
+     SET user_id = ?, status = 'active', accepted_at = ?, declined_at = NULL
+     WHERE id = ? AND email = ? AND status = 'invited' AND declined_at IS NULL
+       AND (expires_at IS NULL OR expires_at > ?)`,
+  )
+    .bind(user.id, now, row.id, email, now)
+    .run();
+  if (Number(result.meta?.changes ?? 0) !== 1) {
+    return { ok: false, error: 'This invite can no longer be used.', status: 409, code: 'INVITE_CLOSED' };
+  }
+  await recordAuditLogBestEffort(env, {
+    org_id: auditOrgIdFor(row.account_id),
+    actor_id: user.id,
+    action: 'workspace_invite_accepted',
+    target_id: row.id,
+    details: { email, role, clientId: row.client_id },
+  });
+  return { ok: true, invite };
 }
 
 export async function assertNewClientAllowed(
@@ -426,6 +607,140 @@ export async function listWorkspaceClients(
     }
   }
   return [...grouped.values()].map(({ measuredAt: _measuredAt, ...card }) => card);
+}
+
+export async function deleteWorkspaceClient(
+  env: Env,
+  accountId: string,
+  clientId: string,
+  actorId: string,
+): Promise<{ ok: true; projectIds: string[] } | { ok: false; error: string; status: number }> {
+  if (!env.DB) return { ok: false, error: 'Database unavailable', status: 503 };
+  const id = clientId.trim();
+  if (!id || id.length > 80) return { ok: false, error: 'Not found', status: 404 };
+  const rows = await env.DB.prepare(`SELECT id FROM projects WHERE account_id = ? AND client_id = ?`)
+    .bind(accountId, id)
+    .all<{ id: string }>();
+  const ids = (rows.results || []).map((row) => row.id);
+  if (ids.length === 0) return { ok: false, error: 'Not found', status: 404 };
+  for (const projectId of ids) {
+    const deleted = await deleteProject(env, accountId, projectId, actorId);
+    if (!deleted.ok) return deleted;
+  }
+  await recordAuditLogBestEffort(env, {
+    org_id: auditOrgIdFor(accountId),
+    actor_id: actorId,
+    action: 'workspace_client_deleted',
+    target_id: id,
+    details: { projectIds: ids },
+  });
+  return { ok: true, projectIds: ids };
+}
+
+/** Member and invite rows share one table. The path key is the stored email (owner rows may be `user:<id>`). */
+export async function removeWorkspacePerson(
+  env: Env,
+  workspace: ClientWorkspace,
+  emailRaw: string,
+  kind: 'invite' | 'member',
+  actorId: string,
+): Promise<{ ok: true } | { ok: false; error: string; status: number }> {
+  if (!env.DB) return { ok: false, error: 'Database unavailable', status: 503 };
+  const email = normalizeEmail(emailRaw);
+  if (!email || email.length > 200) return { ok: false, error: 'Not found', status: 404 };
+  const status = kind === 'invite' ? 'invited' : 'active';
+  const row = await env.DB.prepare(
+    `SELECT email, role, status FROM client_workspace_members
+     WHERE workspace_id = ? AND (id = ? OR email = ?)`,
+  )
+    .bind(workspace.id, emailRaw.trim(), email)
+    .first<{ email: string; role: string; status: string }>();
+  if (!row || row.status !== status || !isRole(row.role)) return { ok: false, error: 'Not found', status: 404 };
+  const memberEmail = row.email;
+  if (kind === 'member' && row.role === 'owner') {
+    const removed = await env.DB.prepare(
+      `DELETE FROM client_workspace_members
+       WHERE workspace_id = ? AND email = ? AND status = 'active' AND role = 'owner'
+         AND (
+           SELECT COUNT(*) FROM client_workspace_members
+           WHERE workspace_id = ? AND role = 'owner' AND status = 'active'
+         ) > 1`,
+    )
+      .bind(workspace.id, memberEmail, workspace.id)
+      .run();
+    if (Number(removed.meta?.changes ?? 0) !== 1) {
+      const still = await env.DB.prepare(
+        `SELECT role FROM client_workspace_members WHERE workspace_id = ? AND email = ? AND status = 'active' AND role = 'owner'`,
+      )
+        .bind(workspace.id, memberEmail)
+        .first<{ role: string }>();
+      if (still) return { ok: false, error: 'The workspace needs an owner.', status: 409 };
+      return { ok: false, error: 'Not found', status: 404 };
+    }
+  } else {
+    const removed = await env.DB.prepare(
+      `DELETE FROM client_workspace_members WHERE workspace_id = ? AND email = ? AND status = ?`,
+    )
+      .bind(workspace.id, memberEmail, status)
+      .run();
+    if (Number(removed.meta?.changes ?? 0) !== 1) return { ok: false, error: 'Not found', status: 404 };
+  }
+  await recordAuditLogBestEffort(env, {
+    org_id: auditOrgIdFor(workspace.accountId),
+    actor_id: actorId,
+    action: kind === 'invite' ? 'workspace_invite_revoked' : 'workspace_member_removed',
+    target_id: memberEmail,
+    details: { workspaceId: workspace.id, role: row.role },
+  });
+  return { ok: true };
+}
+
+export async function deleteWorkspace(
+  env: Env,
+  workspace: ClientWorkspace,
+  confirm: boolean,
+  actorId: string,
+): Promise<{ ok: true } | { ok: false; error: string; status: number }> {
+  if (!env.DB) return { ok: false, error: 'Database unavailable', status: 503 };
+  const flag = confirm ? 1 : 0;
+  await env.DB.batch([
+    env.DB.prepare(
+      `DELETE FROM client_workspace_members
+       WHERE workspace_id = ?
+         AND (
+           ? = 1
+           OR (SELECT COUNT(DISTINCT client_id) FROM projects WHERE account_id = ? AND client_id != '') = 0
+         )`,
+    ).bind(workspace.id, flag, workspace.accountId),
+    env.DB.prepare(
+      `DELETE FROM client_workspaces
+       WHERE id = ? AND account_id = ?
+         AND (
+           ? = 1
+           OR (SELECT COUNT(DISTINCT client_id) FROM projects WHERE account_id = ? AND client_id != '') = 0
+         )`,
+    ).bind(workspace.id, workspace.accountId, flag, workspace.accountId),
+  ]);
+  const still = await workspaceById(env, workspace.id);
+  if (still) {
+    const clients = await countClients(env, workspace.accountId);
+    if (clients > 0 && !confirm) {
+      return {
+        ok: false,
+        status: 409,
+        error: 'Clients are still on this workspace. Delete them first, or send confirm: true.',
+      };
+    }
+    return { ok: false, error: 'Could not delete workspace', status: 500 };
+  }
+  await recordAuditLogBestEffort(env, {
+    org_id: auditOrgIdFor(workspace.accountId),
+    actor_id: actorId,
+    action: 'workspace_deleted',
+    target_id: workspace.id,
+    details: { confirmed: confirm },
+  });
+  return { ok: true };
 }
 
 export async function addWorkspaceClient(

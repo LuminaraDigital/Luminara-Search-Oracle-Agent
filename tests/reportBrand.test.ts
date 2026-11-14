@@ -261,6 +261,9 @@ describe('report brand', () => {
       body: JSON.stringify({ email: 'viewer@example.com', role: 'client_viewer', clientId: adaBody.clientId }),
     });
     expect(invite.status).toBe(200);
+    const inviteBody = (await invite.json()) as { member: { id: string; status: string } };
+    expect(inviteBody.member.status).toBe('invited');
+    expect((await call(env, 802, `/workspaces/invites/${inviteBody.member.id}/accept`, { method: 'POST' })).status).toBe(200);
     const other = await call(env, 802, '/share/reports', {
       method: 'POST',
       body: JSON.stringify({ markdownText: '# Other', projectId: 'missing-project' }),
