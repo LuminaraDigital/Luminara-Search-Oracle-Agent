@@ -5,7 +5,7 @@ import type { Env } from '../worker/env';
 import { capToolResult, handleMcpRequest, listMcpToolCatalogue } from '../worker/mcpServer';
 import { TOOL_GOVERNANCE } from '../worker/mcpGovernance';
 import { enforceMcpOauthIpLimit, MCP_ACCOUNT_BURST_PER_MIN, MCP_CLIENT_BURST_PER_MIN, MCP_HOSTED_PAID_DAILY, spendMcpDailyCall } from '../worker/mcpLimits';
-import { clipText, MCP_RESULT_TEXT_CAP, MCP_STRUCTURED_CHAR_CAP, pageList } from '../worker/mcpToolMeta';
+import { clipText, MCP_RESULT_TEXT_CAP, MCP_STRUCTURED_CHAR_CAP, OPEN_WORLD_TOOLS, pageList } from '../worker/mcpToolMeta';
 import { MCP_PUBLIC_URL } from '../services/mcp/publicServer';
 import type { HostedIdentity, McpCredential } from '../worker/userTypes';
 import { createSqliteD1 } from './helpers/sqliteD1';
@@ -443,9 +443,22 @@ describe('MCP tool catalogue', () => {
     for (const tool of tools) {
       const risk = TOOL_GOVERNANCE[tool.name].risk;
       expect(tool.annotations.readOnlyHint).toBe(risk === 'read');
+      expect(tool.annotations.openWorldHint).toBe(OPEN_WORLD_TOOLS.has(tool.name));
       expect(tool.annotations.destructiveHint).toBe(risk === 'destructive');
       expect(tool.annotations.title.length).toBeGreaterThan(3);
       expect(tool.description.length).toBeGreaterThan(40);
+    }
+  });
+
+  it('every catalogue tool has boolean readOnlyHint, openWorldHint, and destructiveHint', () => {
+    const tools = listMcpToolCatalogue();
+    expect(tools.length).toBeGreaterThan(0);
+    const names = new Set(tools.map((tool) => tool.name));
+    for (const name of OPEN_WORLD_TOOLS) expect(names.has(name)).toBe(true);
+    for (const tool of tools) {
+      expect(typeof tool.annotations.readOnlyHint).toBe('boolean');
+      expect(typeof tool.annotations.openWorldHint).toBe('boolean');
+      expect(typeof tool.annotations.destructiveHint).toBe('boolean');
     }
   });
 
