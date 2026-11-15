@@ -167,7 +167,7 @@ npx wrangler kv namespace create LUMINARA_KV      # paste the id into wrangler.j
 npx wrangler secret put BOT_TOKEN                 # from @BotFather
 npx wrangler secret put TELEGRAM_WEBHOOK_SECRET   # any long random string
 npx wrangler secret put GROQ_API_KEY              # hosted keys are optional; add the ones you offer
-npx wrangler secret put TAVILY_API_KEY
+npx wrangler secret put TAVILY_API_KEY            # free-check answer sample. Set FREE_AI_SAMPLE_DAILY_BUDGET=0 to pause it.
 npx wrangler secret put FIRECRAWL_API_KEY
 npm run deploy
 ```

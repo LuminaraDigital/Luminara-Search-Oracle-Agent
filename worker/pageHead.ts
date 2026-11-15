@@ -7,6 +7,8 @@
  * comments are cut with indexOf, tag openers stop at the next `<` (`[^<>]*`), closers are found
  * with indexOf, and no text or tag longer than MAX_SPAN is matched, since output is MAX_TEXT long.
  */
+import { brandFromEvidence, cleanScrapedName } from '../services/audit/brandName';
+import { cleanPlace } from '../services/audit/freeAiAnswer';
 import { decodeEntities } from '../utils/html';
 import { jsonLdBlocks } from './deployReadback';
 import type { HomepageHead } from '../services/marketing/homepageSnippet';
@@ -158,4 +160,101 @@ export function readPageHead(html: string): Omit<HomepageHead, 'finalUrl'> {
     jsonLdTypes: jsonLdTypes(page),
     noindex: robotsSaysNoindex(meta(metas, 'robots')) || robotsSaysNoindex(meta(metas, 'googlebot')),
   };
+}
+
+const BUSINESS_TYPES = new Set(['RealEstateAgent', 'LocalBusiness', 'ProfessionalService']);
+const LD_NODES = 200;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function leafType(value: string): string {
+  const slash = value.lastIndexOf('/');
+  const base = slash >= 0 ? value.slice(slash + 1) : value;
+  const colon = base.lastIndexOf(':');
+  return (colon >= 0 ? base.slice(colon + 1) : base).trim();
+}
+
+function typeList(value: unknown): string[] {
+  const list = Array.isArray(value) ? value : [value];
+  const out: string[] = [];
+  for (const item of list) {
+    if (typeof item === 'string' && item.trim()) out.push(leafType(item));
+  }
+  return out;
+}
+
+function placeLabel(value: unknown): string {
+  if (typeof value === 'string') return cleanPlace(value);
+  if (Array.isArray(value)) {
+    for (const item of value.slice(0, 8)) {
+      const found = placeLabel(item);
+      if (found) return found;
+    }
+    return '';
+  }
+  if (isRecord(value) && typeof value.name === 'string') return cleanPlace(value.name);
+  return '';
+}
+
+function plainName(value: string): string {
+  return value.replace(/[<>]/g, '').trim();
+}
+
+/**
+ * Agency name and suburb the homepage itself states. Title, og:site_name, and JSON-LD only.
+ * A missing field stays empty. Nothing here is guessed from the domain.
+ */
+export function readBusinessSignals(html: string, title: string | null): { agencyName: string; suburb: string } {
+  const page = withoutComments(html);
+  const lower = page.toLowerCase();
+  const closeHead = lower.indexOf('</head');
+  const openBody = lower.indexOf('<body');
+  const headEnd = closeHead >= 0 ? closeHead : openBody >= 0 ? openBody : page.length;
+  const metas = metaTags(page.slice(0, headEnd));
+  const siteName = text(meta(metas, 'og:site_name'));
+  const geo = cleanPlace(text(meta(metas, 'geo.placename')));
+  let businessName = '';
+  let organizationName = '';
+  let locality = '';
+  let areaServed = '';
+  for (const block of jsonLdBlocks(page)) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(block);
+    } catch {
+      continue;
+    }
+    const stack: unknown[] = [parsed];
+    let seen = 0;
+    while (stack.length > 0 && seen < LD_NODES && (!businessName || !locality)) {
+      const node = stack.shift();
+      seen += 1;
+      if (Array.isArray(node)) {
+        stack.push(...node.slice(0, 20));
+        continue;
+      }
+      if (!isRecord(node)) continue;
+      const types = typeList(node['@type']);
+      const name = typeof node.name === 'string' ? plainName(cleanScrapedName(node.name)) : '';
+      if (name && types.some((type) => BUSINESS_TYPES.has(type)) && !businessName) businessName = name;
+      if (name && types.includes('Organization') && !organizationName) organizationName = name;
+      const address = node.address;
+      if (!locality && isRecord(address) && typeof address.addressLocality === 'string') {
+        locality = cleanPlace(address.addressLocality);
+      }
+      if (!areaServed) areaServed = placeLabel(node.areaServed);
+      for (const value of Object.values(node)) {
+        if (value && typeof value === 'object') stack.push(value);
+      }
+    }
+    if (businessName && locality) break;
+  }
+  const agencyName = plainName(brandFromEvidence({
+    siteName,
+    organizationName: businessName || organizationName,
+    title,
+  }) || '');
+  return { agencyName, suburb: locality || areaServed || geo };
 }

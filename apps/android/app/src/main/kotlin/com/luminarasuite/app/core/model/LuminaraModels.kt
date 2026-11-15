@@ -11,6 +11,28 @@ data class ProbeCrawlResponse(
     val host: String = "",
     val crawl: ProbeCrawlData = ProbeCrawlData(),
     val snapshot: ProbeSnapshot = ProbeSnapshot(),
+    val aiSample: AiAnswerSample? = null,
+)
+
+@Serializable
+data class AiAnswerSample(
+    val status: String = "not_measured",
+    val label: String = "Not measured",
+    val reason: String = "",
+    val provider: String = "",
+    val answeredAt: String = "",
+    val named: Boolean = false,
+    val citedDomains: List<String> = emptyList(),
+    val prompts: List<AiSamplePrompt> = emptyList(),
+    val nextStep: String = "",
+)
+
+@Serializable
+data class AiSamplePrompt(
+    val prompt: String = "",
+    val answer: String = "",
+    val named: Boolean = false,
+    val citedDomains: List<String> = emptyList(),
 )
 
 @Serializable

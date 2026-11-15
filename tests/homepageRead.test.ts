@@ -262,7 +262,7 @@ describe('probe-crawl route with the homepage read', () => {
     const res = await probe('agency.com.au');
     const body = (await res.json()) as { page: HomepageHead; pageReason: null; checkedAt: string };
     expect(res.status).toBe(200);
-    expect(res.headers.get('cache-control')).toBe('public, max-age=120');
+    expect(res.headers.get('cache-control')).toBe('private, no-store');
     expect(body.pageReason).toBeNull();
     expect(body.page.title).toBe('Smith & Co – Hawthorn real estate');
     expect(Number.isNaN(Date.parse(body.checkedAt))).toBe(false);
@@ -323,7 +323,7 @@ describe('probe-crawl route with the homepage read', () => {
     // A site that turned the check away is reused briefly; an unreachable one is never cached.
     vi.stubGlobal('fetch', fakeNet((url) => (url.endsWith('/') ? new Response('down', { status: 503 }) : new Response('', { status: 404 }))));
     const walled = await probe('other-site.com');
-    expect(walled.headers.get('cache-control')).toBe('public, max-age=30');
+    expect(walled.headers.get('cache-control')).toBe('private, no-store');
     expect(store.size).toBe(2);
     vi.stubGlobal('fetch', fakeNet((url) => {
       if (url.endsWith('/')) throw new TypeError('connection reset');
