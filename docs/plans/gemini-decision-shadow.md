@@ -1,6 +1,6 @@
 # Track GD: Is Gemini Decision good enough to stand in for Jev? Probe and offline replay
 
-Status: reviewed, verdict go after three rounds (2026-11-15). The owner approved building the script; it is built, and the probe passed (section 10). The site list awaits approval (section 11). The staging audits, replay and marking are not done.
+Status: reviewed, verdict go after three rounds (2026-11-15). Closed 2026-11-15 after the probe and one replayed production audit (section 10). The full replay was not run; the accuracy question moved to Track TD.
 
 **Which code this describes.** Every `file:line` citation is against `origin/staging` at commit `477c5160`. The main checkout was 198 commits behind staging on that date, so line numbers there differ. Read cited files with `git show origin/staging:<path>`.
 
@@ -219,7 +219,23 @@ Applied: keep the last entry when a 401 retry produces two; a capture with no re
 - The audit asked Jev about **one** finding. If that is typical, 23 audits give Q of about 23 to 50, under the 100 that section 5 step 2 needs when fewer than 8 rows are marked. A run where Gemini mostly agrees with Jev would then end **inconclusive**.
 - The owner's account allows 3 audits a day, so 23 audits take about 8 days.
 
-## 11. Site list (draft, not approved)
+**2026-11-15. That one audit replayed through Gemini.** HTTP 200 in 894 ms, valid. Gemini agreed with Jev on all four questions:
+- finding: Gemini 0.83, Jev 0.65, both "supported";
+- brand name: 0.96 and 0.95;
+- site type: both `real_estate_agency`;
+- brand pick: both "Barry Plant".
+One difference matters for the product: Gemini's brand pick had confidence 0.597, just under the 0.6 that `services/audit/jevVerifier.ts` needs to use a pick, while Jev's was 0.87. On this request the audit would have kept the brand pick with Jev and dropped it with Gemini. One request proves nothing about rates; it shows that thresholds tuned for Jev cannot be copied to Gemini unchanged.
+
+**2026-11-15. Collection stopped at the probe; plan closed.** The owner left the call to the agent. Reasons: a 23-site live run gives about 23 to 50 finding questions, so section 5 would most likely return "inconclusive" when Gemini agrees with Jev; it would take about 8 days at 3 audits a day; and Track TD's "all-checks replay" re-asks each captured state with every finding the audit can emit (about 300 questions), which is the right instrument for the accuracy question. Section 5 was not applied: with one pair it is inconclusive by step 2.
+
+What this plan established:
+- Gemini Decision accepts Jev's request shape unchanged and answers all three question types in the expected format, in 0.3 to 0.9 s, with no output-token charge.
+- Jev's real answers: yes/no without `confidence`, `model: "jev-1.14.0"` in the response.
+- The capture wrapper works on production and the replay runs end to end.
+
+Handed to Track TD: `scripts/decision-probe.mjs` (its five helpers are imported by TD's bench), the one captured request and both answers in `scratch/decision-replay/` of the `feat/gd-decision-probe` worktree (git-ignored, local only), and the brand-pick threshold note above. Reopen this plan only on the triggers in section 6.
+
+## 11. Site list (approved 2026-11-15; 1 of 23 audited before the plan closed)
 
 Public sites only. Checked 2026-11-15 with a plain HTTPS request. A 403 or 429 means the site turned that request away; our audit's own fetcher may still get through. No answer means the address may be wrong.
 
