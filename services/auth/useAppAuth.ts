@@ -44,6 +44,7 @@ export const PUBLIC_APP_VIEWS = new Set([
   'WHY_US',
   'COMPARE',
   'FREE_TOOLS',
+  'LEARN',
   'PRICING',
   'METHODOLOGY',
   'WHITE_PAPER',
