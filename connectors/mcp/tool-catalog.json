@@ -12,6 +12,7 @@
     "annotations": {
       "title": "List industries",
       "readOnlyHint": true,
+      "openWorldHint": false,
       "destructiveHint": false
     }
   },
@@ -28,6 +29,7 @@
     "annotations": {
       "title": "Account and usage",
       "readOnlyHint": true,
+      "openWorldHint": false,
       "destructiveHint": false
     }
   },
@@ -55,6 +57,7 @@
     "annotations": {
       "title": "List projects",
       "readOnlyHint": true,
+      "openWorldHint": false,
       "destructiveHint": false
     }
   },
@@ -92,6 +95,7 @@
     "annotations": {
       "title": "Create project",
       "readOnlyHint": false,
+      "openWorldHint": false,
       "destructiveHint": true
     }
   },
@@ -115,6 +119,7 @@
     "annotations": {
       "title": "Read project context",
       "readOnlyHint": true,
+      "openWorldHint": false,
       "destructiveHint": false
     }
   },
@@ -145,6 +150,7 @@
     "annotations": {
       "title": "Update project context",
       "readOnlyHint": false,
+      "openWorldHint": false,
       "destructiveHint": true
     }
   },
@@ -178,6 +184,7 @@
     "annotations": {
       "title": "List reports",
       "readOnlyHint": true,
+      "openWorldHint": false,
       "destructiveHint": false
     }
   },
@@ -204,6 +211,7 @@
     "annotations": {
       "title": "Read a report",
       "readOnlyHint": true,
+      "openWorldHint": false,
       "destructiveHint": false
     }
   },
@@ -245,6 +253,7 @@
     "annotations": {
       "title": "Save a report",
       "readOnlyHint": false,
+      "openWorldHint": false,
       "destructiveHint": true
     }
   },
@@ -266,6 +275,7 @@
     "annotations": {
       "title": "Workflow guides",
       "readOnlyHint": true,
+      "openWorldHint": false,
       "destructiveHint": false
     }
   },
@@ -289,6 +299,7 @@
     "annotations": {
       "title": "Dreaming status",
       "readOnlyHint": true,
+      "openWorldHint": false,
       "destructiveHint": false
     }
   },
@@ -315,6 +326,7 @@
     "annotations": {
       "title": "Consolidate memory",
       "readOnlyHint": false,
+      "openWorldHint": false,
       "destructiveHint": true
     }
   },
@@ -341,6 +353,7 @@
     "annotations": {
       "title": "Business memory",
       "readOnlyHint": true,
+      "openWorldHint": false,
       "destructiveHint": false
     }
   },
@@ -375,6 +388,7 @@
     "annotations": {
       "title": "Review a memory proposal",
       "readOnlyHint": false,
+      "openWorldHint": false,
       "destructiveHint": true
     }
   },
@@ -430,6 +444,7 @@
     "annotations": {
       "title": "Draft a fix",
       "readOnlyHint": true,
+      "openWorldHint": false,
       "destructiveHint": false
     }
   },
@@ -460,6 +475,7 @@
     "annotations": {
       "title": "List enquiries",
       "readOnlyHint": true,
+      "openWorldHint": false,
       "destructiveHint": false
     }
   },
@@ -525,6 +541,7 @@
     "annotations": {
       "title": "Record an enquiry",
       "readOnlyHint": false,
+      "openWorldHint": false,
       "destructiveHint": true
     }
   },
@@ -565,6 +582,7 @@
     "annotations": {
       "title": "Propose booking slots",
       "readOnlyHint": false,
+      "openWorldHint": false,
       "destructiveHint": true
     }
   },
@@ -605,6 +623,7 @@
     "annotations": {
       "title": "Decide a booking",
       "readOnlyHint": false,
+      "openWorldHint": false,
       "destructiveHint": true
     }
   },
@@ -625,6 +644,7 @@
     "annotations": {
       "title": "Outcomes funnel",
       "readOnlyHint": true,
+      "openWorldHint": false,
       "destructiveHint": false
     }
   },
@@ -680,6 +700,7 @@
     "annotations": {
       "title": "Classify a CMS fix",
       "readOnlyHint": true,
+      "openWorldHint": false,
       "destructiveHint": false
     }
   },
@@ -737,6 +758,7 @@
     "annotations": {
       "title": "Prepare a CMS call",
       "readOnlyHint": false,
+      "openWorldHint": true,
       "destructiveHint": true
     }
   },
@@ -763,6 +785,7 @@
     "annotations": {
       "title": "Project history",
       "readOnlyHint": true,
+      "openWorldHint": false,
       "destructiveHint": false
     }
   },
@@ -794,6 +817,7 @@
     "annotations": {
       "title": "Compare snapshots",
       "readOnlyHint": true,
+      "openWorldHint": false,
       "destructiveHint": false
     }
   },
@@ -817,6 +841,7 @@
     "annotations": {
       "title": "Project outcomes",
       "readOnlyHint": true,
+      "openWorldHint": false,
       "destructiveHint": false
     }
   },
@@ -840,6 +865,7 @@
     "annotations": {
       "title": "Outcome report",
       "readOnlyHint": true,
+      "openWorldHint": false,
       "destructiveHint": false
     }
   },
@@ -867,6 +893,7 @@
     "annotations": {
       "title": "Mark an action done",
       "readOnlyHint": false,
+      "openWorldHint": false,
       "destructiveHint": true
     }
   },
@@ -890,6 +917,7 @@
     "annotations": {
       "title": "Project check schedule",
       "readOnlyHint": true,
+      "openWorldHint": false,
       "destructiveHint": false
     }
   },
@@ -930,6 +958,7 @@
     "annotations": {
       "title": "Set the check schedule",
       "readOnlyHint": false,
+      "openWorldHint": false,
       "destructiveHint": true
     }
   },
@@ -953,6 +982,7 @@
     "annotations": {
       "title": "Project check alerts",
       "readOnlyHint": true,
+      "openWorldHint": false,
       "destructiveHint": false
     }
   },
@@ -980,6 +1010,7 @@
     "annotations": {
       "title": "Mark an alert read",
       "readOnlyHint": false,
+      "openWorldHint": false,
       "destructiveHint": true
     }
   },
@@ -1018,6 +1049,7 @@
     "annotations": {
       "title": "Create a dev ticket",
       "readOnlyHint": false,
+      "openWorldHint": false,
       "destructiveHint": true
     }
   },
@@ -1050,6 +1082,7 @@
     "annotations": {
       "title": "Compile a review into a skill",
       "readOnlyHint": false,
+      "openWorldHint": false,
       "destructiveHint": true
     }
   },
@@ -1086,6 +1119,7 @@
     "annotations": {
       "title": "Mint a habitat token",
       "readOnlyHint": false,
+      "openWorldHint": false,
       "destructiveHint": true
     }
   },
@@ -1110,6 +1144,7 @@
     "annotations": {
       "title": "Luminara Auditor",
       "readOnlyHint": true,
+      "openWorldHint": false,
       "destructiveHint": false
     }
   },
@@ -1134,6 +1169,7 @@
     "annotations": {
       "title": "Luminara Fixer",
       "readOnlyHint": true,
+      "openWorldHint": false,
       "destructiveHint": false
     }
   },
@@ -1158,6 +1194,7 @@
     "annotations": {
       "title": "Luminara Coach",
       "readOnlyHint": true,
+      "openWorldHint": false,
       "destructiveHint": false
     }
   },
@@ -1188,6 +1225,7 @@
     "annotations": {
       "title": "Research keywords",
       "readOnlyHint": false,
+      "openWorldHint": true,
       "destructiveHint": true
     }
   },
@@ -1214,6 +1252,7 @@
     "annotations": {
       "title": "Domain overview",
       "readOnlyHint": true,
+      "openWorldHint": true,
       "destructiveHint": false
     }
   },
@@ -1241,6 +1280,7 @@
     "annotations": {
       "title": "SERP snapshot",
       "readOnlyHint": true,
+      "openWorldHint": true,
       "destructiveHint": false
     }
   },
@@ -1267,6 +1307,7 @@
     "annotations": {
       "title": "Backlink overview",
       "readOnlyHint": true,
+      "openWorldHint": true,
       "destructiveHint": false
     }
   },
@@ -1308,6 +1349,7 @@
     "annotations": {
       "title": "Visibility snapshot",
       "readOnlyHint": true,
+      "openWorldHint": true,
       "destructiveHint": false
     }
   },
@@ -1334,6 +1376,7 @@
     "annotations": {
       "title": "PageSpeed summary",
       "readOnlyHint": true,
+      "openWorldHint": true,
       "destructiveHint": false
     }
   },
@@ -1362,6 +1405,7 @@
     "annotations": {
       "title": "Observe a page",
       "readOnlyHint": true,
+      "openWorldHint": true,
       "destructiveHint": false
     }
   },
@@ -1400,6 +1444,7 @@
     "annotations": {
       "title": "Act in the browser",
       "readOnlyHint": false,
+      "openWorldHint": true,
       "destructiveHint": true
     }
   },
@@ -1482,6 +1527,7 @@
     "annotations": {
       "title": "Run a browser goal",
       "readOnlyHint": false,
+      "openWorldHint": true,
       "destructiveHint": true
     }
   },
@@ -1505,6 +1551,7 @@
     "annotations": {
       "title": "Close the browser",
       "readOnlyHint": false,
+      "openWorldHint": true,
       "destructiveHint": true
     }
   }
