@@ -164,6 +164,8 @@ describe('hero assignment', () => {
     expect(killedHtml).toContain(HOME_HERO.titleLead);
     expect(killedHtml).not.toContain(ANSWER_HERO.titleLead);
     expect(killedHtml).toContain('data-hero-ab="off"');
+    expect(killedHtml.split(HOME_HERO.lede).length - 1).toBe(1);
+    expect(heldHtml.split(ANSWER_HERO.lede).length - 1).toBe(1);
 
     const bot = await maybeServeMarketingHtml(
       homeRequest('https://staging.luminarasuite.com/', { 'user-agent': BOT }),

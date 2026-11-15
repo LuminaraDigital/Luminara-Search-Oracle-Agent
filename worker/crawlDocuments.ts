@@ -124,30 +124,77 @@ export function applyHostRobots(url: URL, environment: string | undefined, res: 
   return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
 }
 
+/**
+ * Git commit date (YYYY-MM-DD) of the page source.
+ * Hub pages share seoHubPages.ts. Free tools share freeTools.ts.
+ * A path listed here overrides that shared date. Update an entry when its source changes.
+ */
+const SITEMAP_LASTMOD: Record<string, string> = {
+  '/': '2026-11-15',
+  '/how-it-works': '2026-11-15',
+  '/ai': '2026-10-31',
+  '/why': '2026-11-15',
+  '/pricing': '2026-11-15',
+  '/methodology': '2026-11-15',
+  '/white-paper': '2026-11-15',
+  '/sample-report': '2026-10-22',
+  '/privacy': '2026-11-15',
+  '/terms': '2026-11-15',
+  '/faq': '2026-11-15',
+  '/contact': '2026-11-15',
+  '/docs/mcp.html': '2026-11-15',
+  '/docs/what-is-aeo.html': '2026-11-15',
+  '/desktop': '2026-11-02',
+  '/best/ai-visibility-tools-with-mcp': '2026-11-15',
+  '/llms.txt': '2026-11-13',
+  '/ai.txt': '2026-11-02',
+};
+
+const HUB_LASTMOD = '2026-10-31';
+const FREE_TOOLS_LASTMOD = '2026-10-28';
+
+function sitemapLastmod(path: string): string {
+  const dated = SITEMAP_LASTMOD[path];
+  if (dated) return dated;
+  if (path.startsWith('/compare/') || path.startsWith('/best/')) return HUB_LASTMOD;
+  if (path === FREE_TOOLS_PATH || path.startsWith('/free-tools/')) return FREE_TOOLS_LASTMOD;
+  throw new Error(`sitemap lastmod missing for ${path}`);
+}
+
+function sitemapPaths(): string[] {
+  return [
+    '/',
+    '/how-it-works',
+    '/ai',
+    '/why',
+    '/pricing',
+    '/methodology',
+    '/white-paper',
+    '/sample-report',
+    '/privacy',
+    '/terms',
+    '/faq',
+    '/contact',
+    '/docs/mcp.html',
+    '/docs/what-is-aeo.html',
+    '/desktop',
+    ...HUB_PAGES.map((page) => page.path),
+    FREE_TOOLS_PATH,
+    ...FREE_TOOLS.map((tool) => tool.path),
+    '/llms.txt',
+    '/ai.txt',
+  ];
+}
+
 export function buildSitemapXml(origin: string = 'https://www.luminarasuite.com'): string {
   const base = origin.replace(/\/+$/, '');
+  const urls = sitemapPaths().map((path) => {
+    const loc = path === '/' ? `${base}/` : `${base}${path}`;
+    return `  <url><loc>${loc}</loc><lastmod>${sitemapLastmod(path)}</lastmod></url>`;
+  });
   return `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url><loc>${base}/</loc></url>
-  <url><loc>${base}/how-it-works</loc></url>
-  <url><loc>${base}/ai</loc></url>
-  <url><loc>${base}/why</loc></url>
-  <url><loc>${base}/pricing</loc></url>
-  <url><loc>${base}/methodology</loc></url>
-  <url><loc>${base}/white-paper</loc></url>
-  <url><loc>${base}/sample-report</loc></url>
-  <url><loc>${base}/privacy</loc></url>
-  <url><loc>${base}/terms</loc></url>
-  <url><loc>${base}/faq</loc></url>
-  <url><loc>${base}/contact</loc></url>
-  <url><loc>${base}/docs/mcp.html</loc></url>
-  <url><loc>${base}/docs/what-is-aeo.html</loc></url>
-  <url><loc>${base}/desktop</loc></url>
-${HUB_PAGES.map((page) => `  <url><loc>${base}${page.path}</loc></url>`).join('\n')}
-  <url><loc>${base}${FREE_TOOLS_PATH}</loc></url>
-${FREE_TOOLS.map((tool) => `  <url><loc>${base}${tool.path}</loc></url>`).join('\n')}
-  <url><loc>${base}/llms.txt</loc></url>
-  <url><loc>${base}/ai.txt</loc></url>
+${urls.join('\n')}
 </urlset>
 `;
 }

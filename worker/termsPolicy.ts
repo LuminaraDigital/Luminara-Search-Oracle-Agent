@@ -30,10 +30,10 @@ export function buildTermsHtml(options?: { android?: boolean }): string {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Terms of Service | Luminara Suite</title>
-  <meta name="description" content="Terms of Service for Luminara Suite web app, Telegram Mini App, and related APIs.">
+  <meta name="description" content="Terms of Service for the Luminara Suite web app, Telegram Mini App, and APIs, covering plans, refunds, and Australian Consumer Law.">
   <meta name="theme-color" content="#0a0a0a">
   <meta property="og:title" content="Terms of Service | Luminara Suite">
-  <meta property="og:description" content="Terms of Service for Luminara Suite.">
+  <meta property="og:description" content="Terms of Service for the Luminara Suite web app, Telegram Mini App, and APIs, covering plans, refunds, and Australian Consumer Law.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://www.luminarasuite.com/terms">
   <meta property="og:image" content="https://www.luminarasuite.com/og-image.png">

@@ -541,7 +541,7 @@ const BEST_PAGES: BestPage[] = [
     path: '/best/ai-visibility-tools-with-mcp',
     label: 'Best AI visibility tools with MCP',
     description:
-      'AI visibility and SEO tools with an MCP server for Cursor, Claude, and other agents, picked by use case.',
+      'AI visibility and SEO tools that offer an MCP server for Cursor, Claude, and other agents, picked by the job you need done.',
     h1: 'Best AI visibility tools with an MCP server',
     verdict:
       'For agents that should load project context, check a research log, and save a report, use Luminara Suite MCP. For backlink and keyword data in an agent pick Ahrefs or Semrush MCP, and for multi-client analytics pick Peec AI.',

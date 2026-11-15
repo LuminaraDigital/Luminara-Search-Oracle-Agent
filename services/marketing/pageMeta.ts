@@ -1,6 +1,6 @@
 /** Shared marketing page meta (browser + Worker). No DOM APIs. */
 
-import { listPriceSummary } from '../../components/paywall/planCopy';
+import { listPriceSummary, pricingMetaDescription } from '../../components/paywall/planCopy';
 import {
   COMPANY_SERVICES_URL,
   COMPANY_SITE_URL,
@@ -12,7 +12,7 @@ import {
 import { parseUrlSwapRoute } from '../../utils/urlSwapRouting';
 import { LIVE_ANSWER_CHECKS } from './engineCoverage';
 import { buildFaqPageJsonLd, MARKETING_FAQ } from './marketingFaqContent';
-import { HOME_HERO, REAL_ESTATE_AUDIENCE } from './marketingHeroCopy';
+import { REAL_ESTATE_AUDIENCE } from './marketingHeroCopy';
 import {
   MCP_BODY,
   MCP_DOCS_PATH,
@@ -32,7 +32,7 @@ import { checkHostFromPath, checkPathForHost } from './homepageSnippet';
 import { CONTACT_CRAWLER, FAQ_CRAWLER } from '../help/helpPages';
 import { privacyCrawlerBody } from '../legal/privacyCrawler';
 
-const HOME_META = `${REAL_ESTATE_AUDIENCE} An AI employee for your agency: it checks whether AI answers name you, flags page leaks, and hands you the next fix. ${LIVE_ANSWER_CHECKS} No invented scores.`;
+const HOME_META = 'An AI employee for your agency. It checks whether AI answers name you, flags page leaks, and hands you the next fix. No invented scores.';
 
 export const MARKETING_ORIGIN = 'https://www.luminarasuite.com';
 export const DEFAULT_OG_IMAGE = `${MARKETING_ORIGIN}/og-image.png`;
@@ -134,13 +134,12 @@ const linkList = (links: readonly { label: string; href: string }[]) =>
 const faqHtml = (items: readonly { question: string; answer: string }[]) =>
   items.map((item) => `<h3>${esc(item.question)}</h3><p>${esc(item.answer)}</p>`).join('');
 
-/** Home crawler copy. The first-paint block already supplies the only h1. */
+/** Home crawler copy. First paint already supplies the only h1 and the hero lede. */
 function homeCrawlerBody(): string {
   const stack = STACK_ROWS.map((row) => `<tr><td>${esc(row.label)}</td><td>${esc(row.them)}</td><td>${esc(row.us)}</td></tr>`).join('');
   const trust = TRUST_ITEMS.map((item) => `<li>${esc(item.title)}: ${esc(item.body)}</li>`).join('');
   return `
 <section>
-  <p>${esc(HOME_HERO.lede)}</p>
   <h2>${esc(PROOF_HEADING)}</h2>
   <p>${esc(PROOF_BODY)}</p>
   <p>${esc(LIVE_ANSWER_CHECKS)}</p>
@@ -308,11 +307,11 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
     path: '/white-paper',
     title: 'White paper | Luminara Suite',
     description:
-      'Product and methodology white paper for independent real estate agencies in Australia, Oceania and South-East Asia. Traction and market size: Unknown. No token offer.',
+      'A product and methodology paper. Each number is tagged Fact, Estimate, or Speculation and links to a source from 2 November 2026.',
     jsonLd: graph(
       '/white-paper',
       'White paper',
-      'Product and methodology white paper. Traction and market size: Unknown. No token offer.',
+      'A product and methodology paper. Each number is tagged Fact, Estimate, or Speculation and links to a source from 2 November 2026.',
     ),
     crawlerBody: `
 <section>
@@ -326,11 +325,11 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
     path: '/methodology',
     title: 'Methodology | Luminara Suite',
     description:
-      `How Luminara labels Measured, Estimated, and Not measured. ${LIVE_ANSWER_CHECKS} Sample versus Live explained.`,
+      'How Luminara labels each result Measured, Estimated, or Not measured. The free check reads your homepage, robots.txt, and llms.txt.',
     jsonLd: graph(
       '/methodology',
       'Methodology',
-      'Honest measurement labels for AI visibility audits.',
+      'How Luminara labels each result Measured, Estimated, or Not measured. The free check reads your homepage, robots.txt, and llms.txt.',
       false,
       [buildFaqPageJsonLd()],
     ),
@@ -362,7 +361,7 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
     path: '/how-it-works',
     title: 'How it works | Luminara Suite',
     description:
-      'How an audit checks a site, generates a ready-to-paste Fix Pack, and qualifies leads in the Enquiry Desk. Competitor scan, impact ranking, and saved progress need sign-in.',
+      'How an audit checks a site, returns a ready-to-paste Fix Pack, and qualifies leads in the Enquiry Desk. Ranking needs sign-in.',
     jsonLd: graph('/how-it-works', 'How it works', 'Audit modules, Fix Pack deliverables, and Enquiry Desk workflow.'),
     crawlerBody: `
 <section>
@@ -400,7 +399,7 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
     path: '/why',
     title: 'Why Luminara | Luminara Suite',
     description:
-      'For real estate agencies that need a clear plan for Google and AI answers, ready-to-paste page and schema fixes, and Enquiry Desk qualification without a consultancy retainer.',
+      'A clear plan for Google and AI answers: ready-to-paste page and schema fixes, and Enquiry Desk qualification without a retainer.',
     jsonLd: graph('/why', 'Why Luminara', 'Why real estate agencies choose Luminara Suite over manual retainers and read-only AI trackers.'),
     crawlerBody: `
 <section>
@@ -418,8 +417,8 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
   '/pricing': {
     path: '/pricing',
     title: 'Pricing | Luminara Suite',
-    description: `${REAL_ESTATE_AUDIENCE} ${listPriceSummary()}`,
-    jsonLd: graph('/pricing', 'Pricing', `${REAL_ESTATE_AUDIENCE} ${listPriceSummary()}`),
+    description: pricingMetaDescription(),
+    jsonLd: graph('/pricing', 'Pricing', pricingMetaDescription()),
     crawlerBody: `
 <section>
   <p>${REAL_ESTATE_AUDIENCE} ${listPriceSummary()}</p>
@@ -448,22 +447,22 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
   '/faq': {
     path: '/faq',
     title: 'FAQ | Luminara Suite',
-    description: 'FAQ, how a check works, and how to ask for a refund. Email info@luminara.digital.',
-    jsonLd: graph('/faq', 'FAQ', 'FAQ, how a check works, and how to ask for a refund.'),
+    description: 'FAQ on how a check works, what stays Not measured, and how to ask for a refund. Email info@luminara.digital. Australian Consumer Law still applies.',
+    jsonLd: graph('/faq', 'FAQ', 'FAQ on how a check works, what stays Not measured, and how to ask for a refund. Email info@luminara.digital. Australian Consumer Law still applies.'),
     crawlerBody: FAQ_CRAWLER,
   },
   '/contact': {
     path: '/contact',
     title: 'Contact | Luminara Suite',
-    description: 'Email info@luminara.digital. There is no phone line.',
-    jsonLd: graph('/contact', 'Contact', 'Email info@luminara.digital. There is no phone line.'),
+    description: 'Email info@luminara.digital about a check, a plan, or a refund. There is no phone line, and the form opens your mail app.',
+    jsonLd: graph('/contact', 'Contact', 'Email info@luminara.digital about a check, a plan, or a refund. There is no phone line, and the form opens your mail app.'),
     crawlerBody: CONTACT_CRAWLER,
   },
   '/privacy': {
     path: '/privacy',
     title: 'Privacy | Luminara Suite',
-    description: 'Privacy policy for Luminara Suite, the Telegram Mini App, and the Telegram bot.',
-    jsonLd: graph('/privacy', 'Privacy', 'Privacy policy for Luminara Suite.'),
+    description: 'Privacy policy for the Luminara Suite web app, the Telegram Mini App, and the bot: what we collect, who receives it, and your rights.',
+    jsonLd: graph('/privacy', 'Privacy', 'Privacy policy for the Luminara Suite web app, the Telegram Mini App, and the bot: what we collect, who receives it, and your rights.'),
     crawlerBody: privacyCrawlerBody(),
   },
 };
