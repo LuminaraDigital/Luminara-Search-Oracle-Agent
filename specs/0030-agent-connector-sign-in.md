@@ -13,7 +13,7 @@ Agents are becoming the operators of software, and the account holder is still t
 - **The agent is a delegate, not a user.** Every token belongs to a human account and names the client on it. There is no account or email for the agent, so quotas, deletion and consent keep working.
 - **Discovery.** A 401 from `/api/mcp` names protected resource metadata (RFC 9728), which leads to server metadata (RFC 8414). Both are served outside `/api` and before the www redirect, so the issuer does not move.
 - **Registration.** Open dynamic registration (RFC 7591) for public clients with PKCE. Any https callback may register, so the exact-match check at authorize and the consent screen are the protection. The chosen name is shown as self-reported.
-- **Consent.** A server-rendered page bound to the signed-in user, with one-time approval records and a page-specific CSP. Its `form-action` names the callback because browsers apply that rule to the redirect after submit.
+- **Consent.** A server-rendered page bound to the signed-in user, with approval records that keep the first answer, so a repeat submit lands on the same redirect and mints no second code, and a page-specific CSP. Its `form-action` names the callback because browsers apply that rule to the redirect after submit.
 - **Money.** Connector tokens carry `mcp:free` only, whatever the plan. An agent cannot pay or spend research credits. A plan without agent access sees an upgrade page instead of Allow.
 - **Revoke.** Settings lists every OAuth connection by name, on any plan, and Disconnect ends the token. The list id is the token hash, never the token.
 - **Existing clients.** A request without `client_id` keeps today's localhost and IDE behaviour.
