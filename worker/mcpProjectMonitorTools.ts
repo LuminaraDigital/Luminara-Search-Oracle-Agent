@@ -33,9 +33,9 @@ export const PROJECT_MONITOR_MCP_TOOLS: McpToolDef[] = [
     },
     handler: async (args, ctx) => {
       const projectId = requireProject(args, ctx);
-      if (!projectId) return textResult('Project not found', undefined, true);
+      if (!projectId) return textResult('Project not found', { code: 'NOT_FOUND' }, true);
       const project = await getProject(ctx.env, ctx.accountId, projectId);
-      if (!project) return textResult('Project not found', undefined, true);
+      if (!project) return textResult('Project not found', { code: 'NOT_FOUND' }, true);
       const monitor = await getProjectMonitor(ctx.env, ctx.accountId, projectId);
       if (!monitor) return textResult('No check schedule yet.', { monitor: null });
       const prompts = monitor.prompts.length ? monitor.prompts.join('; ') : 'none built from the last page read';
@@ -64,7 +64,7 @@ export const PROJECT_MONITOR_MCP_TOOLS: McpToolDef[] = [
     handler: async (args, ctx) => {
       const projectId = requireProject(args, ctx);
       if (!projectId || typeof args.enabled !== 'boolean' || typeof args.emailOptIn !== 'boolean' || typeof args.cadence !== 'string') {
-        return textResult('Project not found', undefined, true);
+        return textResult('Project not found', { code: 'NOT_FOUND' }, true);
       }
       const saved = await saveProjectMonitor(ctx.env, ctx.accountId, projectId, {
         enabled: args.enabled,
@@ -91,9 +91,9 @@ export const PROJECT_MONITOR_MCP_TOOLS: McpToolDef[] = [
     },
     handler: async (args, ctx) => {
       const projectId = requireProject(args, ctx);
-      if (!projectId) return textResult('Project not found', undefined, true);
+      if (!projectId) return textResult('Project not found', { code: 'NOT_FOUND' }, true);
       const alerts = await listProjectAlerts(ctx.env, ctx.accountId, projectId);
-      if (!alerts) return textResult('Project not found', undefined, true);
+      if (!alerts) return textResult('Project not found', { code: 'NOT_FOUND' }, true);
       if (!alerts.length) return textResult('No check alerts yet.', { alerts });
       return textResult(alerts.map((alert) => `${alert.kind}: ${alert.summary}`).join('\n'), { alerts });
     },
@@ -114,9 +114,9 @@ export const PROJECT_MONITOR_MCP_TOOLS: McpToolDef[] = [
     handler: async (args, ctx) => {
       const projectId = requireProject(args, ctx);
       const alertId = typeof args.alertId === 'string' ? args.alertId.trim() : '';
-      if (!projectId || !MCP_PROJECT_ID_RE.test(alertId)) return textResult('Alert not found', undefined, true);
+      if (!projectId || !MCP_PROJECT_ID_RE.test(alertId)) return textResult('Alert not found', { code: 'NOT_FOUND' }, true);
       const alert = await ackProjectAlert(ctx.env, ctx.accountId, projectId, alertId);
-      if (!alert) return textResult('Alert not found', undefined, true);
+      if (!alert) return textResult('Alert not found', { code: 'NOT_FOUND' }, true);
       return textResult(`Read. ${alert.summary}`, { alert });
     },
   },
