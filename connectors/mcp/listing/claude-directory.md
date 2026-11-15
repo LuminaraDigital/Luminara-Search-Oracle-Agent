@@ -14,13 +14,13 @@ Use `https://luminarasuite.com/api/mcp` (no `www`) in the portal. Anthropic chec
 | F2 | 16 tools that change data sent `destructiveHint: false` | Every tool that is not read-only sends `destructiveHint: true`, which matches the review criteria's "modify or delete" |
 | F3 | Claude users saw tools they cannot run: `mint_habitat_token` and `compile_review_to_skill` refuse OAuth connections, and the `browse_*` tools need a crawler that production doesn't set | `tools/list` leaves those two out for OAuth connections, and leaves `browse_*` out while `PATCHRIGHT_URL` is unset. The full catalogue file is unchanged |
 | F4 | Internal or promotional wording: "Luminara Digital Engineering Brief", "ClaimLedger", "W5 registry wiring". The PageSpeed tool works but its description said it didn't | Plain descriptions. PageSpeed now describes the live Core Web Vitals call |
-| F5 | The privacy policy didn't mention connected assistants or DataForSEO | New section "AI assistants you connect": what a tool call sends, what is stored, Disconnect, the 90-day lapse, and deletion. DataForSEO and PageSpeed Insights added to the providers. Deleting an account now also removes its connector sign-ins and approval requests |
+| F5 | The privacy policy didn't mention connected assistants or DataForSEO | New section "AI assistants you connect": what a tool call sends, what is stored, Disconnect, the 90-day lapse, and deletion. The security log keeps the tool name and outcome only. DataForSEO and PageSpeed Insights added to the providers. Deleting an account now also removes its connector sign-ins and approval requests |
 
 Already in place, checked on production 2026-11-15:
 
 - OAuth discovery: a 401 with `WWW-Authenticate: Bearer resource_metadata=...`, S256 PKCE, a registration endpoint, `token_endpoint_auth_methods_supported: ["none"]`, refresh-token rotation, and a form-encoded token endpoint.
 - Dynamic registration accepts Claude's callback `https://claude.ai/api/mcp/auth_callback` and loopback callbacks for Claude Code.
-- Every tool sends `title`, `readOnlyHint` and `destructiveHint`. The longest tool name is 30 characters; the limit is 64.
+- Every tool sends `title`, `readOnlyHint`, `openWorldHint`, and `destructiveHint`. The longest tool name is 30 characters; the limit is 64.
 - Results are capped (32,000 characters of text, 50 items per page).
 
 ## 2. Owner checks (only you can do these)
@@ -29,7 +29,7 @@ Already in place, checked on production 2026-11-15:
 2. **Live test in Claude.** In Claude, go to Settings → Connectors → Add custom connector, enter `https://luminarasuite.com/api/mcp`, sign in, then run each tool once. The form asks you to confirm you did this. Note any tool that errors.
 3. **Test account for reviewers.** Make a separate Luminara account with one project that already has an audit, a saved report and a few findings. Don't put its password in the portal. A reviewer asks for access by email if Luminara is picked for Verified review.
 4. **Icon.** Upload `logo-512.png` from this folder. The pages we read didn't give a size or format, so check what the portal asks for.
-5. **Security log (decision).** Each tool call is written to the tamper-evident audit log with its inputs (secrets removed), and that log survives account deletion. The privacy policy now says so. If you'd rather not keep tool inputs there, the log could store only the tool name and decision. That's a separate change.
+5. **Security log.** Each tool call is written to the tamper-evident audit log with the tool name and the outcome only. Call inputs are not stored there. The log still survives account deletion, and the privacy policy says so.
 
 ## 3. Portal answers
 

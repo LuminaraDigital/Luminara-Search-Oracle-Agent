@@ -532,6 +532,13 @@ function toolsListPayload(ctx: McpToolContext) {
   };
 }
 
+/** Security log rows keep the tool name and outcome. Call inputs stay out of the chain. */
+function mcpToolAuditDetails(tool: string, decision: string, reason?: string): Record<string, unknown> {
+  const details: Record<string, unknown> = { tool, decision };
+  if (reason) details.reason = reason;
+  return redactSensitive(details) as Record<string, unknown>;
+}
+
 async function callTool(
   name: string,
   args: Record<string, unknown>,
@@ -547,17 +554,13 @@ async function callTool(
 
   const habitat = enforceHabitatScope(tool, name, args, ctx.credential);
   if ('blocked' in habitat) {
+    const code = habitat.blocked.structuredContent?.code;
     await recordAuditLogBestEffort(ctx.env, {
       org_id: auditOrgIdFor(ctx.accountId),
       actor_id: ctx.user.id,
       action: 'mcp_tool_block',
       target_id: name,
-      details: redactSensitive({
-        tool: name,
-        decision: 'block',
-        reason: habitat.blocked.structuredContent?.code,
-        args,
-      }) as Record<string, unknown>,
+      details: mcpToolAuditDetails(name, 'block', typeof code === 'string' ? code : undefined),
     });
     return habitat.blocked;
   }
@@ -573,13 +576,7 @@ async function callTool(
       actor_id: ctx.user.id,
       action: 'mcp_tool_block',
       target_id: name,
-      details: redactSensitive({
-        tool: name,
-        decision: 'block',
-        reason: 'budget_exhausted',
-        projectId,
-        args,
-      }) as Record<string, unknown>,
+      details: mcpToolAuditDetails(name, 'block', 'budget_exhausted'),
     });
     const budgetStatus = await getBudgetStatus(ctx.env, ctx.accountId, now);
     if (budgetStatus.policy) {
@@ -648,13 +645,7 @@ async function callTool(
     actor_id: ctx.user.id,
     action: `mcp_tool_${decision.action}`,
     target_id: name,
-    details: redactSensitive({
-      tool: name,
-      decision: decision.action,
-      reason: decision.action === 'allow' ? undefined : decision.reason,
-      projectId,
-      args,
-    }) as Record<string, unknown>,
+    details: mcpToolAuditDetails(name, decision.action, decision.action === 'allow' ? undefined : decision.reason),
   });
 
   if (decision.action === 'block') {

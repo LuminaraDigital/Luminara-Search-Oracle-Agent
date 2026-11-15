@@ -18,8 +18,9 @@ Every MCP `tools/call` runs through three gates before a handler executes:
 3. Audit: every decision (allow, block, require_approval) writes one
    `org_audit_logs` row via `recordAuditLogBestEffort` with action
    `mcp_tool_allow`, `mcp_tool_block`, or `mcp_tool_require_approval`.
-   The details payload is passed through `redactSensitive`
-   (`worker/logRedaction.ts`) before persistence.
+   The details payload is the tool name and the outcome (the decision, and a
+   reason when the call did not run). Call inputs are not stored.
+   `redactSensitive` (`worker/logRedaction.ts`) still runs before persistence.
 
 ## Policy decision order
 

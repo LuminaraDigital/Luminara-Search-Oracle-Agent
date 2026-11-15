@@ -4,7 +4,8 @@
  * Layers a risk-classified tool catalog, a deterministic per-tool policy
  * decision, and a D1-backed action-request approval flow over the existing
  * worker/mcpServer.ts tools/call path. Every decision is recorded through
- * runProvenance / auditLog with payloads passed through redactSensitive.
+ * runProvenance / auditLog. Audit details are the tool name and the outcome,
+ * not the call inputs.
  */
 import type { UserStoreEnv } from './userStore';
 import { redactSensitive } from './logRedaction';
