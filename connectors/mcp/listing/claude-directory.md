@@ -14,7 +14,7 @@ Use `https://luminarasuite.com/api/mcp` (no `www`) in the portal. Anthropic chec
 | F2 | 16 tools that change data sent `destructiveHint: false` | Every tool that is not read-only sends `destructiveHint: true`, which matches the review criteria's "modify or delete" |
 | F3 | Claude users saw tools they cannot run: `mint_habitat_token` and `compile_review_to_skill` refuse OAuth connections, and the `browse_*` tools need a crawler that production doesn't set | `tools/list` leaves those two out for OAuth connections, and leaves `browse_*` out while `PATCHRIGHT_URL` is unset. The full catalogue file is unchanged |
 | F4 | Internal or promotional wording: "Luminara Digital Engineering Brief", "ClaimLedger", "W5 registry wiring". The PageSpeed tool works but its description said it didn't | Plain descriptions. PageSpeed now describes the live Core Web Vitals call |
-| F5 | The privacy policy didn't mention connected assistants or DataForSEO | New section "AI assistants you connect": what a tool call sends, what is stored, Disconnect, the 90-day lapse, and deletion. The security log keeps the tool name and outcome only. DataForSEO and PageSpeed Insights added to the providers. Deleting an account now also removes its connector sign-ins and approval requests |
+| F5 | The privacy policy didn't mention connected assistants or DataForSEO | New section "AI assistants you connect": what a tool call sends, what is stored, Disconnect, the 90-day lapse, and deletion. The example assistants are Claude, Claude Code, ChatGPT, Codex, Grok, or Cursor. The security log keeps the tool name and outcome only. Entries created before 15 November 2026 may also include the inputs sent to a tool, and those entries are kept and deleted under the same rules as other account data: while the account is active, or until deletion finishes. DataForSEO and PageSpeed Insights added to the providers. Deleting an account now also removes its connector sign-ins and approval requests |
 
 Already in place, checked on production 2026-11-15:
 
@@ -29,7 +29,7 @@ Already in place, checked on production 2026-11-15:
 2. **Live test in Claude.** In Claude, go to Settings → Connectors → Add custom connector, enter `https://luminarasuite.com/api/mcp`, sign in, then run each tool once. The form asks you to confirm you did this. Note any tool that errors.
 3. **Test account for reviewers.** Make a separate Luminara account with one project that already has an audit, a saved report and a few findings. Don't put its password in the portal. A reviewer asks for access by email if Luminara is picked for Verified review.
 4. **Icon.** Upload `logo-512.png` from this folder. The pages we read didn't give a size or format, so check what the portal asks for.
-5. **Security log.** Each tool call is written to the tamper-evident audit log with the tool name and the outcome only. Call inputs are not stored there. The log still survives account deletion, and the privacy policy says so.
+5. **Security log.** Each tool call is written to the tamper-evident audit log with the tool name and the outcome only. Security log entries created before 15 November 2026 may also include the inputs sent to a tool, and those entries are kept and deleted under the same rules as other account data: while the account is active, or until deletion finishes. The tool name and outcome are kept after the account is deleted, and the privacy policy says so.
 
 ## 3. Portal answers
 

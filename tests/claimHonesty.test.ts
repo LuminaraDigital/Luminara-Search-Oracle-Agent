@@ -34,13 +34,22 @@ function paragraphs(text: string): string[] {
   return text.split(/\n\s*\n/);
 }
 
+/**
+ * Naming a client someone can connect is not a claim that we measured that product.
+ * The first period in the privacy sentence is the one in the URL, so this stops there.
+ */
+function withoutConnectedAssistantExamples(paragraph: string): string {
+  return paragraph.replace(/an AI assistant, such as [^.]{0,240}/g, 'an AI assistant');
+}
+
 /** A paragraph that names those engines has to say who can measure them. */
 function assertEngineParagraphs(text: string, label: string) {
   for (const paragraph of paragraphs(text)) {
-    if (!/ChatGPT|Perplexity|AI Overviews/.test(paragraph)) continue;
-    if (/is the discipline of|is the work of making a page/.test(paragraph)) continue;
-    expect(paragraph, label).toMatch(/Agency|DataForSEO/);
-    expect(paragraph, label).toMatch(/Not measured|not measured|not_measured/);
+    const claim = withoutConnectedAssistantExamples(paragraph);
+    if (!/ChatGPT|Perplexity|AI Overviews/.test(claim)) continue;
+    if (/is the discipline of|is the work of making a page/.test(claim)) continue;
+    expect(claim, label).toMatch(/Agency|DataForSEO/);
+    expect(claim, label).toMatch(/Not measured|not measured|not_measured/);
   }
 }
 
@@ -82,6 +91,12 @@ describe('claim honesty', () => {
     expect(readFileSync('index.html', 'utf8')).toContain(MARKETING_SHELL_BY_PATH['/'].description);
     expect(readFileSync('public/llms.txt', 'utf8')).toBe(LLMS_TXT);
     expect(readFileSync('public/ai.txt', 'utf8')).toBe(AI_TXT);
+  });
+
+  it('treats a connected assistant list as a client list, and still flags a measurement claim', () => {
+    const list = 'You can connect an AI assistant, such as Claude, Claude Code, ChatGPT, Codex, Grok, or Cursor, to Luminara at https://luminarasuite.com/api/mcp.';
+    expect(() => assertEngineParagraphs(list, 'connector')).not.toThrow();
+    expect(() => assertEngineParagraphs('ChatGPT cites your brand on the free check.', 'claim')).toThrow();
   });
 
   it('does not sell seats, unlimited audits, 24/7 sentinel, or re-audits', () => {
