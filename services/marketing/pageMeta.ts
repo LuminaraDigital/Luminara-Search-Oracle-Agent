@@ -28,6 +28,18 @@ import {
 import { PLAY_STORE_URL, TELEGRAM_BOT_URL, TELEGRAM_MINI_APP_PUBLIC_URL } from './platformSurfaces';
 import { HUB_FAQ_HEADING, HUB_PAGES, HUB_REVIEWED, type HubPage } from './seoHubPages';
 import { FREE_TOOLS, FREE_TOOLS_CLOSING, FREE_TOOLS_HUB, FREE_TOOLS_PATH, type FreeTool } from './freeTools';
+import {
+  LEARN_ARTICLES,
+  LEARN_AUTHOR_NAME,
+  LEARN_AUTHOR_ORG,
+  LEARN_INDEX,
+  LEARN_PATH,
+  formatLearnDate,
+  learnInline,
+  learnLinksForPath,
+  type LearnArticle,
+  type LearnSection,
+} from './learnPages';
 import { checkHostFromPath, checkPathForHost } from './homepageSnippet';
 import { CONTACT_CRAWLER, FAQ_CRAWLER } from '../help/helpPages';
 import { privacyCrawlerBody } from '../legal/privacyCrawler';
@@ -134,6 +146,34 @@ const linkList = (links: readonly { label: string; href: string }[]) =>
 const faqHtml = (items: readonly { question: string; answer: string }[]) =>
   items.map((item) => `<h3>${esc(item.question)}</h3><p>${esc(item.answer)}</p>`).join('');
 
+function inlineHtml(source: string): string {
+  return learnInline(source).map((run) => {
+    if (run.kind === 'text') return esc(run.text);
+    const external = run.href.startsWith('http') ? ' rel="noopener noreferrer" target="_blank"' : '';
+    return `<a href="${esc(run.href)}"${external}>${esc(run.label)}</a>`;
+  }).join('');
+}
+
+function learnReadingHtml(path: string): string {
+  const links = learnLinksForPath(path);
+  if (links.length === 0) return '';
+  return `<h2>From the knowledge hub</h2><p>${linkList(links)}</p>`;
+}
+
+/**
+ * A crawler paragraph that names ChatGPT, Perplexity, or AI Overviews has to name who can
+ * measure those products. Guides explain the vendors' own crawlers, so the measurement
+ * limit is repeated in any chunk that would otherwise fail that check.
+ */
+function withEngineCaveat(html: string): string {
+  const caveat = `<p>${esc(LIVE_ANSWER_CHECKS)}</p>`;
+  return html.split(/\n\s*\n/).map((chunk) => {
+    if (!/ChatGPT|Perplexity|AI Overviews/.test(chunk)) return chunk;
+    const named = /Agency|DataForSEO/.test(chunk) && /Not measured|not measured|not_measured/.test(chunk);
+    return named ? chunk : `${chunk}\n${caveat}`;
+  }).join('\n\n');
+}
+
 /** Home crawler copy. First paint already supplies the only h1 and the hero lede. */
 function homeCrawlerBody(): string {
   const stack = STACK_ROWS.map((row) => `<tr><td>${esc(row.label)}</td><td>${esc(row.them)}</td><td>${esc(row.us)}</td></tr>`).join('');
@@ -205,6 +245,7 @@ function hubCrawlerBody(page: HubPage): string {
   const faq = faqHtml(page.faq);
   const sources = linkList(page.sources.map((source) => ({ label: source.label, href: source.url })));
   const related = linkList(HUB_PAGES.filter((other) => other !== page).map((other) => ({ label: other.label, href: other.path })));
+  const reading = learnReadingHtml(page.path);
   return `
 <section>
   <h1>${esc(page.h1)}</h1>
@@ -212,6 +253,7 @@ function hubCrawlerBody(page: HubPage): string {
   ${body}
   <h2>${HUB_FAQ_HEADING}</h2>${faq}
   <p>Reviewed ${HUB_REVIEWED}. Sources: ${sources}</p>
+  ${reading}
   <p>More comparisons: ${related}</p>
   <p><a href="/">Run the free check</a> · <a href="/methodology">Methodology</a> · <a href="/pricing">Pricing</a></p>
 </section>`;
@@ -258,6 +300,7 @@ function freeToolShell(tool: FreeTool): MarketingShellMeta {
   <h2>How to use it</h2><ol>${listItems(tool.steps)}</ol>
   ${tool.why.map((block) => `<h2>${esc(block.heading)}</h2><p>${esc(block.body)}</p>`).join('')}
   <h2>Common questions</h2>${faqHtml(tool.faq)}
+  ${learnReadingHtml(tool.path)}
   <p>More free tools: ${toolLinks(FREE_TOOLS.filter((other) => other !== tool))}</p>
   <p>${esc(FREE_TOOLS_CLOSING.body)} <a href="/">Run the free check</a> · <a href="${FREE_TOOLS_PATH}">All free tools</a></p>
 </section>`,
@@ -282,11 +325,109 @@ const FREE_TOOLS_HUB_SHELL: MarketingShellMeta = {
   <p>${esc(FREE_TOOLS_HUB.lede)}</p>
   <ul>${FREE_TOOLS.map((tool) => `<li><a href="${tool.path}">${esc(tool.label)}</a>: ${esc(tool.blurb)}</li>`).join('')}</ul>
   <h2>Common questions</h2>${faqHtml(FREE_TOOLS_HUB.faq)}
+  ${learnReadingHtml(FREE_TOOLS_PATH)}
   <p>${esc(FREE_TOOLS_CLOSING.body)} <a href="/">Run the free check</a> · <a href="/pricing">Pricing</a></p>
 </section>`,
 };
 
+function breadcrumbNode(id: string, items: readonly { name: string; item: string }[]) {
+  return {
+    '@type': 'BreadcrumbList',
+    '@id': `${id}#breadcrumb`,
+    itemListElement: items.map((item, index) => ({
+      '@type': 'ListItem',
+      position: index + 1,
+      name: item.name,
+      item: item.item,
+    })),
+  };
+}
+
+function learnSectionHtml(section: LearnSection): string {
+  const paragraphs = section.paragraphs.map((paragraph) => `<p>${inlineHtml(paragraph)}</p>`).join('');
+  const steps = section.steps ? `<ol>${section.steps.map((step) => `<li>${inlineHtml(step)}</li>`).join('')}</ol>` : '';
+  const bullets = section.bullets ? `<ul>${section.bullets.map((item) => `<li>${inlineHtml(item)}</li>`).join('')}</ul>` : '';
+  const code = section.code ? `<pre><code>${esc(section.code)}</code></pre>` : '';
+  return `<h2>${esc(section.heading)}</h2>${paragraphs}${steps}${bullets}${code}`;
+}
+
+function learnArticleShell(article: LearnArticle): MarketingShellMeta {
+  const url = `${MARKETING_ORIGIN}${article.path}`;
+  const personId = `${MARKETING_ORIGIN}${LEARN_PATH}#author`;
+  const published = formatLearnDate(article.published);
+  const updated = formatLearnDate(article.updated);
+  const more = linkList([{ label: 'All guides', href: LEARN_PATH }, ...article.related.filter((link) => link.href !== LEARN_PATH)]);
+  return {
+    path: article.path,
+    title: `${article.label} | Luminara Suite`,
+    description: article.description,
+    jsonLd: graph(article.path, article.h1, article.description, false, [
+      {
+        '@type': 'Person',
+        '@id': personId,
+        name: LEARN_AUTHOR_NAME,
+        affiliation: { '@type': 'Organization', name: LEARN_AUTHOR_ORG, url: COMPANY_SITE_URL },
+      },
+      {
+        '@type': 'Article',
+        '@id': `${url}#article`,
+        headline: article.h1,
+        description: article.description,
+        datePublished: article.published,
+        dateModified: article.updated,
+        author: { '@id': personId },
+        publisher: { '@id': `${MARKETING_ORIGIN}/#organization` },
+        mainEntityOfPage: { '@id': `${url}#webpage` },
+      },
+      breadcrumbNode(url, [
+        { name: 'Home', item: `${MARKETING_ORIGIN}/` },
+        { name: 'Learn', item: `${MARKETING_ORIGIN}${LEARN_PATH}` },
+        { name: article.h1, item: url },
+      ]),
+      buildFaqPageJsonLd(article.faq, `${url}#faq`),
+    ]),
+    crawlerBody: withEngineCaveat(`
+<section>
+  <h1>${esc(article.h1)}</h1>
+  <p>Published ${esc(published)}. Updated ${esc(updated)}.</p>
+  <p>${esc(LEARN_AUTHOR_NAME)}, ${esc(LEARN_AUTHOR_ORG)}</p>
+  ${article.sections.map(learnSectionHtml).join('')}
+  <h2>Common questions</h2>${faqHtml(article.faq)}
+  <p>Sources: ${linkList(article.sources)}</p>
+  <p>More guides: ${more}</p>
+  <p><a href="${LEARN_PATH}">All guides</a> · <a href="/">Run the free check</a></p>
+</section>`),
+  };
+}
+
+const LEARN_INDEX_SHELL: MarketingShellMeta = {
+  path: LEARN_PATH,
+  title: `${LEARN_INDEX.label} | Luminara Suite`,
+  description: LEARN_INDEX.description,
+  jsonLd: graph(LEARN_PATH, LEARN_INDEX.h1, LEARN_INDEX.description, false, [
+    itemListNode(
+      `${MARKETING_ORIGIN}${LEARN_PATH}#guides`,
+      LEARN_INDEX.h1,
+      LEARN_ARTICLES.map((article) => ({ name: article.h1, url: `${MARKETING_ORIGIN}${article.path}` })),
+    ),
+    breadcrumbNode(`${MARKETING_ORIGIN}${LEARN_PATH}`, [
+      { name: 'Home', item: `${MARKETING_ORIGIN}/` },
+      { name: 'Learn', item: `${MARKETING_ORIGIN}${LEARN_PATH}` },
+    ]),
+  ]),
+  crawlerBody: `
+<section>
+  <h1>${esc(LEARN_INDEX.h1)}</h1>
+  <p>${esc(LEARN_INDEX.lede)}</p>
+  <p>Updated ${esc(formatLearnDate(LEARN_INDEX.updated))}. ${esc(LEARN_AUTHOR_NAME)}, ${esc(LEARN_AUTHOR_ORG)}</p>
+  <ul>${LEARN_ARTICLES.map((article) => `<li><a href="${article.path}">${esc(article.h1)}</a>: ${esc(article.description)}</li>`).join('')}</ul>
+  <p><a href="/">Run the free check</a></p>
+</section>`,
+};
+
 export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
+  [LEARN_PATH]: LEARN_INDEX_SHELL,
+  ...Object.fromEntries(LEARN_ARTICLES.map((article) => [article.path, learnArticleShell(article)])),
   ...Object.fromEntries(HUB_PAGES.map((page) => [page.path, hubShell(page)])),
   [FREE_TOOLS_PATH]: FREE_TOOLS_HUB_SHELL,
   ...Object.fromEntries(FREE_TOOLS.map((tool) => [tool.path, freeToolShell(tool)])),

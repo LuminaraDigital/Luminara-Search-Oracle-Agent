@@ -9,6 +9,7 @@ import { REAL_ESTATE_AUDIENCE } from '../services/marketing/marketingHeroCopy';
 import { PLAY_STORE_URL, TELEGRAM_BOT_URL, TELEGRAM_MINI_APP_PUBLIC_URL } from '../services/marketing/platformSurfaces';
 import { HUB_PAGES, HUB_REVIEWED } from '../services/marketing/seoHubPages';
 import { FREE_TOOLS, FREE_TOOLS_PATH } from '../services/marketing/freeTools';
+import { LEARN_ARTICLES, LEARN_INDEX, LEARN_PATH } from '../services/marketing/learnPages';
 import { COMPANY_SERVICES_URL, COMPANY_SITE_URL } from '../services/legal/consumerTerms';
 import { PLAN_ENTITLEMENTS } from '../services/plans/planEntitlements';
 import { MCP_PUBLIC_URL } from '../services/mcp/publicServer';
@@ -46,6 +47,7 @@ Allow: /contact
 Allow: /desktop
 Allow: /compare/
 Allow: /best/
+Allow: /learn/
 Allow: /docs/
 Allow: /docs/what-is-aeo.html
 Allow: /llms.txt
@@ -76,6 +78,7 @@ Allow: /contact
 Allow: /desktop
 Allow: /compare/
 Allow: /best/
+Allow: /learn/
 Allow: /docs/
 Allow: /docs/what-is-aeo.html
 Allow: /llms.txt
@@ -146,8 +149,17 @@ const SITEMAP_LASTMOD: Record<string, string> = {
   '/docs/what-is-aeo.html': '2026-11-15',
   '/desktop': '2026-11-02',
   '/best/ai-visibility-tools-with-mcp': '2026-11-15',
-  '/llms.txt': '2026-11-13',
-  '/ai.txt': '2026-11-02',
+  '/learn': '2026-11-15',
+  '/learn/what-is-aeo': '2026-11-15',
+  '/learn/how-ai-recommends-an-agency': '2026-11-15',
+  '/learn/llms-txt-for-real-estate': '2026-11-15',
+  '/learn/robots-txt-and-ai-crawlers': '2026-11-15',
+  '/learn/real-estate-agent-schema': '2026-11-15',
+  '/learn/suburb-pages': '2026-11-15',
+  '/learn/check-if-ai-names-your-agency': '2026-11-15',
+  '/learn/mcp-for-marketing-data': '2026-11-15',
+  '/llms.txt': '2026-11-15',
+  '/ai.txt': '2026-11-15',
 };
 
 const HUB_LASTMOD = '2026-10-31';
@@ -179,6 +191,8 @@ function sitemapPaths(): string[] {
     '/docs/what-is-aeo.html',
     '/desktop',
     ...HUB_PAGES.map((page) => page.path),
+    LEARN_PATH,
+    ...LEARN_ARTICLES.map((article) => article.path),
     FREE_TOOLS_PATH,
     ...FREE_TOOLS.map((tool) => tool.path),
     '/llms.txt',
@@ -317,6 +331,13 @@ Competitor rows cite each vendor's public pages as of ${HUB_REVIEWED}. No scores
 
 ${HUB_PAGES.map((page) => `- ${page.label}: https://www.luminarasuite.com${page.path}`).join('\n')}
 
+## Learn
+
+Guides for independent real estate agencies and for developers who ship their sites.
+
+- ${LEARN_INDEX.label}: https://www.luminarasuite.com${LEARN_INDEX.path}
+${LEARN_ARTICLES.map((article) => `- ${article.label}: https://www.luminarasuite.com${article.path}`).join('\n')}
+
 ## Free tools
 
 They run in the browser with no account. Nothing typed into a tool is sent to Luminara.
@@ -359,6 +380,7 @@ Allow: /contact
 Allow: /desktop
 Allow: /compare/
 Allow: /best/
+Allow: /learn/
 Allow: /docs/
 Allow: /docs/what-is-aeo.html
 Allow: /llms.txt

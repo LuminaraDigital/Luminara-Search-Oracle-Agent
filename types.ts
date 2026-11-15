@@ -26,6 +26,8 @@ export enum AppView {
   COMPARE = 'COMPARE',
   /** /free-tools and /free-tools/* pages. The tool comes from the pathname. */
   FREE_TOOLS = 'FREE_TOOLS',
+  /** /learn and /learn/* pages. The article comes from the pathname. */
+  LEARN = 'LEARN',
   PRICING = 'PRICING',
   METHODOLOGY = 'METHODOLOGY',
   WHITE_PAPER = 'WHITE_PAPER',

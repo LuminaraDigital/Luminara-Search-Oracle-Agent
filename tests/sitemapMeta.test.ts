@@ -62,7 +62,8 @@ describe('sitemap meta', () => {
       expect(description, path).toBeTruthy();
       const text = description ?? '';
       expect(text.length, `${path}: ${text}`).toBeGreaterThanOrEqual(120);
-      expect(text.length, path).toBeLessThanOrEqual(160);
+      const max = path === '/learn' || path.startsWith('/learn/') ? 155 : 160;
+      expect(text.length, `${path}: ${text}`).toBeLessThanOrEqual(max);
       expect(text, path).not.toMatch(/[\u2013\u2014]/);
       expect(text.startsWith(BOILERPLATE), path).toBe(false);
       const prior = seen.get(text);
@@ -74,5 +75,7 @@ describe('sitemap meta', () => {
       if (twitter) expect(twitter, path).toBe(text);
     }
     expect(seen.size).toBeGreaterThan(20);
+    const learnPaths = [...seen.values()].filter((path) => path === '/learn' || path.startsWith('/learn/'));
+    expect(learnPaths).toHaveLength(9);
   });
 });
