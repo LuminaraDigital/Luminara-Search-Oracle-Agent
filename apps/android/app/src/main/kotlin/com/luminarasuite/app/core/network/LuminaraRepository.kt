@@ -9,6 +9,7 @@ import com.luminarasuite.app.core.database.LuminaraDao
 import com.luminarasuite.app.core.database.toEntity
 import com.luminarasuite.app.core.database.wipeLocalWorkspace
 import com.luminarasuite.app.core.model.AccountDeleteRequest
+import com.luminarasuite.app.core.model.AiAnswerSample
 import com.luminarasuite.app.core.model.AudioOverview
 import com.luminarasuite.app.core.model.AuditFinding
 import com.luminarasuite.app.core.model.AuditHistoryEntry
@@ -66,6 +67,7 @@ data class InstantAuditReport(
     val receiptNote: String,
     val crew: CrewResult? = null,
     val crewNote: String? = null,
+    val aiSample: AiAnswerSample? = null,
 )
 
 data class AuditRead(
@@ -272,6 +274,7 @@ class DefaultLuminaraRepository(
                     ?: "Read live from robots.txt, llms.txt, and ai.txt on $domain.",
                 crew = crew,
                 crewNote = crewRun.note,
+                aiSample = probe?.aiSample,
             )
         }
 

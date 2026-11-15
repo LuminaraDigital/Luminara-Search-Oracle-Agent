@@ -1,15 +1,17 @@
 /**
  * Anonymous landing Probe crawl: robots.txt / llms.txt / ai.txt plus one read of the homepage head.
- * No auth. No DFS/PSI/oracle. No scout receipt that implies engine Measured.
- * The homepage read returns parsed head fields only, never the page HTML
- * (docs/plans/conversion-honesty-ship.md, amended for G1c). Engines stay Not measured.
+ * No DFS/PSI/oracle. No scout receipt that implies a specific AI product was measured.
+ * The homepage read returns parsed head fields only, never the page HTML.
+ * A separate capped Tavily sample may be attached. ChatGPT, Gemini, and other
+ * named products stay Not measured because this route does not query them.
  */
 import type { Env } from './env';
 import { json } from './workerUtils';
 import { defaultPortFetcher, fetchPublicUrl, safePublicUrl, type DohFetch } from './security';
 import { loadCrawlerSnapshot } from './llmCrawlerRoute';
 import { readCapped } from './domainVerification';
-import { readPageHead, robotsSaysNoindex } from './pageHead';
+import { readBusinessSignals, readPageHead, robotsSaysNoindex } from './pageHead';
+import { collectAiAnswerSample } from './aiAnswerSample';
 import { detectSitePlatform } from '../services/audit/sitePlatform';
 import { applyMarketingDocument } from './marketingShell';
 import { isStagingCrawlHost, servesOwnHost } from './crawlDocuments';
@@ -49,11 +51,16 @@ export type ProbeCrawlResult = {
   pageReason: HomepageReadFailure | null;
   /** When this result was read. A cached result keeps its original time. */
   checkedAt: string;
+  /** Name and suburb stated on the homepage. Empty when the page did not say. */
+  detected: { agencyName: string; suburb: string };
 };
 
-type HomepageRead = { page: HomepageHead; pageReason: null } | { page: null; pageReason: HomepageReadFailure };
+type HomepageRead =
+  | { page: HomepageHead; pageReason: null; signals: { agencyName: string; suburb: string } }
+  | { page: null; pageReason: HomepageReadFailure };
 
 const failed = (pageReason: HomepageReadFailure): HomepageRead => ({ page: null, pageReason });
+const EMPTY_SIGNALS = { agencyName: '', suburb: '' };
 
 /**
  * One GET of the homepage: public host and default port on every hop (fetchPublicUrl), 5 seconds
@@ -81,6 +88,7 @@ export async function readHomepage(pageUrl: string, fetcher: typeof fetch = fetc
     const sample = html.slice(0, 20_000);
     if (responseBlocked(res.status, html) || CHALLENGE_MARKERS.test(sample)) return failed('blocked');
     const head = readPageHead(html);
+    const signals = readBusinessSignals(html, head.title);
     const headerNoindex = robotsSaysNoindex(res.headers.get('x-robots-tag'));
     // A bot wall answers 200 with no title or description, often with noindex or a vendor script.
     // Reporting that as the owner's own page (or own noindex) would be a false finding.
@@ -94,6 +102,7 @@ export async function readHomepage(pageUrl: string, fetcher: typeof fetch = fetc
         platform: detectSitePlatform(html, res.headers),
       },
       pageReason: null,
+      signals,
     };
   } catch {
     return failed('unreachable');
@@ -111,7 +120,8 @@ async function readOwnHomepage(env: Env, serveHost: string, host: string): Promi
   try {
     const shell = await env.ASSETS.fetch(new Request(`https://${host}/`));
     if (!shell.ok) return failed('http_error');
-    const head = readPageHead(applyMarketingDocument(await shell.text(), MARKETING_SHELL_BY_PATH['/']));
+    const html = applyMarketingDocument(await shell.text(), MARKETING_SHELL_BY_PATH['/']);
+    const head = readPageHead(html);
     const staging = isStagingCrawlHost(host, undefined);
     return {
       page: {
@@ -121,6 +131,7 @@ async function readOwnHomepage(env: Env, serveHost: string, host: string): Promi
         noindex: head.noindex || staging,
       },
       pageReason: null,
+      signals: readBusinessSignals(html, head.title),
     };
   } catch {
     return failed('unreachable');
@@ -186,13 +197,18 @@ export async function handleProbeCrawlRoute(request: Request, env: Env): Promise
   const origin = `${page.protocol}//${host}`;
 
   // One entry per serving host, scheme and target host; the typed path does not change what is read.
+  // v4 stores detected name and suburb. The live sample is attached after the cache read
+  // so one caller's daily cap is not frozen into the shared crawl.
   const cacheKey = new Request(
-    `https://probe-cache.invalid/v3/${url.hostname}/${page.protocol.slice(0, -1)}/${encodeURIComponent(host)}`,
+    `https://probe-cache.invalid/v4/${url.hostname}/${page.protocol.slice(0, -1)}/${encodeURIComponent(host)}`,
   );
   try {
     const hit = await caches.default.match(cacheKey);
-    // A cached Response has immutable headers; withCors must be able to set them.
-    if (hit) return new Response(hit.body, hit);
+    if (hit) {
+      const parsed: unknown = await hit.json();
+      const ready = await withSample(request, env, parsed);
+      if (ready) return ready;
+    }
   } catch {
     /* local tests have no Cache API */
   }
@@ -219,22 +235,45 @@ export async function handleProbeCrawlRoute(request: Request, env: Env): Promise
     page: homepage.page,
     pageReason: homepage.pageReason,
     checkedAt: new Date().toISOString(),
+    detected: homepage.page ? homepage.signals : EMPTY_SIGNALS,
   };
   // A good read is reused for 2 minutes. A site that turned the check away (blocked, error) is
   // reused for 30 seconds, so a shared link to it is not refetched on every view. An unreachable
   // read is never cached, so "try again" really tries again.
+  // The stored body has no live sample. The response the caller sees is private because the
+  // sample allowance and the next step depend on who asked.
   const seconds = homepage.page
     ? PROBE_CACHE_SECONDS
     : homepage.pageReason === 'blocked' || homepage.pageReason === 'http_error'
       ? PROBE_FAILURE_CACHE_SECONDS
       : 0;
-  const response = json(body, 200, { 'cache-control': seconds ? `public, max-age=${seconds}` : 'no-store' });
   if (seconds) {
     try {
-      await caches.default.put(cacheKey, response.clone());
+      await caches.default.put(cacheKey, json(body));
     } catch {
       /* local tests have no Cache API */
     }
   }
-  return response;
+  const aiSample = await collectAiAnswerSample(request, env, {
+    host,
+    agencyName: body.detected.agencyName,
+    suburb: body.detected.suburb,
+  });
+  return json({ ...body, aiSample }, 200, {
+    'cache-control': seconds ? 'private, no-store' : 'no-store',
+  });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** Cache hit: same crawl, a fresh sample for this caller. Null when the entry is not ours. */
+async function withSample(request: Request, env: Env, parsed: unknown): Promise<Response | null> {
+  if (!isRecord(parsed) || parsed.ok !== true || typeof parsed.host !== 'string') return null;
+  const detected = isRecord(parsed.detected) ? parsed.detected : {};
+  const agencyName = typeof detected.agencyName === 'string' ? detected.agencyName : '';
+  const suburb = typeof detected.suburb === 'string' ? detected.suburb : '';
+  const aiSample = await collectAiAnswerSample(request, env, { host: parsed.host, agencyName, suburb });
+  return json({ ...parsed, aiSample }, 200, { 'cache-control': 'private, no-store' });
 }

@@ -15,6 +15,8 @@ import { PastReports } from './PastReports';
 import { focusLabel, focusTip } from '../../services/audit/focusLabel';
 import { auditReportHash, publishReportHash } from '../../services/audit/auditReportUrl';
 import { FreeAiAnswerCard } from './FreeAiAnswerCard';
+import { AiAnswerSamplePanel } from '../marketing/AiAnswerSamplePanel';
+import type { AiAnswerSample } from '../../services/audit/aiAnswerSample';
 import { FirstRunTour } from '../onboarding/FirstRunTour';
 import { ReportPdfButton } from './ReportPdfButton';
 import type { AuditHistoryEntry } from '../../services/audit/auditHistoryService';
@@ -145,6 +147,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
   const [briefing, setBriefing] = useState(false);
   const [crewEvents, setCrewEvents] = useState<AgentActivityEvent[]>([]);
   const [crewMeasurement, setCrewMeasurement] = useState<'measured' | 'not_measured' | null>(null);
+  const [probeSample, setProbeSample] = useState<AiAnswerSample | null>(null);
   const [scoutSummary, setScoutSummary] = useState<GuestScoutSummary | null>(null);
   const [shareNote, setShareNote] = useState<string | null>(null);
   const [sharing, setSharing] = useState(false);
@@ -256,6 +259,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
     setLoading(true);
     setCrewEvents([]);
     setCrewMeasurement(null);
+    setProbeSample(null);
     setScoutSummary(null);
     setReport(null);
     setStrategySaved(false);
@@ -405,6 +409,8 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
         guest: Boolean(isGuest),
       });
       void fetchProbeCrawl(formattedUrl).then((probe) => {
+        if (seq !== runSeq.current) return;
+        if (probe.ok && probe.aiSample) setProbeSample(probe.aiSample);
         if (probe.ok && probe.page?.platform) {
           productTelemetry.track('site_platform_detected', { platform: probe.page.platform });
         }
@@ -905,6 +911,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       {/* Audit Report Result */}
       {report && (
         <div className="space-y-6">
+          {probeSample ? <AiAnswerSamplePanel sample={probeSample} tone="night" /> : null}
           {dna?.suburb && dna.state ? (
             <FreeAiAnswerCard suburb={dna.suburb} state={dna.state} brandName={dna.name} />
           ) : null}

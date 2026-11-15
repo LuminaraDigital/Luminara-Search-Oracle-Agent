@@ -59,6 +59,7 @@ import com.luminarasuite.app.core.designsystem.probeBeacons
 import com.luminarasuite.app.core.designsystem.probeCaption
 import com.luminarasuite.app.core.designsystem.toneColor
 import com.luminarasuite.app.core.designsystem.toneForStatus
+import com.luminarasuite.app.core.model.AiAnswerSample
 import com.luminarasuite.app.core.model.BotDirectiveStatus
 import com.luminarasuite.app.core.model.CrewResult
 import com.luminarasuite.app.core.model.QuotaStatus
@@ -237,6 +238,27 @@ private fun reportAsText(report: InstantAuditReport): String =
         } ?: appendLine(report.verdict)
         report.evaluation.checks.forEach { appendLine("- ${it.label}: ${it.status}. ${it.detail}") }
         appendLine("This week: ${report.oneMoveThisWeek}")
+        report.aiSample?.let { sample ->
+            appendLine(sample.label)
+            if (sample.status == "measured") {
+                appendLine(
+                    if (sample.named) {
+                        "The agency name or domain appears in this sample."
+                    } else {
+                        "The agency name and domain do not appear in this sample."
+                    },
+                )
+                sample.prompts.forEach { row ->
+                    appendLine("Asked: ${row.prompt}")
+                    appendLine(row.answer)
+                    val cited = if (row.citedDomains.isEmpty()) "none" else row.citedDomains.joinToString(", ")
+                    appendLine("Other domains cited: $cited")
+                }
+            } else if (sample.reason.isNotBlank()) {
+                appendLine(sample.reason)
+            }
+            if (sample.nextStep.isNotBlank()) appendLine(sample.nextStep)
+        }
     }
 
 private fun shareReport(
@@ -376,6 +398,36 @@ fun AuditScreen(
 }
 
 @Composable
+private fun AiSampleCard(sample: AiAnswerSample) {
+    WorkbenchCard(emphasized = true, modifier = Modifier.testTag("audit_ai_sample")) {
+        EyebrowKicker("Does AI name this agency?")
+        MeasurementStatusBadge(sample.status)
+        Text(text = sample.label, style = LuminaraTextStyles.Body)
+        if (sample.status == "measured") {
+            Text(
+                text = if (sample.named) {
+                    "The agency name or domain appears in this sample."
+                } else {
+                    "The agency name and domain do not appear in this sample."
+                },
+                style = LuminaraTextStyles.Body,
+            )
+            sample.prompts.forEach { row ->
+                Text(text = "Asked: ${row.prompt}", style = LuminaraTextStyles.Body, color = LuminaraColors.Ink2)
+                Text(text = row.answer, style = LuminaraTextStyles.Body)
+                val cited = if (row.citedDomains.isEmpty()) "none" else row.citedDomains.joinToString(", ")
+                Text(text = "Other domains cited: $cited", style = LuminaraTextStyles.Body, color = LuminaraColors.Ink2)
+            }
+        } else if (sample.reason.isNotBlank()) {
+            Text(text = sample.reason, style = LuminaraTextStyles.Body)
+        }
+        if (sample.nextStep.isNotBlank()) {
+            Text(text = sample.nextStep, style = LuminaraTextStyles.Body, color = LuminaraColors.GoldLight)
+        }
+    }
+}
+
+@Composable
 private fun AuditReportContent(
     report: InstantAuditReport,
     state: AuditUiState,
@@ -400,6 +452,7 @@ private fun AuditReportContent(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        report.aiSample?.let { sample -> AiSampleCard(sample) }
         WorkbenchCard(emphasized = true) {
             Row(
                 modifier = Modifier.fillMaxWidth(),

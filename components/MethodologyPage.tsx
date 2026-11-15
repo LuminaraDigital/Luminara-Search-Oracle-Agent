@@ -97,7 +97,8 @@ const MethodologyPage: React.FC<MethodologyPageProps> = ({
         <p className="lx-lede md:col-span-7 md:pt-12" data-reveal>
           The free check on the landing page reads the homepage title, description and structured data, plus
           robots.txt and llms.txt, for the domain you type. Those are read from your page, not from Google, and the
-          engine rows stay Not measured. Instant Audit measures answer engines after you create a free
+          engine rows stay Not measured. The same check may add one capped Tavily answer sample, labeled
+          Measured only for that call. Instant Audit measures answer engines after you create a free
           account (hosted daily allowance) or sign in. Public share previews never invent scores.
         </p>
       </section>

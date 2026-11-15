@@ -1,6 +1,8 @@
 /**
- * Client helper for anonymous landing Probe crawl (robots / llms / ai.txt and the homepage head).
+ * Client helper for the landing Probe crawl (robots / llms / ai.txt, the homepage head,
+ * and a capped Tavily answer sample when the server key and the daily allowance allow it).
  */
+import type { AiAnswerSample } from '../audit/aiAnswerSample';
 import type { HomepageHead, HomepageReadFailure } from './homepageSnippet';
 
 export type ProbeCrawlClientResult =
@@ -18,6 +20,8 @@ export type ProbeCrawlClientResult =
       page?: HomepageHead | null;
       pageReason?: HomepageReadFailure | null;
       checkedAt?: string;
+      /** Absent on an older Worker. */
+      aiSample?: AiAnswerSample;
     }
   | { ok: false; error: string; code?: string };
 
@@ -26,7 +30,8 @@ export async function fetchProbeCrawl(pageUrl: string): Promise<ProbeCrawlClient
   try {
     const res = await fetch(
       `${base}/api/visibility/probe-crawl?url=${encodeURIComponent(pageUrl)}`,
-      { method: 'GET', credentials: 'omit' },
+      // Same-origin cookies let a signed-in free account use its daily sample allowance.
+      { method: 'GET', credentials: 'same-origin' },
     );
     const data = (await res.json()) as ProbeCrawlClientResult & { error?: string; code?: string };
     if (!res.ok || !data || data.ok !== true) {

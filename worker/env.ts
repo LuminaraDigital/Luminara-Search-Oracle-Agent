@@ -113,6 +113,11 @@ export interface Env extends DataPlaneEnv {
   /** Sovereign Ollama endpoint override (e.g. https://my-ollama.internal:11434). Defaults to https://ollama.com */
   OLLAMA_BASE_URL?: string;
   TAVILY_API_KEY?: string;
+  /**
+   * Free-check live answer samples (Tavily include_answer) per UTC day, all callers.
+   * Default 30. 0 pauses live calls. The key is the existing TAVILY_API_KEY secret.
+   */
+  FREE_AI_SAMPLE_DAILY_BUDGET?: string;
   FIRECRAWL_API_KEY?: string;
   EXA_API_KEY?: string;
   /** Free hosted Exa calls per account per UTC day. Default 15. Paid plans are not counted. */

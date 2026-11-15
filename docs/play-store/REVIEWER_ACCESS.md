@@ -8,7 +8,7 @@ Play Console -> **App content -> Sign-in details (App access)**.
 
 The Luminara Suite Android app supports three access lanes:
 1. **Guest Mode (Zero Sign-In Required)**:
-   - The **Instant Audit** tab works out of the box without an account. Reviewers can tap any preset chip (`luminarasuite.com`, `cloudflare.com`, `developer.android.com`) or enter any domain, and they can repeat that. Each run reads live `/robots.txt`, `/llms.txt`, and `/ai.txt` and fills the local **Dashboard**.
+   - The **Instant Audit** tab works out of the box without an account. Reviewers can tap any preset chip (`luminarasuite.com`, `cloudflare.com`, `developer.android.com`) or enter any domain, and they can repeat that. Each run reads live `/robots.txt`, `/llms.txt`, and `/ai.txt` and fills the local **Dashboard**. A guest also gets one capped Tavily answer sample per day when the server key is set. That sample is labeled Measured only for the Tavily call. ChatGPT, Gemini, and Perplexity stay Not measured.
    - One **Explain in plain English** read of a finished check is included on the device. It uses the crawl result already on screen. It does not call a hosted model. After that read, Ask, Studio, idea cards, and further explanations ask for sign-in. Uninstalling the app resets the one read. Crawl checks stay available.
 2. **Signed-In Workspace Account**:
    - In **Settings -> Workspace**, reviewers sign in with the same Firebase account as luminarasuite.com (email and password, or Google). That unlocks cloud workspace sync, hosted **Ask Oracle** (`3/day` on the free plan), the full audit, GDPR JSON export, and account controls. The plan line says to manage the plan on luminarasuite.com. The app does not open checkout.

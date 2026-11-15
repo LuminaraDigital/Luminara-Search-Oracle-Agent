@@ -466,18 +466,18 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
     path: '/methodology',
     title: 'Methodology | Luminara Suite',
     description:
-      'How Luminara labels each result Measured, Estimated, or Not measured. The free check reads your homepage, robots.txt, and llms.txt.',
+      'How Luminara labels each result Measured, Estimated, or Not measured. The free check reads your homepage, robots.txt, llms.txt, and one capped Tavily sample.',
     jsonLd: graph(
       '/methodology',
       'Methodology',
-      'How Luminara labels each result Measured, Estimated, or Not measured. The free check reads your homepage, robots.txt, and llms.txt.',
+      'How Luminara labels each result Measured, Estimated, or Not measured. The free check reads your homepage, robots.txt, llms.txt, and one capped Tavily sample.',
       false,
       [buildFaqPageJsonLd()],
     ),
     crawlerBody: `
 <section>
   <p>Measured means live evidence. Estimated is directional only. Not measured means missing data is labeled, never invented.</p>
-  <p>The free check on the landing page reads the homepage title and description, robots.txt, llms.txt and ai.txt. ${LIVE_ANSWER_CHECKS}</p>
+  <p>The free check on the landing page reads the homepage title and description, robots.txt, llms.txt and ai.txt, and may add one capped Tavily answer sample. ${LIVE_ANSWER_CHECKS}</p>
   <p><a href="/sample-report">Sample report</a> · <a href="/pricing">Pricing</a> · <a href="/">Home</a></p>
 </section>`,
   },
@@ -680,7 +680,7 @@ export function checkShell(pathname: string): MarketingShellMeta | null {
   // Built from the validated host, never the raw path, so percent-encoded junk cannot reach the meta.
   const clean = checkPathForHost(host);
   const title = brandedTabTitle(`Free check: ${host}`);
-  const description = `A free live check of ${host}: its homepage title and description, robots.txt and llms.txt. Run the same check on your site.`;
+  const description = `A free live check of ${host}: homepage, robots.txt, llms.txt, and one capped Tavily sample.`;
   return {
     path: clean,
     title,
