@@ -273,6 +273,17 @@
 .lg-empty-card { padding: 28px 20px; border: 1px dashed var(--lg-line-2); border-radius: var(--lg-r); color: var(--lg-fg-2); display: grid; gap: 6px; }
 .lg-empty-card b { color: var(--lg-fg); font-weight: 500; font-size: 1rem; }
 
+/* ---------- More tools menu (portalled to body, so it carries .lg-app itself) ---------- */
+.lg-more { background: var(--lg-s1); border: 1px solid var(--lg-line-2); border-radius: var(--lg-r); box-shadow: var(--lg-shadow); }
+.lg-more :is(a, button) {
+  background: transparent; border-color: transparent; border-radius: 8px; color: var(--lg-fg-2);
+  font-size: 0.875rem; font-weight: 400; letter-spacing: 0; text-transform: none;
+}
+.lg-more :is(a, button):hover { background: var(--lg-s2); color: var(--lg-fg); }
+.lg-more :is(a, button).border-t { border-top-color: var(--lg-line); border-radius: 0 0 8px 8px; }
+.lg-more svg { color: var(--lg-fg-3); }
+.lg-more :is(a, button):hover svg { color: var(--lg-gold); }
+
 /* ---------- phone tab bar ---------- */
 .lg-tabbar { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border-top: 1px solid var(--lg-line); background: var(--lg-rail); padding-bottom: env(safe-area-inset-bottom, 0px); flex: none; position: relative; z-index: 30; }
 @media (min-width: 1024px) { .lg-tabbar { display: none; } }

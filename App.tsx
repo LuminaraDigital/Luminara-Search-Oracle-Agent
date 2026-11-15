@@ -1639,7 +1639,9 @@ const App: React.FC = () => {
                 />
                 <div 
                   style={suiteMenuPos && !inTelegram && typeof window !== 'undefined' && window.innerWidth >= 640 ? suiteMenuPos : undefined}
-                  className={`z-50 overflow-y-auto border border-[var(--color-rule)] rounded-lg p-2.5 shadow-2xl bg-[var(--color-paper-2)] animate-in fade-in zoom-in-95 duration-200 fixed ${
+                  role="dialog"
+                  aria-label="More tools"
+                  className={`lg-app lg-more z-50 overflow-y-auto p-2 animate-in fade-in zoom-in-95 duration-200 fixed ${
                     inTelegram
                       ? 'bottom-[calc(env(safe-area-inset-bottom,0px)+68px)] left-3 right-3 max-h-[72dvh] mx-auto max-w-sm'
                       : 'max-sm:bottom-4 max-sm:left-3 max-sm:right-3 max-sm:max-h-[72dvh] max-sm:mx-auto max-sm:max-w-sm sm:w-[min(19rem,calc(100vw-1.5rem))] sm:max-h-[min(70dvh,28rem)]'
@@ -1789,11 +1791,21 @@ const App: React.FC = () => {
                     <kbd className="ml-auto hidden sm:inline text-[9px] px-1.5 py-0.5 rounded bg-white/10 text-gray-300">⌘K</kbd>
                   </button>
                   {!inTelegram && appAuth.authenticated && <ReplayTourButton onDone={() => setShowSuiteMenu(false)} goToAudit={() => setView(AppView.INSTANT_AUDIT)} />}
+                  {/* Below 1024px there is no rail, so Settings, the daily quota and Log out live here. */}
+                  <button
+                    type="button"
+                    onClick={() => { setShowSuiteMenu(false); setIsKeyModalOpen(true); }}
+                    className={`${inTelegram ? '' : 'lg:hidden '}w-full text-left px-3 py-2.5 min-h-11 flex items-center gap-2 border-t mt-1 pt-2`}
+                  >
+                    <ICONS.Settings className="w-3.5 h-3.5" />
+                    <span>Settings and AI keys</span>
+                  </button>
+                  <div className="sm:hidden px-3 py-2"><UsageQuotaBadge /></div>
                   {!inTelegram && appAuth.authenticated && (
                     <button
                       type="button"
                       onClick={() => { setShowSuiteMenu(false); void logoutToLanding(); }}
-                      className="sm:hidden w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-400 hover:text-gold hover:bg-gold/10 transition-colors flex items-center gap-2 border-t border-white/5 mt-1 pt-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                      className="lg:hidden w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-400 hover:text-gold hover:bg-gold/10 transition-colors flex items-center gap-2 border-t border-white/5 mt-1 pt-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
                     >
                       <ICONS.Close className="w-3.5 h-3.5 text-gold-light" />
                       <span>Log out</span>
