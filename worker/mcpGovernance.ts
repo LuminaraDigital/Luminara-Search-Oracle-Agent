@@ -56,6 +56,10 @@ export const TOOL_GOVERNANCE: Record<string, ToolGovernanceEntry> = {
   // Dreaming memory catalogue
   dream_status: { risk: 'read', status: 'active' },
   get_business_memory: { risk: 'read', status: 'active' },
+  // Visibility Unit Tests
+  list_visibility_tests: { risk: 'read', status: 'active' },
+  get_visibility_test: { risk: 'read', status: 'active' },
+  get_provider_scorecard: { risk: 'read', status: 'active' },
   dream_consolidate: { risk: 'write', status: 'active' },
   review_dream_proposal: { risk: 'write', status: 'active' },
   // Conversion spine & CMS MCP bridge catalogue (0042)

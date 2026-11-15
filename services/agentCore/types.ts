@@ -164,6 +164,8 @@ export interface AuditStateGraphContext {
   scrapedPages: ScrapedPageEvidence[];
   /** Search evidence gathered by SERP Radar */
   serpEvidence: SerpEvidenceItem[];
+  /** Rows for one question that does not name the business. Never counted in citation rate or share of voice. */
+  discoveryEvidence?: SerpEvidenceItem[];
   /**
    * Empirical metrics. Null when providers failed or returned no evidence.
    * Never seed these with placeholder percentages.

@@ -331,6 +331,75 @@
     }
   },
   {
+    "name": "list_visibility_tests",
+    "title": "list visibility tests",
+    "description": "Uses no credits. Lists saved Visibility Unit Test runs with their family scores, newest first.",
+    "creditClass": "free",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "domain": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "list visibility tests",
+      "readOnlyHint": true,
+      "openWorldHint": false,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "get_visibility_test",
+    "title": "get visibility test",
+    "description": "Uses no credits. Returns every verdict and plain reason for one Visibility Unit Test run. Raw answers stay private.",
+    "creditClass": "free",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "runId": {
+          "type": "string"
+        },
+        "domain": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "runId"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "get visibility test",
+      "readOnlyHint": true,
+      "openWorldHint": false,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "get_provider_scorecard",
+    "title": "get provider scorecard",
+    "description": "Uses no credits. Compares the models on the account's own keys, on its own checks: quality, reported cost, refusals. These are estimates, not measured ChatGPT, Perplexity, or AI Overview results.",
+    "creditClass": "free",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "domain": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "get provider scorecard",
+      "readOnlyHint": true,
+      "openWorldHint": false,
+      "destructiveHint": false
+    }
+  },
+  {
     "name": "get_business_memory",
     "title": "Business memory",
     "description": "Uses no credits. Retrieves active Business DNA, visibility profiles, action memories, and preferences.",

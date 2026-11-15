@@ -61,6 +61,7 @@ export class OpenRouterProvider extends BaseAIProvider {
     if (options?.jsonMode) {
       body.response_format = { type: 'json_object' };
     }
+    if (options?.reportCost) body.usage = { include: true };
     applyToolsToChatBody(body, options);
 
     const headers: Record<string, string> = {
@@ -99,6 +100,7 @@ export class OpenRouterProvider extends BaseAIProvider {
       finishReason: (data.choices?.[0]?.finish_reason as GenerateFinishReason) || 'stop',
       toolCalls,
       latencyMs,
+      costUsd: typeof usage.cost === 'number' ? usage.cost : undefined,
     };
   }
 

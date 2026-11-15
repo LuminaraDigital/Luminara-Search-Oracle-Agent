@@ -9,6 +9,7 @@ import { identify, json, billingId, sha256Hex, secretEquals } from './workerUtil
 import { isTeaserFailureCode, teaserFailureLine } from '../services/audit/teaserFailureCodes';
 import { getActiveSubscription } from './quotaMiddleware';
 import { meterDailyUse } from './securityHardening';
+import { sharedPassList } from './visibilityTests';
 import { planCapsFor } from './telegramBot';
 import { entitlementsFor } from '../services/plans/planEntitlements';
 import { PRODUCTION_MINI_APP_URL, resolveMiniAppUrl } from '../services/referrals/rules';
@@ -28,6 +29,8 @@ export interface SharedReportPublic {
   dnaName?: string;
   markdownText: string;
   sources?: Array<{ uri: string; title: string }>;
+  /** Passing visibility checks by label. No answer text and no reasons reach a share link. */
+  visibilityPassList?: string[];
   branding?: SharedReportBranding;
   createdAt: number;
   expiresAt: number | null;
@@ -314,6 +317,7 @@ function parseCreateBody(raw: unknown): {
   password?: string;
   clientId?: string;
   projectId?: string;
+  visibilityRunId?: string;
   expiresInMs: number;
 } | { ok: false; error: string; status: number } {
   if (!raw || typeof raw !== 'object') return { ok: false, error: 'JSON body required', status: 400 };
@@ -379,6 +383,7 @@ function parseCreateBody(raw: unknown): {
     password,
     clientId: typeof body.clientId === 'string' ? body.clientId.slice(0, 64) : undefined,
     projectId,
+    visibilityRunId: typeof body.visibilityRunId === 'string' ? body.visibilityRunId.slice(0, 64) : undefined,
     expiresInMs,
   };
 }
@@ -551,6 +556,11 @@ export async function handleShareRoute(request: Request, env: Env, path: string)
     const meter = await meterDailyUse(env, 'share', accountId, ent.shareDailyLimit, 'Share link');
     if (!meter.ok) {
       return json({ ok: false, error: meter.error, code: 'SHARE_QUOTA', requiredPlan: 'growth' }, 429);
+    }
+
+    // Built here from the account's own verdicts, so nobody can publish checks that were never passed.
+    if (parsed.visibilityRunId) {
+      parsed.payload.visibilityPassList = await sharedPassList(env, accountId, parsed.visibilityRunId);
     }
 
     const token = randomTokenHex(32);

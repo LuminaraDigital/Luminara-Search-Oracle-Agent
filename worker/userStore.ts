@@ -535,6 +535,13 @@ export async function linkTelegramAndFirebase(
       } catch (err) {
         console.error('[UserStore] Community feed rows were not moved to the linked account', err);
       }
+      try {
+        await env.DB.batch(['visibility_test_runs', 'visibility_test_answers', 'visibility_test_verdicts'].map((table) =>
+          env.DB!.prepare(`UPDATE ${table} SET account_id = ? WHERE account_id = ?`).bind(accountId, from),
+        ));
+      } catch (err) {
+        console.error('[UserStore] Visibility test rows were not moved to the linked account', err);
+      }
       // Audit history. An id the surviving account already has is the same saved audit, so the copy goes.
       try {
         await audits.move(from, accountId);

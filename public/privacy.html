@@ -69,7 +69,7 @@
 
 <ul>
 <li>On your device: in a browser, localStorage and sessionStorage hold the business profile, chat, audits, memory, themes, and keys when you are not relying on sync. On the Android app, saved API keys are encrypted with Android Keystore AES-256-GCM.</li>
-<li>On Cloudflare: a D1 database (users and workspace JSON) and KV (subscriptions, quota, workspace fallback, Sentinel targets, short-lived TON orders, and an enrichment cache). Hosting and logs are on Cloudflare.</li>
+<li>On Cloudflare: a D1 database (users and workspace JSON) and KV (subscriptions, quota, workspace fallback, Sentinel targets, short-lived TON orders, and an enrichment cache). A private Cloudflare R2 bucket holds the raw material of your visibility checks: the questions asked, the answers returned, the business facts they were checked against, and text from up to six pages of the audited website. The audit history limit on your plan applies separately to audit checks and to checks on your own AI accounts. We delete older ones past that limit, delete all of them with your account, and include the newest in your data export. Ask us for the rest. Hosting and logs are on Cloudflare.</li>
 <li>Firebase Authentication holds email, password, and Google sign-in credentials for the luminara-suite project.</li>
 <li>Stripe holds the card payment. We keep the plan id, expiry, and checkout session id.</li>
 </ul>
@@ -94,7 +94,7 @@
 <li>Tavily, Exa, and Firecrawl for search and crawl evidence.</li>
 <li>DataForSEO for keyword, search result, domain, and backlink research, and Google PageSpeed Insights for page speed.</li>
 <li>LanguageTool and Umami, only if you turn those features on.</li>
-<li>Cloudflare for hosting, KV, D1, and logs.</li>
+<li>Cloudflare for hosting, KV, D1, R2, and logs.</li>
 <li>Firebase and Google for sign-in.</li>
 <li>Stripe for card payments. We do not store card numbers.</li>
 <li>Telegram for Mini App identity, Stars payments, and bot alerts.</li>

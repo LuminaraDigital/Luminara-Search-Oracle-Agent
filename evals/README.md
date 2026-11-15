@@ -43,6 +43,14 @@ block-level findings). `maxBlock` / `maxWarn` cap finding counts by severity
 (maxBlock defaults to 0). `mustContain` / `mustNotContain` are raw substring
 assertions on the response.
 
+## Visibility Unit Test cases
+
+`evals/visibility/*.json` run through the real scorer in
+`services/visibilityTests/scorer.ts`. Each case gives `facts`, `answers`, and an
+`expect` map of test id to `pass`, `fail`, or `not_measured`. Every reason the
+scorer writes must also pass `plainLanguage` and `runAllValidators`, so jargon in
+a reason fails the eval. `--dir` skips these cases.
+
 ## YAML subset limitation
 
 `evals/yaml-subset.mjs` is a tiny hand-rolled parser, not YAML. It supports

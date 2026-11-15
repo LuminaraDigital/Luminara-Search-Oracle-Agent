@@ -37,6 +37,7 @@ import {
 import { clipText, MCP_RESULT_TEXT_CAP, MCP_STRUCTURED_CHAR_CAP, mcpToolAnnotations } from './mcpToolMeta';
 import { entitlementsFor } from '../services/plans/planEntitlements';
 import { gateMcpTenant } from './tenantGate';
+import { cleanDomain, getRunVerdicts, listRuns, providerScorecard } from './visibilityTests';
 import {
   BYOK_PAID_CALL_COST_CENTS,
   HOSTED_PAID_CALL_COST_CENTS,
@@ -397,6 +398,61 @@ const TOOLS: McpToolDef[] = [
         ].join('\n'),
         { run: res.run, proposals: res.proposals },
       );
+    },
+  },
+  {
+    name: 'list_visibility_tests',
+    description: 'Uses no credits. Lists saved Visibility Unit Test runs with their family scores, newest first.',
+    creditClass: 'free',
+    inputSchema: {
+      type: 'object',
+      properties: { domain: { type: 'string' } },
+      additionalProperties: false,
+    },
+    handler: async (args, ctx) => {
+      const runs = await listRuns(ctx.env, ctx.accountId, cleanDomain(args.domain), 20);
+      const lines = runs.length
+        ? runs.map((run) => `- ${run.id}: ${run.domain}, ${run.summary?.graded ?? 0} checks graded, ${run.summary?.notMeasured ?? 0} not measured`).join('\n')
+        : 'No visibility test runs yet. Run an Instant Audit in the app.';
+      return textResult(lines, { runs });
+    },
+  },
+  {
+    name: 'get_visibility_test',
+    description: 'Uses no credits. Returns every verdict and plain reason for one Visibility Unit Test run. Raw answers stay private.',
+    creditClass: 'free',
+    inputSchema: {
+      type: 'object',
+      // `domain` lets a project-bound token limit this lookup to its own site.
+      properties: { runId: { type: 'string' }, domain: { type: 'string' } },
+      required: ['runId'],
+      additionalProperties: false,
+    },
+    handler: async (args, ctx) => {
+      const runId = requireString(args, 'runId');
+      if (!runId) return textResult('runId required', undefined, true);
+      const found = await getRunVerdicts(ctx.env, ctx.accountId, runId);
+      const domain = cleanDomain(args.domain);
+      if (!found || (domain && found.run.domain !== domain)) return textResult('Run not found', undefined, true);
+      const lines = found.verdicts.map((v) => `[${v.result}] ${v.label}: ${v.why}`).join('\n');
+      return textResult(lines || 'This run has no verdicts.', found);
+    },
+  },
+  {
+    name: 'get_provider_scorecard',
+    description: 'Uses no credits. Compares the models on the account\'s own keys, on its own checks: quality, reported cost, refusals. These are estimates, not measured ChatGPT, Perplexity, or AI Overview results.',
+    creditClass: 'free',
+    inputSchema: {
+      type: 'object',
+      properties: { domain: { type: 'string' } },
+      additionalProperties: false,
+    },
+    handler: async (args, ctx) => {
+      const scorecard = await providerScorecard(ctx.env, ctx.accountId, cleanDomain(args.domain));
+      const lines = scorecard.length
+        ? scorecard.map((row) => `- ${row.provider}/${row.model}: ${row.answers} answers, ${row.refusals} refused, ${row.errors} failed`).join('\n')
+        : 'No model checks yet. Add an OpenRouter key in Settings and press Ask my AI accounts on an audit.';
+      return textResult(lines, { scorecard, measurementStatus: 'estimated' });
     },
   },
   {
