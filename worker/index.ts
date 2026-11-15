@@ -145,7 +145,8 @@ import {
 } from './auditQueue';
 import { handleAuditScoutRun } from './auditScoutRun';
 import { dispatchQueueBatch } from './queueDispatch';
-import { MCP_OAUTH_PUBLIC_CORS, handleMcpOAuthRoute, handleMcpRegistryAuth, handleOAuthDiscovery, listAgentConnections, revokeAgentConnection } from './mcpOAuth';
+import { MCP_OAUTH_PUBLIC_CORS, handleMcpOAuthRoute, listAgentConnections, revokeAgentConnection } from './mcpOAuth';
+import { handleMcpRegistryAuth, handleOAuthDiscovery } from './mcpOAuthDiscovery';
 import { pruneMcpOAuthRefreshRows } from './mcpOAuthRefresh';
 import { enforceMcpOauthIpLimit, MCP_OAUTH_REGISTER_PER_MIN, MCP_OAUTH_TOKEN_PER_MIN } from './mcpLimits';
 import { executeOracleGatewayTask, type OracleGatewayRequest } from './oracleGateway';
