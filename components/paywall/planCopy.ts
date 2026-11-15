@@ -31,11 +31,19 @@ export const NOTHING_TO_CANCEL = 'There is nothing to cancel, because a plan doe
 /** Web card checkout is closed until STRIPE_CHECKOUT_LIVE is true. Stars in Telegram stays open. */
 export const WAITLIST_LINE = 'Payment on the web is not open yet. Email info@luminara.digital to join the waitlist.';
 
-/** One sentence for /pricing, llms.txt, and the pricing meta description. */
-export function listPriceSummary(): string {
+function paidPriceList(): string {
   const ids = ['starter', 'growth', 'agency'] as const;
-  const parts = ids.map((id) => `${PLAN_ENTITLEMENTS[id].title} ${PAID_PLAN_PRICES[id].audLabel}`);
-  return `${parts.join(', ')}. Pay by card for a 30-day pass that does not renew, or pay in Telegram Stars in the Mini App.`;
+  return ids.map((id) => `${PLAN_ENTITLEMENTS[id].title} ${PAID_PLAN_PRICES[id].audLabel}`).join(', ');
+}
+
+/** Full price sentence for the pricing page body and llms.txt. */
+export function listPriceSummary(): string {
+  return `${paidPriceList()}. Pay by card for a 30-day pass that does not renew, or pay in Telegram Stars in the Mini App.`;
+}
+
+/** Search snippet for /pricing. Same list prices, short enough for the result. */
+export function pricingMetaDescription(): string {
+  return `${paidPriceList()}. Each plan is a 30-day pass that does not renew. Pay by card or in Telegram Stars.`;
 }
 
 /** Free card lines. The daily allowance matches the Worker default of 3. */
