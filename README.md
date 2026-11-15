@@ -100,7 +100,7 @@ for the app:
 | GEO | scoring rules, AI search, content quality |
 | Lenses (optional) | Local business, Online store, Content quality, Structured data, Search experience |
 
-Reports carry a Health Score (0-100) with the playbook weights, Critical / High / Medium / Low findings,
+Reports do not carry a blended or composite score. Findings are labelled Measured, Estimated or Not measured, are evidence-labelled, and invent no scores. Reports include Critical / High / Medium / Low findings,
 and for every recommendation a "how we'd know it failed" check and a leading indicator. Deprecation rules
 (no HowTo schema, FAQPage earns no rich result, INP not FID) are enforced in the prompt. Anything not
 observable from the scrape and search evidence is reported as "not measured".
