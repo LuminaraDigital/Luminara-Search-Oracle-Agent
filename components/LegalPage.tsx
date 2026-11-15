@@ -60,7 +60,7 @@ function TermsBody({ playSafe = false }: { playSafe?: boolean }) {
     {
       title: 'Your keys and accounts',
       paragraphs: [
-        'You may use your own provider API keys. You are responsible for those accounts, their costs and their terms. Hosted keys on luminarasuite.com are provided to signed-in users within the free daily allowance or an active plan, and may be rate-limited or withdrawn to prevent abuse. If you enable workspace sync while signed in, workspace content and optional key bags may be stored on our Cloudflare backend for that account.',
+        'You may use your own provider API keys. You are responsible for those accounts, their costs and their terms. Hosted keys on luminarasuite.com are provided to signed-in users within the free daily allowance or an active plan, and may be rate-limited or withdrawn to prevent abuse. When you are signed in on the website or in the Telegram Mini App, workspace content is synced to our Cloudflare backend for that account automatically. API keys are synced only as an encrypted key bag.',
       ],
     },
     {
