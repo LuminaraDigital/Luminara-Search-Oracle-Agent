@@ -6,7 +6,7 @@ import worker from '../worker/index';
 import type { Env } from '../worker/env';
 import { handleMcpRequest } from '../worker/mcpServer';
 import { MCP_INSTRUCTIONS } from '../worker/mcpProtocol';
-import type { HostedIdentity } from '../worker/userTypes';
+import type { HostedIdentity, McpCredential } from '../worker/userTypes';
 import { createSqliteD1 } from './helpers/sqliteD1';
 
 function makeEnv(): Env {
@@ -100,6 +100,44 @@ describe('streamable HTTP details', () => {
     );
     expect(res.status).toBe(202);
     expect(await res.text()).toBe('');
+  });
+});
+
+describe('tools/list shows only tools this connection can run', () => {
+  async function listNames(env: Env, credential?: McpCredential): Promise<string[]> {
+    const res = await handleMcpRequest(
+      new Request('https://luminarasuite.com/api/mcp', {
+        method: 'POST',
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
+      }),
+      env,
+      user,
+      credential,
+    );
+    const body = (await res.json()) as { result: { tools: Array<{ name: string }> } };
+    return body.result.tools.map((tool) => tool.name);
+  }
+  const oauth: McpCredential = { kind: 'oauth', id: null, scopes: ['mcp:free'], clientId: 'client-1' };
+
+  it('hides the tools an OAuth connection is refused', async () => {
+    const names = await listNames(makeEnv(), oauth);
+    expect(names).not.toContain('mint_habitat_token');
+    expect(names).not.toContain('compile_review_to_skill');
+    expect(names).toContain('get_project_context');
+  });
+
+  it('keeps them for a signed-in session', async () => {
+    const names = await listNames(makeEnv());
+    expect(names).toContain('mint_habitat_token');
+    expect(names).toContain('compile_review_to_skill');
+  });
+
+  it('lists browser tools only when a crawler is configured', async () => {
+    const browse = ['browse_observe', 'browse_act', 'browse_goal', 'browse_close'];
+    const without = await listNames(makeEnv(), oauth);
+    for (const name of browse) expect(without).not.toContain(name);
+    const withCrawler = await listNames({ ...makeEnv(), PATCHRIGHT_URL: 'https://crawler.example' } as Env, oauth);
+    for (const name of browse) expect(withCrawler).toContain(name);
   });
 });
 

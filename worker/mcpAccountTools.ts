@@ -49,7 +49,7 @@ export const ACCOUNT_MCP_TOOLS: McpToolDef[] = [
   {
     name: 'whoami',
     description:
-      'Read this first. Returns the account, plan, and MCP calls used and remaining today. Uses no credits. A new token does not reset the daily count.',
+      'Returns the account, plan, and MCP calls used and remaining today. Uses no credits. A new token does not reset the daily count.',
     creditClass: 'free',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     handler: async (_args, ctx) => {

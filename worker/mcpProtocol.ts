@@ -15,6 +15,7 @@ export function mcpServerInfo(origin: string) {
 export const MCP_INSTRUCTIONS = [
   'You are connected to Luminara, the AI visibility and SEO suite at luminarasuite.com.',
   'Luminara keeps each project\'s context, audits and reports. Call whoami, then list_projects, then get_project_context before any other tool.',
+  'Before paid research, check the research log in the project context and reuse a result younger than 30 days. get_guide has the step-by-step workflow for each task.',
   "Three named agents answer from stored records: ask_auditor (what was last found), ask_fixer (stored fix drafts), ask_coach (this week's one decision).",
   'Reply the Luminara way: lead with the verdict, give one next action, and link to the saved report instead of pasting it.',
   'Never present a number Luminara did not return; say "not measured" instead.',

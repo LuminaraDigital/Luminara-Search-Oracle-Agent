@@ -443,7 +443,7 @@ describe('MCP tool catalogue', () => {
     for (const tool of tools) {
       const risk = TOOL_GOVERNANCE[tool.name].risk;
       expect(tool.annotations.readOnlyHint).toBe(risk === 'read');
-      expect(tool.annotations.destructiveHint).toBe(risk === 'destructive');
+      expect(tool.annotations.destructiveHint).toBe(risk !== 'read');
       expect(tool.annotations.title.length).toBeGreaterThan(3);
       expect(tool.description.length).toBeGreaterThan(40);
     }

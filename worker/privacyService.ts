@@ -517,6 +517,17 @@ async function softDeleteAccount(env: Env, accountId: string, deps?: DataPlaneDe
   await drop('project_monitor_alerts', `DELETE FROM project_monitor_alerts WHERE account_id = ?`);
   await drop('project_monitors', `DELETE FROM project_monitors WHERE account_id = ?`);
   await drop('agent_reports', `DELETE FROM agent_reports WHERE account_id = ?`);
+  // Connected assistants: approval requests hold tool inputs, and refresh families keep a connection alive.
+  await drop('mcp_action_requests', `DELETE FROM mcp_action_requests WHERE user_id = ?`);
+  await drop(
+    'mcp_oauth_refresh_access',
+    `DELETE FROM mcp_oauth_refresh_access WHERE family_id IN (SELECT family_id FROM mcp_oauth_refresh_family WHERE account_id = ?)`,
+  );
+  await drop(
+    'mcp_oauth_refresh_retired',
+    `DELETE FROM mcp_oauth_refresh_retired WHERE family_id IN (SELECT family_id FROM mcp_oauth_refresh_family WHERE account_id = ?)`,
+  );
+  await drop('mcp_oauth_refresh_family', `DELETE FROM mcp_oauth_refresh_family WHERE account_id = ?`);
   await drop('project_industries', `DELETE FROM project_industries WHERE project_id IN (SELECT id FROM projects WHERE account_id = ?)`);
   await drop('projects', `DELETE FROM projects WHERE account_id = ?`);
   await drop('account_industries', `DELETE FROM account_industries WHERE account_id = ?`);

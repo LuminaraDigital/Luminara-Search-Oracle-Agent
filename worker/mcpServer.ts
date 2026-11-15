@@ -507,15 +507,28 @@ export function listMcpToolCatalogue(): Array<{
   });
 }
 
-function toolsListPayload() {
+/** Tools whose handlers refuse an OAuth connection, so a connector never sees them. */
+const OAUTH_REFUSED_TOOLS = new Set(['mint_habitat_token', 'compile_review_to_skill']);
+const BROWSER_TOOL_NAMES = new Set(BROWSER_ACTION_CATALOGUE.map((meta) => meta.name));
+
+/** A tool this connection could call and get a real answer from. Directory reviewers run every listed tool. */
+export function isToolListedFor(name: string, ctx: Pick<McpToolContext, 'env' | 'credential'>): boolean {
+  if (ctx.credential.kind === 'oauth' && OAUTH_REFUSED_TOOLS.has(name)) return false;
+  if (BROWSER_TOOL_NAMES.has(name) && !(ctx.env.PATCHRIGHT_URL || '').trim()) return false;
+  return true;
+}
+
+function toolsListPayload(ctx: McpToolContext) {
   return {
-    tools: listMcpToolCatalogue().map(({ name, title, description, inputSchema, annotations }) => ({
-      name,
-      title,
-      description,
-      inputSchema,
-      annotations,
-    })),
+    tools: listMcpToolCatalogue()
+      .filter((tool) => isToolListedFor(tool.name, ctx))
+      .map(({ name, title, description, inputSchema, annotations }) => ({
+        name,
+        title,
+        description,
+        inputSchema,
+        annotations,
+      })),
   };
 }
 
@@ -840,7 +853,7 @@ export async function handleMcpRequest(
       continue;
     }
     if (method === 'tools/list') {
-      responses.push(rpcResult(id, toolsListPayload()));
+      responses.push(rpcResult(id, toolsListPayload(ctx)));
       continue;
     }
     if (method === 'prompts/list') {

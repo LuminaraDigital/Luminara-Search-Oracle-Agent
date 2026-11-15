@@ -70,7 +70,8 @@ export function mcpToolAnnotations(name: string): McpToolAnnotations {
   return {
     title: mcpToolTitle(name),
     readOnlyHint: risk === 'read',
-    destructiveHint: risk === 'destructive',
+    // Anthropic's directory review wants destructiveHint on any tool that modifies data, not only deletes.
+    destructiveHint: risk !== 'read',
   };
 }
 
