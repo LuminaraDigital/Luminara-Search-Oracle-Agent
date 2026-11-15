@@ -7,6 +7,7 @@
  * under a key derived from MCP_OAUTH_SECRET only.
  */
 import type { Env } from './env';
+import { MCP_RESOURCE_ERROR } from './mcpOAuthResource';
 import { sha256Hex } from './workerUtils';
 import { randomId } from '../services/projects/projectUtils';
 import { planCapsFor } from './telegramBot';
@@ -44,9 +45,16 @@ export type RefreshAccessStore = {
     clientName: string | null;
     familyId: string;
     expiresIn: number;
+    resource: string | null;
   }): Promise<void>;
   deleteHash(accountId: string, accessHash: string): Promise<void>;
   deleteFamilyConnection(accountId: string, familyId: string): Promise<void>;
+  /** Audience to stamp on the next access token. ok false is invalid_target. */
+  issuedResource(
+    accountId: string,
+    familyId: string,
+    requested: string | null,
+  ): Promise<{ ok: true; resource: string | null } | { ok: false }>;
 };
 
 type FamilyRow = {
@@ -70,6 +78,7 @@ export type RefreshGrantResult =
   | { kind: 'issued'; accessToken: string; refreshToken: string; scope: string; expiresIn: number }
   | { kind: 'invalid_grant' }
   | { kind: 'invalid_scope' }
+  | { kind: 'invalid_target' }
   | { kind: 'unavailable' };
 
 /** Token-endpoint body for a refresh result. Callers add Cache-Control: no-store. */
@@ -90,6 +99,11 @@ export function refreshGrantResponse(result: RefreshGrantResult): { status: numb
       return {
         status: 400,
         body: { error: 'invalid_scope', error_description: 'Scope cannot widen past the original grant or the current plan.' },
+      };
+    case 'invalid_target':
+      return {
+        status: 400,
+        body: { error: 'invalid_target', error_description: MCP_RESOURCE_ERROR },
       };
     case 'unavailable':
       return {
@@ -533,6 +547,7 @@ async function replaySuccessor(
   secret: string,
   store: RefreshAccessStore,
   plan: string,
+  resource: string | null,
 ): Promise<RefreshGrantResult> {
   const successor = await openSuccessor(secret, family.successorEnc);
   if (!successor) return { kind: 'unavailable' };
@@ -551,6 +566,7 @@ async function replaySuccessor(
     clientName: family.clientName,
     familyId: family.familyId,
     expiresIn: REFRESH_ACCESS_TTL_SECONDS,
+    resource,
   });
   return {
     kind: 'issued',
@@ -563,7 +579,7 @@ async function replaySuccessor(
 
 export async function rotateRefreshGrant(
   env: Env,
-  input: { refreshToken: string; clientId: string; requestedScope: string | null },
+  input: { refreshToken: string; clientId: string; requestedScope: string | null; resource: string | null },
   store: RefreshAccessStore,
 ): Promise<RefreshGrantResult> {
   if (!input.refreshToken.startsWith(REFRESH_PREFIX)) return { kind: 'invalid_grant' };
@@ -590,6 +606,8 @@ export async function rotateRefreshGrant(
     await revokeRefreshFamily(env, family.familyId, store);
     return { kind: 'invalid_grant' };
   }
+  const audienceFor = (row: FamilyRow) => store.issuedResource(row.accountId, row.familyId, input.resource);
+
   if (inGrace(family, refreshHash, now)) {
     const entitlement = await readEntitlement(env, family);
     if (entitlement.kind === 'unavailable') return { kind: 'unavailable' };
@@ -597,7 +615,9 @@ export async function rotateRefreshGrant(
       await revokeRefreshFamily(env, family.familyId, store);
       return { kind: 'invalid_grant' };
     }
-    return replaySuccessor(env, family, secret, store, entitlement.plan);
+    const audience = await audienceFor(family);
+    if (!audience.ok) return { kind: 'invalid_target' };
+    return replaySuccessor(env, family, secret, store, entitlement.plan, audience.resource);
   }
   if (family.currentRefreshHash !== refreshHash) {
     await revokeRefreshFamily(env, family.familyId, store);
@@ -610,6 +630,8 @@ export async function rotateRefreshGrant(
     await revokeRefreshFamily(env, family.familyId, store);
     return { kind: 'invalid_grant' };
   }
+  const audience = await audienceFor(family);
+  if (!audience.ok) return { kind: 'invalid_target' };
   const scope = scopeAfterRefresh(family.grantedScope, input.requestedScope, entitlement.allowed);
   if (!scope) return { kind: 'invalid_scope' };
 
@@ -641,7 +663,9 @@ export async function rotateRefreshGrant(
   if (Number(updated?.meta?.changes ?? 0) !== 1) {
     const again = await findFamily(env, refreshHash);
     if (again && again.clientId === input.clientId && inGrace(again, refreshHash, Date.now())) {
-      return replaySuccessor(env, again, secret, store, entitlement.plan);
+      const againAudience = await audienceFor(again);
+      if (!againAudience.ok) return { kind: 'invalid_target' };
+      return replaySuccessor(env, again, secret, store, entitlement.plan, againAudience.resource);
     }
     if (again && !again.revoked && again.currentRefreshHash !== refreshHash) {
       await revokeRefreshFamily(env, again.familyId, store);
@@ -658,6 +682,7 @@ export async function rotateRefreshGrant(
     clientName: family.clientName,
     familyId: family.familyId,
     expiresIn: REFRESH_ACCESS_TTL_SECONDS,
+    resource: audience.resource,
   });
   return { kind: 'issued', accessToken, refreshToken, scope, expiresIn: REFRESH_ACCESS_TTL_SECONDS };
 }

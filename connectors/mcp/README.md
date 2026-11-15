@@ -41,6 +41,8 @@ The token response includes a `refresh_token` when the client registered that gr
 
 A revoked, expired, or unknown `mcp_` token returns HTTP 401 `invalid_token` with the message `token revoked or expired, reconnect`. `WWW-Authenticate` points at the protected resource metadata. If you still hold a live refresh token, refresh it. Otherwise reconnect. Do not retry the same bearer.
 
+Send `resource` as the MCP URL you call, for example `https://www.luminarasuite.com/api/mcp`. Authorize and the token endpoint reject a different URL with `invalid_target`. Repeat the same value on the token request, including refresh. A token issued for that URL is refused on another host. Clients that leave `resource` out keep working, including a registration that omits `grant_types`.
+
 ## Scopes
 
 - `mcp:free` covers projects, context, and reports on every plan.
