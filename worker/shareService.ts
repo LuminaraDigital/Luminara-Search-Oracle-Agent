@@ -9,7 +9,7 @@ import { identify, json, billingId, sha256Hex, secretEquals } from './workerUtil
 import { isTeaserFailureCode, teaserFailureLine } from '../services/audit/teaserFailureCodes';
 import { getActiveSubscription } from './quotaMiddleware';
 import { meterDailyUse } from './securityHardening';
-import { sharedPassList } from './visibilityTests';
+import { cleanDomain, sharedPassList } from './visibilityTests';
 import { planCapsFor } from './telegramBot';
 import { entitlementsFor } from '../services/plans/planEntitlements';
 import { PRODUCTION_MINI_APP_URL, resolveMiniAppUrl } from '../services/referrals/rules';
@@ -560,7 +560,7 @@ export async function handleShareRoute(request: Request, env: Env, path: string)
 
     // Built here from the account's own verdicts, so nobody can publish checks that were never passed.
     if (parsed.visibilityRunId) {
-      parsed.payload.visibilityPassList = await sharedPassList(env, accountId, parsed.visibilityRunId);
+      parsed.payload.visibilityPassList = await sharedPassList(env, accountId, parsed.visibilityRunId, cleanDomain(parsed.payload.domain));
     }
 
     const token = randomTokenHex(32);

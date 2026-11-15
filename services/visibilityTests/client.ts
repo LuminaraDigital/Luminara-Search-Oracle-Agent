@@ -140,14 +140,15 @@ export async function askOwnModels(raw: RawVisibilityRun, targets: readonly OwnK
       };
       const startedAt = Date.now();
       try {
-        const result = await provider.generateText(probePrompt(question.prompt), { model: target.model, temperature: 0, maxTokens: 300, reportCost: true });
+        const result = await provider.generateText(probePrompt(question.prompt), { model: target.model, temperature: 0, maxTokens: 300, reportCost: true, ownKeyOnly: true });
         answers.push({
           ...base,
           text: result.text,
           sources: urlsInAnswer(result.text),
           finishReason: result.finishReason,
-          inputTokens: result.tokenUsage?.prompt ?? null,
-          outputTokens: result.tokenUsage?.completion ?? null,
+          // Only counts the provider reported: an estimate is not a measurement.
+          inputTokens: result.tokensEstimated ? null : result.tokenUsage?.prompt ?? null,
+          outputTokens: result.tokensEstimated ? null : result.tokenUsage?.completion ?? null,
           costUsd: result.costUsd ?? null,
           latencyMs: Date.now() - startedAt,
           answeredAt: Date.now(),

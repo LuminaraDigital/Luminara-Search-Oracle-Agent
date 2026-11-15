@@ -22,7 +22,7 @@ One yes/no question at a time about whether AI can find and describe a business.
 
 ## Storage
 
-Verdict rows are in D1 (migration 0044). This is D1 only: unlike audit history it has no Firestore mirror. Raw is in the optional `AUDIT_EVIDENCE` R2 bucket at `visibility-raw/<run id>.json`. With no bucket, verdicts still save, `canRegrade` is false, and regrade returns 409 `RAW_NOT_STORED`.
+Verdict rows are in D1 (migration 0057). This is D1 only: unlike audit history it has no Firestore mirror. Raw is in the optional `AUDIT_EVIDENCE` R2 bucket at `visibility-raw/<run id>.json`. With no bucket, verdicts still save, `canRegrade` is false, and regrade returns 409 `RAW_NOT_STORED`.
 
 ## Adding a test type
 

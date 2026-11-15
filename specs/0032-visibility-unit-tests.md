@@ -31,7 +31,7 @@ From Omni Parse Bench, a document-parsing benchmark (Apache 2.0). This is an ori
 
 ## Key decisions
 
-- **Keys stay in the browser, so collection does too.** The Worker grades, so grading has one implementation. The evidence is client-reported, which is why it never feeds a signed receipt.
+- **Keys stay in the browser, so collection does too.** The Worker grades, so grading has one implementation. The evidence is client-reported, which is why it never feeds a signed receipt. The same goes for the "facts confirmed" flag and the reported cost: the owner is the only reader of their own runs, so the Worker caps them but does not prove them. It does enforce two things a client cannot change: an OpenRouter answer is always an own-model answer, never a search result, and a shared report shows passes only from a run for its own domain.
 - **Audit-time checks reuse rows already collected.** A non-technical owner with no keys still gets results, at no extra cost, and they read as search results, never as AI. Spending an owner's key takes a button that says so.
 - **Own-model checks use OpenRouter only.** One key reaches several models, it has no fallback, and a model answer can never be paid for by Luminara or credited to the wrong model.
 - **Presence is graded only on questions that do not name the business.** All three audit searches contain the name, so a model or search engine would pass by repeating it. One unbranded search was added, with a timeout so it cannot hold up an audit, kept out of the citation rate so that number does not move.

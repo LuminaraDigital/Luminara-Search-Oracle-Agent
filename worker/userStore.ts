@@ -11,6 +11,7 @@ import { readPlane, type DataPlaneDeps } from './dataPlane';
 import { openAuditHistoryStore } from './auditHistoryRepo';
 import { openUserLoginStore } from './userLoginRepo';
 import { findErasedLogin } from './accountMirror';
+import { VISIBILITY_TABLES } from './visibilityTests';
 
 export type UserStoreEnv = DataPlaneEnv & {
   LUMINARA_KV?: KVNamespace;
@@ -536,7 +537,7 @@ export async function linkTelegramAndFirebase(
         console.error('[UserStore] Community feed rows were not moved to the linked account', err);
       }
       try {
-        await env.DB.batch(['visibility_test_runs', 'visibility_test_answers', 'visibility_test_verdicts'].map((table) =>
+        await env.DB.batch(VISIBILITY_TABLES.map((table) =>
           env.DB!.prepare(`UPDATE ${table} SET account_id = ? WHERE account_id = ?`).bind(accountId, from),
         ));
       } catch (err) {

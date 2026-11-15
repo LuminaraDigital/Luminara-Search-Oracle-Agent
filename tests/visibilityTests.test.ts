@@ -534,13 +534,31 @@ describe('sharing and privacy', () => {
   it('builds the pass list from the account\'s own rows, never from what a client sends', async () => {
     const env = envWith(r2());
     const saved = await saveRun(env, 'acct-1', run(), 1000, 'agency');
-    const list = await sharedPassList(env, 'acct-1', saved.run.id);
+    const list = await sharedPassList(env, 'acct-1', saved.run.id, 'harbourrealty.com.au');
     expect(list).toContain('Your website tells AI what kind of business you are');
     expect(list?.join(' ')).not.toContain('AI names');
     expect(list?.join(' ')).not.toContain('cheapest');
-    expect(await sharedPassList(env, 'acct-2', saved.run.id)).toBeUndefined();
+    expect(await sharedPassList(env, 'acct-2', saved.run.id, 'harbourrealty.com.au')).toBeUndefined();
     const broken = { DB: { prepare: () => { throw new Error('no such table'); } } } as unknown as Env;
-    expect(await sharedPassList(broken, 'acct-1', saved.run.id)).toBeUndefined();
+    expect(await sharedPassList(broken, 'acct-1', saved.run.id, 'harbourrealty.com.au')).toBeUndefined();
+  });
+
+  it('never puts one site\'s passes on another site\'s shared report', async () => {
+    const env = envWith(r2());
+    const saved = await saveRun(env, 'acct-1', run(), 1000, 'agency');
+    expect(await sharedPassList(env, 'acct-1', saved.run.id, 'other-site.com')).toBeUndefined();
+    expect(await sharedPassList(env, 'acct-1', saved.run.id, '')).toBeUndefined();
+  });
+
+  it('treats a model answer as a model answer whatever the client calls it, and drops an absurd cost', () => {
+    const sanitized = sanitizeRun({
+      facts,
+      answers: [answer({ kind: 'search', provider: 'openrouter', costUsd: 900 }), answer({ costUsd: 0.002 })],
+      snapshot,
+    }, 1000);
+    if (!sanitized.ok) throw new Error(sanitized.error);
+    expect(sanitized.run.answers.map((a) => a.kind)).toEqual(['byok_probe', 'byok_probe']);
+    expect(sanitized.run.answers.map((a) => a.costUsd)).toEqual([null, 0.002]);
   });
 
   it('stops a daily flood of saves', async () => {
@@ -599,5 +617,16 @@ describe('sharing and privacy', () => {
     bucket.delete.mockRejectedValueOnce(new Error('r2 down'));
     await expect(eraseAccountRows(env, 'acct-1')).rejects.toThrow('r2 down');
     expect((await listRuns(env, 'acct-1', '', 50)).length).toBe(1);
+  });
+
+  it('still erases the rows when no bucket is bound, and logs the raw keys for an operator', async () => {
+    const env = envWith(r2());
+    const saved = await saveRun(env, 'acct-1', run(), 1000, 'agency');
+    const unbound = { ...env, AUDIT_EVIDENCE: undefined } as unknown as Env;
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await eraseAccountRows(unbound, 'acct-1');
+    expect((await listRuns(env, 'acct-1', '', 50)).length).toBe(0);
+    expect(logged.mock.calls.flat().join(' ')).toContain(saved.run.id);
+    logged.mockRestore();
   });
 });

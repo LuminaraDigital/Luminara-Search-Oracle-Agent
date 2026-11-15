@@ -43,6 +43,9 @@ const REQUIRED_D1_MIGRATIONS = [
 ];
 
 const REQUIRED_D1_TABLES = [
+  'visibility_test_runs',
+  'visibility_test_answers',
+  'visibility_test_verdicts',
   'mcp_action_requests',
   'budget_policies',
   'cost_events',

@@ -381,7 +381,7 @@
   {
     "name": "get_provider_scorecard",
     "title": "get provider scorecard",
-    "description": "Uses no credits. Compares the models on the account's own keys, on its own checks: quality, reported cost, refusals. These are estimates, not measured ChatGPT, Perplexity, or AI Overview results.",
+    "description": "Uses no credits. Compares the models on the account's own keys, on its own checks: quality, reported cost, refusals. Checks from your own AI accounts are estimates, not measured ChatGPT, Perplexity, or AI Overview results.",
     "creditClass": "free",
     "inputSchema": {
       "type": "object",

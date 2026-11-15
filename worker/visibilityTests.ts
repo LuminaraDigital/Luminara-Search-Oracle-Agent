@@ -26,6 +26,10 @@ const MAX_SOURCES = 20;
 const UNLIMITED_RUNS = 500;
 const RETENTION_PAGE = 100;
 const SCORECARD_ANSWERS = 500;
+/** One check costs cents at most; a bigger reported figure is a client error, so it is dropped. */
+const MAX_ANSWER_COST_USD = 5;
+/** Every table that holds a run. Erase, account link and run delete all walk this list. Children first. */
+export const VISIBILITY_TABLES = ['visibility_test_verdicts', 'visibility_test_answers', 'visibility_test_runs'] as const;
 export const EXPORTED_RAW_RUNS = 25;
 /** An export is one KV value, capped at 25 MiB, and everything else in it needs room too. */
 const EXPORTED_RAW_BYTES = 12_000_000;
@@ -93,11 +97,14 @@ function sanitizeAnswer(raw: unknown, index: number, now: number): RawAnswer | n
   if (r.kind !== 'search' && r.kind !== 'byok_probe') return null;
   const prompt = text(r.prompt, 2000).trim();
   if (!prompt) return null;
+  const provider = text(r.provider, 64).trim() || 'unknown';
+  const cost = count(r.costUsd);
   return {
     id: `a${index}`,
-    kind: r.kind,
+    // A model answer is never a search result, whatever the client labels it, so it cannot reach a public pass list.
+    kind: provider === 'openrouter' ? 'byok_probe' : r.kind,
     engine: text(r.engine, 120).trim() || 'unknown',
-    provider: text(r.provider, 64).trim() || 'unknown',
+    provider,
     model: text(r.model, 120).trim() || 'unknown',
     prompt,
     intent: text(r.intent, 32).trim() || 'unknown',
@@ -107,7 +114,7 @@ function sanitizeAnswer(raw: unknown, index: number, now: number): RawAnswer | n
     error: text(r.error, 200) || undefined,
     inputTokens: count(r.inputTokens),
     outputTokens: count(r.outputTokens),
-    costUsd: count(r.costUsd),
+    costUsd: cost !== null && cost <= MAX_ANSWER_COST_USD ? cost : null,
     latencyMs: count(r.latencyMs),
     answeredAt: count(r.answeredAt) ?? now,
   };
@@ -260,9 +267,9 @@ export async function pruneRuns(env: Env, accountId: string, plan: string | null
 }
 
 function deleteRunStatements(env: Env, accountId: string, runId: string) {
-  return ['visibility_test_verdicts', 'visibility_test_answers'].map((table) =>
-    env.DB!.prepare(`DELETE FROM ${table} WHERE run_id = ? AND account_id = ?`).bind(runId, accountId),
-  ).concat(env.DB!.prepare(`DELETE FROM visibility_test_runs WHERE id = ? AND account_id = ?`).bind(runId, accountId));
+  return VISIBILITY_TABLES.map((table) =>
+    env.DB!.prepare(`DELETE FROM ${table} WHERE ${table === 'visibility_test_runs' ? 'id' : 'run_id'} = ? AND account_id = ?`).bind(runId, accountId),
+  );
 }
 
 export async function regradeRun(env: Env, row: RunRow, factsOverride: ExpectedFacts | null, now: number) {
@@ -336,13 +343,16 @@ export async function getRunVerdicts(env: Env, accountId: string, id: string) {
  * Search and website checks only: a public page must not present an own-model estimate as a result.
  * A failed lookup leaves the list off the link. It never blocks sharing a report.
  */
-export async function sharedPassList(env: Env, accountId: string, runId: string): Promise<string[] | undefined> {
+export async function sharedPassList(env: Env, accountId: string, runId: string, domain: string): Promise<string[] | undefined> {
+  if (!domain) return undefined;
   try {
+    // The run must be for the shared report's own site, so one site's passes never appear on another's page.
     const res = await env.DB!.prepare(
       `SELECT v.label, v.result, v.test_type FROM visibility_test_verdicts v
+         JOIN visibility_test_runs r ON r.id = v.run_id AND r.account_id = v.account_id
          LEFT JOIN visibility_test_answers a ON a.run_id = v.run_id AND a.id = v.answer_id
-        WHERE v.run_id = ? AND v.account_id = ? AND (v.answer_id = '' OR a.kind = 'search')`,
-    ).bind(runId, accountId).all<{ label: string; result: VisibilityVerdict['result']; test_type: VisibilityVerdict['testType'] }>();
+        WHERE v.run_id = ? AND v.account_id = ? AND r.domain = ? AND (v.answer_id = '' OR a.kind = 'search')`,
+    ).bind(runId, accountId, domain).all<{ label: string; result: VisibilityVerdict['result']; test_type: VisibilityVerdict['testType'] }>();
     const labels = passList((res.results ?? []).map((row) => ({ label: row.label, result: row.result, testType: row.test_type })));
     return labels.length ? labels : undefined;
   } catch (err) {
@@ -376,13 +386,20 @@ export async function providerScorecard(env: Env, accountId: string, domain: str
   );
 }
 
-/** Raw records of an account, deleted before the rows that name them. A failure stops the erase, so a retry finds them. */
+/**
+ * Raw records of an account, deleted before the rows that name them. A failed delete stops the erase, so a retry finds them.
+ * With no bucket bound the Worker cannot reach them, and a person's erase must not be blocked forever by a config gap,
+ * so the keys (run ids only, no content) are logged for an operator to remove and the erase goes on.
+ */
 export async function eraseVisibilityRaw(env: Env, accountId: string): Promise<number> {
   const res = await env.DB!.prepare(`SELECT raw_key FROM visibility_test_runs WHERE account_id = ? AND raw_key IS NOT NULL`)
     .bind(accountId).all<{ raw_key: string }>();
   const keys = (res.results ?? []).map((row) => row.raw_key);
   if (!keys.length) return 0;
-  if (!env.AUDIT_EVIDENCE) throw new Error('AUDIT_EVIDENCE binding is required to erase saved raw answers');
+  if (!env.AUDIT_EVIDENCE) {
+    console.error(JSON.stringify({ event: 'visibility_raw_erase_unbound', count: keys.length, keys }));
+    return 0;
+  }
   for (let at = 0; at < keys.length; at += 1000) await env.AUDIT_EVIDENCE.delete(keys.slice(at, at + 1000));
   return keys.length;
 }
