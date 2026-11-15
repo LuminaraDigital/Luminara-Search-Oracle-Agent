@@ -72,6 +72,9 @@ export function planBullets(id: PaidPlanId): PlanBullet[] {
       text: e.shareDailyLimit ? `${e.shareDailyLimit} public share links a day` : 'Public share links, no daily cap',
     },
   ];
+  if (e.whiteLabelRemovePoweredBy) {
+    lines.push({ included: true, text: 'Reports can leave off Powered by Luminara Suite' });
+  }
   if (e.apiAccess) lines.push({ included: true, text: 'Paid research API (Agency plan or your own DataForSEO login)' });
   if (e.agencyClientLimit > 0) lines.push({ included: true, text: `${e.agencyClientLimit} client workspaces` });
   return lines.map((line) => ({ ...line, text: withLeadCapital(line.text) }));

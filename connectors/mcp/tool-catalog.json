@@ -1,5 +1,21 @@
 [
   {
+    "name": "list_industries",
+    "title": "List industries",
+    "description": "Lists industries a project can use, with default checks, the keyword template, competitor hints, and report wording. Uses no credits.",
+    "creditClass": "free",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "List industries",
+      "readOnlyHint": true,
+      "destructiveHint": false
+    }
+  },
+  {
     "name": "whoami",
     "title": "Account and usage",
     "description": "Read this first. Returns the account, plan, and MCP calls used and remaining today. Uses no credits. A new token does not reset the daily count.",
@@ -58,6 +74,14 @@
         },
         "clientId": {
           "type": "string"
+        },
+        "industryId": {
+          "type": "string",
+          "description": "Industry id from list_industries. Omit to keep the account default."
+        },
+        "workspaceId": {
+          "type": "string",
+          "description": "Workspace id when a staff member is adding a client to that workspace."
         }
       },
       "required": [
@@ -221,6 +245,27 @@
     "annotations": {
       "title": "Save a report",
       "readOnlyHint": false,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "get_guide",
+    "title": "Workflow guides",
+    "description": "Uses no credits. Step-by-step Luminara workflows (audit, keyword research, competitors, visibility, reports). Call with no topic to list them; read the matching guide before starting a task.",
+    "creditClass": "free",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "topic": {
+          "type": "string",
+          "description": "A topic from the list. Omit to list every guide."
+        }
+      },
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Workflow guides",
+      "readOnlyHint": true,
       "destructiveHint": false
     }
   },
@@ -771,6 +816,29 @@
     },
     "annotations": {
       "title": "Project outcomes",
+      "readOnlyHint": true,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "get_outcome_report",
+    "title": "Outcome report",
+    "description": "Uses no credits. Reports each recorded action with its 30, 60 and 90 day follow-ups. A change is included only when both scores were measured. Otherwise the row says Not measured.",
+    "creditClass": "free",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "projectId"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Outcome report",
       "readOnlyHint": true,
       "destructiveHint": false
     }

@@ -6,7 +6,7 @@
  *   GET  /api/auth/session                current Telegram or Firebase identity (if signed in)
  *   GET  /api/boot                        signed-in workspace, quota, and session cookie
  *   POST /api/auth/reset-password         IP-throttled password reset (anti-enumeration)
- *   POST /api/auth/sign-up                IP-throttled Identity Toolkit sign-up
+ *   POST /api/auth/sign-up                IP-throttled Identity Toolkit sign-up, then verification mail
  *   POST /api/auth/sign-in                IP-throttled Identity Toolkit sign-in
  *   POST /api/auth/refresh                IP-throttled ID token renewal for native clients
  *   POST /api/auth/google                 IP-throttled Google ID token exchange for native clients
@@ -195,11 +195,17 @@ import { settleFirebaseErase } from './accountDeletion';
 import { handleEmailUnsubscribe, runWithWaitUntil } from './welcomeEmail';
 
 export { DailyQuota } from './dailyQuota';
-import { createProject, listProjects, getProject } from './projectService';
+import { createProject, deleteProject, getProject, setProjectIndustry } from './projectService';
+import { handleIndustryWorkspaceRoute } from './workspaceRoutes';
+import { accountForProjectPath, accountForReportId, createTargetAccount, listVisibleProjects } from './tenantGate';
+import { assertNewClientAllowed } from './clientWorkspace';
+import { parseIndustryId, readOptionalIndustry } from '../services/industries/industryProfiles';
 import { handleProjectHistoryRoute } from './projectHistoryRoute';
 import { handleProjectMonitorRoute, runProjectMonitorTick } from './projectMonitor';
+import { runOutcomeFollowUpTick } from './outcomeFollowups';
 import { getProjectContext, updateProjectContext, seedContextFromDna } from './projectContextService';
 import { getAgentReport, listAgentReports, saveAgentReport, getAgentReportHtmlForAccount } from './agentReportService';
+import { reportBrandForAccount } from './reportBrand';
 import { createApiKey, listApiKeys, revokeApiKey } from './apiKeyService';
 import { loadAgentSkill, setAgentSkillEnabled, upsertAgentSkillVersion, type AgentSkill } from './agentSkills';
 import type { ProjectContextPatch } from '../services/projects/types';
@@ -2070,30 +2076,54 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     return withCors(handleMcpRequest(request, env, resolved.user, resolved.credential));
   }
 
+  if (
+    path === '/industries'
+    || path === '/account/industry'
+    ||     path === '/workspaces/current'
+    || path.startsWith('/workspaces/current/')
+    || path === '/workspaces/invites'
+    || path.startsWith('/workspaces/invites/')
+  ) {
+    const industryResponse = await handleIndustryWorkspaceRoute(request, env, path);
+    if (industryResponse) return withCors(industryResponse);
+  }
+
   // APS: projects + context
   if (path === '/projects' || path.startsWith('/projects/')) {
     const who = await identify(request, env);
     if (who.error || !who.user) {
       return withCors(json({ ok: false, error: who.error || 'Unauthorized', code: 'AUTH_REQUIRED' }, 401));
     }
-    const accountId = billingId(who.user);
+    const scoped = await accountForProjectPath(env, who.user, path, request.method);
+    if (!scoped.ok) return withCors(json({ ok: false, error: scoped.error }, scoped.status));
+    const accountId = scoped.accountId;
     const historyResponse = await handleProjectHistoryRoute(request, env, path, accountId);
     if (historyResponse) return withCors(historyResponse);
     const monitorResponse = await handleProjectMonitorRoute(request, env, path, accountId);
     if (monitorResponse) return withCors(monitorResponse);
 
     if (path === '/projects' && request.method === 'GET') {
-      const projects = await listProjects(env, accountId);
+      const projects = await listVisibleProjects(env, who.user);
       return withCors(json({ ok: true, projects }));
     }
     if (path === '/projects' && request.method === 'POST') {
       const body = await readBody(request, MAX_SMALL_BODY_BYTES);
       if (!body.ok) return withCors(json({ error: body.error }, body.status));
       const raw = (body.value || {}) as Record<string, unknown>;
-      const created = await createProject(env, accountId, {
+      const industryId = readOptionalIndustry(raw.industryId);
+      if (industryId === null) {
+        return withCors(json({ ok: false, error: 'industryId is not a known industry.' }, 400));
+      }
+      const target = await createTargetAccount(env, who.user, typeof raw.workspaceId === 'string' ? raw.workspaceId : null);
+      if (!target.ok) return withCors(json({ ok: false, error: target.error }, target.status));
+      const clientId = typeof raw.clientId === 'string' ? raw.clientId : undefined;
+      const slot = await assertNewClientAllowed(env, target.accountId, clientId);
+      if (!slot.ok) return withCors(json({ ok: false, error: slot.error }, slot.status));
+      const created = await createProject(env, target.accountId, {
         domain: String(raw.domain || ''),
         name: typeof raw.name === 'string' ? raw.name : undefined,
-        clientId: typeof raw.clientId === 'string' ? raw.clientId : undefined,
+        clientId,
+        industryId,
       });
       if (!created.ok) return withCors(json({ ok: false, error: created.error }, created.status));
       if (raw.dna && typeof raw.dna === 'object') {
@@ -2109,7 +2139,25 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       if (!isContext && request.method === 'GET') {
         const project = await getProject(env, accountId, projectId);
         if (!project) return withCors(json({ ok: false, error: 'Not found' }, 404));
-        return withCors(json({ ok: true, project }));
+        const live = await reportBrandForAccount(env, project.accountId);
+        return withCors(json({ ok: true, project, reportBrand: live.brand }));
+      }
+      if (!isContext && request.method === 'DELETE') {
+        const deleted = await deleteProject(env, accountId, projectId, who.user.id);
+        if (!deleted.ok) return withCors(json({ ok: false, error: deleted.error }, deleted.status));
+        return withCors(json({ ok: true }));
+      }
+      if (!isContext && request.method === 'PATCH') {
+        const body = await readBody(request, MAX_SMALL_BODY_BYTES);
+        if (!body.ok) return withCors(json({ error: body.error }, body.status));
+        const raw = (body.value || {}) as Record<string, unknown>;
+        const industryId = parseIndustryId(raw.industryId);
+        if (!industryId) return withCors(json({ ok: false, error: 'industryId is not a known industry.' }, 400));
+        const project = await getProject(env, accountId, projectId);
+        if (!project) return withCors(json({ ok: false, error: 'Not found' }, 404));
+        await setProjectIndustry(env, project.id, industryId);
+        const updated = await getProject(env, accountId, projectId);
+        return withCors(json({ ok: true, project: updated }));
       }
       if (isContext && request.method === 'GET') {
         const context = await getProjectContext(env, accountId, projectId);
@@ -2140,10 +2188,13 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     if (who.error || !who.user) {
       return withCors(json({ ok: false, error: who.error || 'Unauthorized', code: 'AUTH_REQUIRED' }, 401));
     }
-    const accountId = billingId(who.user);
+    let accountId = billingId(who.user);
     if (path === '/reports' && request.method === 'GET') {
       const projectId = url.searchParams.get('projectId') || '';
       if (!projectId) return withCors(json({ ok: false, error: 'projectId required' }, 400));
+      const opened = await accountForProjectPath(env, who.user, `/projects/${projectId}`, 'GET');
+      if (!opened.ok) return withCors(json({ ok: false, error: opened.error }, opened.status));
+      accountId = opened.accountId;
       const reports = await listAgentReports(env, accountId, projectId);
       if (!reports) return withCors(json({ ok: false, error: 'Project not found' }, 404));
       return withCors(json({ ok: true, reports }));
@@ -2152,6 +2203,10 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       const body = await readBody(request, 600_000);
       if (!body.ok) return withCors(json({ error: body.error }, body.status));
       const raw = (body.value || {}) as Record<string, unknown>;
+      const projectId = String(raw.projectId || '');
+      const opened = await accountForProjectPath(env, who.user, `/projects/${projectId}`, 'POST');
+      if (!opened.ok) return withCors(json({ ok: false, error: opened.error }, opened.status));
+      accountId = opened.accountId;
       const saved = await saveAgentReport(env, accountId, {
         projectId: String(raw.projectId || ''),
         title: String(raw.title || ''),
@@ -2168,6 +2223,9 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     const rptMatch = path.match(/^\/reports\/([^/]+)(?:\/(html))?$/);
     if (rptMatch && request.method === 'GET') {
       const reportId = decodeURIComponent(rptMatch[1]);
+      const opened = await accountForReportId(env, who.user, reportId, false);
+      if (!opened.ok) return withCors(json({ ok: false, error: opened.error }, opened.status));
+      accountId = opened.accountId;
       if (rptMatch[2] === 'html') {
         const doc = await getAgentReportHtmlForAccount(env, accountId, reportId);
         if (!doc) return withCors(json({ ok: false, error: 'Not found' }, 404));
@@ -2177,7 +2235,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
             headers: {
               'content-type': 'text/html; charset=utf-8',
               'content-security-policy':
-                "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox allow-popups allow-popups-to-escape-sandbox",
+                "default-src 'none'; style-src 'unsafe-inline'; img-src https: data:; sandbox allow-popups allow-popups-to-escape-sandbox",
               'x-content-type-options': 'nosniff',
             },
           }),
@@ -2702,6 +2760,14 @@ const handler = {
         runProjectMonitorTick(env, { scheduledAt })
           .then(() => undefined)
           .catch((err) => console.error('[Monitor] sweep failed', err)),
+      );
+    }
+    if (jobs.includes('outcome_followup')) {
+      const scheduledAt = controller.scheduledTime;
+      ctx.waitUntil(
+        runOutcomeFollowUpTick(env, { now: scheduledAt })
+          .then(() => undefined)
+          .catch((err) => console.error('[outcome-followup] sweep failed', err)),
       );
     }
     if (jobs.includes('mcp_oauth_refresh_prune')) {

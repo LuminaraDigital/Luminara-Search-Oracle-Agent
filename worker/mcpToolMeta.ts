@@ -10,12 +10,15 @@ export const MCP_STRUCTURED_CHAR_CAP = 48_000;
 
 const MCP_TOOL_TITLES: Record<string, string> = {
   whoami: 'Account and usage',
+  get_guide: 'Workflow guides',
+  list_industries: 'List industries',
   list_projects: 'List projects',
   create_project: 'Create project',
   get_project_context: 'Read project context',
   get_project_history: 'Project history',
   compare_snapshots: 'Compare snapshots',
   get_project_outcomes: 'Project outcomes',
+  get_outcome_report: 'Outcome report',
   mark_project_action_done: 'Mark an action done',
   get_project_monitor: 'Project check schedule',
   set_project_monitor: 'Set the check schedule',

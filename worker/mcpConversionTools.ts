@@ -114,7 +114,7 @@ export const CONVERSION_SPINE_MCP_TOOLS: McpToolDef[] = [
       const fullName = requireStr(args, 'fullName');
       const initialMessage = requireStr(args, 'initialMessage');
       if (!fullName || !initialMessage) {
-        return toTextResult('fullName and initialMessage are required', undefined, true);
+        return toTextResult('fullName and initialMessage are required', { code: 'BAD_INPUT' }, true);
       }
       const res = await ingestInboundEnquiry(ctx.env, {
         accountId: ctx.accountId,
@@ -166,7 +166,7 @@ export const CONVERSION_SPINE_MCP_TOOLS: McpToolDef[] = [
         ? (args.proposedSlots as ProposedBookingSlot[])
         : [];
       if (!enquiryId || !contactId || proposedSlots.length === 0) {
-        return toTextResult('enquiryId, contactId, and non-empty proposedSlots are required', undefined, true);
+        return toTextResult('enquiryId, contactId, and non-empty proposedSlots are required', { code: 'BAD_INPUT' }, true);
       }
       const res = await createBookingProposal(ctx.env, {
         accountId: ctx.accountId,
@@ -203,7 +203,7 @@ export const CONVERSION_SPINE_MCP_TOOLS: McpToolDef[] = [
       const appointmentId = requireStr(args, 'appointmentId');
       const decision = requireStr(args, 'decision');
       if (!appointmentId || (decision !== 'approve' && decision !== 'decline')) {
-        return toTextResult('appointmentId and decision ("approve" | "decline") required', undefined, true);
+        return toTextResult('appointmentId and decision ("approve" | "decline") required', { code: 'BAD_INPUT' }, true);
       }
       const res = await decideBookingAppointment(ctx.env, {
         accountId: ctx.accountId,
@@ -275,7 +275,7 @@ export const CONVERSION_SPINE_MCP_TOOLS: McpToolDef[] = [
       const domain = requireStr(args, 'domain');
       const findingCategory = requireStr(args, 'findingCategory');
       if (!domain || !findingCategory) {
-        return toTextResult('domain and findingCategory are required', undefined, true);
+        return toTextResult('domain and findingCategory are required', { code: 'BAD_INPUT' }, true);
       }
       const summary =
         requireStr(args, 'summary') ||
@@ -326,7 +326,7 @@ export const CONVERSION_SPINE_MCP_TOOLS: McpToolDef[] = [
       const connectorId = requireStr(args, 'connectorId');
       const domain = requireStr(args, 'domain');
       if (!connectorId || !(connectorId in CMS_MCP_CONNECTOR_CATALOG) || !domain) {
-        return toTextResult('Valid connectorId and domain are required', undefined, true);
+        return toTextResult('Valid connectorId and domain are required', { code: 'BAD_INPUT' }, true);
       }
       const typedConnector = connectorId as CmsMcpConnectorId;
       const projectId = typeof args.projectId === 'string' && args.projectId.trim() ? args.projectId.trim() : 'default';

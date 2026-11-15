@@ -21,7 +21,8 @@ export type ScheduledJobName =
   | 'citation_watch'
   | 'recovery_campaign_sweep'
   | 'project_monitor'
-  | 'mcp_oauth_refresh_prune';
+  | 'mcp_oauth_refresh_prune'
+  | 'outcome_followup';
 
 export const ALL_SCHEDULED_JOBS: readonly ScheduledJobName[] = [
   'sentinel',
@@ -38,6 +39,7 @@ export const ALL_SCHEDULED_JOBS: readonly ScheduledJobName[] = [
   'recovery_campaign_sweep',
   'project_monitor',
   'mcp_oauth_refresh_prune',
+  'outcome_followup',
 ];
 
 /**
@@ -48,6 +50,8 @@ export const ALL_SCHEDULED_JOBS: readonly ScheduledJobName[] = [
  * sweep, the weekly decision digest, the weekly visibility email, the RSI jobs, Citation Watch,
  * and the project check schedule. That job checks at most 40 projects per fire (MONITOR_TICK_CAP in
  * worker/projectMonitor.ts) and pages the Monday weekly report on its own one-minute budget.
+ * Outcome follow-ups (`outcome_followup`) run on this same expression: at most 12 due rows per fire,
+ * 3 attempts, and 6 live re-checks per account per UTC day (worker/outcomeFollowups.ts).
  * wrangler.jsonc sets limits.cpu_ms to 120000 because the platform default is 30 seconds for the
  * whole scheduled invocation. Project checks email only accounts that opted in, and only when RESEND_API_KEY is set.
  * The visibility email sends only to accounts that opted in, and only when RESEND_API_KEY is set.
@@ -75,6 +79,7 @@ const CRON_JOBS: Record<string, readonly ScheduledJobName[]> = {
     'recovery_campaign_sweep',
     'project_monitor',
     'mcp_oauth_refresh_prune',
+    'outcome_followup',
   ],
 };
 

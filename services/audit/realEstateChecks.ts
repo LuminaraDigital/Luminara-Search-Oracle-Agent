@@ -6,6 +6,7 @@
 
 import { pageFetchBlocked } from '../agentCore/auditEvidenceGate';
 import { BLOCKED_CHECK } from './llmCrawlerReadiness';
+import { filterChecksForIndustry, industryProfile } from '../industries/industryProfiles';
 
 export type RealEstateCheckStatus = 'measured' | 'not_measured';
 
@@ -492,11 +493,17 @@ export function measureRealEstate(pages: readonly RealEstatePageInput[]): { chec
   return { checks, prompts };
 }
 
-export function evaluateRealEstateChecks(pages: readonly RealEstatePageInput[]): RealEstateCheck[] {
-  return measureRealEstate(pages).checks;
+export function evaluateRealEstateChecks(
+  pages: readonly RealEstatePageInput[],
+  industryId?: string | null,
+): RealEstateCheck[] {
+  return filterChecksForIndustry(measureRealEstate(pages).checks, industryId);
 }
 
-export function formatRealEstateChecks(checks: readonly RealEstateCheck[]): string {
-  const lines = ['## Real estate checks', ...checks.map((check) => `- ${check.label}: ${check.detail}`)];
+export function formatRealEstateChecks(checks: readonly RealEstateCheck[], industryId?: string | null): string {
+  const profile = industryId ? industryProfile(industryId) : null;
+  const lines = [`## ${profile ? profile.reportHeading : 'Real estate checks'}`];
+  if (profile) lines.push(`Written for ${profile.reportAudience}.`);
+  lines.push(...checks.map((check) => `- ${check.label}: ${check.detail}`));
   return `${lines.join('\n')}\n`;
 }

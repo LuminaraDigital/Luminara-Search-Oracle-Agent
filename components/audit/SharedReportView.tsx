@@ -4,6 +4,7 @@ import { fetchSharedReport, type SharedReportResponse } from '../../services/sha
 import { Button } from '../ui/Button';
 import { AuditReportSkeleton } from '../ui/Skeleton';
 import { productTelemetry } from '../../services/analytics/productTelemetry';
+import { POWERED_BY_LINE, safeLogoSrc, safePrimaryColour } from '../../services/reports/reportBrand';
 
 function tokenFromLocation(): string {
   if (typeof window === 'undefined') return '';
@@ -62,6 +63,9 @@ export const SharedReportView: React.FC<{
   const branding = payload?.branding;
   // White-labelled reports belong to the agency; every other report carries Luminara's badge and CTA.
   const showLuminaraCta = Boolean(payload) && !branding?.agencyName;
+  const showPoweredBy = branding?.showPoweredBy !== false;
+  const logo = safeLogoSrc(branding?.logoUrl);
+  const accent = branding?.accentColor ? safePrimaryColour(branding.accentColor) : null;
   const openInstantAudit = () => {
     productTelemetry.track('shared_report_cta_clicked', { domain: payload?.domain || null });
     onOpenInstantAudit?.();
@@ -71,6 +75,8 @@ export const SharedReportView: React.FC<{
     <div className="min-h-[100dvh] bg-black text-gray-100">
       <header className="border-b border-white/10 px-4 py-4 flex items-center justify-between gap-3">
         <div>
+          {accent && <span aria-hidden className="mb-2 block h-1 w-16" style={{ background: accent }} />}
+          {logo && <img src={logo} alt="" className="mb-2 h-8 w-auto" referrerPolicy="no-referrer" />}
           <p className="text-[10px] uppercase tracking-widest text-gold-light font-mono">
             {branding?.agencyName || 'Luminara Suite'}
           </p>
@@ -165,6 +171,9 @@ export const SharedReportView: React.FC<{
                   )}
                 </div>
               </footer>
+            )}
+            {showPoweredBy && (
+              <p className="mt-8 text-xs text-gray-500">{POWERED_BY_LINE}</p>
             )}
           </>
         )}

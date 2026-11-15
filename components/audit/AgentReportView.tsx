@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { apiBase, workerFetchWithAuthRetry } from '../../services/apiClient';
 import { AuditReportSkeleton } from '../ui/Skeleton';
+import { readReportBrandName } from '../../services/reports/reportBrand';
 
 /**
  * Sandboxed agent report viewer for /reports/:id
@@ -83,7 +84,7 @@ export const AgentReportView: React.FC = () => {
     <main id="main" tabIndex={-1} className="min-h-screen bg-white animate-in fade-in duration-200 outline-none">
       <div className="border-b border-gray-200 px-4 py-2 text-xs text-gray-500 flex justify-between">
         <span>{title}</span>
-        <span>Luminara</span>
+        <span>{readReportBrandName(html) || 'Luminara Suite'}</span>
       </div>
       <iframe
         title={title}

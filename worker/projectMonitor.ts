@@ -238,7 +238,7 @@ export async function ackProjectAlert(
   return alertFromRow(row);
 }
 
-async function defaultRead(url: string): Promise<{ status: number; html: string }> {
+export async function fetchProjectPage(url: string): Promise<{ status: number; html: string }> {
   try {
     const fetched = await fetchPublicUrl(url, {
       method: 'GET',
@@ -256,7 +256,7 @@ async function defaultRead(url: string): Promise<{ status: number; html: string 
   }
 }
 
-async function readSite(domain: string, read: MonitorPageRead): Promise<RealEstatePageInput[]> {
+export async function readProjectSite(domain: string, read: MonitorPageRead): Promise<RealEstatePageInput[]> {
   const homeUrl = `https://${domain}/`;
   const home = await read(homeUrl);
   if (home.status < 200 || home.status >= 300 || !home.html.trim()) return [];
@@ -392,7 +392,7 @@ async function runOne(
   if (Number(claimed.meta?.changes ?? 0) !== 1) return false;
   const project = await getProject(env, row.account_id, row.project_id);
   if (!project) return false;
-  const measured = measureRealEstate(await readSite(project.domain, read));
+  const measured = measureRealEstate(await readProjectSite(project.domain, read));
   const checks = measured.checks;
   const coverage = realEstateCoverage(checks);
   const prompts = measured.prompts;
@@ -500,7 +500,7 @@ export async function runProjectMonitorTick(
   if (!env.DB) return { checked: 0, skipped: 'no_db' };
   const now = deps.now ?? Date.now();
   const scheduledAt = deps.scheduledAt ?? now;
-  const read = deps.read ?? defaultRead;
+  const read = deps.read ?? fetchProjectPage;
   const started = deps.startedAt ?? Date.now();
   const budget = deps.budgetMs ?? BUDGET_MS;
   await writeWeeklyReports(env, scheduledAt, now, WEEKLY_BUDGET_MS);

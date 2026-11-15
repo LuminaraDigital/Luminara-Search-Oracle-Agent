@@ -875,7 +875,7 @@ describe('project history http and mcp', () => {
       result?: { isError?: boolean; content?: Array<{ text?: string }> };
     };
     expect(deniedBody.result?.isError).toBe(true);
-    expect(deniedBody.result?.content?.[0]?.text).toBe('Project not found');
+    expect(deniedBody.result?.content?.[0]?.text).toContain('Project not found');
 
     const anon = await worker.fetch(
       new Request(`https://luminarasuite.com/api/projects/${projectId}/history`),

@@ -23,6 +23,7 @@ import {
   type SnapshotSignals,
   type SnapshotTrend,
 } from '../services/history/snapshotCompare';
+import { OUTCOME_HORIZONS, followUpDueAt } from '../services/history/outcomeFollowUp';
 
 export const SNAPSHOT_CAP = 200;
 export const HISTORY_RETENTION_NOTE =
@@ -96,6 +97,68 @@ function pointFromRow(row: SnapshotRow): SnapshotPoint | null {
     measuredAt: row.measured_at,
     signals: parseSignals(parsed),
   };
+}
+
+const SCHEDULE_FOLLOWUP_SQL = `INSERT INTO project_outcome_followups (
+  id, account_id, project_id, outcome_id, horizon_days, due_at, status, attempts,
+  baseline_snapshot_id, before_value, baseline_measured_at, source_ref, note, created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?, ?, '', '', ?, ?)
+ON CONFLICT(account_id, outcome_id, horizon_days) DO UPDATE SET
+  baseline_snapshot_id = COALESCE(project_outcome_followups.baseline_snapshot_id, excluded.baseline_snapshot_id),
+  before_value = COALESCE(project_outcome_followups.before_value, excluded.before_value),
+  baseline_measured_at = COALESCE(project_outcome_followups.baseline_measured_at, excluded.baseline_measured_at),
+  updated_at = excluded.updated_at
+WHERE project_outcome_followups.status = 'pending'`;
+
+async function scheduleFollowUps(env: Env, accountId: string, projectId: string, outcomeId: string): Promise<void> {
+  try {
+    await insertFollowUps(env, accountId, projectId, outcomeId);
+  } catch (err) {
+    console.error('[outcome-followup] schedule failed', err instanceof Error ? err.name : 'error');
+  }
+}
+
+async function insertFollowUps(env: Env, accountId: string, projectId: string, outcomeId: string): Promise<void> {
+  const db = dbOf(env);
+  if (!db) return;
+  const outcome = await db
+    .prepare(
+      `SELECT recommended_at, before_snapshot_id, before_value
+       FROM project_action_outcomes WHERE account_id = ? AND project_id = ? AND id = ?`,
+    )
+    .bind(accountId, projectId, outcomeId)
+    .first<{ recommended_at: number; before_snapshot_id: string | null; before_value: number | null }>();
+  if (!outcome || !Number.isFinite(outcome.recommended_at)) return;
+  let baselineMeasuredAt: number | null = null;
+  if (outcome.before_snapshot_id) {
+    const snap = await db
+      .prepare(
+        `SELECT measured_at FROM project_measurement_snapshots
+         WHERE account_id = ? AND project_id = ? AND id = ?`,
+      )
+      .bind(accountId, projectId, outcome.before_snapshot_id)
+      .first<{ measured_at: number }>();
+    baselineMeasuredAt = snap && Number.isFinite(snap.measured_at) ? snap.measured_at : null;
+  }
+  const now = Date.now();
+  const before = typeof outcome.before_value === 'number' ? outcome.before_value : null;
+  await db.batch(
+    OUTCOME_HORIZONS.map((horizon) =>
+      db.prepare(SCHEDULE_FOLLOWUP_SQL).bind(
+        randomId('fol'),
+        accountId,
+        projectId,
+        outcomeId,
+        horizon,
+        followUpDueAt(outcome.recommended_at, horizon),
+        outcome.before_snapshot_id,
+        before,
+        baselineMeasuredAt,
+        now,
+        now,
+      ),
+    ),
+  );
 }
 
 function outcomeFromRow(row: OutcomeRow): ProjectOutcome | null {
@@ -429,6 +492,7 @@ export async function recordRecommendedAction(
     )
     .bind(input.accountId, input.projectId, actionKey)
     .first<OutcomeRow>();
+  if (row?.id) await scheduleFollowUps(env, input.accountId, input.projectId, row.id);
   return row ? outcomeFromRow(row) : null;
 }
 
@@ -505,6 +569,7 @@ export async function markActionDone(
       actionId,
     )
     .run();
+  await scheduleFollowUps(env, accountId, projectId, actionId);
   const saved = await db
     .prepare(
       `SELECT id, project_id, action_key, title, kind, metric, status, before_value, after_value, lift, data_label, recommended_at, resolved_at

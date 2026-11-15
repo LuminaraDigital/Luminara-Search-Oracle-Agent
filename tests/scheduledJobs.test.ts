@@ -32,6 +32,7 @@ describe('jobsForCron', () => {
       'recovery_campaign_sweep',
       'project_monitor',
       'mcp_oauth_refresh_prune',
+      'outcome_followup',
     ]);
   });
 
@@ -51,6 +52,7 @@ describe('jobsForCron', () => {
       'recovery_campaign_sweep',
       'project_monitor',
       'mcp_oauth_refresh_prune',
+      'outcome_followup',
     ]);
   });
 
@@ -86,6 +88,7 @@ describe('jobsForCron', () => {
       'recovery_campaign_sweep',
       'project_monitor',
       'mcp_oauth_refresh_prune',
+      'outcome_followup',
     ]);
   });
 
