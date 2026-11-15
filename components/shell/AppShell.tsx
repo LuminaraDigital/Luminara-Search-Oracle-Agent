@@ -42,6 +42,11 @@ export const VIEW_TITLES: Partial<Record<AppView, string>> = {
   [AppView.VISION]: 'Vision',
 };
 
+/** The orbit logo from the brand files (public/boot-mark.webp, 176px). The SVG copy loses its orbits below 40px. */
+const BrandMark: React.FC<{ size: number }> = ({ size }) => (
+  <img src="/boot-mark.webp" width={size} height={size} alt="" className="lg-logo" decoding="async" />
+);
+
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   return (parts.length > 1 ? parts[0][0] + parts[1][0] : name.slice(0, 2)).toUpperCase();
@@ -69,7 +74,7 @@ export const AppRail: React.FC<RailProps> = ({
 }) => (
   <aside className="lg-rail" aria-label="Workspace">
     <button type="button" className="lg-brand" onClick={onBrand} title={brandTitle} aria-label={brandTitle}>
-      <ICONS.LuminaraLogo className="w-7 h-7" />
+      <BrandMark size={32} />
       <b>Luminara</b>
     </button>
 
@@ -156,7 +161,7 @@ const STATUS_TEXT: Record<AgentState, string> = {
 export const AppTopBar: React.FC<TopBarProps> = ({ title, businessName, agent, pendingCount, onStatus, onBrand, brandTitle, children }) => (
   <header className="lg-top" data-testid="app-header">
     <button type="button" className="lg-top-brand" onClick={onBrand} aria-label={brandTitle} data-header-item="brand">
-      <ICONS.LuminaraLogo className="w-8 h-8" />
+      <BrandMark size={32} />
     </button>
     <div className="lg-crumb">
       {businessName && <><span>{businessName}</span><span aria-hidden="true">/</span></>}

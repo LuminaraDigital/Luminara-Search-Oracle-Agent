@@ -44,6 +44,7 @@
 @media (min-width: 1024px) { .lg-rail { display: flex; } }
 .lg-brand { display: flex; align-items: center; gap: 10px; padding: 2px 8px; background: none; border: 0; color: inherit; cursor: pointer; text-align: left; }
 .lg-brand b { font: 400 1.375rem/1 var(--font-serif); letter-spacing: -0.01em; }
+.lg-logo { display: block; flex: none; border-radius: 50%; }
 .lg-proj {
   display: flex; align-items: center; gap: 10px; width: 100%; min-height: 48px; padding: 10px; text-align: left; cursor: pointer;
   background: var(--lg-s1); border: 1px solid var(--lg-line); border-radius: 12px; color: inherit;
