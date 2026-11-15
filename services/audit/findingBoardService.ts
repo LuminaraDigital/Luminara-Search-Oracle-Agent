@@ -168,6 +168,11 @@ export function retireStaleOrgFindings(previous: BoardFinding[], incoming: Board
   return previous.filter((row) => !isOrgMissingRow(row) || keptKeys.has(row.stableKey));
 }
 
+/** Ids the findings API mints (`fnd_` plus 24 hex). Anything else is a local rule id or stable key. */
+export function isServerFindingId(id: string | undefined): boolean {
+  return !!id && /^fnd_[0-9a-f]{24}$/.test(id);
+}
+
 /** Map crew AuditFinding[] into board rows (local + optional remote upsert). */
 export async function ingestCrewFindings(opts: {
   domain: string;
@@ -194,6 +199,7 @@ export async function ingestCrewFindings(opts: {
         leadingIndicator: f.leadingIndicator,
         criticVerified: f.criticVerified,
         source: 'instant_audit_crew',
+        ...(f.id ? { provenance: { ruleId: f.id } } : {}),
       },
       auditRunId,
       synced: false,
@@ -204,7 +210,9 @@ export async function ingestCrewFindings(opts: {
   const byKey = new Map(prev.map((p) => [p.stableKey, p]));
   for (const m of mapped) {
     const existing = byKey.get(m.stableKey);
-    byKey.set(m.stableKey, existing ? { ...existing, ...m, status: existing.status } : m);
+    // A re-audit must not swap the server's row id back to the crew rule id.
+    const id = existing && isServerFindingId(existing.id) ? existing.id : m.id;
+    byKey.set(m.stableKey, existing ? { ...existing, ...m, id, status: existing.status } : m);
   }
   const merged = Array.from(byKey.values());
   writeLocal(domain, merged);
@@ -292,17 +300,20 @@ export async function patchFindingStatus(
 ): Promise<BoardFinding | null> {
   const local = readLocal(domain);
   const idx = local.findIndex((f) => f.id === findingId || f.stableKey === findingId);
+  // Until a row has a server id, the server only knows it by stable key and domain.
+  const row = idx >= 0 ? local[idx] : undefined;
+  const target = row && row.stableKey && !isServerFindingId(row.id) ? row.stableKey : findingId;
   if (idx >= 0) {
     local[idx] = { ...local[idx], status };
     writeLocal(domain, local);
   }
   try {
     const res = await workerFetchWithAuthRetry(
-      `${apiBase()}/api/findings/${encodeURIComponent(findingId)}`,
+      `${apiBase()}/api/findings/${encodeURIComponent(target)}`,
       {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({ status, domain: normalizeDomain(domain) }),
       },
     );
     if (res.ok) {
