@@ -25,6 +25,7 @@ import {
 import { RECEIPT_CLAIM_LABELS, type TrustReceiptView } from '../../services/trust/receiptTypes';
 import { buildBrandPassport } from '../../services/trust/brandPassport';
 import { UniversalBrandPassportView } from './UniversalBrandPassportView';
+import { CitationWatchesPanel } from '../citationWatch/CitationWatchesPanel';
 import type { BusinessDNA } from '../../types';
 
 type SectionState = 'loading' | 'ready' | 'disabled' | 'error';
@@ -625,6 +626,8 @@ export const TrustCenterView: React.FC<{ initialDomain?: string }> = ({ initialD
           </div>
         </div>
       </section>
+
+      <CitationWatchesPanel />
     </div>
   );
 };
