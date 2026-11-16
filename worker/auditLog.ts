@@ -10,8 +10,10 @@ import type { UserStoreEnv } from './userStore';
 import type { AuditLogEntry } from './userTypes';
 import { sha256Hex } from './workerUtils';
 import { redactForAudit } from './logRedaction';
+import { GENESIS_HASH, computeAuditHash } from './auditHash';
 
-const GENESIS_HASH = '0000000000000000000000000000000000000000000000000000000000000000';
+export { GENESIS_HASH, auditEntryDetailsJson, computeAuditHash, verifyAuditChain } from './auditHash';
+
 const AUDIT_APPEND_ATTEMPTS = 12;
 /** Jittered backoff between append attempts so a burst on one org serialises instead of colliding again. */
 const auditBackoff = (attempt: number) =>
@@ -93,34 +95,6 @@ export async function recordAuditLogBestEffort(
       err instanceof Error ? err.message : err,
     );
   }
-}
-
-function bufferToHex(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
-  let hex = '';
-  for (let i = 0; i < bytes.length; i++) {
-    hex += bytes[i].toString(16).padStart(2, '0');
-  }
-  return hex;
-}
-
-/**
- * Computes an immutable cryptographic SHA-256 hash for an audit log entry,
- * linking it to the previous entry's hash.
- */
-export async function computeAuditHash(
-  prevHash: string,
-  orgId: string,
-  actorId: string,
-  action: string,
-  targetId: string,
-  timestamp: number,
-  detailsJson: string,
-): Promise<string> {
-  const payload = `${prevHash}|${orgId}|${actorId}|${action}|${targetId}|${timestamp}|${detailsJson}`;
-  const encoder = new TextEncoder();
-  const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(payload));
-  return bufferToHex(hashBuffer);
 }
 
 /**
@@ -279,69 +253,6 @@ export async function getAuditLogs(
   }
 
   return { entries: [], total: 0 };
-}
-
-/**
- * Verifies the mathematical integrity of an audit chain (detects tampering/forgery).
- *
- * Walks prev_hash links from genesis instead of trusting timestamp order, so it
- * reports three failure shapes: an edited row (hash mismatch), a fork (two rows
- * linking to the same parent, from pre-fix concurrent writes), and orphans (rows
- * unreachable from genesis, e.g. a deleted parent).
- */
-export async function verifyAuditChain(
-  entries: AuditLogEntry[],
-): Promise<{ verified: boolean; brokenAtId?: string; reason?: 'hash_mismatch' | 'fork' | 'orphan'; length: number; headHash: string }> {
-  const byPrev = new Map<string, AuditLogEntry[]>();
-  for (const entry of entries) {
-    const key = entry.prev_hash || GENESIS_HASH;
-    const list = byPrev.get(key) || [];
-    list.push(entry);
-    byPrev.set(key, list);
-  }
-
-  let expectedPrevHash = GENESIS_HASH;
-  const reached = new Set<string>();
-  for (;;) {
-    const next = (byPrev.get(expectedPrevHash) || []).sort((a, b) => a.created_at - b.created_at);
-    if (next.length === 0) break;
-    if (next.length > 1) {
-      return { verified: false, brokenAtId: next[1].id, reason: 'fork', length: reached.size, headHash: expectedPrevHash };
-    }
-    const entry = next[0];
-
-    const detailsJson = typeof entry.details === 'string'
-      ? entry.details
-      : JSON.stringify(entry.details || {});
-
-    const computed = await computeAuditHash(
-      entry.prev_hash || GENESIS_HASH,
-      entry.org_id,
-      entry.actor_id,
-      entry.action,
-      entry.target_id || '',
-      Number(entry.created_at),
-      detailsJson,
-    );
-
-    if (computed !== entry.hash) {
-      return { verified: false, brokenAtId: entry.id, reason: 'hash_mismatch', length: reached.size, headHash: expectedPrevHash };
-    }
-
-    if (reached.has(entry.id)) break; // defensive: a hash cycle cannot occur with SHA-256, but never loop forever
-    reached.add(entry.id);
-    expectedPrevHash = entry.hash;
-  }
-
-  const length = reached.size;
-  if (length < entries.length) {
-    const orphan = [...entries]
-      .sort((a, b) => a.created_at - b.created_at)
-      .find((e) => !reached.has(e.id));
-    return { verified: false, brokenAtId: orphan?.id, reason: 'orphan', length, headHash: expectedPrevHash };
-  }
-
-  return { verified: true, length, headHash: expectedPrevHash };
 }
 
 /** Upper bound on rows read for one chain verification (D1 response size). */

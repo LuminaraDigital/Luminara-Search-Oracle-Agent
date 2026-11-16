@@ -106,6 +106,14 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || '2373013c66331e9660e47ffa3ae40f5c' }}
           command: d1 migrations apply luminara-users-staging --remote --env staging
 
+      # Not a SQL migration: resealing the audit hash needs SHA-256. Idempotent.
+      # See docs/runbooks/d1-backup-dr.md, "MCP security log input strip".
+      - name: Strip historical MCP tool inputs from the security log (staging)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || '2373013c66331e9660e47ffa3ae40f5c' }}
+        run: npm run db:strip-mcp-audit-inputs -- --staging
+
       - name: Deploy to Cloudflare Workers (Staging Sandbox)
         uses: cloudflare/wrangler-action@v3
         env:
@@ -223,6 +231,15 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || '2373013c66331e9660e47ffa3ae40f5c' }}
           command: d1 migrations apply luminara-users --remote --env production
+
+      # Same rewrite as staging. CONFIRM_PROD_AUDIT_STRIP is what a laptop run must set.
+      # The script refuses --prod without it, before any request.
+      - name: Strip historical MCP tool inputs from the security log (production)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || '2373013c66331e9660e47ffa3ae40f5c' }}
+          CONFIRM_PROD_AUDIT_STRIP: '1'
+        run: npm run db:strip-mcp-audit-inputs -- --prod
 
       - name: Deploy to Cloudflare Workers (Production)
         uses: cloudflare/wrangler-action@v3
