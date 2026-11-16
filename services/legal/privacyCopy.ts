@@ -4,14 +4,14 @@
  */
 import { OPERATOR_LINE, PUBLIC_CONTACT_LINE } from './consumerTerms';
 
-export const PRIVACY_UPDATED = '25 October 2026';
+export const PRIVACY_UPDATED = '15 November 2026';
 
 export const PUBLIC_PRIVACY_URL = 'https://www.luminarasuite.com/privacy';
 
 export const PUBLIC_TERMS_URL = 'https://www.luminarasuite.com/terms';
 
 export const PRIVACY_INTRO =
-  'This policy says what personal information Luminara Suite handles on the website, the Android app, the Telegram Mini App, the Telegram bot, and the related Cloudflare APIs. It matches the product as shipped. It is not legal advice. For a counsel-approved data processing agreement, email privacy@luminarasuite.com.';
+  'This policy says what personal information Luminara Suite handles on the website, the Android app, the Telegram Mini App, the Telegram bot, AI assistants you connect, and the related Cloudflare APIs. It matches the product as shipped. It is not legal advice. For a counsel-approved data processing agreement, email privacy@luminarasuite.com.';
 
 export interface PrivacySection {
   title: string;
@@ -33,7 +33,7 @@ export const PRIVACY_SECTIONS: PrivacySection[] = [
       'Collection notice. We collect the account, usage, and billing details listed under "Information we handle" when you create an account, run a check, pay, or email us. If you do not give an email address or a Telegram id, we cannot sign you in or deliver a paid plan. The live crawl check on the website does not need an account.',
       'Use and disclosure. We use personal information to run audits, chat, and saved work, to sign you in, to deliver the plan you buy, to limit abuse, and to answer support. We disclose it to the providers named in this section when that step needs them. We do not sell personal information. We do not use it for cross-context behavioural advertising.',
       'Access and correction. Email info@luminara.digital from the address on the account, or include your Telegram id. Ask us to correct information that is wrong, incomplete, or out of date. We will correct it, or tell you why we will not. If you are signed in, open Settings, then Account. Download your data as JSON first. To delete the account, type DELETE and sign in again. That removes the live rows for the account, including workspaces, audits, public win pages, and saved fix state, and it deletes a Firebase sign-in when there is one. Cloudflare D1 Time Travel can restore a database backup for 30 days. We do not restore a deleted account from that backup unless the law requires it. Records a payment partner must keep, and a public blockchain payment, stay.',
-      'Overseas disclosure (APP 8). Some of these providers are outside Australia. We disclose personal information to them only so they can do the step we asked for, and we take reasonable steps so they handle it consistently with the APPs. We use Cloudflare for hosting, D1, KV, and request logs. We use Google Firebase for sign-in. We use Telegram for Mini App identity, Stars payments, and the bot. We use Stripe to process card payments. When a check or a chat runs, the prompt and page text go to the providers that check uses: Groq, NVIDIA, Google Gemini, OpenRouter, Ollama, Tavily, Exa, and Firecrawl. The Open Network and Toncenter receive a payment check only when you pay on that network.',
+      'Overseas disclosure (APP 8). Some of these providers are outside Australia. We disclose personal information to them only so they can do the step we asked for, and we take reasonable steps so they handle it consistently with the APPs. We use Cloudflare for hosting, D1, KV, and request logs. We use Google Firebase for sign-in. We use Telegram for Mini App identity, Stars payments, and the bot. We use Stripe to process card payments. When a check or a chat runs, the prompt and page text go to the providers that check uses: Groq, NVIDIA, Google Gemini, OpenRouter, Ollama, Tavily, Exa, and Firecrawl. Keyword, search result, domain, and backlink research sends the keywords and domains you ask about to DataForSEO. The Open Network and Toncenter receive a payment check only when you pay on that network.',
       'Security. The site uses HTTPS. Sign-in checks protect hosted keys. Synced API keys are handled as described under "Information we handle". No method of sending or storing data is perfectly secure. Report a vulnerability to security@luminarasuite.com.',
       'Complaints. Email info@luminara.digital and describe what happened. We will respond. If you are not satisfied, you can complain to the Office of the Australian Information Commissioner (OAIC) at https://www.oaic.gov.au/.',
     ],
@@ -83,12 +83,22 @@ export const PRIVACY_SECTIONS: PrivacySection[] = [
     bullets: [
       'Groq, NVIDIA NIM, Ollama, Google Gemini, OpenRouter.',
       'Tavily, Exa, and Firecrawl for search and crawl evidence.',
+      'DataForSEO for keyword, search result, domain, and backlink research, and Google PageSpeed Insights for page speed.',
       'LanguageTool and Umami, only if you turn those features on.',
       'Cloudflare for hosting, KV, D1, and logs.',
       'Firebase and Google for sign-in.',
       'Stripe for card payments. We do not store card numbers.',
       'Telegram for Mini App identity, Stars payments, and bot alerts.',
       'The Open Network and Toncenter for checking an on-chain payment.',
+    ],
+  },
+  {
+    title: 'AI assistants you connect',
+    paragraphs: [
+      'You can connect an AI assistant, such as Claude, Claude Code, ChatGPT, Codex, Grok, or Cursor, to Luminara at https://luminarasuite.com/api/mcp. You sign in with your Luminara account and press Allow. The assistant then acts for your account through the tools it is given.',
+      "We receive only what the assistant sends in a tool call: the tool name and its inputs, such as a project, a domain, a keyword, or report text. We do not receive or read the assistant's chat history, its memory, or files you gave it, unless the assistant puts them in a tool input. The assistant's provider handles your conversation under its own policy.",
+      'We store the name and sign-in address the assistant registers with, hashes of its access and refresh tokens (never the tokens themselves), a daily call count, the cost of paid calls, any approval request with its tool inputs when a tool needs your yes, and whatever a tool saves to your account, such as a report or project context. A security log keeps only the tool name and the outcome.',
+      'Settings lists every connected assistant, and Disconnect ends its access. A connection lapses after 90 days without use. Deleting your account removes its connections and approval requests. The security log is tamper-evident, so the tool name and outcome are kept after the account is deleted.',
     ],
   },
   {
@@ -111,6 +121,7 @@ export const PRIVACY_SECTIONS: PrivacySection[] = [
       'Enrichment cache: about 7 days.',
       'Unfinished TON orders: about 2 hours.',
       'Bot chat context: kept in KV so the conversation can continue, and deleted when you send /reset.',
+      'Connected assistants: until you disconnect them, or 90 days without use. Approval requests: while the account is active.',
       'Subscriptions, user rows, workspace data, and Sentinel targets: while the account is active, or until deletion finishes.',
       'Database backups: Cloudflare D1 Time Travel can restore the database for 30 days. A deleted account is removed from the live database. We do not restore it from that backup unless the law requires it.',
       'Payment identifiers we need for a dispute: as long as the payment partner requires. A public blockchain record cannot be erased.',

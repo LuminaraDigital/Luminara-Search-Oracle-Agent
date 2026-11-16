@@ -444,7 +444,7 @@ describe('MCP tool catalogue', () => {
       const risk = TOOL_GOVERNANCE[tool.name].risk;
       expect(tool.annotations.readOnlyHint).toBe(risk === 'read');
       expect(tool.annotations.openWorldHint).toBe(OPEN_WORLD_TOOLS.has(tool.name));
-      expect(tool.annotations.destructiveHint).toBe(risk === 'destructive');
+      expect(tool.annotations.destructiveHint).toBe(risk !== 'read');
       expect(tool.annotations.title.length).toBeGreaterThan(3);
       expect(tool.description.length).toBeGreaterThan(40);
     }
