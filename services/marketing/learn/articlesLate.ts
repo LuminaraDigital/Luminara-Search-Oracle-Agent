@@ -7,7 +7,7 @@ const schemaTool = { label: 'Schema generator', href: '/free-tools/schema-genera
 const freeCheck = { label: 'Free check', href: '/' };
 
 /**
- * Guides 5 to 8. Schema.org and Google describe the markup. The templates are examples,
+ * Guides 5 to 9. Schema.org and Google describe the markup. The templates are examples,
  * not client results. Product limits are the ones this site already publishes.
  */
 export const LATE_ARTICLES: readonly LearnArticle[] = [
@@ -228,6 +228,7 @@ Updated 15 November 2026.`,
       freeCheck,
       { label: 'Robots.txt and AI crawlers', href: LEARN_PATHS.robots },
       { label: 'How an assistant reads your site', href: LEARN_PATHS.how },
+      { label: 'Claim your agency in ChatGPT', href: LEARN_PATHS.claim },
       { label: 'Pricing', href: '/pricing' },
     ],
     faq: [
@@ -372,6 +373,113 @@ Updated 15 November 2026.`,
         paragraphs: [
           'Developers building a different server should read the protocol intro for the shape of tools and clients, then keep that server separate from this one. Do not proxy the Luminara endpoint through a key you embed in a public website. The consent screen exists so a person sees who is asking. Hiding it breaks that check.',
           'Bring the public-web work along with the connection. An agent that can read your findings is useful only if the [suburb page](/learn/suburb-pages), the [schema](/learn/real-estate-agent-schema), and the [crawler rules](/learn/robots-txt-and-ai-crawlers) are the ones you meant to publish. MCP reads the record. It does not repair a disallow you shipped last month.',
+        ],
+      },
+    ],
+  },
+  {
+    published: '2026-11-17',
+    updated: '2026-11-17',
+    path: LEARN_PATHS.claim,
+    label: 'Claim your agency in ChatGPT',
+    description:
+      'How an Australian real estate agency can claim a ChatGPT profile, and what the OpenAI mention counts include. Not measured unless you are on Agency.',
+    h1: 'How to claim your real estate agency in ChatGPT (and what it won\'t tell you)',
+    sources: [
+      { label: 'Introducing Businesses in ChatGPT, OpenAI, 10 November 2026', href: 'https://openai.com/index/introducing-businesses-chatgpt' },
+      { label: 'Setting up your business on ChatGPT, OpenAI Help Center', href: 'https://help.openai.com/en/articles/20001635-setting-up-your-business-on-chatgpt' },
+      { label: 'Businesses in ChatGPT, OpenAI product page', href: 'https://openai.com/business/businesses-in-chatgpt/' },
+    ],
+    related: [
+      hub,
+      { label: 'How to check if AI names your agency', href: LEARN_PATHS.check },
+      { label: 'How AI assistants decide which real estate agency to recommend', href: LEARN_PATHS.how },
+      { label: 'Methodology', href: '/methodology' },
+      freeCheck,
+    ],
+    faq: [
+      {
+        question: 'If I claim my agency, will ChatGPT recommend us more often?',
+        answer:
+          'OpenAI says ChatGPT continues to make independent recommendations and comparisons, and that claiming does not guarantee higher placement or sales, or increased visibility.',
+      },
+      {
+        question: 'Can an Australian real estate agency claim a ChatGPT profile?',
+        answer:
+          'Availability depends on location, type, industry, and verification. Claiming is initially available to eligible businesses with a website. Check Business Hub for your trading name.',
+      },
+      {
+        question: 'Do the mention counts prove ChatGPT named us for a suburb question?',
+        answer:
+          'No. Insights are aggregated, cover the past 28 days, and appear only above unpublished thresholds. For an online business, a mention counts when ChatGPT references the website, not when the brand name appears alone.',
+      },
+      {
+        question: 'Do I need a Business Agent to claim my agency?',
+        answer:
+          'No. Claiming, publishing an agent, and advertising are separate. Business Agents are currently for eligible ecommerce and online service businesses in the United States.',
+      },
+    ],
+    sections: [
+      {
+        heading: 'What OpenAI launched',
+        paragraphs: [
+          'On 10 November 2026, OpenAI launched [Businesses in ChatGPT](https://openai.com/index/introducing-businesses-chatgpt) in beta. Businesses can claim a profile through [Business Hub](https://openai.com/business/businesses-in-chatgpt/), keep information current, and see aggregated insights. The announcement says 1.2 billion people use ChatGPT each week. That figure is OpenAI\'s, not a measurement from this site.',
+          'If a vendor asks for the best real estate agency in your suburb, claiming the profile does not mean ChatGPT will name you. OpenAI\'s pages do not offer that as a guarantee. This guide covers the documented claim steps, what the counts include, and how to check a real answer without inventing a score.',
+        ],
+      },
+      {
+        heading: 'Check eligibility in Business Hub first',
+        paragraphs: [
+          'OpenAI\'s [setup guide](https://help.openai.com/en/articles/20001635-setting-up-your-business-on-chatgpt) says you can claim a business if you own it or are authorized to represent it. Eligible businesses can claim an existing listing, or add one, where ChatGPT is available and the required verification is supported. Availability depends on location and type. The [Businesses in ChatGPT page](https://openai.com/business/businesses-in-chatgpt/) also ties eligibility to industry and to verification and integrity checks, and says claiming is initially available to eligible businesses with a website.',
+          'This guide does not say an Australian agency is eligible, or that it is not. Those pages do not publish a country list for real estate offices. Open Business Hub and search for your trading name. That is the only live answer for your office. The setup guide also says local stores and restaurants can currently claim only an existing U.S. listing. It does not say how that rule applies to a real estate office.',
+        ],
+      },
+      {
+        heading: 'How to claim the profile',
+        paragraphs: [
+          'The steps below are from the [setup guide](https://help.openai.com/en/articles/20001635-setting-up-your-business-on-chatgpt). They may change. Follow what ChatGPT shows.',
+        ],
+        steps: [
+          'Sign in to ChatGPT, and open Business Hub from the sidebar. Search for your business by name.',
+          'Select the listing that matches your business and confirm the ChatGPT account you will use to manage it.',
+          'Choose a verification method. OpenAI lists business phone (a text message or an automated call), business email, website domain, or Shopify.',
+          'If you verify with your website domain, add the TXT record shown in ChatGPT to your DNS settings, copying the type, name or host, and value exactly. DNS changes may take time. Return to ChatGPT and select Verify domain.',
+          'Wait for OpenAI to review the claim. It emails you its decision or a request for more information. You can cancel the claim while it is under review.',
+        ],
+      },
+      {
+        heading: 'If you cannot find your business',
+        paragraphs: [
+          'If you cannot find your business, an eligible online business may see an option to add it. Open a claim invitation with the address that received it. Do not forward that link to give someone else access. If you see Contact support, the listing is locked. If the profile is already claimed, use Dispute ownership and follow the Persona prompts. OpenAI says claiming or disputing does not change visibility in ChatGPT.',
+        ],
+      },
+      {
+        heading: 'Complete identity verification with Persona',
+        paragraphs: [
+          'After the claim is approved, you still need to complete identity verification with Persona before you can publish changes, view insights, or create an eligible business agent. You may need a government-issued ID, business registration information, and proof that you are authorized to represent the business.',
+          'Claiming your business alone does not give the profile a verified badge. The blue check appears after your Persona verification is approved. Submitting information does not mean it is approved. If you use Persona to create a new profile, approval publishes it automatically, so continue only when you are ready.',
+        ],
+      },
+      {
+        heading: 'What you get, and what the counts leave out',
+        paragraphs: [
+          'Once the claim and Persona verification are approved, you can update your website, description, category, logo, and other optional details. OpenAI reviews and publishes changes. Updates can take time, and ChatGPT may also use other sources. You do not need to advertise or publish a Business Agent to claim the business or use insights.',
+          '[Business Hub insights](https://openai.com/index/introducing-businesses-chatgpt) show aggregate activity over the past 28 days: mentions, website clicks, and discovery topics. Businesses do not receive individual prompts or conversations. Insights appear only when activity meets unpublished thresholds. A blank metric does not necessarily mean zero activity.',
+          'The [setup guide](https://help.openai.com/en/articles/20001635-setting-up-your-business-on-chatgpt) says that for an online business, a mention counts when ChatGPT references the website. Naming the brand alone does not count. For a local business, a mention counts when ChatGPT shows a result for that location. That is not a log of answers to "best real estate agency in" your suburb.',
+          'The [Businesses in ChatGPT page](https://openai.com/business/businesses-in-chatgpt/) states this in plain words. ChatGPT continues to make independent recommendations and comparisons. Claiming does not guarantee higher placement or sales, or increased visibility, and it does not give you control over those recommendations. Advertising does not influence ChatGPT\'s independent answers. A blue check is not a ranking.',
+        ],
+      },
+      {
+        heading: 'Business Agents are a separate product',
+        paragraphs: [
+          'A Business Agent answers questions using information the business provides, in a labeled conversation, separate from ChatGPT\'s independent answers. [OpenAI says](https://openai.com/index/introducing-businesses-chatgpt) agents are available to eligible ecommerce and online service businesses in the United States, with a website, and must meet the Business Agents Policy. Treat an agent as unavailable for an Australian real estate office unless Business Hub offers one. The current agent cannot complete purchases, make bookings, or check a customer\'s order.',
+        ],
+      },
+      {
+        heading: 'How to check whether ChatGPT actually names your agency',
+        paragraphs: [
+          'The profile and the counts do not tell you whether ChatGPT named you for a suburb question. Ask ChatGPT the way a vendor would, with the suburb and the job. Save the full reply, the product name, and the date. One reply is a sample, not a share of voice. The [guide to checking a named mention](/learn/check-if-ai-names-your-agency) covers how to keep that log.',
+          'The [free check](/) on luminarasuite.com reads your homepage title and description, robots.txt, llms.txt, and ai.txt. It does not ask ChatGPT, Claude, or Gemini to name you. Live answers from specific AI products stay Not measured unless you are on Agency or you connect your own search login. Those labels are defined on the [methodology](/methodology) page. Run the free check first. For a suburb mention, ask ChatGPT yourself. Do not treat a blue check, or a blank insights panel, as either result. That is the point of this line: the AI audit that won\'t invent a score.',
         ],
       },
     ],

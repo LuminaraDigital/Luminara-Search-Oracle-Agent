@@ -149,7 +149,7 @@ const SITEMAP_LASTMOD: Record<string, string> = {
   '/docs/what-is-aeo.html': '2026-11-15',
   '/desktop': '2026-11-02',
   '/best/ai-visibility-tools-with-mcp': '2026-11-15',
-  '/learn': '2026-11-15',
+  '/learn': '2026-11-17',
   '/learn/what-is-aeo': '2026-11-15',
   '/learn/how-ai-recommends-an-agency': '2026-11-15',
   '/learn/llms-txt-for-real-estate': '2026-11-15',
@@ -157,8 +157,9 @@ const SITEMAP_LASTMOD: Record<string, string> = {
   '/learn/real-estate-agent-schema': '2026-11-15',
   '/learn/suburb-pages': '2026-11-15',
   '/learn/check-if-ai-names-your-agency': '2026-11-15',
+  '/learn/claim-your-agency-in-chatgpt': '2026-11-17',
   '/learn/mcp-for-marketing-data': '2026-11-15',
-  '/llms.txt': '2026-11-15',
+  '/llms.txt': '2026-11-17',
   '/ai.txt': '2026-11-15',
 };
 
@@ -337,6 +338,7 @@ Guides for independent real estate agencies and for developers who ship their si
 
 - ${LEARN_INDEX.label}: https://www.luminarasuite.com${LEARN_INDEX.path}
 ${LEARN_ARTICLES.map((article) => `- ${article.label}: https://www.luminarasuite.com${article.path}`).join('\n')}
+${LIVE_ANSWER_CHECKS}
 
 ## Free tools
 
