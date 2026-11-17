@@ -267,6 +267,25 @@ textarea.lx-field { resize: vertical; }
     transform: none;
   }
 }
+.lx-skip {
+  position: absolute;
+  left: 1rem;
+  top: 1rem;
+  z-index: 80;
+  padding: 0.55rem 0.9rem;
+  border-radius: 999px;
+  background: var(--gold-light);
+  color: #000;
+  font-size: 0.875rem;
+  font-weight: 600;
+  transform: translateY(-160%);
+}
+.lx-skip:focus {
+  transform: none;
+  outline: 2px solid var(--color-focus);
+  outline-offset: 3px;
+}
+
 @media print {
   .lx-armed [data-reveal]:not([data-in]) { opacity: 1; transform: none; }
   .lx-root .lx-chapter[data-active='false'] { opacity: 1; }

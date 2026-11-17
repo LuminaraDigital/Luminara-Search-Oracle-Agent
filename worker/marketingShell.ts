@@ -101,7 +101,8 @@ export function injectMarketingMeta(html: string, page: MarketingShellMeta): str
   const title = escapeHtml(page.title);
   const description = escapeHtml(page.description);
   const canonical = escapeHtml(url);
-  const image = escapeHtml(DEFAULT_OG_IMAGE);
+  const image = escapeHtml(page.ogImage ?? DEFAULT_OG_IMAGE);
+  const ogType = escapeHtml(page.ogType ?? 'website');
   const jsonLd = JSON.stringify(page.jsonLd).replace(/</g, '\\u003c');
 
   let out = html;
@@ -135,6 +136,15 @@ export function injectMarketingMeta(html: string, page: MarketingShellMeta): str
     );
   } else {
     out = out.replace(/<\/head>/i, () => `  <meta property="og:url" content="${canonical}">\n</head>`);
+  }
+
+  if (/<meta\s+property="og:type"/i.test(out)) {
+    out = out.replace(
+      /<meta\s+property="og:type"\s+content="[^"]*"\s*>/i,
+      () => `<meta property="og:type" content="${ogType}">`,
+    );
+  } else {
+    out = out.replace(/<\/head>/i, () => `  <meta property="og:type" content="${ogType}">\n</head>`);
   }
 
   if (/<meta\s+property="og:image"/i.test(out)) {

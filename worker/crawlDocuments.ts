@@ -139,7 +139,7 @@ const SITEMAP_LASTMOD: Record<string, string> = {
   '/why': '2026-11-15',
   '/pricing': '2026-11-15',
   '/methodology': '2026-11-15',
-  '/white-paper': '2026-11-15',
+  '/white-paper': '2026-11-17',
   '/sample-report': '2026-10-22',
   '/privacy': '2026-11-15',
   '/terms': '2026-11-15',

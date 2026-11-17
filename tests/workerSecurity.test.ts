@@ -139,6 +139,9 @@ describe('security headers', () => {
 
   it('caches a hashed asset for a year and leaves other files alone', async () => {
     expect(immutableAssetCache('/assets/index-Ab12cd34.js')).toBe('public, max-age=31536000, immutable');
+    expect(immutableAssetCache('/marketing/white-paper/web-landing-1280.f528283b67.webp')).toBe('public, max-age=31536000, immutable');
+    expect(immutableAssetCache('/marketing/white-paper/og.813bf4ef48.png')).toBe('public, max-age=31536000, immutable');
+    expect(immutableAssetCache('/marketing/white-paper/web-landing.png')).toBeNull();
     expect(immutableAssetCache('/favicon.ico')).toBeNull();
     expect(immutableAssetCache('/assets/index.js')).toBeNull();
     const locked = new Response('console.log(1)', { headers: { 'content-type': 'text/javascript' } });

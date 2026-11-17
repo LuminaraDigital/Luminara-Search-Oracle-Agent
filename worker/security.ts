@@ -43,8 +43,14 @@ const COMMON_HEADERS: Record<string, string> = {
 
 /** Vite files under /assets/ carry a content hash, so the URL never serves a new body. */
 export function immutableAssetCache(pathname: string): string | null {
-  if (!/^\/assets\/[^/]+-[A-Za-z0-9_-]{8,}\.[a-z0-9]+$/i.test(pathname)) return null;
-  return 'public, max-age=31536000, immutable';
+  if (/^\/assets\/[^/]+-[A-Za-z0-9_-]{8,}\.[a-z0-9]+$/i.test(pathname)) {
+    return 'public, max-age=31536000, immutable';
+  }
+  // Content-hashed white paper images. The hash is in the filename, so the URL never serves a new body.
+  if (/^\/marketing\/white-paper\/[a-z0-9-]+\.[a-f0-9]{10}\.(?:webp|png)$/i.test(pathname)) {
+    return 'public, max-age=31536000, immutable';
+  }
+  return null;
 }
 
 /**
