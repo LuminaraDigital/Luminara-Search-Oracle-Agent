@@ -76,6 +76,6 @@ describe('sitemap meta', () => {
     }
     expect(seen.size).toBeGreaterThan(20);
     const learnPaths = [...seen.values()].filter((path) => path === '/learn' || path.startsWith('/learn/'));
-    expect(learnPaths).toHaveLength(9);
+    expect(learnPaths).toHaveLength(10);
   });
 });

@@ -14,6 +14,7 @@ import {
   LEARN_AUTHOR_ORG,
   LEARN_INDEX,
   LEARN_PATH,
+  formatLearnDate,
   learnPageForPath,
   learnWordCount,
 } from '../services/marketing/learnPages';
@@ -74,7 +75,6 @@ describe('knowledge hub (/learn)', () => {
   });
 
   it('keeps each article in the word range, with dates, author, and no dashes', () => {
-    const dated = `Published 15 November 2026`;
     for (const article of LEARN_ARTICLES) {
       const words = learnWordCount(article);
       expect(words, article.path).toBeGreaterThanOrEqual(900);
@@ -84,8 +84,10 @@ describe('knowledge hub (/learn)', () => {
       const copy = JSON.stringify(article);
       expect(copy, article.path).not.toMatch(/[\u2013\u2014]/);
       const body = MARKETING_SHELL_BY_PATH[article.path].crawlerBody;
-      expect(body).toContain(dated);
-      expect(body).toContain(`Updated ${dated.replace('Published ', '')}`);
+      const published = formatLearnDate(article.published);
+      const updated = formatLearnDate(article.updated);
+      expect(body).toContain(`Published ${published}`);
+      expect(body).toContain(`Updated ${updated}`);
       expect(body).toContain(`${LEARN_AUTHOR_NAME}, ${LEARN_AUTHOR_ORG}`);
       for (const item of article.faq) expect(body).toContain(item.question);
       expect(SITEMAP_XML).toContain(`<loc>https://www.luminarasuite.com${article.path}</loc><lastmod>${article.updated}</lastmod>`);
@@ -111,8 +113,8 @@ describe('knowledge hub (/learn)', () => {
 
     const article = LEARN_ARTICLES[0];
     const html = renderToStaticMarkup(createElement(LearnPage, { article, onFullAudit: () => {} }));
-    expect(html).toContain(`Published 15 November 2026`);
-    expect(html).toContain('Updated 15 November 2026');
+    expect(html).toContain(`Published ${formatLearnDate(article.published)}`);
+    expect(html).toContain(`Updated ${formatLearnDate(article.updated)}`);
     expect(html).toContain(`${LEARN_AUTHOR_NAME}, ${LEARN_AUTHOR_ORG}`);
     expect(html).toContain(article.faq[0].question);
     expect(html).toContain('id="learn-domain"');

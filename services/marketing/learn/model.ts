@@ -14,6 +14,7 @@ export const LEARN_PATHS = {
   schema: '/learn/real-estate-agent-schema',
   suburb: '/learn/suburb-pages',
   check: '/learn/check-if-ai-names-your-agency',
+  claim: '/learn/claim-your-agency-in-chatgpt',
   mcp: '/learn/mcp-for-marketing-data',
 } as const;
 
@@ -51,8 +52,8 @@ export interface LearnArticle {
   label: string;
   description: string;
   h1: string;
-  published: typeof LEARN_PUBLISHED;
-  updated: typeof LEARN_PUBLISHED;
+  published: string;
+  updated: string;
   sections: LearnSection[];
   faq: MarketingFaqItem[];
   sources: LearnLink[];

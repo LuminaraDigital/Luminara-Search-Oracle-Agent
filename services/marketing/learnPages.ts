@@ -48,7 +48,7 @@ export const LEARN_INDEX = {
   path: LEARN_PATH,
   label: 'Learn',
   description:
-    'Practical guides for independent real estate agencies and developers: AEO, AI crawlers, llms.txt, schema, suburb pages, and MCP.',
+    'Practical guides for agencies: AEO, AI crawlers, llms.txt, schema, suburb pages, ChatGPT business profiles, and MCP. Not measured unless you are on Agency.',
   h1: 'Guides for agencies and the people who ship their sites',
   lede:
     'How an independent real estate agency, and the developer who ships the site, can make pages readable by search and by answer engines. Each guide says what the vendor documents, what to publish, and what we do not measure.',
@@ -76,6 +76,7 @@ const READING: Record<string, readonly string[]> = {
   '/best/ai-visibility-tools-for-real-estate-agencies': [LEARN_PATHS.how, LEARN_PATHS.suburb, LEARN_PATHS.check],
   '/best/aeo-audit-tools-for-small-business': [LEARN_PATHS.aeo, LEARN_PATHS.check],
   '/best/ai-visibility-tools-with-mcp': [LEARN_PATHS.mcp, LEARN_PATHS.check],
+  '/learn/check-if-ai-names-your-agency': [LEARN_PATHS.claim],
   '/free-tools': [LEARN_PATH],
   '/free-tools/serp-preview': [LEARN_PATHS.suburb],
   '/free-tools/robots-txt-generator': [LEARN_PATHS.robots],

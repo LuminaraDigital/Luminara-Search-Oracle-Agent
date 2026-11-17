@@ -108,6 +108,8 @@ Guides for independent real estate agencies and for developers who ship their si
 - Suburb pages AI can quote: https://www.luminarasuite.com/learn/suburb-pages
 - Check if AI names you: https://www.luminarasuite.com/learn/check-if-ai-names-your-agency
 - MCP for marketing data: https://www.luminarasuite.com/learn/mcp-for-marketing-data
+- Claim your agency in ChatGPT: https://www.luminarasuite.com/learn/claim-your-agency-in-chatgpt
+Live answers from specific AI products stay Not measured unless you are on Agency or you connect your own search login.
 
 ## Free tools
 
