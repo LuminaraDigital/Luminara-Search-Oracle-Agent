@@ -26,6 +26,16 @@ def sha10(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()[:10]
 
 
+# 0+ Downloads under the developer name on the 1920x1200 Play capture.
+PLAY_INSTALL_COUNT = (300, 332, 500, 402)
+
+
+def hide_play_install_count(im: Image.Image) -> Image.Image:
+    rgb = im.convert('RGB')
+    ImageDraw.Draw(rgb).rectangle(PLAY_INSTALL_COUNT, fill=(255, 255, 255))
+    return rgb
+
+
 def drop_browser_chrome(im: Image.Image) -> Image.Image:
     rgb = im.convert('RGB')
     px = rgb.load()
@@ -81,6 +91,8 @@ def write_shots() -> dict[str, dict[str, object]]:
     shots: dict[str, dict[str, object]] = {}
     for src in sorted(SRC.glob('*.png')):
         im = Image.open(src)
+        if src.name == 'play-listing.png':
+            im = hide_play_install_count(im)
         framed = telegram_card(im) if src.name == 'telegram-bot.png' else drop_browser_chrome(im)
         widths = [640, 1280] if framed.width > 1280 else [framed.width]
         variants = []

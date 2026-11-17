@@ -9,8 +9,8 @@ export const WHITE_PAPER_IMAGE_BY_FILE = {
     height: 736,
   },
   'play-listing.png': {
-    src: '/marketing/white-paper/play-listing-1280.1a0981bf1b.webp',
-    srcSet: '/marketing/white-paper/play-listing-640.bbc8228157.webp 640w, /marketing/white-paper/play-listing-1280.1a0981bf1b.webp 1280w',
+    src: '/marketing/white-paper/play-listing-1280.632801cbde.webp',
+    srcSet: '/marketing/white-paper/play-listing-640.d457c54f57.webp 640w, /marketing/white-paper/play-listing-1280.632801cbde.webp 1280w',
     width: 1280,
     height: 736,
   },
