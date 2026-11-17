@@ -43,6 +43,14 @@ import {
 import { checkHostFromPath, checkPathForHost } from './homepageSnippet';
 import { CONTACT_CRAWLER, FAQ_CRAWLER } from '../help/helpPages';
 import { privacyCrawlerBody } from '../legal/privacyCrawler';
+import {
+  WHITE_PAPER_DESCRIPTION,
+  WHITE_PAPER_H1,
+  WHITE_PAPER_MODIFIED,
+  WHITE_PAPER_OG_PATH,
+  WHITE_PAPER_PUBLISHED,
+} from './whitePaper';
+import { WHITE_PAPER_SOURCES } from './whitePaperSources';
 
 const HOME_META = 'An AI employee for your agency. It checks whether AI answers name you, flags page leaks, and hands you the next fix. No invented scores.';
 
@@ -58,6 +66,9 @@ export interface MarketingShellMeta {
   crawlerBody: string;
   /** Set on unbounded per-domain pages so they are not indexed and not folded into another URL. */
   robots?: 'noindex, nofollow';
+  /** Absolute image URL. Defaults to the site OG image. */
+  ogImage?: string;
+  ogType?: string;
 }
 
 const ORG_NODE = {
@@ -425,6 +436,24 @@ const LEARN_INDEX_SHELL: MarketingShellMeta = {
 </section>`,
 };
 
+const WHITE_PAPER_OG_IMAGE = `${MARKETING_ORIGIN}${WHITE_PAPER_OG_PATH}`;
+
+function whitePaperArticleNode(): Record<string, unknown> {
+  return {
+    '@type': 'TechArticle',
+    '@id': `${MARKETING_ORIGIN}/white-paper#article`,
+    headline: WHITE_PAPER_H1,
+    description: WHITE_PAPER_DESCRIPTION,
+    datePublished: WHITE_PAPER_PUBLISHED,
+    dateModified: WHITE_PAPER_MODIFIED,
+    image: WHITE_PAPER_OG_IMAGE,
+    mainEntityOfPage: `${MARKETING_ORIGIN}/white-paper`,
+    author: { '@type': 'Organization', name: LEGAL_ENTITY, '@id': `${MARKETING_ORIGIN}/#organization` },
+    publisher: { '@type': 'Organization', name: LEGAL_ENTITY, '@id': `${MARKETING_ORIGIN}/#organization` },
+    citation: WHITE_PAPER_SOURCES.flatMap((source) => [...source.urls]),
+  };
+}
+
 export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
   [LEARN_PATH]: LEARN_INDEX_SHELL,
   ...Object.fromEntries(LEARN_ARTICLES.map((article) => [article.path, learnArticleShell(article)])),
@@ -447,19 +476,16 @@ export const MARKETING_SHELL_BY_PATH: Record<string, MarketingShellMeta> = {
   '/white-paper': {
     path: '/white-paper',
     title: 'White paper | Luminara Suite',
-    description:
-      'A product and methodology paper. Each number is tagged Fact, Estimate, or Speculation and links to a source from 2 November 2026.',
-    jsonLd: graph(
-      '/white-paper',
-      'White paper',
-      'A product and methodology paper. Each number is tagged Fact, Estimate, or Speculation and links to a source from 2 November 2026.',
-    ),
+    description: WHITE_PAPER_DESCRIPTION,
+    ogImage: WHITE_PAPER_OG_IMAGE,
+    ogType: 'article',
+    jsonLd: graph('/white-paper', WHITE_PAPER_H1, WHITE_PAPER_DESCRIPTION, false, [whitePaperArticleNode()]),
     crawlerBody: `
 <section>
-  <h1>White paper</h1>
+  <h1>${WHITE_PAPER_H1}</h1>
   <p>Product and methodology paper for independent real estate agencies in Australia, Oceania and South-East Asia. Traction and market size: Unknown. This paper does not recommend issuing a token.</p>
   <p>Every number on the page is tagged Fact, Estimate, or Speculation and links to a source checked on 2 November 2026.</p>
-  <p><a href="/">Check a domain</a> · <a href="${TELEGRAM_MINI_APP_PUBLIC_URL}">Telegram Mini App</a> · <a href="${PLAY_STORE_URL}">Google Play</a> · <a href="/desktop">Windows</a></p>
+  <p><a href="/">Free check</a> · <a href="/pricing">Sign up</a> · <a href="${TELEGRAM_MINI_APP_PUBLIC_URL}">Telegram Mini App</a> · <a href="${PLAY_STORE_URL}">Google Play</a> · <a href="/desktop">Windows</a></p>
 </section>`,
   },
   '/methodology': {

@@ -3,22 +3,37 @@
  * show Fact, Estimate, or Speculation plus a source link.
  */
 import { PLAY_STORE_URL, TELEGRAM_BOT_URL, TELEGRAM_MINI_APP_PUBLIC_URL } from './platformSurfaces';
+import { WHITE_PAPER_IMAGE_BY_FILE, WHITE_PAPER_OG_PATH } from './whitePaperImages.generated';
 import { compareSourceIds, type SourceId } from './whitePaperSources';
 
 export const WHITE_PAPER_PATH = '/white-paper';
+export const WHITE_PAPER_PDF_PATH = '/white-paper.pdf';
+export { WHITE_PAPER_OG_PATH };
+
+/** Visible H1. The crawler H1 uses the same sentence. */
+export const WHITE_PAPER_H1 = 'Product and methodology.';
+
+/** Source-access date on the appendix, and the day this edition was revised. */
+export const WHITE_PAPER_PUBLISHED = '2026-11-02';
+export const WHITE_PAPER_MODIFIED = '2026-11-17';
+
+export const WHITE_PAPER_DESCRIPTION =
+  'Product and methodology paper for independent real estate agencies. Every number is tagged Fact, Estimate, or Speculation, with a source.';
 
 export const WHITE_PAPER_SECTION_IDS = [
   'executive-summary',
-  'problem',
-  'market-category',
   'how-measurement-works',
   'competitive-map',
+  'problem',
+  'market-category',
   'product-surfaces-gtm',
   'monetization',
-  'onchain-telegram-adjacency',
-  'architecture',
   'risks-open-questions',
   'glossary',
+  'appendix',
+  'stars-payout',
+  'onchain-telegram-adjacency',
+  'architecture',
   'sources',
 ] as const;
 
@@ -38,36 +53,43 @@ export const WHITE_PAPER_SHOTS = {
     alt: 'Luminara Suite home page with the headline Be the answer AI gives and a domain field.',
     caption: 'Web Suite at luminarasuite.com. The free check reads a homepage, robots.txt, and llms.txt. Card passes are bought here.',
     illustrative: false,
+    ...WHITE_PAPER_IMAGE_BY_FILE['web-landing.png'],
   },
   'web-product.png': {
     alt: 'Illustrative sample report for an example agency. Not a measurement.',
     caption: 'Illustrative example, not a measurement. The rows show the report shape on the sample report page.',
     illustrative: true,
+    ...WHITE_PAPER_IMAGE_BY_FILE['web-product.png'],
   },
   'play-listing.png': {
     alt: 'Google Play listing page for the Luminara Suite companion app.',
     caption: 'Google Play listing for the free companion. The app does not sell passes. Traction: Unknown.',
     illustrative: false,
+    ...WHITE_PAPER_IMAGE_BY_FILE['play-listing.png'],
   },
   'play-listing-screenshots.png': {
     alt: 'Google Play listing screenshots of the Luminara Suite companion.',
     caption: 'Store screenshots of the Play companion. These frames are the listing, not a client measurement.',
     illustrative: false,
+    ...WHITE_PAPER_IMAGE_BY_FILE['play-listing-screenshots.png'],
   },
   'telegram-bot.png': {
-    alt: 'Telegram bot page for @LuminaraSuiteBot with buttons to open the Mini App.',
+    alt: 'Telegram bot @LuminaraSuiteBot with Open app and Open in web buttons.',
     caption: 'Telegram bot @LuminaraSuiteBot. It opens the Mini App. Paid passes in Telegram use Stars.',
     illustrative: false,
+    ...WHITE_PAPER_IMAGE_BY_FILE['telegram-bot.png'],
   },
   'telegram-miniapp.png': {
     alt: 'Telegram Mini App Instant Audit screen with a Not measured checklist.',
     caption: 'Telegram Mini App, Instant Audit. Checklist rows stay Not measured until a live check records them.',
     illustrative: false,
+    ...WHITE_PAPER_IMAGE_BY_FILE['telegram-miniapp.png'],
   },
   'telegram-miniapp-2.png': {
     alt: 'Telegram Mini App Ask screen.',
     caption: 'Telegram Mini App, Ask. Live answers from specific AI products stay Not measured unless the plan or a connected search login allows them.',
     illustrative: false,
+    ...WHITE_PAPER_IMAGE_BY_FILE['telegram-miniapp-2.png'],
   },
 } as const;
 

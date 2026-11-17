@@ -2680,7 +2680,7 @@ const handler = {
     const contentType = assetResponse.headers.get('content-type') || '';
     const isStaticFile =
       url.pathname.startsWith('/assets/') ||
-      /\.(ico|png|jpe?g|gif|svg|webp|avif|webmanifest|json|xml|txt|map|css|js|woff2?|ttf|otf|eot|wasm)$/i.test(
+      /\.(ico|png|jpe?g|gif|svg|webp|avif|pdf|webmanifest|json|xml|txt|map|css|js|woff2?|ttf|otf|eot|wasm)$/i.test(
         url.pathname,
       );
     if (isStaticFile && assetResponse.ok && contentType.includes('text/html')) {

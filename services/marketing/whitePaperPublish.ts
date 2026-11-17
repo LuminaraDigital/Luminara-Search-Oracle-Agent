@@ -1,11 +1,12 @@
 import {
   isCited,
+  WHITE_PAPER_H1,
   WHITE_PAPER_PRODUCT_LINKS,
   WHITE_PAPER_SHOTS,
   type Cited,
   type Rich,
 } from './whitePaper';
-import { WHITE_PAPER_SECTIONS } from './whitePaperSections';
+import { WHITE_PAPER_AGENCY_BRIEF, WHITE_PAPER_SECTIONS } from './whitePaperSections';
 import { compareSourceIds, whitePaperSource, WHITE_PAPER_SOURCES } from './whitePaperSources';
 
 function visitPart(
@@ -19,6 +20,11 @@ function visitPart(
 
 /** Walks reader-facing copy. Source notes are excluded: each note sits on its own link. */
 export function visitCopy(visit: (text: string, cited: Cited | null, where: string) => void): void {
+  visit(WHITE_PAPER_AGENCY_BRIEF.title, null, 'brief.title');
+  visit(WHITE_PAPER_AGENCY_BRIEF.kicker, null, 'brief.kicker');
+  WHITE_PAPER_AGENCY_BRIEF.items.forEach((item, itemIndex) => {
+    item.forEach((part, partIndex) => visitPart(part, visit, `brief.${itemIndex}.${partIndex}`));
+  });
   for (const section of WHITE_PAPER_SECTIONS) {
     visit(section.title, null, `${section.id}.title`);
     visit(section.nav, null, `${section.id}.nav`);
@@ -83,7 +89,14 @@ function richHtml(parts: readonly Rich[]): string {
 
 /** Noscript body. Same sentences as the page, with source links. */
 export function whitePaperCrawlerHtml(): string {
-  const chunks: string[] = ['<article>', '<h1>White paper</h1>'];
+  const chunks: string[] = [
+    '<article>',
+    `<h1>${esc(WHITE_PAPER_H1)}</h1>`,
+    '<p><a href="/">Free check</a> · <a href="/pricing">Sign up</a></p>',
+    `<section><h2>${esc(WHITE_PAPER_AGENCY_BRIEF.title)}</h2><ul>${WHITE_PAPER_AGENCY_BRIEF.items
+      .map((item) => `<li>${richHtml(item)}</li>`)
+      .join('')}</ul></section>`,
+  ];
   for (const section of WHITE_PAPER_SECTIONS) {
     chunks.push(`<section id="${esc(section.id)}">`);
     chunks.push(`<h2>${esc(section.title)}</h2>`);
@@ -103,7 +116,7 @@ export function whitePaperCrawlerHtml(): string {
         for (const file of block.files) {
           const shot = WHITE_PAPER_SHOTS[file];
           chunks.push(
-            `<figure><img src="/marketing/white-paper/${esc(file)}" alt="${esc(shot.alt)}" /><figcaption>${esc(shot.caption)}</figcaption></figure>`,
+            `<figure><img src="${esc(shot.src)}" alt="${esc(shot.alt)}" width="${shot.width}" height="${shot.height}" /><figcaption>${esc(shot.caption)}</figcaption></figure>`,
           );
         }
       }

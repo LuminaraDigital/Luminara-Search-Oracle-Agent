@@ -1,9 +1,36 @@
-import { estimate, fact, speculation, type Cited, type WhitePaperSection } from './whitePaper';
+import {
+  estimate,
+  fact,
+  speculation,
+  WHITE_PAPER_SECTION_IDS,
+  type Cited,
+  type Rich,
+  type WhitePaperSection,
+} from './whitePaper';
 import type { SourceId } from './whitePaperSources';
 
 const label = (sources: readonly [SourceId, ...SourceId[]], note?: string): Cited => fact('', sources, note);
 
-export const WHITE_PAPER_SECTIONS: readonly WhitePaperSection[] = [
+/** Near the top. Same claims as the paper, no new figures. */
+export const WHITE_PAPER_AGENCY_BRIEF: { kicker: string; title: string; items: readonly (readonly Rich[])[] } = {
+  kicker: 'Short read',
+  title: 'What this means for your agency',
+  items: [
+    ['For an independent real estate agency, the question is whether an answer names the agency, and whether that can be proved.'],
+    [
+      fact(
+        'Luminara Suite checks a site and live web search, labels every result Measured, Estimated, or Not measured, refuses a blended 0-100 score, and ranks one fix to ship next.',
+        ['S20', 'S21', 'S22'],
+      ),
+    ],
+    ['The free check reads a homepage title and description, robots.txt, and llms.txt. No card. Answer engines stay Not measured until a signed-in audit or your own keys.'],
+    ['Traction: Unknown. Market size: Unknown. This paper does not recommend issuing a token. It is not legal, financial, or investment advice.'],
+    ['Paid access is a one-off pass that does not auto-renew. The prices, and their sources, are in Monetization.'],
+  ],
+};
+
+/** Page order is WHITE_PAPER_SECTION_IDS. This list is sorted on export. */
+const WHITE_PAPER_SECTION_LIST: readonly WhitePaperSection[] = [
   {
     id: 'executive-summary',
     nav: 'Summary',
@@ -105,9 +132,10 @@ export const WHITE_PAPER_SECTIONS: readonly WhitePaperSection[] = [
             ),
           ],
           [
-            estimate(
-              'Gartner forecast in February 2024 that traditional search engine volume would drop 25% by 2026 because of AI chatbots and virtual agents. Treat that as a forecast, not a measurement.',
+            fact(
+              'In February 2024 Gartner forecast that traditional search engine volume would drop 25% by 2026 because of AI chatbots and virtual agents. That horizon has nearly closed. This paper cites no measured outcome for the forecast.',
               ['S6'],
+              'past forecast, no measured outcome cited',
             ),
           ],
         ],
@@ -351,7 +379,7 @@ export const WHITE_PAPER_SECTIONS: readonly WhitePaperSection[] = [
           ],
         ],
       },
-      { kind: 'shots', files: ['web-product.png', 'telegram-miniapp.png'] },
+      { kind: 'shots', files: ['web-product.png'] },
     ],
   },
   {
@@ -532,7 +560,6 @@ export const WHITE_PAPER_SECTIONS: readonly WhitePaperSection[] = [
       {
         kind: 'shots',
         files: [
-          'web-landing.png',
           'telegram-bot.png',
           'telegram-miniapp.png',
           'telegram-miniapp-2.png',
@@ -547,7 +574,6 @@ export const WHITE_PAPER_SECTIONS: readonly WhitePaperSection[] = [
     nav: 'Pricing',
     title: 'Monetization',
     blocks: [
-      { kind: 'shots', files: ['telegram-bot.png'] },
       {
         kind: 'p',
         parts: [
@@ -577,21 +603,6 @@ export const WHITE_PAPER_SECTIONS: readonly WhitePaperSection[] = [
           ],
           [
             fact(
-              'Telegram said developers would withdraw Stars as Toncoin via Fragment.',
-              ['S19b'],
-            ),
-          ],
-          [
-            fact(
-              'Fragment\'s current terms describe rewards issued as Grams ($GRAM) to a connected TON wallet, irreversible on the TON ledger.',
-              ['S36'],
-            ),
-          ],
-          [
-            'Payout asset, holding periods, and rates: verify at the time of writing. This paper does not state a conversion rate.',
-          ],
-          [
-            fact(
               'The Android app does not sell passes. Since 30 September 2026, Australian users can be offered alternative billing or external web links under Google\'s billing choice program. Example service fees include 10% on the first US$1M of annual earnings, and 20% standard for one-off purchases by new installs via external links.',
               ['S24', 'S37'],
             ),
@@ -602,6 +613,12 @@ export const WHITE_PAPER_SECTIONS: readonly WhitePaperSection[] = [
               ['S37'],
             ),
           ],
+        ],
+      },
+      {
+        kind: 'p',
+        parts: [
+          'What a developer is paid after a Stars purchase is in the appendix. This paper does not state a conversion rate.',
         ],
       },
       {
@@ -626,7 +643,6 @@ export const WHITE_PAPER_SECTIONS: readonly WhitePaperSection[] = [
           'This paper does not recommend issuing a token. The rows below are options and risks. They are not a plan.',
         ],
       },
-      { kind: 'shots', files: ['telegram-miniapp-2.png'] },
       {
         kind: 'ul',
         items: [
@@ -867,6 +883,52 @@ export const WHITE_PAPER_SECTIONS: readonly WhitePaperSection[] = [
     ],
   },
   {
+    id: 'appendix',
+    nav: 'Appendix',
+    title: 'Appendix',
+    blocks: [
+      {
+        kind: 'p',
+        parts: [
+          'The next sections are the Stars payout path, on-chain options and legal risk, and architecture. They stay for readers who need them. The agency brief is the sections above.',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'stars-payout',
+    nav: 'Payout',
+    title: 'Stars payout path',
+    blocks: [
+      {
+        kind: 'p',
+        parts: [
+          'How a developer is paid after a Stars purchase is separate from the pass price. Pass prices stay in Monetization.',
+        ],
+      },
+      {
+        kind: 'ul',
+        items: [
+          [
+            fact(
+              'Telegram said developers would withdraw Stars as Toncoin via Fragment.',
+              ['S19b'],
+            ),
+          ],
+          [
+            fact(
+              'Fragment\'s current terms describe rewards issued as Grams ($GRAM) to a connected TON wallet, irreversible on the TON ledger.',
+              ['S36'],
+            ),
+          ],
+          [
+            'Payout asset, holding periods, and rates: verify at the time of writing. This paper does not state a conversion rate.',
+          ],
+        ],
+      },
+    ],
+  },
+  {
     id: 'sources',
     nav: 'Sources',
     title: 'Sources',
@@ -880,3 +942,20 @@ export const WHITE_PAPER_SECTIONS: readonly WhitePaperSection[] = [
     ],
   },
 ];
+
+function outlineIndex(id: WhitePaperSection['id']): number {
+  const index = WHITE_PAPER_SECTION_IDS.indexOf(id);
+  if (index < 0) throw new Error(`White paper section ${id} is not in the outline`);
+  return index;
+}
+
+for (const id of WHITE_PAPER_SECTION_IDS) {
+  if (!WHITE_PAPER_SECTION_LIST.some((section) => section.id === id)) {
+    throw new Error(`Missing white paper section ${id}`);
+  }
+}
+
+/** Executive summary, measurement, and the competitive map stay in front. Appendix material is last, before sources. */
+export const WHITE_PAPER_SECTIONS: readonly WhitePaperSection[] = [...WHITE_PAPER_SECTION_LIST].sort(
+  (a, b) => outlineIndex(a.id) - outlineIndex(b.id),
+);

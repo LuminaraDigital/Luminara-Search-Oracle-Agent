@@ -89,8 +89,9 @@ function applyShell(page: MarketingShellMeta) {
   ensureMeta('property', 'og:title', page.title);
   ensureMeta('property', 'og:description', page.description);
   ensureMeta('property', 'og:url', url);
-  ensureMeta('property', 'og:type', 'website');
-  ensureMeta('property', 'og:image', DEFAULT_OG_IMAGE);
+  ensureMeta('property', 'og:type', page.ogType ?? 'website');
+  ensureMeta('property', 'og:image', page.ogImage ?? DEFAULT_OG_IMAGE);
+  ensureMeta('name', 'twitter:image', page.ogImage ?? DEFAULT_OG_IMAGE);
   ensureCanonical(url);
   ensureRobots(page.robots ?? null);
   ensureJsonLd(page.jsonLd);
