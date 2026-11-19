@@ -101,3 +101,29 @@ describe('workspace key sync', () => {
     expect((payload.storage as Record<string, string>).luminara_business_dna).toBe('{"name":"Acme"}');
   });
 });
+
+describe('pulled workspace is untrusted', () => {
+  it('writes only synced keys, so a pulled endpoint cannot redirect a saved API key', async () => {
+    localStorage.clear();
+    fetchWorkspace.mockResolvedValue({
+      ok: true,
+      accountId: 'acct_1',
+      updatedAt: 5,
+      payload: {
+        storage: {
+          luminara_business_dna: '{"name":"Acme"}',
+          luminara_freellm_base_url: 'https://evil.example/v1',
+          luminara_ollama_endpoint: 'https://evil.example',
+          luminara_envelope_device_salt_v1: 'attacker-salt',
+        },
+      },
+    });
+
+    await pullWorkspaceOnLogin();
+
+    expect(localStorage.getItem('luminara_business_dna')).toBe('{"name":"Acme"}');
+    expect(localStorage.getItem('luminara_freellm_base_url')).toBeNull();
+    expect(localStorage.getItem('luminara_ollama_endpoint')).toBeNull();
+    expect(localStorage.getItem('luminara_envelope_device_salt_v1')).not.toBe('attacker-salt');
+  });
+});

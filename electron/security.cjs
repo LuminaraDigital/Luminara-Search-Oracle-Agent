@@ -60,6 +60,8 @@ function filePathKey(rawUrl) {
  * @param {{ webappUrl: string, isDev: boolean, firebaseAuthDomain?: string, shellPageUrls: string[] }} options
  * shellPageUrls: the file: URLs of the shell's own splash and offline pages.
  */
+const HARMLESS_PERMISSIONS = new Set(['fullscreen', 'pointerLock', 'clipboard-sanitized-write']);
+
 function createShellPolicy({ webappUrl, isDev, firebaseAuthDomain, shellPageUrls }) {
   const appOrigins = new Set([
     originOf(webappUrl),
@@ -87,8 +89,16 @@ function createShellPolicy({ webappUrl, isDev, firebaseAuthDomain, shellPageUrls
    * Electron grants every permission by default. Only launching another app is narrowed: a link
    * in a frame or popup to search-ms:, ms-msdt: or file: asks this before Windows opens it.
    */
+  /**
+   * openExternal follows the link policy. Every other permission (microphone, camera, location,
+   * clipboard read, notifications) goes only to the app's own pages, never to an embedded frame.
+   * A request that names no page gets the harmless ones only.
+   */
   function isPermissionGranted(permission, details) {
-    return permission !== 'openExternal' || windowOpenAction(details?.externalURL) === 'external';
+    if (permission === 'openExternal') return windowOpenAction(details?.externalURL) === 'external';
+    const requester = details?.requestingUrl;
+    if (!requester) return HARMLESS_PERMISSIONS.has(permission);
+    return isAllowedNavigation(requester);
   }
 
   function isTrustedSender(frameUrl) {

@@ -36,6 +36,8 @@ function constantTimeEqual(a: string, b: string): boolean {
 
 /** Default Mini App initData freshness window (1 hour). Reopen the Mini App to refresh. */
 export const TELEGRAM_INIT_DATA_TTL_SECONDS = 3600;
+/** Account linking is permanent, so it accepts only a recent Mini App launch. */
+export const LINK_INIT_DATA_TTL_SECONDS = 900;
 
 /** Signed by Telegram but older than the window: the app has simply been open a while. */
 export const INIT_DATA_EXPIRED_REASON = 'initData expired; reopen the app';

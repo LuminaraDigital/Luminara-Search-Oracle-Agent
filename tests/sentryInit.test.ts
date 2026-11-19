@@ -88,3 +88,15 @@ describe('sentry init', () => {
     expect(viaHook && 'request' in viaHook ? viaHook.request?.headers?.Authorization : '').toBe('[redacted]');
   });
 });
+describe('sentry capability links', () => {
+  it('redacts share and verify tokens from the URL, transaction and breadcrumbs', () => {
+    const token = 'a'.repeat(64);
+    const scrubbed = scrubSentryEvent({
+      transaction: `/share/${token}`,
+      request: { url: `https://www.luminarasuite.com/share/teaser/${token}?x=1` },
+      breadcrumbs: [{ data: { to: `/verify/${token}` } }],
+    });
+    expect(JSON.stringify(scrubbed)).not.toContain(token);
+    expect(scrubbed.request?.url).toBe('https://www.luminarasuite.com/share/teaser/[redacted]?x=1');
+  });
+});

@@ -23,7 +23,6 @@ const MEMORY_KEYS = [
   'luminara_last_audit_report',
   'luminara_context_graph_decisions',
   'luminara_native_llm_order',
-  'luminara_freellm_base_url',
   'luminara_freellm_prefer',
   'luminara_local_serp_enabled',
   'luminara_crawler_provider',
@@ -66,6 +65,12 @@ const KEY_BAG_KEYS = [
 ] as const;
 
 const CHAT_SESSION_KEY = 'luminara_chat_session';
+/**
+ * The only keys a pulled workspace may write. Endpoint settings (for example the FreeLLM base URL)
+ * are left out on purpose: a pulled value would decide where this device sends its saved API key.
+ */
+const SYNCED_STORAGE_KEYS: ReadonlySet<string> = new Set(MEMORY_KEYS);
+const KEY_BAG_KEY_SET: ReadonlySet<string> = new Set(KEY_BAG_KEYS);
 const LOCAL_META_KEY = 'luminara_workspace_meta';
 
 /**
@@ -139,6 +144,7 @@ async function applyPayload(payload: WorkspacePayload, accountId?: string): Prom
       }
       continue;
     }
+    if (!SYNCED_STORAGE_KEYS.has(key) || typeof value !== 'string') continue;
     try {
       localStorage.setItem(key, value);
     } catch {
@@ -152,6 +158,7 @@ async function applyPayload(payload: WorkspacePayload, accountId?: string): Prom
       const passphrase = getOrCreateAccountEncryptionPassphrase(accountId);
       const decryptedKeys = await decryptKeyBag(payload.encryptedKeys, passphrase);
       for (const [key, value] of Object.entries(decryptedKeys)) {
+        if (!KEY_BAG_KEY_SET.has(key) || typeof value !== 'string') continue;
         try {
           localStorage.setItem(key, value);
         } catch {

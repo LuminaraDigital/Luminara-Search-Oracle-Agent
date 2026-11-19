@@ -36,6 +36,12 @@ const SENSITIVE_KEYS = new Set([
   'cookie',
   'jwt',
   'bearer',
+  'provider_key',
+  'pagespeed_key',
+  'telegram_init_data',
+  'init_data',
+  'share_password',
+  'admin_secret',
 ]);
 
 const USERNAME_KEYS = new Set(['username', 'user', 'home', 'userhome']);

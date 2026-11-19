@@ -45,6 +45,8 @@ export interface ProviderSpec {
 /** Pure helper so the allowlist can be unit-tested. */
 export function isPathAllowed(spec: { allow: string[] } | undefined, subPath: string): boolean {
   if (!spec) return false;
+  // An encoded slash or backslash stays one segment here but an upstream may decode it into "../".
+  if (/%2f|%5c|\\/i.test(subPath) || subPath.split('/').includes('..')) return false;
   return spec.allow.some(p => subPath === p || subPath.startsWith(`${p}/`) || subPath.startsWith(`${p}:`));
 }
 

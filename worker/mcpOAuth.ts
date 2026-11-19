@@ -7,6 +7,7 @@ import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
 import { billingId, json } from './workerUtils';
 import { identify, sha256Hex } from './workerUtils';
+import { accountErasedAt } from './opaqueSession';
 import { escapeHtml } from './marketingShell';
 import { randomId } from '../services/projects/projectUtils';
 import { getActiveSubscription } from './quotaMiddleware';
@@ -543,6 +544,18 @@ async function authorize(request: Request, env: Env): Promise<Response> {
     );
   }
 
+  // This flow has no consent screen, so another website must not be able to start it for a signed-in
+  // visitor. An IDE opening the browser sends Sec-Fetch-Site: none; a link on our own site, same-origin.
+  if (request.headers.get('sec-fetch-site') === 'cross-site') {
+    return json(
+      {
+        error: 'access_denied',
+        error_description: 'Start the connection from your editor or from Luminara, not from another website.',
+      },
+      403,
+    );
+  }
+
   const who = await identify(request, env);
   if (who.error || !who.user) {
     return json(
@@ -961,7 +974,12 @@ async function acceptAccessToken(env: Env, token: string, raw: string): Promise<
   const parsed = parseTokenRecord(raw);
   if (!parsed) return null;
   const familyId = familyIdFromAccessRecord(raw);
-  if (!familyId) return parsed;
+  // A token with a refresh family dies with the family row; one without needs the erased marker.
+  if (!familyId) {
+    const record = JSON.parse(raw) as { accountId: string; createdAt?: number };
+    const erasedAt = await accountErasedAt(env, record.accountId);
+    return erasedAt !== null && !(Number(record.createdAt) > erasedAt) ? null : parsed;
+  }
   const allowed = await refreshFamilyAllowsAccess(env, familyId, await sha256Hex(token));
   return allowed ? parsed : null;
 }

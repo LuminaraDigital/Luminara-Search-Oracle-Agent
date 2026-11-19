@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 type ShellPolicy = {
   isAllowedNavigation: (url: string) => boolean;
   windowOpenAction: (url: string) => 'child' | 'external' | 'deny';
-  isPermissionGranted: (permission: string, details: { externalURL?: string }) => boolean;
+  isPermissionGranted: (permission: string, details: { externalURL?: string; requestingUrl?: string }) => boolean;
   isTrustedSender: (frameUrl: string | undefined) => boolean;
 };
 type IpcListener = (event: { senderFrame: { url: string } | null }, ...args: unknown[]) => unknown;
@@ -188,8 +188,11 @@ describe('desktop external app launches from frames and popups', () => {
     expect(packaged.isPermissionGranted('openExternal', { externalURL })).toBe(granted);
   });
 
-  it('leaves every other permission at the Electron default', () => {
-    expect(packaged.isPermissionGranted('notifications', {})).toBe(true);
+  it('gives other permissions to the app pages only, never to an embedded frame', () => {
+    expect(packaged.isPermissionGranted('media', { requestingUrl: 'https://www.luminarasuite.com/app' })).toBe(true);
+    expect(packaged.isPermissionGranted('media', { requestingUrl: 'https://evil.example/frame' })).toBe(false);
+    expect(packaged.isPermissionGranted('geolocation', {})).toBe(false);
+    expect(packaged.isPermissionGranted('fullscreen', {})).toBe(true);
   });
 });
 
