@@ -384,7 +384,19 @@ export async function revokeRefreshByToken(env: Env, token: string, store: Refre
 }
 
 /** True only when this access hash is listed on a family that is still active. A write happens only when expired grace ciphertext is present. */
-export async function refreshFamilyAllowsAccess(env: Env, familyId: string, accessHash: string): Promise<boolean> {
+/**
+ * Whether a stored access token may still be used. Its refresh family decides; a token without one
+ * has no row to delete, so it is refused once its account is on the erase ledger, as a refresh is.
+ */
+export async function accessRecordAllowed(env: Env, raw: string, accessHash: string): Promise<boolean> {
+  const familyId = familyIdFromAccessRecord(raw);
+  if (familyId) return refreshFamilyAllowsAccess(env, familyId, accessHash);
+  if (!env.DB) return true;
+  const { accountId, userId } = JSON.parse(raw) as { accountId: string; userId?: string };
+  return !(await isErasedSubject(env.DB, accountId, userId || accountId));
+}
+
+async function refreshFamilyAllowsAccess(env: Env, familyId: string, accessHash: string): Promise<boolean> {
   if (!env.DB) return false;
   try {
     const row = await env.DB.prepare(

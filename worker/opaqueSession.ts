@@ -46,29 +46,6 @@ export async function revokeSessionsForDeletedUser(env: Env, uid: string): Promi
   await env.LUMINARA_KV.put(deletedUserKvKey(uid), String(Date.now()), { expirationTtl: SESSION_TTL_SECONDS });
 }
 
-const ERASED_ACCOUNT_TTL_SECONDS = 60 * 60 * 24 * 30;
-
-function erasedAccountKvKey(accountId: string): string {
-  return `account_erased:${accountId}`;
-}
-
-/**
- * Agent access tokens are stored by token hash with no per-account index, so an erased account's
- * tokens cannot be listed and removed. This marker outlives the longest token (30 days) and makes
- * them fail instead. It lives here, not in mcpOAuth, so the erase path stays a light import.
- */
-export async function markAccountErased(env: Env, accountId: string): Promise<void> {
-  if (!env.LUMINARA_KV || !accountId) return;
-  await env.LUMINARA_KV.put(erasedAccountKvKey(accountId), String(Date.now()), { expirationTtl: ERASED_ACCOUNT_TTL_SECONDS });
-}
-
-/** When the account was erased, or null. A Telegram account id can come back, so callers compare times. */
-export async function accountErasedAt(env: Env, accountId: string): Promise<number | null> {
-  if (!env.LUMINARA_KV || !accountId) return null;
-  const at = Number(await env.LUMINARA_KV.get(erasedAccountKvKey(accountId)));
-  return Number.isFinite(at) && at > 0 ? at : null;
-}
-
 /** True when this login was deleted and its sessions were cut off. */
 export async function isSessionRevokedUser(env: Env, userId: string): Promise<boolean> {
   if (!env.LUMINARA_KV || !userId) return false;

@@ -7,7 +7,6 @@ import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
 import { billingId, json } from './workerUtils';
 import { identify, sha256Hex } from './workerUtils';
-import { accountErasedAt } from './opaqueSession';
 import { escapeHtml } from './marketingShell';
 import { randomId } from '../services/projects/projectUtils';
 import { getActiveSubscription } from './quotaMiddleware';
@@ -21,7 +20,7 @@ import {
   parseRegisteredGrantTypes,
   REFRESH_ACCESS_TTL_SECONDS,
   REFRESH_TTL_SECONDS,
-  refreshFamilyAllowsAccess,
+  accessRecordAllowed,
   refreshGrantResponse,
   revokeRefreshByToken,
   revokeRefreshFamily,
@@ -39,6 +38,7 @@ import {
 } from './mcpOAuthResource';
 import { authorizationServerMetadata } from './mcpOAuthDiscovery';
 
+const CROSS_SITE_AUTHORIZE_ERROR = 'Start the connection from your editor or from Luminara, not from another website.';
 const CODES_KV_PREFIX = 'mcp_oauth_code:';
 const TOKENS_KV_PREFIX = 'mcp_oauth_token:';
 const CLIENTS_KV_PREFIX = 'mcp_oauth_client:';
@@ -547,13 +547,7 @@ async function authorize(request: Request, env: Env): Promise<Response> {
   // This flow has no consent screen, so another website must not be able to start it for a signed-in
   // visitor. An IDE opening the browser sends Sec-Fetch-Site: none; a link on our own site, same-origin.
   if (request.headers.get('sec-fetch-site') === 'cross-site') {
-    return json(
-      {
-        error: 'access_denied',
-        error_description: 'Start the connection from your editor or from Luminara, not from another website.',
-      },
-      403,
-    );
+    return json({ error: 'access_denied', error_description: CROSS_SITE_AUTHORIZE_ERROR }, 403);
   }
 
   const who = await identify(request, env);
@@ -973,15 +967,7 @@ export async function identifyMcpOAuthToken(
 async function acceptAccessToken(env: Env, token: string, raw: string): Promise<McpOAuthIdentity | null> {
   const parsed = parseTokenRecord(raw);
   if (!parsed) return null;
-  const familyId = familyIdFromAccessRecord(raw);
-  // A token with a refresh family dies with the family row; one without needs the erased marker.
-  if (!familyId) {
-    const record = JSON.parse(raw) as { accountId: string; createdAt?: number };
-    const erasedAt = await accountErasedAt(env, record.accountId);
-    return erasedAt !== null && !(Number(record.createdAt) > erasedAt) ? null : parsed;
-  }
-  const allowed = await refreshFamilyAllowsAccess(env, familyId, await sha256Hex(token));
-  return allowed ? parsed : null;
+  return (await accessRecordAllowed(env, raw, await sha256Hex(token))) ? parsed : null;
 }
 
 function parseTokenRecord(raw: string): McpOAuthIdentity | null {
