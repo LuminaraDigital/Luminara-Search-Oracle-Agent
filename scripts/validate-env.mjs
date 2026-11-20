@@ -249,6 +249,32 @@ if (!secretPlaceholders.ok) {
   console.error(`[EnvValidation] ${secretPlaceholders.message}`);
   process.exit(1);
 }
+const strictFlags = checkStrictBooleanFlags(wranglerConfig);
+if (!strictFlags.ok) {
+  console.error(`[EnvValidation] ${strictFlags.message}`);
+  process.exit(1);
+}
+
+/**
+ * Allora fix retest flags (plan 2.1): an absent var is fine (off); a present var must be "true" or
+ * "false", so a typo such as "ture" fails here instead of silently leaving the feature off.
+ */
+function checkStrictBooleanFlags(config) {
+  const blocks = [
+    ['top-level', config?.vars || {}],
+    ['staging', config?.env?.staging?.vars || {}],
+    ['production', config?.env?.production?.vars || {}],
+  ];
+  for (const [name, vars] of blocks) {
+    for (const flag of ['DECISION_CHECKS_ENABLED', 'DECISION_RETEST_ENABLED']) {
+      if (!Object.prototype.hasOwnProperty.call(vars, flag)) continue;
+      if (vars[flag] !== 'true' && vars[flag] !== 'false') {
+        return { ok: false, message: `${name} vars: ${flag} must be "true" or "false", got ${JSON.stringify(vars[flag])}.` };
+      }
+    }
+  }
+  return { ok: true };
+}
 
 console.log(`[EnvValidation] Environment checks passed for ${targetMode}. Staging-production isolation verified.`);
 process.exit(0);

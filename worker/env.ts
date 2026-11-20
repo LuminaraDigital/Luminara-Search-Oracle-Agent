@@ -176,6 +176,14 @@ export interface Env extends DataPlaneEnv {
    * out. Rows already written stay. Off until decision 9 (Track SW, SW0a-10).
    */
   LUMENS_ENABLED?: string;
+  /**
+   * Allora fix retest, Phase 1: "true" creates check rows and runs the baseline when a weekly
+   * decision is committed. Anything else, or KV `decision_checks:off`, keeps it off
+   * (worker/decisionCheckFlags.ts).
+   */
+  DECISION_CHECKS_ENABLED?: string;
+  /** Allora fix retest, Phase 2: "true" lets the daily job and manual retest fetch. Same off-switch. */
+  DECISION_RETEST_ENABLED?: string;
   TON_API_KEY?: string;
   /**
    * Hard network gate for chain payments and proof anchors: `testnet` | `mainnet`.
