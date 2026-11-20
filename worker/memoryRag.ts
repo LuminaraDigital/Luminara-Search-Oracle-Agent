@@ -293,12 +293,19 @@ export async function searchMemoryVectors(
 export async function extractFactsFromChat(
   env: Env,
   user: HostedIdentity,
-  opts: { sessionId?: string; turnId?: string; message: string; autoStore?: boolean },
+  opts: { sessionId?: string; turnId?: string; message: string; autoStore?: boolean; projectId?: string | null },
 ): Promise<Response> {
   if (!env.DB) return json({ ok: false, error: 'Database unavailable' }, 503);
   const accountId = billingId(user);
   const message = opts.message.trim().slice(0, 4000);
   if (!message) return json({ ok: false, error: 'message required' }, 400);
+
+  const { memoryLlmExtractEnabled, extractTypedFacts } = await import('./memoryExtract');
+  if (memoryLlmExtractEnabled(env)) {
+    const typed = await extractTypedFacts(env, accountId, { ...opts, message });
+    if (typed) return json(typed);
+    // No model answered: the regex below still runs.
+  }
 
   // Heuristic extractor (LLM optional later): durable preference / brand lines.
   const candidates: Array<{ text: string; confidence: number }> = [];
@@ -362,7 +369,17 @@ export async function ragContextForOracle(
   env: Env,
   accountId: string,
   query: string,
+  opts: { projectId?: string | null } = {},
 ): Promise<{ block: string; facts: string[] }> {
+  const { memoryRecallV2Enabled, recallMemory, formatRecallLines } = await import('./memoryRecall');
+  if (memoryRecallV2Enabled(env)) {
+    const ranked = await recallMemory(env, accountId, query, { projectId: opts.projectId ?? null });
+    if (!ranked.length) return { block: '', facts: [] };
+    return {
+      block: `## Account memory (retrieved)\n${wrapUntrustedContent('ACCOUNT_MEMORY', formatRecallLines(ranked))}`.trim(),
+      facts: ranked.map((h) => h.text),
+    };
+  }
   const hits = await searchMemoryVectors(env, accountId, query, 5);
   if (!hits.length) return { block: '', facts: [] };
   const joined = hits.map((h, i) => `${i + 1}. (${h.score.toFixed(2)}) ${h.text}`).join('\n');

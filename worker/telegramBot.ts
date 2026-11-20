@@ -4,6 +4,8 @@
  */
 import type { Env } from './index';
 import { resolveAccountId, writeSubscriptionRecord, listAllUsers, getWorkspace } from './userStore';
+import { ragContextForOracle } from './memoryRag';
+import { memoryRecallV2Enabled } from './memoryRecall';
 import { QUOTA_CAPACITY_ERROR, refundDailyQuota, spendDailyQuota } from './quotaMiddleware';
 import { readRetentionSnapshot } from './referrals';
 import { nichePulseReply } from './ideaScout';
@@ -907,9 +909,25 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
       ? `\n\nDetected Target Domain in query: "${targetDomain}". This chat has not fetched or measured that site. Do not describe its current state and do not give it a diagnostic, a rating or any number. Give general guidance only, and tell the user that the Full Visual Audit button under this reply opens the audit screen in the app.`
       : '';
 
+    // 6b. Account memory, the same ranked recall the Oracle chat uses (flag MEMORY_RECALL_V2).
+    // Off by default; when off, the prompt is exactly what it was before.
+    let memoryPromptAddition = '';
+    let memoryFacts: string[] = [];
+    if (env.DB && memoryRecallV2Enabled(env)) {
+      try {
+        const memory = await ragContextForOracle(env, accountId, text);
+        if (memory.block) {
+          memoryPromptAddition = `\n\n${memory.block}`;
+          memoryFacts = memory.facts;
+        }
+      } catch {
+        /* memory is best-effort */
+      }
+    }
+
     const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
       // Plan facts in the prompt are built from PLANS on every turn, never typed by hand.
-      { role: 'system', content: TELEGRAM_ORACLE_SYSTEM_PROMPT + planPricePromptBlock(plansOfferedToBuyers()) + dnaPromptAddition + domainPromptAddition },
+      { role: 'system', content: TELEGRAM_ORACLE_SYSTEM_PROMPT + planPricePromptBlock(plansOfferedToBuyers()) + dnaPromptAddition + domainPromptAddition + memoryPromptAddition },
       ...history.slice(-6),
       { role: 'user', content: text },
     ];
@@ -923,7 +941,8 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
     const honest = modelReply
       ? filterChatReply(modelReply, {
           plans: plansOfferedToBuyers(),
-          userTexts: [...history.filter((turn) => turn?.role === 'user').map((turn) => String(turn.content ?? '')), text],
+          // Remembered facts came from this user's own messages, as in the Oracle chat.
+          userTexts: [...memoryFacts, ...history.filter((turn) => turn?.role === 'user').map((turn) => String(turn.content ?? '')), text],
           allowedHosts: [String(env.WEBAPP_URL || '').replace(/^https?:\/\//i, '').split(/[/:?#]/)[0]],
         })
       : null;

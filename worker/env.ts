@@ -264,6 +264,10 @@ export interface Env extends DataPlaneEnv {
    * Default off: require invokeTool + confirmTool for paid tool side effects.
    */
   ORACLE_AUTO_TOOLS?: string;
+  /** When "true", account memory recall uses the full-text index with RRF and recall budgets (worker/memoryRecall.ts). */
+  MEMORY_RECALL_V2?: string;
+  /** When "true", chat facts are extracted by a model into typed kinds (worker/memoryExtract.ts); the regex stays as fallback. */
+  MEMORY_LLM_EXTRACT?: string;
   AUDIT_QUEUE_ENABLED?: string;
   /** Google PageSpeed Insights API key (optional hosted). */
   PAGESPEED_API_KEY?: string;
