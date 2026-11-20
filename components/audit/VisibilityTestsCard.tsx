@@ -171,7 +171,11 @@ export const VisibilityTestsCard: React.FC<{
 
       {summary.estimated && (
         <p className="text-xs text-gray-400 mt-2">
-          These checks use details we found, not details you confirmed. {isGuest ? 'Sign in, then open Business profile to confirm your facts.' : 'Open Business profile and confirm your facts. Then open this report from your past reports and press Check again for free.'}
+          These checks use details we found, not details you confirmed. {isGuest
+            ? 'Sign in, then open Business profile to confirm your facts.'
+            : regradable.length > 0
+              ? 'Open Business profile and confirm your facts. Then open this report from your past reports and press Check again for free.'
+              : 'Open Business profile and confirm your facts. Your next audit checks against them.'}
         </p>
       )}
 

@@ -22,7 +22,7 @@ One yes/no question at a time about whether AI can find and describe a business.
 
 ## Storage
 
-Verdict rows are in D1 (migration 0059). This is D1 only: unlike audit history it has no Firestore mirror. Raw is in the optional `AUDIT_EVIDENCE` R2 bucket at `visibility-raw/<run id>.json`. With no bucket, verdicts still save, `canRegrade` is false, and regrade returns 409 `RAW_NOT_STORED`.
+Verdict rows are in D1 (migration 0059). This is D1 only: unlike audit history it has no Firestore mirror. Raw is in the optional `AUDIT_EVIDENCE` R2 bucket at `visibility-raw/<run id>.json`. With no bucket, verdicts still save, `canRegrade` is false, and regrade returns 409 `RAW_NOT_STORED`. **As of 2026-11-21 no bucket is bound**: `wrangler.jsonc` leaves `AUDIT_EVIDENCE` out until `luminara-audit-evidence` and `luminara-audit-evidence-staging` exist, so no raw is kept. To turn it on, create both buckets, add the binding to the top level, `env.staging` and `env.production`, and add the raw-storage sentence back to the privacy policy in the same change.
 
 ## Adding a test type
 

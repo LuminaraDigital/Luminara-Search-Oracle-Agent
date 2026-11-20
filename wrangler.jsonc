@@ -61,8 +61,7 @@
 
   // Windows installer mirror (bucket: luminara-desktop-releases).
   "r2_buckets": [
-    { "binding": "DESKTOP_RELEASES", "bucket_name": "luminara-desktop-releases" },
-    { "binding": "AUDIT_EVIDENCE", "bucket_name": "luminara-audit-evidence" }
+    { "binding": "DESKTOP_RELEASES", "bucket_name": "luminara-desktop-releases" }
   ],
 
   // Cloudflare Workers AI binding for chat completions fallback and embeddings.
@@ -222,8 +221,7 @@
         { "binding": "LUMINARA_KV", "id": "1898b8c88b1048b38be720bcf6c5a91c" }
       ],
       "r2_buckets": [
-        { "binding": "DESKTOP_RELEASES", "bucket_name": "luminara-desktop-releases-staging" },
-        { "binding": "AUDIT_EVIDENCE", "bucket_name": "luminara-audit-evidence-staging" }
+        { "binding": "DESKTOP_RELEASES", "bucket_name": "luminara-desktop-releases-staging" }
       ],
       "ratelimits": [
         {
@@ -344,8 +342,7 @@
         { "binding": "LUMINARA_KV", "id": "00d331adea604a70945fb1651b7968b3" }
       ],
       "r2_buckets": [
-        { "binding": "DESKTOP_RELEASES", "bucket_name": "luminara-desktop-releases" },
-        { "binding": "AUDIT_EVIDENCE", "bucket_name": "luminara-audit-evidence" }
+        { "binding": "DESKTOP_RELEASES", "bucket_name": "luminara-desktop-releases" }
       ],
       "ratelimits": [
         {

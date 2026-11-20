@@ -36,7 +36,7 @@ From Omni Parse Bench, a document-parsing benchmark (Apache 2.0). This is an ori
 - **Own-model checks use OpenRouter only.** One key reaches several models, it has no fallback, and a model answer can never be paid for by Luminara or credited to the wrong model.
 - **Presence is graded only on questions that do not name the business.** All three audit searches contain the name, so a model or search engine would pass by repeating it. One unbranded search was added, with a timeout so it cannot hold up an audit, kept out of the citation rate so that number does not move.
 - **Business DNA gained two things it lacked:** `keyFacts` and `factsConfirmedAt`. Name and mission cannot be graded yes/no. A phone number can.
-- **Raw in R2, verdicts in D1.** Verdicts are queried and replaced, raw is read back only to regrade.
+- **Raw in R2, verdicts in D1.** Verdicts are queried and replaced, raw is read back only to regrade. The first release ships without the bucket binding, because the buckets do not exist yet: verdicts save, nothing raw is kept, and regrading is off until the binding is added.
 - **Owners see counts, not a percentage.** "4 of 9 checks passed" needs no explanation.
 
 ## Alternatives rejected
