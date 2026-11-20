@@ -659,6 +659,12 @@ Section 8 (parked) waits on Phase 3a and its reopen conditions
 | 5 | Privacy page sentence and the 180-day retention. Draft: "When you commit a weekly action, Luminara stores the page addresses it checked and may fetch those pages again at or after your verify date. These records are deleted 180 days after the result." | CL1-1; turning the Phase 1 flag on in production | The flag stays off in production until the sentence is published |
 | 6 | Order of this plan against verifiable-flow and the open conversion-honesty items (section 9) | Scheduling | The order in section 9 |
 
+**Owner answers, 2026-11-21:**
+- Decision 2: approved as written (section 6 table).
+- Decision 3: approved as written: the strings in 3.5 and the CL2-7 messages, together with Zoro decision 8 ("Contradicted" as a fourth state, in the evidence drawer only).
+- Decision 5: the sentence and the 180-day retention approved as drafted. CL1-1 adds it to the privacy page; the Phase 1 flag may go on in production once that page is published.
+- Decisions 1, 4 and 6: not yet answered; their defaults stand.
+
 ---
 
 ## 13. Review record
