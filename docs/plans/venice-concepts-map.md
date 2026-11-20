@@ -1,6 +1,6 @@
 # Venice concepts: what to borrow, what to skip, build order (Track VN)
 
-**Status:** v0.3. Two review rounds (section 8): CEO gate GO WITH CONDITIONS, all conditions applied; citation corrections applied. Waiting for the owner. No code. Nothing in it is approved by the owner.
+**Status:** v0.4. Two review rounds (section 8), then a fit check against newer work on 2026-11-20 (section 9). VN-D1 and VN-D6 answered by the owner; VN0-1 is draft PR #412 and VN2-0 is draft PR #413. The plan itself is not approved.
 **Date:** 2026-11-15
 **Owner:** Luminara Digital (owner gate before every production step)
 **Source:** the owner asked whether Luminara can build its own, much better version of what `venice.ai/home` and `docs.venice.ai/overview/about-venice` describe. Concepts only. No Venice name, text, design or token mechanics.
@@ -27,7 +27,7 @@ Four Venice ideas are worth taking, each made honest:
 
 "100x" cannot be measured, so this plan does not claim a multiple. It claims a result a customer can check: the same question, several models, one grid, every answer saved.
 
-**You need to answer two decisions now: VN-D1 (privacy copy) and VN-D6 (commit the visibility tests work).** Section 7 has both, with a recommendation.
+**Both decisions needed now are answered** (VN-D1: change the copy, #412; VN-D6: commit the visibility tests work, #413). Section 9 records how Track VN fits the work merged since.
 
 ### Words used here
 
@@ -237,8 +237,8 @@ Three are needed before 28 December. The other three can wait.
 
 | ID | Decision | Recommended | Needed |
 |---|---|---|---|
-| VN-D1 | Signed-in chat sync: change the policy to match the code, or add a switch to match the policy | **Change the copy now**; add "Don't save this chat" in VN1-1 | Now (blocks VN0-1) |
-| VN-D6 | May the VUT worktree be committed and reviewed | **Yes**; it is the base for VN2 | Now (blocks VN2) |
+| VN-D1 | Signed-in chat sync: change the policy to match the code, or add a switch to match the policy | **Change the copy now**; add "Don't save this chat" in VN1-1 | Answered 2026-11-15: change the copy (#412) |
+| VN-D6 | May the VUT worktree be committed and reviewed | **Yes**; it is the base for VN2 | Answered 2026-11-15: yes (#413) |
 | VN-D4 | Teaser spend cap | **AUD 5 a day and 100 runs, stops itself.** A starting figure, not a measured cost: the real cost per run comes from VN2-0's cost reporting | Only if the teaser is built |
 | VN-D2 | Which providers may carry a "Private" label | **Only those with zero-retention terms confirmed in writing** | After 28 Dec |
 | VN-D3 | One spend unit: Lumen or billed cents | **Decide with the budget plan** | After 28 Dec |
@@ -253,4 +253,36 @@ Three are needed before 28 December. The other three can wait.
 
 **Round 2 (2026-11-15), closing check by the CEO reviewer: GO WITH CONDITIONS, conditions applied.** All eleven round-1 findings confirmed fixed; new citations (`worker/userStore.ts:598-606`, `migrations/0002_accounts_workspace.sql:13-16`, `components/LegalPage.tsx:63`, `worker/termsPolicy.ts:65`, `services/plans/planEntitlements.ts:59`, `worker/index.ts:1016-1024`, `worker/mcpAgents.ts:24-46`) confirmed. Applied: VN3-2 pulled forward ahead of the grid, and the teaser's spend counter reads VN2-0's reported cost, so the 28 December path no longer depends on post-28 December work (1); a line under the answer names the two decisions needed now (2).
 
+**Round 3 (2026-11-20), fit check against work merged or opened since.** See section 9. No change to the verdict, the order or the decisions. VN-D1 and VN-D6 are answered.
+
 **Next:** owner review. Ship as a docs-only draft PR to `staging`. Do not commit it as approved.
+
+## 9. Fit with work since 15 November
+
+Checked against `origin/staging` at `d0a8f3c8` and every open PR on 2026-11-20. Track VN adds to this work and replaces none of it.
+
+### 9.1 Where each VN task now stands
+
+| Task | State | Fits with |
+|---|---|---|
+| VN0-1 privacy copy | Draft PR #412, rebased on 2026-11-20 | Keeps the sections added since (connected assistants, DataForSEO, PageSpeed) and adds the sync, provider and retention corrections. Policy and terms dates set to 20 November 2026 |
+| VN0-3 erase the Oracle session store | Not started | Draft PR #417 (security hardening) extends account deletion to cookie sessions and API keys but not the Oracle session store, so VN0-3 is still open and is the natural next change to the same erase path |
+| VN2-0 visibility unit tests | Draft PR #413, rebased on 2026-11-20 | Migration renumbered to `0059_visibility_tests.sql` (0058 is memory recall, #416). Its privacy sentence is a separate bullet, so #412 and #413 merge in either order. Still waits on the two evidence buckets |
+| VN2-1 to VN2-3 model grid | Not started | Its labels must pass the unmeasured-claim guard (`tests/unmeasuredClaimGuard.test.ts`) and the ChatGPT wording rule added with the learn guide in #415: any copy that names ChatGPT says live answers are Not measured unless measured. This is the same rule as section 3.4 and VN-1 |
+| VN2-4 free teaser | Not started | Also waits on the account-level spend controls from the 20 November security review, which are owner decisions recorded outside this repo. Until those land, the teaser stays off whatever VN-D4 says |
+| VN3 price before run | Not started | Unchanged. PR #304 (Lumen) still conflicts with staging |
+| VN4 agents as models | Not started | #409 (Claude directory readiness) and the connected assistants policy section strengthen the MCP path Track AE owns; VN4 stays an addition to it |
+
+### 9.2 Checks run on 2026-11-20
+
+- #412 and #413 merge into each other cleanly in both orders, and each merges cleanly with #417.
+- #412, #413 and #417 merged together on a scratch branch: typecheck passes and all 380 test files pass, including the check that `public/privacy.html` matches the shared copy.
+- #413 alone: typecheck, lint (0 errors), 378 test files and the build pass. #412 alone: typecheck and 377 test files pass.
+- Older PRs that already conflict with staging (#304, #308) also conflict with #413 in shared files; whichever of them is revived rebases on top.
+- #413 and #382 (ND0-1) both add a line to the migration list in `scripts/smoke-check.mjs`; the second to merge keeps both lines.
+
+### 9.3 New gap
+
+| ID | Gap | Evidence | Proposed home |
+|---|---|---|---|
+| VN-7 | When `MEMORY_LLM_EXTRACT` is turned on, a person's messages, Telegram included, go to Groq for fact extraction and the facts are kept. The policy describes bot context as six messages for 24 hours, which is only true while the flag is off | `worker/memoryExtract.ts:124`; flag `"false"` at `wrangler.jsonc:170`, `:319`, `:439` | The memory recall track: update the policy in the same change that turns the flag on |
