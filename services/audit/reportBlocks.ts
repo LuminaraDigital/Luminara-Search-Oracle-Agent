@@ -8,6 +8,7 @@ import { formatAuDate } from '../../utils/formatAuDate';
 import { stripUntrustedFences } from '../../utils/untrustedContent';
 import { healthChecklist, measuredCheckLine, parseMeasuredCheckLine, siteChecksRan } from '../agentCore/auditEvidenceGate';
 import { organizationJsonLd } from './fixPackCopy';
+import { MIN_WORDS } from './ruleDefinitions';
 import { mentionedCount, plainCustomerReport, sentencesCiting, withoutContradictorySentences, type AuditTextScope } from './reportColumnGate';
 
 /** The only customer spelling of an unmeasured cell. */
@@ -336,7 +337,7 @@ function howToKnowFor(finding: MoveFinding, sentence: string): string {
   if (finding.id === 'finding-schema-org' || finding.id === 'finding-schema-org-partial') {
     return 'How to know it worked: the page source includes a business identity tag that names the organization.';
   }
-  if (finding.id === 'finding-thin-content') return 'How to know it worked: the short page is at least 250 words.';
+  if (finding.id === 'finding-thin-content') return `How to know it worked: the short page is at least ${MIN_WORDS} words.`;
   if (finding.id === 'finding-zero-citations') return 'How to know it worked: a web result for the brand name states what you offer.';
   if (finding.id === 'finding-deprecated-howto') return 'How to know it worked: the page source no longer includes a HowTo tag.';
   return howToKnow(sentence);

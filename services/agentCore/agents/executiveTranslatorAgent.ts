@@ -11,6 +11,7 @@
  */
 
 import { readableStem } from '../../audit/brandName';
+import { MIN_WORDS } from '../../audit/ruleDefinitions';
 import { AgentActivityEvent, AuditFinding, CodeRemediationPatch } from '../types';
 import { BusinessDNA } from '../../../types';
 import { HEALTH_CHECKS, measuredCheckLine, resolveCheckCounts } from '../auditEvidenceGate';
@@ -45,7 +46,7 @@ const STEP_FOR_FAILED_CHECK: Record<(typeof HEALTH_CHECKS)[number]['findingId'],
   'finding-deprecated-howto':
     '**Remove the HowTo markup:** Your pages carry HowTo schema, which the playbook marks as deprecated.',
   'finding-thin-content':
-    '**Write fuller answers on thin pages:** At least one page this run read has fewer than 250 words. Add clear, 2-to-3 sentence answers to the questions your buyers ask before buying.',
+    `**Write fuller answers on thin pages:** At least one page this run read has fewer than ${MIN_WORDS} words. Add clear, 2-to-3 sentence answers to the questions your buyers ask before buying.`,
 };
 
 /** Two whole numbers that can be "count of total". Anything else is treated as not measured. */

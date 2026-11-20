@@ -16,6 +16,7 @@
 import { BusinessDNA, ReportFocus } from '../../types';
 import { vfsMemoryService } from '../vfs/vfsMemoryService';
 import { mem0MemoryEngine } from '../agentCore/mem0MemoryEngine';
+import { MIN_WORDS } from './ruleDefinitions';
 
 export interface ProceduralLesson {
   pattern: string;
@@ -120,9 +121,9 @@ export class PostAuditReflectionService {
       });
     }
 
-    if (pageInspected && wordCount > 0 && wordCount < 250) {
+    if (pageInspected && wordCount > 0 && wordCount < MIN_WORDS) {
       proceduralLessons.push({
-        pattern: 'Thin Initial DOM Content (<250 words)',
+        pattern: `Thin Initial DOM Content (<${MIN_WORDS} words)`,
         heuristic: 'Target page has extremely sparse initial text. Search engines may flag this as soft 404 or low-information-gain. Expand substantive copy to at least 450 words.',
         severity: 'critical',
       });

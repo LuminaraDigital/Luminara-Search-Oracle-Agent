@@ -26,7 +26,7 @@ import {
   unmeasuredHealthMessage,
 } from '../auditEvidenceGate';
 import { hostedAuthBlocked } from '../../resilience/hostedAuthCircuit';
-import { isOrganizationEntityType } from '../../audit/brandName';
+import { isHowToType, isOrganizationEntityType, MAX_TARGET_URLS, MIN_WORDS, RULE_IDS } from '../../audit/ruleDefinitions';
 import { countPhrase, findingSummary, joinList, tidySentence, withArticle } from '../../audit/reportSentence';
 
 /** Names up to two pages in a finding title and counts the rest, so the reader knows where to look. */
@@ -36,6 +36,15 @@ export function pageList(urls: readonly string[]): string {
   if (urls.length <= 1) return first || 'a measured page';
   if (urls.length === 2) return `${first} and ${second}`;
   return `${first}, ${second} and ${rest} more ${rest === 1 ? 'page' : 'pages'}`;
+}
+
+/** The site root of a page URL, for the site-level schema rule. Undefined when the URL does not parse. */
+function siteRoot(url: string | undefined): string[] | undefined {
+  try {
+    return url ? [`${new URL(url).origin}/`] : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** The page checks can all pass while crawler files fail, so the card says which checks it means. */
@@ -90,7 +99,8 @@ export class PlaybookAuditorAgent {
       const queries = [...new Set(liveSerp.map((row) => row.query).filter(Boolean))].slice(0, 3);
       const queryList = queries.length ? joinList(queries.map((query) => `"${query}"`)) : 'the searches in this run';
       findings.push({
-        id: 'finding-zero-citations',
+        id: RULE_IDS.zeroCitations,
+        ruleId: RULE_IDS.zeroCitations,
         category: 'citations',
         severity: 'critical',
         title: 'Web results do not name your business',
@@ -118,7 +128,9 @@ export class PlaybookAuditorAgent {
         const seen = [...schemaTypes];
         const seenLabel = seen.length ? joinList(seen) : 'none';
         findings.push({
-          id: 'finding-schema-org',
+          id: RULE_IDS.schemaOrg,
+          ruleId: RULE_IDS.schemaOrg,
+          targetUrls: siteRoot(measured[0]?.url),
           category: 'schema',
           severity: 'critical',
           title: `Add a business identity tag on ${urlList}`,
@@ -137,7 +149,9 @@ export class PlaybookAuditorAgent {
             return `${page.url}: ${seen}`;
           }).join('; ');
           findings.push({
-            id: 'finding-schema-org-partial',
+            id: RULE_IDS.schemaOrgPartial,
+            ruleId: RULE_IDS.schemaOrgPartial,
+            targetUrls: missing.slice(0, MAX_TARGET_URLS).map((page) => page.url),
             category: 'schema',
             severity: 'low',
             title: `A business identity tag is not on ${pageList(missing.map((page) => page.url))}`,
@@ -151,14 +165,16 @@ export class PlaybookAuditorAgent {
         }
       }
 
-      if (schemaTypes.has('howto')) {
-        const howtoUrls = joinList(livePages
-          .filter((page) => page.schemasFound.some((schema) => schema.type.toLowerCase() === 'howto'))
+      if ([...schemaTypes].some(isHowToType)) {
+        const howtoPages = livePages
+          .filter((page) => page.schemasFound.some((schema) => isHowToType(schema.type)))
           .map((page) => page.url)
-          .slice(0, 3));
-        const howtoWhere = howtoUrls || withArticle('page we read');
+          .slice(0, MAX_TARGET_URLS);
+        const howtoWhere = joinList(howtoPages) || withArticle('page we read');
         findings.push({
-          id: 'finding-deprecated-howto',
+          id: RULE_IDS.deprecatedHowto,
+          ruleId: RULE_IDS.deprecatedHowto,
+          targetUrls: howtoPages,
           category: 'schema',
           severity: 'medium',
           title: 'Remove the outdated how-to tag',
@@ -171,15 +187,17 @@ export class PlaybookAuditorAgent {
         });
       }
 
-      const lowWordCountPages = livePages.filter((p) => p.wordCount > 0 && p.wordCount < 250);
+      const lowWordCountPages = livePages.filter((p) => p.wordCount > 0 && p.wordCount < MIN_WORDS);
       if (lowWordCountPages.length > 0) {
         const thin = lowWordCountPages.map((page) => `${page.url} (${page.wordCount} words)`).join('; ');
         findings.push({
-          id: 'finding-thin-content',
+          id: RULE_IDS.thinContent,
+          ruleId: RULE_IDS.thinContent,
+          targetUrls: lowWordCountPages.slice(0, MAX_TARGET_URLS).map((page) => page.url),
           category: 'content_quality',
           severity: 'high',
           title: lowWordCountPages.length === 1 ? 'This page is too short' : 'These pages are too short',
-          description: tidySentence(`${thin} ${lowWordCountPages.length === 1 ? 'has' : 'have'} fewer than 250 words.`),
+          description: tidySentence(`${thin} ${lowWordCountPages.length === 1 ? 'has' : 'have'} fewer than ${MIN_WORDS} words.`),
           evidenceSource: 'Word count from the pages in this run',
           howWeKnowItFailed: thin,
           leadingIndicator: 'Not measured. This run does not say what a longer page will change.',
