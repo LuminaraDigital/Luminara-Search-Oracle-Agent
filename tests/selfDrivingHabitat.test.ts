@@ -103,7 +103,9 @@ async function listedTools(): Promise<Array<NonNullable<ToolDef>>> {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
   });
-  const response = await handleMcpRequest(request, makeEnv(), growthUser);
+  // A crawler URL keeps the browser tools in the list, so their scope rules stay covered.
+  const env = { ...makeEnv(), PATCHRIGHT_URL: 'https://crawler.example' } as Env;
+  const response = await handleMcpRequest(request, env, growthUser);
   return ((await response.json()) as { result: { tools: Array<NonNullable<ToolDef>> } }).result.tools;
 }
 

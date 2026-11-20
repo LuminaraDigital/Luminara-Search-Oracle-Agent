@@ -3,6 +3,7 @@
  * Fixtures only. Never invent live SEO metrics. Never mark engines Measured.
  */
 import { EMPTY_SITE_INPUT_MESSAGE } from '../../../services/audit/auditTargetUrl';
+import type { AiAnswerSample } from '../../../services/audit/aiAnswerSample';
 import type { HomepageHead, HomepageReadFailure } from '../../../services/marketing/homepageSnippet';
 export type DemoPhase =
   | 'empty'
@@ -35,6 +36,8 @@ export interface DemoFixture {
   pageReason?: HomepageReadFailure | null;
   /** ISO time of the read. A cached result keeps its original time. */
   checkedAt?: string;
+  /** Capped Tavily sample from the free check. Absent on an older Worker. */
+  aiSample?: AiAnswerSample;
 }
 
 export const DEMO_PRESETS = ['luminarasuite.com', 'example.com', 'yourbrand.com'] as const;

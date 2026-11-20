@@ -25,10 +25,18 @@ import {
   revokeRefreshByToken,
   revokeRefreshFamily,
   rotateRefreshGrant,
-  SUPPORTED_GRANT_TYPES,
   type OAuthGrantType,
   type RefreshAccessStore,
 } from './mcpOAuthRefresh';
+import {
+  acceptedMcpResources,
+  boundResourceField,
+  decideMcpResource,
+  MCP_RESOURCE_ERROR,
+  resourceFieldOnRecord,
+  resourceFromAuthorize,
+} from './mcpOAuthResource';
+import { authorizationServerMetadata } from './mcpOAuthDiscovery';
 
 const CODES_KV_PREFIX = 'mcp_oauth_code:';
 const TOKENS_KV_PREFIX = 'mcp_oauth_token:';
@@ -164,6 +172,8 @@ type AuthCodeRecord = {
   /** Set on the connector flow: the token call must present the same client. */
   clientId?: string;
   clientName?: string;
+  /** RFC 8707 resource, set only when authorize sent one. */
+  resource?: string;
 };
 
 type RegisteredClient = {
@@ -184,6 +194,8 @@ type ConsentRecord = {
   redirectUri: string;
   codeChallenge: string;
   state: string;
+  /** RFC 8707 resource carried from authorize to the code. */
+  resource?: string;
 };
 
 const SHORTEST_KV_CACHE_TTL_SECONDS = 30;
@@ -238,74 +250,6 @@ export async function handleMcpOAuthRoute(
     return json(authorizationServerMetadata(new URL(request.url).origin));
   }
   return null;
-}
-
-function authorizationServerMetadata(origin: string) {
-  return {
-    issuer: origin,
-    authorization_endpoint: `${origin}/api/oauth/mcp/authorize`,
-    token_endpoint: `${origin}/api/oauth/mcp/token`,
-    registration_endpoint: `${origin}/api/oauth/mcp/register`,
-    revocation_endpoint: `${origin}/api/oauth/mcp/revoke`,
-    revocation_endpoint_auth_methods_supported: ['none'],
-    response_types_supported: ['code'],
-    grant_types_supported: [...SUPPORTED_GRANT_TYPES],
-    token_endpoint_auth_methods_supported: ['none'],
-    code_challenge_methods_supported: ['S256'],
-    scopes_supported: ['mcp:free', 'mcp:research'],
-  };
-}
-
-/** Where a 401 from /api/mcp sends an MCP client to discover how to sign in (RFC 9728). */
-export function mcpResourceMetadataUrl(request: Request): string {
-  return `${new URL(request.url).origin}/.well-known/oauth-protected-resource/api/mcp`;
-}
-
-/**
- * RFC 9728 and RFC 8414 discovery. Lives outside /api because clients derive these paths from the
- * server URL, and it answers on every host so the www redirect cannot move the issuer.
- */
-const DISCOVERY_CORS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, OPTIONS',
-  'Access-Control-Allow-Headers': 'content-type, authorization, mcp-protocol-version',
-};
-
-export function handleOAuthDiscovery(request: Request): Response | null {
-  const url = new URL(request.url);
-  const resource = url.pathname.startsWith('/.well-known/oauth-protected-resource');
-  const authorization = url.pathname.startsWith('/.well-known/oauth-authorization-server');
-  if (!resource && !authorization) return null;
-  if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: DISCOVERY_CORS });
-  if (request.method !== 'GET') return null;
-  if (resource) {
-    return json(
-      {
-        resource: `${url.origin}/api/mcp`,
-        resource_name: 'Luminara Suite',
-        authorization_servers: [url.origin],
-        scopes_supported: [CONNECTOR_SCOPE],
-        bearer_methods_supported: ['header'],
-      },
-      200,
-      DISCOVERY_CORS,
-    );
-  }
-  return json(authorizationServerMetadata(url.origin), 200, DISCOVERY_CORS);
-}
-
-/**
- * HTTP proof for the MCP Registry domain namespace. The owner sets
- * MCP_REGISTRY_AUTH_TOKEN to the challenge from `mcp-publisher`. Absent means 404.
- */
-export function handleMcpRegistryAuth(request: Request, env: Env): Response | null {
-  if (new URL(request.url).pathname !== '/.well-known/mcp-registry-auth') return null;
-  const token = env.MCP_REGISTRY_AUTH_TOKEN?.trim();
-  if (!token) return new Response('not found', { status: 404 });
-  return new Response(token, {
-    status: 200,
-    headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' },
-  });
 }
 
 /** RFC 7591 registration for public clients. Open by design: approval happens per user at consent. */
@@ -442,7 +386,7 @@ function agentPage(title: string, inner: string, status: number, csp: string): R
 async function connectorAuthorize(
   request: Request,
   env: Env,
-  params: { clientId: string; redirectUri: string; codeChallenge: string; state: string },
+  params: { clientId: string; redirectUri: string; codeChallenge: string; state: string; resource?: string },
 ): Promise<Response> {
   const client = await loadClient(env, params.clientId);
   // Never redirect on a bad client or callback: that is the open-redirect case.
@@ -486,6 +430,7 @@ async function connectorAuthorize(
     codeChallenge: params.codeChallenge,
     state: params.state,
   };
+  if (params.resource) record.resource = params.resource;
   await env.LUMINARA_KV.put(`${CONSENTS_KV_PREFIX}${consentId}`, JSON.stringify(record), {
     expirationTtl: CONSENT_TTL_SECONDS,
   });
@@ -530,6 +475,11 @@ async function decideConsent(request: Request, env: Env): Promise<Response> {
     redirect.searchParams.set('error', 'access_denied');
     return Response.redirect(redirect.toString(), 303);
   }
+  const audience = boundResourceField(record.resource);
+  const accepted = acceptedMcpResources(new URL(request.url).origin, env);
+  if (audience === 'invalid' || (audience && !accepted.has(audience))) {
+    return json({ error: 'invalid_target', error_description: MCP_RESOURCE_ERROR }, 400);
+  }
   const code = randomId('oc', 16);
   const codeRecord: AuthCodeRecord = {
     accountId: record.accountId,
@@ -542,6 +492,7 @@ async function decideConsent(request: Request, env: Env): Promise<Response> {
     clientId: record.clientId,
     clientName: record.clientName,
   };
+  if (audience) codeRecord.resource = audience;
   await env.LUMINARA_KV.put(`${CODES_KV_PREFIX}${code}`, JSON.stringify(codeRecord), { expirationTtl: 300 });
   redirect.searchParams.set('code', code);
   return Response.redirect(redirect.toString(), 303);
@@ -570,8 +521,16 @@ async function authorize(request: Request, env: Env): Promise<Response> {
     return json({ error: 'invalid_request', error_description: 'redirect_uri and S256 code_challenge required' }, 400);
   }
 
+  const resourceValues = url.searchParams.getAll('resource');
+  let resource: string | undefined;
+  if (resourceValues.length > 0) {
+    const accepted = resourceFromAuthorize(url.origin, env, resourceValues);
+    if (!accepted) return json({ error: 'invalid_target', error_description: MCP_RESOURCE_ERROR }, 400);
+    resource = accepted;
+  }
+
   const clientId = url.searchParams.get('client_id') || '';
-  if (clientId) return connectorAuthorize(request, env, { clientId, redirectUri, codeChallenge, state });
+  if (clientId) return connectorAuthorize(request, env, { clientId, redirectUri, codeChallenge, state, resource });
 
   if (!isAllowedMcpRedirectUri(redirectUri)) {
     return json(
@@ -614,6 +573,7 @@ async function authorize(request: Request, env: Env): Promise<Response> {
     scope: scopes.includes('mcp:research') && caps.apiAccess ? 'mcp:free mcp:research' : 'mcp:free',
     createdAt: Date.now(),
   };
+  if (resource) record.resource = resource;
 
   if (!env.LUMINARA_KV) return json({ error: 'server_error', error_description: 'KV unavailable' }, 503);
   await env.LUMINARA_KV.put(`${CODES_KV_PREFIX}${code}`, JSON.stringify(record), { expirationTtl: 300 });
@@ -624,7 +584,7 @@ async function authorize(request: Request, env: Env): Promise<Response> {
   return Response.redirect(redirect.toString(), 302);
 }
 
-function refreshAccessStore(env: Env): RefreshAccessStore {
+function refreshAccessStore(env: Env, request?: Request): RefreshAccessStore {
   return {
     put: (input) =>
       writeAccessToken(env, {
@@ -639,7 +599,16 @@ function refreshAccessStore(env: Env): RefreshAccessStore {
         createdAt: Date.now(),
         tokenTtl: input.expiresIn,
         connectionTtl: REFRESH_TTL_SECONDS,
+        resource: input.resource,
       }),
+    issuedResource: async (accountId, familyId, requested) => {
+      if (!request || !env.LUMINARA_KV) return { ok: false };
+      const bound = boundResourceField(
+        resourceFieldOnRecord(await env.LUMINARA_KV.get(await connectionKvKey(accountId, familyId))),
+      );
+      if (bound === 'invalid') return { ok: false };
+      return decideMcpResource(acceptedMcpResources(new URL(request.url).origin, env), bound, requested);
+    },
     deleteHash: async (accountId, accessHash) => {
       if (!env.LUMINARA_KV) return;
       await env.LUMINARA_KV.delete(`${TOKENS_KV_PREFIX}${accessHash}`);
@@ -666,6 +635,7 @@ async function writeAccessToken(
     createdAt: number;
     tokenTtl?: number;
     connectionTtl?: number;
+    resource?: string | null;
   },
 ): Promise<void> {
   if (!env.LUMINARA_KV) return;
@@ -681,6 +651,7 @@ async function writeAccessToken(
   if (input.clientName) tokenRecord.clientName = input.clientName;
   if (input.clientId) tokenRecord.clientId = input.clientId;
   if (input.familyId) tokenRecord.familyId = input.familyId;
+  if (input.resource) tokenRecord.resource = input.resource;
   await env.LUMINARA_KV.put(await tokenKvKey(input.accessToken), JSON.stringify(tokenRecord), {
     expirationTtl: tokenTtl,
   });
@@ -696,7 +667,9 @@ async function writeAccessToken(
     createdAt,
     ...(input.familyId ? { familyId: input.familyId, lastRefreshedAt: input.createdAt } : {}),
   };
-  await env.LUMINARA_KV.put(key, JSON.stringify(connection), {
+  // Resource stays off the list metadata. Refresh reads it from this JSON so the family keeps its audience.
+  const stored = input.resource ? { ...connection, resource: input.resource } : connection;
+  await env.LUMINARA_KV.put(key, JSON.stringify(stored), {
     expirationTtl: input.connectionTtl ?? tokenTtl,
     metadata: connection,
   });
@@ -720,14 +693,18 @@ async function tokenGrant(request: Request, env: Env): Promise<Response> {
     return json({ error: 'invalid_request', error_description: 'Body must be form-encoded or JSON.' }, 400);
   }
 
-  if (body.grant_type === 'refresh_token') return exchangeRefreshToken(env, body);
+  if (body.grant_type === 'refresh_token') return exchangeRefreshToken(request, env, body);
   if (body.grant_type !== 'authorization_code') {
     return json({ error: 'unsupported_grant_type' }, 400);
   }
-  return exchangeAuthorizationCode(env, body);
+  return exchangeAuthorizationCode(request, env, body);
 }
 
-async function exchangeRefreshToken(env: Env, body: Record<string, string>): Promise<Response> {
+function requestedResource(body: Record<string, string>): string | null {
+  return 'resource' in body ? body.resource ?? '' : null;
+}
+
+async function exchangeRefreshToken(request: Request, env: Env, body: Record<string, string>): Promise<Response> {
   const refreshToken = body.refresh_token || '';
   const clientId = body.client_id || '';
   if (!refreshToken) {
@@ -748,8 +725,8 @@ async function exchangeRefreshToken(env: Env, body: Record<string, string>): Pro
 
   const result = await rotateRefreshGrant(
     env,
-    { refreshToken, clientId, requestedScope: body.scope ?? null },
-    refreshAccessStore(env),
+    { refreshToken, clientId, requestedScope: body.scope ?? null, resource: requestedResource(body) },
+    refreshAccessStore(env, request),
   );
   if (result.kind === 'issued') {
     await env.LUMINARA_KV.put(`${CLIENTS_KV_PREFIX}${client.clientId}`, JSON.stringify(client), {
@@ -760,7 +737,7 @@ async function exchangeRefreshToken(env: Env, body: Record<string, string>): Pro
   return json(http.body, http.status);
 }
 
-async function exchangeAuthorizationCode(env: Env, body: Record<string, string>): Promise<Response> {
+async function exchangeAuthorizationCode(request: Request, env: Env, body: Record<string, string>): Promise<Response> {
   const code = body.code || '';
   const redirectUri = body.redirect_uri || '';
   const verifier = body.code_verifier || '';
@@ -785,6 +762,15 @@ async function exchangeAuthorizationCode(env: Env, body: Record<string, string>)
   const challenge = await sha256Base64Url(verifier);
   if (challenge !== record.codeChallenge) return json({ error: 'invalid_grant', error_description: 'PKCE failed' }, 400);
 
+  const bound = boundResourceField(record.resource);
+  if (bound === 'invalid') return json({ error: 'invalid_grant' }, 400);
+  const audience = decideMcpResource(
+    acceptedMcpResources(new URL(request.url).origin, env),
+    bound,
+    requestedResource(body),
+  );
+  if (!audience.ok) return json({ error: 'invalid_target', error_description: MCP_RESOURCE_ERROR }, 400);
+
   const accessToken = `mcp_${randomId('tok', 20)}`;
   const createdAt = Date.now();
   const refresh = await issueRefreshToken(env, record, accessToken);
@@ -802,6 +788,7 @@ async function exchangeAuthorizationCode(env: Env, body: Record<string, string>)
       createdAt,
       tokenTtl,
       connectionTtl: refresh ? REFRESH_TTL_SECONDS : TOKEN_TTL_SECONDS,
+      resource: audience.resource,
     });
   } catch (err) {
     if (refresh) await revokeRefreshFamily(env, refresh.familyId, refreshAccessStore(env)).catch(() => undefined);
@@ -935,6 +922,8 @@ type StoredTokenRecord = {
   clientId?: string;
   /** Set when this access token was issued with a refresh token. */
   familyId?: string;
+  /** RFC 8707 audience. Absent on tokens issued before resource binding, and on clients that omit it. */
+  resource?: string;
 };
 
 export type McpOAuthIdentity = {
@@ -943,6 +932,7 @@ export type McpOAuthIdentity = {
   scope: string;
   scopeEnforced: boolean;
   clientId: string | null;
+  resource: string | null;
 };
 
 /** Resolve Bearer mcp_* OAuth token to a HostedIdentity-like identity. */
@@ -980,6 +970,8 @@ function parseTokenRecord(raw: string): McpOAuthIdentity | null {
   try {
     const record = JSON.parse(raw) as StoredTokenRecord;
     if (!record?.accountId || !record?.scope) return null;
+    const resource = boundResourceField(record.resource);
+    if (resource === 'invalid') return null;
     const user: HostedIdentity = {
       id: record.userId || `oauth:${record.accountId}`,
       source: 'firebase',
@@ -992,6 +984,7 @@ function parseTokenRecord(raw: string): McpOAuthIdentity | null {
       scope: record.scope,
       scopeEnforced: record.scopeEnforced === true,
       clientId: typeof record.clientId === 'string' && record.clientId ? record.clientId : null,
+      resource,
     };
   } catch {
     return null;

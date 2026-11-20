@@ -12,13 +12,14 @@
     "annotations": {
       "title": "List industries",
       "readOnlyHint": true,
+      "openWorldHint": false,
       "destructiveHint": false
     }
   },
   {
     "name": "whoami",
     "title": "Account and usage",
-    "description": "Read this first. Returns the account, plan, and MCP calls used and remaining today. Uses no credits. A new token does not reset the daily count.",
+    "description": "Returns the account, plan, and MCP calls used and remaining today. Uses no credits. A new token does not reset the daily count.",
     "creditClass": "free",
     "inputSchema": {
       "type": "object",
@@ -28,6 +29,7 @@
     "annotations": {
       "title": "Account and usage",
       "readOnlyHint": true,
+      "openWorldHint": false,
       "destructiveHint": false
     }
   },
@@ -55,6 +57,7 @@
     "annotations": {
       "title": "List projects",
       "readOnlyHint": true,
+      "openWorldHint": false,
       "destructiveHint": false
     }
   },
@@ -92,7 +95,8 @@
     "annotations": {
       "title": "Create project",
       "readOnlyHint": false,
-      "destructiveHint": false
+      "openWorldHint": false,
+      "destructiveHint": true
     }
   },
   {
@@ -115,6 +119,7 @@
     "annotations": {
       "title": "Read project context",
       "readOnlyHint": true,
+      "openWorldHint": false,
       "destructiveHint": false
     }
   },
@@ -145,7 +150,8 @@
     "annotations": {
       "title": "Update project context",
       "readOnlyHint": false,
-      "destructiveHint": false
+      "openWorldHint": false,
+      "destructiveHint": true
     }
   },
   {
@@ -178,6 +184,7 @@
     "annotations": {
       "title": "List reports",
       "readOnlyHint": true,
+      "openWorldHint": false,
       "destructiveHint": false
     }
   },
@@ -204,6 +211,7 @@
     "annotations": {
       "title": "Read a report",
       "readOnlyHint": true,
+      "openWorldHint": false,
       "destructiveHint": false
     }
   },
@@ -245,13 +253,14 @@
     "annotations": {
       "title": "Save a report",
       "readOnlyHint": false,
-      "destructiveHint": false
+      "openWorldHint": false,
+      "destructiveHint": true
     }
   },
   {
     "name": "get_guide",
     "title": "Workflow guides",
-    "description": "Uses no credits. Step-by-step Luminara workflows (audit, keyword research, competitors, visibility, reports). Call with no topic to list them; read the matching guide before starting a task.",
+    "description": "Uses no credits. Returns step-by-step Luminara workflows (audit, keyword research, competitors, visibility, reports). With no topic, returns the list of guides.",
     "creditClass": "free",
     "inputSchema": {
       "type": "object",
@@ -266,6 +275,7 @@
     "annotations": {
       "title": "Workflow guides",
       "readOnlyHint": true,
+      "openWorldHint": false,
       "destructiveHint": false
     }
   },
@@ -289,6 +299,7 @@
     "annotations": {
       "title": "Dreaming status",
       "readOnlyHint": true,
+      "openWorldHint": false,
       "destructiveHint": false
     }
   },
@@ -315,7 +326,8 @@
     "annotations": {
       "title": "Consolidate memory",
       "readOnlyHint": false,
-      "destructiveHint": false
+      "openWorldHint": false,
+      "destructiveHint": true
     }
   },
   {
@@ -341,6 +353,7 @@
     "annotations": {
       "title": "Business memory",
       "readOnlyHint": true,
+      "openWorldHint": false,
       "destructiveHint": false
     }
   },
@@ -375,7 +388,8 @@
     "annotations": {
       "title": "Review a memory proposal",
       "readOnlyHint": false,
-      "destructiveHint": false
+      "openWorldHint": false,
+      "destructiveHint": true
     }
   },
   {
@@ -430,6 +444,7 @@
     "annotations": {
       "title": "Draft a fix",
       "readOnlyHint": true,
+      "openWorldHint": false,
       "destructiveHint": false
     }
   },
@@ -460,13 +475,14 @@
     "annotations": {
       "title": "List enquiries",
       "readOnlyHint": true,
+      "openWorldHint": false,
       "destructiveHint": false
     }
   },
   {
     "name": "ingest_enquiry",
     "title": "Record an enquiry",
-    "description": "Uses no credits. Ingests an inbound real-estate or SME enquiry with Australian statutory valuation/legal guard and ClaimLedger brief extraction.",
+    "description": "Uses no credits. Records an inbound real-estate or small-business enquiry for one project and returns a qualification brief. Requests for a price valuation or legal advice are marked for a licensed person to answer.",
     "creditClass": "free",
     "inputSchema": {
       "type": "object",
@@ -525,7 +541,8 @@
     "annotations": {
       "title": "Record an enquiry",
       "readOnlyHint": false,
-      "destructiveHint": false
+      "openWorldHint": false,
+      "destructiveHint": true
     }
   },
   {
@@ -565,7 +582,8 @@
     "annotations": {
       "title": "Propose booking slots",
       "readOnlyHint": false,
-      "destructiveHint": false
+      "openWorldHint": false,
+      "destructiveHint": true
     }
   },
   {
@@ -605,6 +623,7 @@
     "annotations": {
       "title": "Decide a booking",
       "readOnlyHint": false,
+      "openWorldHint": false,
       "destructiveHint": true
     }
   },
@@ -625,13 +644,14 @@
     "annotations": {
       "title": "Outcomes funnel",
       "readOnlyHint": true,
+      "openWorldHint": false,
       "destructiveHint": false
     }
   },
   {
     "name": "classify_cms_remediation",
     "title": "Classify a CMS fix",
-    "description": "Uses no credits. Classifies an audit finding into Tier 1 (Instant MCP), Tier 2 (Guided Builder / Squarespace Injection), or Tier 3 (Luminara Digital Engineering Brief).",
+    "description": "Uses no credits. Sorts an audit finding by how it can be fixed: Tier 1, a change a CMS connector can make; Tier 2, a guided change in the site builder (for example Squarespace code injection); Tier 3, a written brief for a developer.",
     "creditClass": "free",
     "inputSchema": {
       "type": "object",
@@ -680,6 +700,7 @@
     "annotations": {
       "title": "Classify a CMS fix",
       "readOnlyHint": true,
+      "openWorldHint": false,
       "destructiveHint": false
     }
   },
@@ -737,6 +758,7 @@
     "annotations": {
       "title": "Prepare a CMS call",
       "readOnlyHint": false,
+      "openWorldHint": true,
       "destructiveHint": true
     }
   },
@@ -763,6 +785,7 @@
     "annotations": {
       "title": "Project history",
       "readOnlyHint": true,
+      "openWorldHint": false,
       "destructiveHint": false
     }
   },
@@ -794,6 +817,7 @@
     "annotations": {
       "title": "Compare snapshots",
       "readOnlyHint": true,
+      "openWorldHint": false,
       "destructiveHint": false
     }
   },
@@ -817,6 +841,7 @@
     "annotations": {
       "title": "Project outcomes",
       "readOnlyHint": true,
+      "openWorldHint": false,
       "destructiveHint": false
     }
   },
@@ -840,6 +865,7 @@
     "annotations": {
       "title": "Outcome report",
       "readOnlyHint": true,
+      "openWorldHint": false,
       "destructiveHint": false
     }
   },
@@ -867,7 +893,8 @@
     "annotations": {
       "title": "Mark an action done",
       "readOnlyHint": false,
-      "destructiveHint": false
+      "openWorldHint": false,
+      "destructiveHint": true
     }
   },
   {
@@ -890,6 +917,7 @@
     "annotations": {
       "title": "Project check schedule",
       "readOnlyHint": true,
+      "openWorldHint": false,
       "destructiveHint": false
     }
   },
@@ -930,7 +958,8 @@
     "annotations": {
       "title": "Set the check schedule",
       "readOnlyHint": false,
-      "destructiveHint": false
+      "openWorldHint": false,
+      "destructiveHint": true
     }
   },
   {
@@ -953,6 +982,7 @@
     "annotations": {
       "title": "Project check alerts",
       "readOnlyHint": true,
+      "openWorldHint": false,
       "destructiveHint": false
     }
   },
@@ -980,7 +1010,8 @@
     "annotations": {
       "title": "Mark an alert read",
       "readOnlyHint": false,
-      "destructiveHint": false
+      "openWorldHint": false,
+      "destructiveHint": true
     }
   },
   {
@@ -1018,7 +1049,8 @@
     "annotations": {
       "title": "Create a dev ticket",
       "readOnlyHint": false,
-      "destructiveHint": false
+      "openWorldHint": false,
+      "destructiveHint": true
     }
   },
   {
@@ -1050,7 +1082,8 @@
     "annotations": {
       "title": "Compile a review into a skill",
       "readOnlyHint": false,
-      "destructiveHint": false
+      "openWorldHint": false,
+      "destructiveHint": true
     }
   },
   {
@@ -1086,7 +1119,8 @@
     "annotations": {
       "title": "Mint a habitat token",
       "readOnlyHint": false,
-      "destructiveHint": false
+      "openWorldHint": false,
+      "destructiveHint": true
     }
   },
   {
@@ -1110,6 +1144,7 @@
     "annotations": {
       "title": "Luminara Auditor",
       "readOnlyHint": true,
+      "openWorldHint": false,
       "destructiveHint": false
     }
   },
@@ -1134,6 +1169,7 @@
     "annotations": {
       "title": "Luminara Fixer",
       "readOnlyHint": true,
+      "openWorldHint": false,
       "destructiveHint": false
     }
   },
@@ -1158,13 +1194,14 @@
     "annotations": {
       "title": "Luminara Coach",
       "readOnlyHint": true,
+      "openWorldHint": false,
       "destructiveHint": false
     }
   },
   {
     "name": "research_keywords",
     "title": "Research keywords",
-    "description": "Uses paid DataForSEO credits unless BYOK. Discover keyword ideas from up to 5 seed topics. Returns at most 20 rows. Check the research log first. This is a sample, not a full export.",
+    "description": "Uses paid DataForSEO credits unless BYOK. Discover keyword ideas from up to 5 seed topics. Returns at most 20 rows. This is a sample, not a full export.",
     "creditClass": "paid",
     "inputSchema": {
       "type": "object",
@@ -1188,13 +1225,14 @@
     "annotations": {
       "title": "Research keywords",
       "readOnlyHint": false,
-      "destructiveHint": false
+      "openWorldHint": true,
+      "destructiveHint": true
     }
   },
   {
     "name": "get_domain_overview",
     "title": "Domain overview",
-    "description": "Uses paid DataForSEO credits unless BYOK. High-level domain rank overview. Check research log first.",
+    "description": "Uses paid DataForSEO credits unless BYOK. Returns a high-level rank overview for one domain.",
     "creditClass": "paid",
     "inputSchema": {
       "type": "object",
@@ -1214,13 +1252,14 @@
     "annotations": {
       "title": "Domain overview",
       "readOnlyHint": true,
+      "openWorldHint": true,
       "destructiveHint": false
     }
   },
   {
     "name": "get_serp_results",
     "title": "SERP snapshot",
-    "description": "Uses paid DataForSEO credits unless BYOK. SERP snapshot for one query. Returns at most 10 rows. Check the research log first. This is a sample, not a ranked export.",
+    "description": "Uses paid DataForSEO credits unless BYOK. SERP snapshot for one query. Returns at most 10 rows. This is a sample, not a ranked export.",
     "creditClass": "paid",
     "inputSchema": {
       "type": "object",
@@ -1241,13 +1280,14 @@
     "annotations": {
       "title": "SERP snapshot",
       "readOnlyHint": true,
+      "openWorldHint": true,
       "destructiveHint": false
     }
   },
   {
     "name": "get_backlinks_overview",
     "title": "Backlink overview",
-    "description": "Uses paid DataForSEO credits unless BYOK. Backlink profile overview. Check research log first.",
+    "description": "Uses paid DataForSEO credits unless BYOK. Returns a backlink profile overview for one domain.",
     "creditClass": "paid",
     "inputSchema": {
       "type": "object",
@@ -1267,6 +1307,7 @@
     "annotations": {
       "title": "Backlink overview",
       "readOnlyHint": true,
+      "openWorldHint": true,
       "destructiveHint": false
     }
   },
@@ -1308,13 +1349,14 @@
     "annotations": {
       "title": "Visibility snapshot",
       "readOnlyHint": true,
+      "openWorldHint": true,
       "destructiveHint": false
     }
   },
   {
     "name": "get_pagespeed_summary",
     "title": "PageSpeed summary",
-    "description": "Uses paid credits when live. PageSpeed / CWV summary. Returns not_measured until W5 registry wiring.",
+    "description": "Uses paid credits. Returns Google PageSpeed Insights scores and Core Web Vitals (LCP, CLS, INP) for one URL, mobile by default. Says not_measured when PageSpeed returns no data.",
     "creditClass": "paid",
     "inputSchema": {
       "type": "object",
@@ -1334,6 +1376,7 @@
     "annotations": {
       "title": "PageSpeed summary",
       "readOnlyHint": true,
+      "openWorldHint": true,
       "destructiveHint": false
     }
   },
@@ -1362,6 +1405,7 @@
     "annotations": {
       "title": "Observe a page",
       "readOnlyHint": true,
+      "openWorldHint": true,
       "destructiveHint": false
     }
   },
@@ -1400,13 +1444,14 @@
     "annotations": {
       "title": "Act in the browser",
       "readOnlyHint": false,
-      "destructiveHint": false
+      "openWorldHint": true,
+      "destructiveHint": true
     }
   },
   {
     "name": "browse_goal",
     "title": "Run a browser goal",
-    "description": "Paid (same gate as browse_act). Run a bounded indexed DOM loop for a natural-language goal. Requires independent verifier checks (urlIncludes / textIncludes / titleIncludes). Agent DONE is never proof. Prefer get_project_context first.",
+    "description": "Paid (same gate as browse_act). Run a bounded indexed DOM loop for a natural-language goal. Requires independent verifier checks (urlIncludes / textIncludes / titleIncludes). Agent DONE is never proof.",
     "creditClass": "paid",
     "inputSchema": {
       "type": "object",
@@ -1482,6 +1527,7 @@
     "annotations": {
       "title": "Run a browser goal",
       "readOnlyHint": false,
+      "openWorldHint": true,
       "destructiveHint": true
     }
   },
@@ -1505,6 +1551,7 @@
     "annotations": {
       "title": "Close the browser",
       "readOnlyHint": false,
+      "openWorldHint": true,
       "destructiveHint": true
     }
   }

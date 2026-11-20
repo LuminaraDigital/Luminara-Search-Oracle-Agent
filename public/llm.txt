@@ -95,6 +95,22 @@ Competitor rows cite each vendor's public pages as of October 2026. No scores ar
 - Best AEO audit tools for small business: https://www.luminarasuite.com/best/aeo-audit-tools-for-small-business
 - Best AI visibility tools with MCP: https://www.luminarasuite.com/best/ai-visibility-tools-with-mcp
 
+## Learn
+
+Guides for independent real estate agencies and for developers who ship their sites.
+
+- Learn: https://www.luminarasuite.com/learn
+- What is AEO: https://www.luminarasuite.com/learn/what-is-aeo
+- How AI picks an agency: https://www.luminarasuite.com/learn/how-ai-recommends-an-agency
+- llms.txt for agencies: https://www.luminarasuite.com/learn/llms-txt-for-real-estate
+- AI crawlers in robots.txt: https://www.luminarasuite.com/learn/robots-txt-and-ai-crawlers
+- RealEstateAgent schema: https://www.luminarasuite.com/learn/real-estate-agent-schema
+- Suburb pages AI can quote: https://www.luminarasuite.com/learn/suburb-pages
+- Check if AI names you: https://www.luminarasuite.com/learn/check-if-ai-names-your-agency
+- MCP for marketing data: https://www.luminarasuite.com/learn/mcp-for-marketing-data
+- Claim your agency in ChatGPT: https://www.luminarasuite.com/learn/claim-your-agency-in-chatgpt
+Live answers from specific AI products stay Not measured unless you are on Agency or you connect your own search login.
+
 ## Free tools
 
 They run in the browser with no account. Nothing typed into a tool is sent to Luminara.

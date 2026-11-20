@@ -10,7 +10,7 @@ export const GUIDE_MCP_TOOLS: McpToolDef[] = [
   {
     name: 'get_guide',
     description:
-      'Uses no credits. Step-by-step Luminara workflows (audit, keyword research, competitors, visibility, reports). Call with no topic to list them; read the matching guide before starting a task.',
+      'Uses no credits. Returns step-by-step Luminara workflows (audit, keyword research, competitors, visibility, reports). With no topic, returns the list of guides.',
     creditClass: 'free',
     inputSchema: {
       type: 'object',

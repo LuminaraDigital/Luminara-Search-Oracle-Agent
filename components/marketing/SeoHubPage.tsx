@@ -5,6 +5,8 @@ import { MarketingFaq } from './MarketingFaq';
 import { DomainCheck } from './DomainCheck';
 import { prefersReducedMotion } from './deviceCapability';
 import { HUB_FAQ_HEADING, HUB_PAGES, HUB_REVIEWED, type BestPage, type ComparePage, type HubPage } from '../../services/marketing/seoHubPages';
+import { learnLinksForPath } from '../../services/marketing/learnPages';
+import { LearnReadingList } from './LearnReadingList';
 import type { AuditHandoff } from '../../services/activation/auditHandoff';
 
 interface SeoHubPageProps {
@@ -155,6 +157,7 @@ const SeoHubPage: React.FC<SeoHubPageProps> = ({ page, isAuthenticated, onFullAu
             </li>
           ))}
         </ul>
+        <LearnReadingList links={learnLinksForPath(page.path)} />
         <h2 className="lx-eyebrow mt-10">More comparisons</h2>
         <ul className={`mt-4 flex flex-wrap gap-x-6 gap-y-2 ${BODY}`}>
           {HUB_PAGES.filter((other) => other.path !== page.path).map((other) => (

@@ -145,7 +145,8 @@ import {
 } from './auditQueue';
 import { handleAuditScoutRun } from './auditScoutRun';
 import { dispatchQueueBatch } from './queueDispatch';
-import { MCP_OAUTH_PUBLIC_CORS, handleMcpOAuthRoute, handleMcpRegistryAuth, handleOAuthDiscovery, listAgentConnections, revokeAgentConnection } from './mcpOAuth';
+import { MCP_OAUTH_PUBLIC_CORS, handleMcpOAuthRoute, listAgentConnections, revokeAgentConnection } from './mcpOAuth';
+import { handleMcpRegistryAuth, handleOAuthDiscovery } from './mcpOAuthDiscovery';
 import { pruneMcpOAuthRefreshRows } from './mcpOAuthRefresh';
 import { enforceMcpOauthIpLimit, MCP_OAUTH_REGISTER_PER_MIN, MCP_OAUTH_TOKEN_PER_MIN } from './mcpLimits';
 import { executeOracleGatewayTask, type OracleGatewayRequest } from './oracleGateway';
@@ -2679,7 +2680,7 @@ const handler = {
     const contentType = assetResponse.headers.get('content-type') || '';
     const isStaticFile =
       url.pathname.startsWith('/assets/') ||
-      /\.(ico|png|jpe?g|gif|svg|webp|avif|webmanifest|json|xml|txt|map|css|js|woff2?|ttf|otf|eot|wasm)$/i.test(
+      /\.(ico|png|jpe?g|gif|svg|webp|avif|pdf|webmanifest|json|xml|txt|map|css|js|woff2?|ttf|otf|eot|wasm)$/i.test(
         url.pathname,
       );
     if (isStaticFile && assetResponse.ok && contentType.includes('text/html')) {

@@ -98,12 +98,24 @@ function decision(env: TestEnv, id: string, weekKey: string, title: string, find
 describe('named agents in the catalogue', () => {
   it('lists the three tools with a human title, read-only', async () => {
     const { result } = await rpc(makeEnv(), 'tools/list', {});
-    const tools = result?.tools as Array<{ name: string; title?: string; annotations: { readOnlyHint: boolean } }>;
+    const tools = result?.tools as Array<{
+      name: string;
+      title?: string;
+      annotations: { readOnlyHint: boolean; openWorldHint: boolean; destructiveHint: boolean };
+    }>;
     const agents = tools.filter((t) => t.name.startsWith('ask_'));
-    expect(agents.map((t) => [t.name, t.title, t.annotations.readOnlyHint])).toEqual([
-      ['ask_auditor', 'Luminara Auditor', true],
-      ['ask_fixer', 'Luminara Fixer', true],
-      ['ask_coach', 'Luminara Coach', true],
+    expect(
+      agents.map((t) => [
+        t.name,
+        t.title,
+        t.annotations.readOnlyHint,
+        t.annotations.openWorldHint,
+        t.annotations.destructiveHint,
+      ]),
+    ).toEqual([
+      ['ask_auditor', 'Luminara Auditor', true, false, false],
+      ['ask_fixer', 'Luminara Fixer', true, false, false],
+      ['ask_coach', 'Luminara Coach', true, false, false],
     ]);
   });
 

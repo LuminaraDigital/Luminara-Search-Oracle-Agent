@@ -20,6 +20,8 @@ GROQ_API_KEY=
 GROQ_API_KEY_FALLBACK=
 GEMINI_API_KEY=
 TAVILY_API_KEY=
+# Free-check live samples per UTC day (Tavily). 0 pauses them. Unset uses 30.
+FREE_AI_SAMPLE_DAILY_BUDGET=30
 FIRECRAWL_API_KEY=
 EXA_API_KEY=
 TYPESAFE_API_KEY=
@@ -54,7 +56,7 @@ CHAIN_XDC_RPC_URL=https://erpc.xinfin.network
 PROOF_ANCHOR_ENABLED=false
 PROOF_XDC_ENABLED=false
 # SMB Launchpad (spec 0015). Unset = on in local dev only; staging/prod need true. Explicit false always disables.
-# LAUNCHPAD_ENABLED=true
+# LAUNCHPAD_ENABLED=true
 # Trust Network (docs/plans/trust-network-additive-plan.md). Unset = on in local dev only.
 # TRUST_RECEIPTS_ENABLED=true
 # DOMAIN_VERIFY_ENABLED=true

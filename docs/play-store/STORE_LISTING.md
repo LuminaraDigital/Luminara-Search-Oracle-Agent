@@ -33,6 +33,7 @@ KEY CAPABILITIES
 
 1. Live Instant Audit (No Sign-In Required)
 - Inspect live /robots.txt, /llms.txt, and /ai.txt files on any public domain.
+- Show one capped Tavily answer sample when the server key and the daily allowance allow it. ChatGPT, Gemini, and Perplexity stay Not measured.
 - Evaluate 5 core LLM crawler readiness checks: llms.txt presence, markdown structure, AI bot directives, canonical citation links, and ai.txt policy headers.
 - Audit your 10-bot AI Governance Matrix across GPTBot, OAI-SearchBot, ChatGPT-User, ClaudeBot, Claude-SearchBot, PerplexityBot, Google-Extended, Applebot-Extended, CCBot, and Bytespider.
 - Verify deployed fixes live with one-tap check re-runs.

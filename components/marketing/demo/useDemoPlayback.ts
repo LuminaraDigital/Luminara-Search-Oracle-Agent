@@ -169,6 +169,7 @@ export function useDemoPlayback(): DemoPlayback {
             page: crawl.page,
             pageReason: crawl.pageReason ?? null,
             checkedAt: crawl.checkedAt,
+            aiSample: crawl.aiSample,
           }
           : {}),
       };

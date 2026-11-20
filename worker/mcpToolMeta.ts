@@ -55,9 +55,25 @@ const MCP_TOOL_TITLES: Record<string, string> = {
   draft_fix: 'Draft a fix',
 };
 
+/** Reaches a live index, a public page, or an external CMS. Closed tools stay false. */
+export const OPEN_WORLD_TOOLS: ReadonlySet<string> = new Set([
+  'research_keywords',
+  'get_domain_overview',
+  'get_serp_results',
+  'get_backlinks_overview',
+  'get_visibility_snapshot',
+  'get_pagespeed_summary',
+  'browse_observe',
+  'browse_act',
+  'browse_goal',
+  'browse_close',
+  'prepare_cms_mcp_call',
+]);
+
 export type McpToolAnnotations = {
   title: string;
   readOnlyHint: boolean;
+  openWorldHint: boolean;
   destructiveHint: boolean;
 };
 
@@ -70,7 +86,9 @@ export function mcpToolAnnotations(name: string): McpToolAnnotations {
   return {
     title: mcpToolTitle(name),
     readOnlyHint: risk === 'read',
-    destructiveHint: risk === 'destructive',
+    openWorldHint: OPEN_WORLD_TOOLS.has(name),
+    // Anthropic's directory review wants destructiveHint on any tool that modifies data, not only deletes.
+    destructiveHint: risk !== 'read',
   };
 }
 

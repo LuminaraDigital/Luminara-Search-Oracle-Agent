@@ -52,7 +52,7 @@ Submit at PulseMCP. Same URL and description. If the form asks for a GitHub repo
 
 **Owner.**
 
-Anthropic's connector directory is a separate review from Claude Desktop config. Apply with the remote URL, the OAuth metadata URLs in `README.md`, and the scopes `mcp:free` and `mcp:research`. Desktop and Claude Code users can connect before the directory lists the server. The copy-paste config does not require a directory listing.
+The field-by-field submission, review rules and owner checks are in `listing/claude-directory.md`. Anthropic's connector directory is a separate review from Claude Desktop config. Apply with the remote URL, the OAuth metadata URLs in `README.md`, and the scopes `mcp:free` and `mcp:research`. Desktop and Claude Code users can connect before the directory lists the server. The copy-paste config does not require a directory listing.
 
 ## ChatGPT apps
 

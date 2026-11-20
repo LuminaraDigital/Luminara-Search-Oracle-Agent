@@ -115,6 +115,8 @@
     "REQUIRE_TG_AUTH": "true",
     "REQUIRE_SUBSCRIPTION": "false",
     "FREE_DAILY_LIMIT": "3",
+    // Free-check Tavily samples per UTC day for every caller. 0 pauses them. Needs secret TAVILY_API_KEY.
+    "FREE_AI_SAMPLE_DAILY_BUDGET": "30",
     // Sovereign Ollama Base URL (optional, defaults to https://ollama.com if unset)
     "OLLAMA_BASE_URL": "",
     // Firebase Auth project id (same as VITE_FIREBASE_PROJECT_ID). Empty disables Firebase token checks.
@@ -164,6 +166,8 @@
     "ORACLE_SERVER_ENABLED": "true",
     // Paid Oracle tools require invokeTool+confirmTool unless explicitly enabled.
     "ORACLE_AUTO_TOOLS": "false",
+    "MEMORY_RECALL_V2": "false",
+    "MEMORY_LLM_EXTRACT": "false",
     "LAUNCHPAD_ENABLED": "false",
     "LAUNCHPAD_MAINNET_ENABLED": "false",
     "LAUNCHPAD_SKIP_CHAIN_VERIFY": "false",
@@ -270,6 +274,7 @@
         "REQUIRE_TG_AUTH": "true",
         "REQUIRE_SUBSCRIPTION": "false",
         "FREE_DAILY_LIMIT": "3",
+        "FREE_AI_SAMPLE_DAILY_BUDGET": "30",
         "FIREBASE_PROJECT_ID": "luminara-suite-staging",
         "FIREBASE_PROJECT_NUMBER": "449283385852",
         "REQUIRE_APP_CHECK": "false",
@@ -310,6 +315,8 @@
         "DESKTOP_GITHUB_REPO": "LuminaraDigital/Luminara-Search-Oracle-Agent",
         "ORACLE_SERVER_ENABLED": "true",
         "ORACLE_AUTO_TOOLS": "false",
+        "MEMORY_RECALL_V2": "false",
+        "MEMORY_LLM_EXTRACT": "false",
         "LAUNCHPAD_ENABLED": "false",
         "LAUNCHPAD_MAINNET_ENABLED": "false",
         "LAUNCHPAD_SKIP_CHAIN_VERIFY": "false",
@@ -388,6 +395,7 @@
         "REQUIRE_TG_AUTH": "true",
         "REQUIRE_SUBSCRIPTION": "false",
         "FREE_DAILY_LIMIT": "3",
+        "FREE_AI_SAMPLE_DAILY_BUDGET": "30",
         "FIREBASE_PROJECT_ID": "luminara-suite",
         "FIREBASE_PROJECT_NUMBER": "274315225068",
         // Keep false until the prod build step passes VITE_FIREBASE_APPCHECK_SITE_KEY (validate-env enforces this).
@@ -427,6 +435,8 @@
         "DESKTOP_GITHUB_REPO": "LuminaraDigital/Luminara-Search-Oracle-Agent",
         "ORACLE_SERVER_ENABLED": "true",
         "ORACLE_AUTO_TOOLS": "false",
+        "MEMORY_RECALL_V2": "false",
+        "MEMORY_LLM_EXTRACT": "false",
         "LAUNCHPAD_ENABLED": "false",
         "LAUNCHPAD_MAINNET_ENABLED": "false",
         "LAUNCHPAD_SKIP_CHAIN_VERIFY": "false",

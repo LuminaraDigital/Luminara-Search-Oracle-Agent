@@ -100,7 +100,7 @@ for the app:
 | GEO | scoring rules, AI search, content quality |
 | Lenses (optional) | Local business, Online store, Content quality, Structured data, Search experience |
 
-Reports carry a Health Score (0-100) with the playbook weights, Critical / High / Medium / Low findings,
+Reports do not carry a blended or composite score. Findings are labelled Measured, Estimated or Not measured, are evidence-labelled, and invent no scores. Reports include Critical / High / Medium / Low findings,
 and for every recommendation a "how we'd know it failed" check and a leading indicator. Deprecation rules
 (no HowTo schema, FAQPage earns no rich result, INP not FID) are enforced in the prompt. Anything not
 observable from the scrape and search evidence is reported as "not measured".
@@ -167,7 +167,7 @@ npx wrangler kv namespace create LUMINARA_KV      # paste the id into wrangler.j
 npx wrangler secret put BOT_TOKEN                 # from @BotFather
 npx wrangler secret put TELEGRAM_WEBHOOK_SECRET   # any long random string
 npx wrangler secret put GROQ_API_KEY              # hosted keys are optional; add the ones you offer
-npx wrangler secret put TAVILY_API_KEY
+npx wrangler secret put TAVILY_API_KEY            # free-check answer sample. Set FREE_AI_SAMPLE_DAILY_BUDGET=0 to pause it.
 npx wrangler secret put FIRECRAWL_API_KEY
 npm run deploy
 ```

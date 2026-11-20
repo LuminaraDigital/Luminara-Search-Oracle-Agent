@@ -70,6 +70,7 @@ const InfrastructurePage = lazyWithReload(() => import('./components/Infrastruct
 const IntelligencePage = lazyWithReload(() => import('./components/IntelligencePage'));
 const WhyLuminaraPage = lazyWithReload(() => import('./components/WhyLuminaraPage'));
 const SeoHubPage = lazyWithReload(() => import('./components/marketing/SeoHubPage'));
+const LearnPage = lazyWithReload(() => import('./components/marketing/LearnPage'));
 const FreeToolPage = lazyWithReload(() => import('./components/marketing/freeTools/FreeToolPage'));
 const PricingPage = lazyWithReload(() => import('./components/PricingPage'));
 const MethodologyPage = lazyWithReload(() => import('./components/MethodologyPage'));
@@ -114,13 +115,14 @@ const MARKETING_VIEWS = new Set<AppView>([
   AppView.WHY_US,
   AppView.COMPARE,
   AppView.FREE_TOOLS,
+  AppView.LEARN,
   AppView.PRICING,
   AppView.METHODOLOGY,
   AppView.WHITE_PAPER,
   AppView.SAMPLE_REPORT,
 ]);
-/** Views whose page comes from the pathname: /compare/*, /best/*, /free-tools/*. */
-const PATH_DRIVEN_VIEWS = new Set<AppView>([AppView.COMPARE, AppView.FREE_TOOLS]);
+/** Views whose page comes from the pathname: /compare/*, /best/*, /free-tools/*, /learn/*. */
+const PATH_DRIVEN_VIEWS = new Set<AppView>([AppView.COMPARE, AppView.FREE_TOOLS, AppView.LEARN]);
 
 interface SendOptions {
   /** Short text to show in the user bubble instead of the full prompt. */
@@ -141,6 +143,7 @@ import {
 import { applyDocumentMetaForView } from './services/marketing/documentMeta';
 import { hubPageForPath } from './services/marketing/seoHubPages';
 import { FREE_TOOLS_PATH, freeToolsPageForPath } from './services/marketing/freeTools';
+import { LEARN_PATH, learnPageForPath } from './services/marketing/learnPages';
 
 const viewFromLocation = (): AppView | null => {
   if (typeof window === 'undefined') return null;
@@ -561,6 +564,7 @@ const App: React.FC = () => {
       { label: 'Pricing', onClick: () => setView(AppView.PRICING), current: view === AppView.PRICING },
       // Path-driven view: no single view URL, so the link loads /free-tools like the footer link does.
       { label: 'Free tools', onClick: () => window.location.assign(FREE_TOOLS_PATH), current: view === AppView.FREE_TOOLS },
+      { label: 'Learn', onClick: () => window.location.assign(LEARN_PATH), current: view === AppView.LEARN },
     ],
     primaryCta: navSignedIn
       ? { label: 'New audit', onClick: () => enterInstantAudit() }
@@ -956,9 +960,10 @@ const App: React.FC = () => {
   const marketingFullAudit = (handoff?: AuditHandoff) =>
     appAuth.authenticated ? enterInstantAudit(handoff) : openLoginWall('signup', handoff);
   const freeToolsPage = view === AppView.FREE_TOOLS ? freeToolsPageForPath(window.location.pathname) : null;
+  const learnRoute = view === AppView.LEARN ? learnPageForPath(window.location.pathname) : null;
 
   // A path-driven view without its page (e.g. a stray #compare hash) is Not Found, never a blank page.
-  if (view === AppView.NOT_FOUND || (PATH_DRIVEN_VIEWS.has(view) && !hubPage && !freeToolsPage)) {
+  if (view === AppView.NOT_FOUND || (PATH_DRIVEN_VIEWS.has(view) && !hubPage && !freeToolsPage && !learnRoute)) {
     return (
       <Suspense fallback={null}>
         <NotFoundPage onHome={() => setView(AppView.LANDING)} />
@@ -1156,6 +1161,22 @@ const App: React.FC = () => {
       <Suspense fallback={<ViewLoader label="Loading" />}>
         {introOverlay}
         <SeoHubPage page={hubPage} isAuthenticated={appAuth.authenticated} onFullAudit={marketingFullAudit} />
+        {marketingOverlays}
+      </Suspense>
+      </MarketingChromeContext.Provider>
+    );
+  }
+
+  if (learnRoute) {
+    return (
+      <MarketingChromeContext.Provider value={marketingChrome}>
+      <Suspense fallback={<ViewLoader label="Loading" />}>
+        {introOverlay}
+        <LearnPage
+          article={learnRoute.article}
+          isAuthenticated={appAuth.authenticated}
+          onFullAudit={marketingFullAudit}
+        />
         {marketingOverlays}
       </Suspense>
       </MarketingChromeContext.Provider>

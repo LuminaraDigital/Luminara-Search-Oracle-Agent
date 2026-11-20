@@ -19,7 +19,7 @@ import {
 } from '../worker/mcpGovernance';
 import { redactSensitive } from '../worker/logRedaction';
 import { handleMcpRequest } from '../worker/mcpServer';
-import type { HostedIdentity } from '../worker/userTypes';
+import type { HostedIdentity, McpCredential } from '../worker/userTypes';
 import { createSqliteD1 } from './helpers/sqliteD1';
 
 function mockKv(store = new Map<string, string>()): KVNamespace {
@@ -413,6 +413,68 @@ describe('mcp integration', () => {
       .bind('org_acct_gov')
       .first<{ action: string }>();
     expect(audit?.action).toBe('mcp_tool_allow');
+  });
+
+  it('records the tool name and outcome and leaves call inputs out of the audit log', async () => {
+    const env = makeEnv();
+    const marker = 'do-not-persist-this-tool-input';
+    const habitat: McpCredential = {
+      kind: 'habitat',
+      id: 'hab-1',
+      scopes: ['mcp:free'],
+      projectId: 'proj-bound',
+      domain: 'bound.example',
+      maxRisk: 'read',
+    };
+
+    const blocked = await handleMcpRequest(
+      mcpCall('save_report', { projectId: 'other-project', title: marker, summary: marker, html: marker }),
+      env,
+      user,
+      habitat,
+    );
+    const allowed = await handleMcpRequest(mcpCall('whoami', { note: marker }), env, user);
+    const approval = await handleMcpRequest(mcpCall('browse_close', { sessionId: marker }), env, user);
+    expect(blocked.status).toBe(200);
+    expect(allowed.status).toBe(200);
+    expect(approval.status).toBe(200);
+
+    const { results } = await env.DB.prepare(
+      `SELECT action, target_id, details FROM org_audit_logs WHERE org_id = ? AND action LIKE 'mcp_tool_%' ORDER BY rowid ASC`,
+    )
+      .bind('org_acct_gov')
+      .all<{ action: string; target_id: string; details: string }>();
+    expect(results.map((row) => `${row.action}:${row.target_id}`)).toEqual([
+      'mcp_tool_block:save_report',
+      'mcp_tool_allow:whoami',
+      'mcp_tool_require_approval:browse_close',
+    ]);
+    for (const row of results) {
+      expect(row.details).not.toContain(marker);
+      const details = JSON.parse(row.details) as Record<string, unknown>;
+      expect(details).toMatchObject({ tool: row.target_id });
+      expect(details).not.toHaveProperty('args');
+      expect(details).not.toHaveProperty('projectId');
+      expect(details).not.toHaveProperty('sessionId');
+      expect(details).not.toHaveProperty('title');
+      expect(details).not.toHaveProperty('html');
+    }
+    expect(JSON.parse(results[0].details)).toEqual({
+      tool: 'save_report',
+      decision: 'block',
+      reason: 'HABITAT_RISK_CEILING_EXCEEDED',
+    });
+    expect(JSON.parse(results[1].details)).toEqual({ tool: 'whoami', decision: 'allow' });
+    expect(JSON.parse(results[2].details)).toEqual({
+      tool: 'browse_close',
+      decision: 'require_approval',
+      reason: 'destructive_requires_approval',
+    });
+
+    const request = await env.DB.prepare(`SELECT args_json FROM mcp_action_requests WHERE user_id = ?`)
+      .bind('acct_gov')
+      .first<{ args_json: string }>();
+    expect(request?.args_json).toContain(marker);
   });
 
   it('read tool allowed without subscription and writes audit row', async () => {

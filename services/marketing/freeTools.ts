@@ -34,8 +34,8 @@ export const FREE_TOOLS_PATH = '/free-tools';
  */
 export const FREE_TOOLS_CLOSING = {
   eyebrow: 'Free check',
-  lede: 'Reads a homepage title and description, robots.txt and llms.txt. No card, no account.',
-  body: `The free check reads your homepage title, description and structured data, plus robots.txt and llms.txt, with no card and no account. Instant Audit then checks your site and live web search and gives you one fix to ship. ${LIVE_ANSWER_CHECKS}`,
+  lede: 'Reads a homepage title and description, robots.txt and llms.txt, plus a capped Tavily sample. No card, no account.',
+  body: `The free check reads your homepage title, description and structured data, plus robots.txt and llms.txt, with no card and no account. It may also ask Tavily up to three buyer questions and labels that sample Measured only when the call returns. Instant Audit then checks your site and live web search and gives you one fix to ship. ${LIVE_ANSWER_CHECKS}`,
 } as const;
 
 /** Added to each generator's last step: most agency owners hand files to whoever runs their site. */
