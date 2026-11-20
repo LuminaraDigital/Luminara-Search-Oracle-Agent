@@ -20,7 +20,7 @@ export interface AeoPatternRecord {
   integrityScore?: number;
   schemaSafety?: number;
   citeWorthiness?: number;
-  /** Default true; false when security measurement was CORS-limited only. */
+  /** Default true; false when the security check was browser-limited or reached nothing. */
   trainEligible?: boolean;
 }
 
@@ -137,7 +137,7 @@ export class AeoCorpusService {
     // Extract entity keywords
     const entityNodes = [cleanDomain.split('.')[0], vertical.split(' ')[0], schemaType];
 
-    const trainEligible = trust?.measurementConfidence === 'cors_limited' ? false : true;
+    const trainEligible = trust?.measurementConfidence !== 'cors_limited' && trust?.measurementConfidence !== 'failed';
 
     // Seed 3 standard intent patterns for this vertical
     const intents: Array<{ intent: 'informational' | 'commercial' | 'comparative'; query: string }> = [

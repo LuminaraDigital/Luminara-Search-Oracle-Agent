@@ -1,11 +1,12 @@
 /* Landing domain check: one input, one button, an honest inline result.
- * Runs the anonymous live check (homepage head, robots.txt, llms.txt) on this page, keeps the
- * engines labeled Not measured, then hands off to the full audit.
+ * Runs the live check (homepage head, robots.txt, llms.txt, and a capped Tavily sample)
+ * on this page. Named AI product rows stay Not measured, then hands off to the full audit.
  */
 import React, { useEffect, useEffectEvent, useRef, useState } from 'react';
 import { useDemoPlayback } from './demo/useDemoPlayback';
 import { normalizeDemoUrl, visibleProbeHost } from './demo/demoFixtures';
 import { EngineStatusChip } from './EvidenceGlyph';
+import { AiAnswerSamplePanel } from './AiAnswerSamplePanel';
 import { HomepageSnippetResult } from './HomepageSnippetResult';
 import { productTelemetry } from '../../services/analytics/productTelemetry';
 import type { AuditHandoff } from '../../services/activation/auditHandoff';
@@ -169,7 +170,13 @@ export const DomainCheck: React.FC<DomainCheckProps> = ({
             </button>
           </div>
 
-          {/* The homepage read is the first value, so it leads; the engine chips follow it. */}
+          {demo.fixture?.aiSample && (
+            <div className="mt-4">
+              <AiAnswerSamplePanel sample={demo.fixture.aiSample} />
+            </div>
+          )}
+
+          {/* The homepage read follows the live sample; the engine chips stay Not measured. */}
           {demo.fixture && demo.resultKind === 'live_crawl' && demo.fixture.page !== undefined && (
             <div className="mt-4">
               <HomepageSnippetResult

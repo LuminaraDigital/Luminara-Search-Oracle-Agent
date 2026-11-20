@@ -9,8 +9,10 @@ import { REAL_ESTATE_AUDIENCE } from '../services/marketing/marketingHeroCopy';
 import { PLAY_STORE_URL, TELEGRAM_BOT_URL, TELEGRAM_MINI_APP_PUBLIC_URL } from '../services/marketing/platformSurfaces';
 import { HUB_PAGES, HUB_REVIEWED } from '../services/marketing/seoHubPages';
 import { FREE_TOOLS, FREE_TOOLS_PATH } from '../services/marketing/freeTools';
+import { LEARN_ARTICLES, LEARN_INDEX, LEARN_PATH } from '../services/marketing/learnPages';
 import { COMPANY_SERVICES_URL, COMPANY_SITE_URL } from '../services/legal/consumerTerms';
 import { PLAN_ENTITLEMENTS } from '../services/plans/planEntitlements';
+import { MCP_PUBLIC_URL } from '../services/mcp/publicServer';
 
 export const ROBOTS_TXT = `# Luminara Suite crawl policy
 # Public marketing pages, /llms.txt, /llm.txt, /ai.txt, and redacted /share/teaser/ cards are meant to be cited.
@@ -45,6 +47,7 @@ Allow: /contact
 Allow: /desktop
 Allow: /compare/
 Allow: /best/
+Allow: /learn/
 Allow: /docs/
 Allow: /docs/what-is-aeo.html
 Allow: /llms.txt
@@ -75,6 +78,7 @@ Allow: /contact
 Allow: /desktop
 Allow: /compare/
 Allow: /best/
+Allow: /learn/
 Allow: /docs/
 Allow: /docs/what-is-aeo.html
 Allow: /llms.txt
@@ -123,30 +127,89 @@ export function applyHostRobots(url: URL, environment: string | undefined, res: 
   return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
 }
 
+/**
+ * Git commit date (YYYY-MM-DD) of the page source.
+ * Hub pages share seoHubPages.ts. Free tools share freeTools.ts.
+ * A path listed here overrides that shared date. Update an entry when its source changes.
+ */
+const SITEMAP_LASTMOD: Record<string, string> = {
+  '/': '2026-11-15',
+  '/how-it-works': '2026-11-15',
+  '/ai': '2026-10-31',
+  '/why': '2026-11-15',
+  '/pricing': '2026-11-15',
+  '/methodology': '2026-11-15',
+  '/white-paper': '2026-11-17',
+  '/sample-report': '2026-10-22',
+  '/privacy': '2026-11-15',
+  '/terms': '2026-11-15',
+  '/faq': '2026-11-15',
+  '/contact': '2026-11-15',
+  '/docs/mcp.html': '2026-11-15',
+  '/docs/what-is-aeo.html': '2026-11-15',
+  '/desktop': '2026-11-02',
+  '/best/ai-visibility-tools-with-mcp': '2026-11-15',
+  '/learn': '2026-11-17',
+  '/learn/what-is-aeo': '2026-11-15',
+  '/learn/how-ai-recommends-an-agency': '2026-11-15',
+  '/learn/llms-txt-for-real-estate': '2026-11-15',
+  '/learn/robots-txt-and-ai-crawlers': '2026-11-15',
+  '/learn/real-estate-agent-schema': '2026-11-15',
+  '/learn/suburb-pages': '2026-11-15',
+  '/learn/check-if-ai-names-your-agency': '2026-11-15',
+  '/learn/claim-your-agency-in-chatgpt': '2026-11-17',
+  '/learn/mcp-for-marketing-data': '2026-11-15',
+  '/llms.txt': '2026-11-17',
+  '/ai.txt': '2026-11-15',
+};
+
+const HUB_LASTMOD = '2026-10-31';
+const FREE_TOOLS_LASTMOD = '2026-10-28';
+
+function sitemapLastmod(path: string): string {
+  const dated = SITEMAP_LASTMOD[path];
+  if (dated) return dated;
+  if (path.startsWith('/compare/') || path.startsWith('/best/')) return HUB_LASTMOD;
+  if (path === FREE_TOOLS_PATH || path.startsWith('/free-tools/')) return FREE_TOOLS_LASTMOD;
+  throw new Error(`sitemap lastmod missing for ${path}`);
+}
+
+function sitemapPaths(): string[] {
+  return [
+    '/',
+    '/how-it-works',
+    '/ai',
+    '/why',
+    '/pricing',
+    '/methodology',
+    '/white-paper',
+    '/sample-report',
+    '/privacy',
+    '/terms',
+    '/faq',
+    '/contact',
+    '/docs/mcp.html',
+    '/docs/what-is-aeo.html',
+    '/desktop',
+    ...HUB_PAGES.map((page) => page.path),
+    LEARN_PATH,
+    ...LEARN_ARTICLES.map((article) => article.path),
+    FREE_TOOLS_PATH,
+    ...FREE_TOOLS.map((tool) => tool.path),
+    '/llms.txt',
+    '/ai.txt',
+  ];
+}
+
 export function buildSitemapXml(origin: string = 'https://www.luminarasuite.com'): string {
   const base = origin.replace(/\/+$/, '');
+  const urls = sitemapPaths().map((path) => {
+    const loc = path === '/' ? `${base}/` : `${base}${path}`;
+    return `  <url><loc>${loc}</loc><lastmod>${sitemapLastmod(path)}</lastmod></url>`;
+  });
   return `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url><loc>${base}/</loc></url>
-  <url><loc>${base}/how-it-works</loc></url>
-  <url><loc>${base}/ai</loc></url>
-  <url><loc>${base}/why</loc></url>
-  <url><loc>${base}/pricing</loc></url>
-  <url><loc>${base}/methodology</loc></url>
-  <url><loc>${base}/white-paper</loc></url>
-  <url><loc>${base}/sample-report</loc></url>
-  <url><loc>${base}/privacy</loc></url>
-  <url><loc>${base}/terms</loc></url>
-  <url><loc>${base}/faq</loc></url>
-  <url><loc>${base}/contact</loc></url>
-  <url><loc>${base}/docs/mcp.html</loc></url>
-  <url><loc>${base}/docs/what-is-aeo.html</loc></url>
-  <url><loc>${base}/desktop</loc></url>
-${HUB_PAGES.map((page) => `  <url><loc>${base}${page.path}</loc></url>`).join('\n')}
-  <url><loc>${base}${FREE_TOOLS_PATH}</loc></url>
-${FREE_TOOLS.map((tool) => `  <url><loc>${base}${tool.path}</loc></url>`).join('\n')}
-  <url><loc>${base}/llms.txt</loc></url>
-  <url><loc>${base}/ai.txt</loc></url>
+${urls.join('\n')}
 </urlset>
 `;
 }
@@ -233,13 +296,21 @@ ${llmsPaidPlanBlock()}
 ## MCP
 
 - Docs: https://www.luminarasuite.com/docs/mcp.html
-- Endpoint: https://luminarasuite.com/api/mcp
-- MCP is on every plan: ${PLAN_ENTITLEMENTS.free.mcpDailyCallLimit} calls a day on Free, no daily cap on Growth and Agency. Paid research needs Agency or your own DataForSEO login.
+- Endpoint: ${MCP_PUBLIC_URL}
+- MCP is on every plan. Free: ${PLAN_ENTITLEMENTS.free.mcpDailyCallLimit} calls a day. Starter: ${PLAN_ENTITLEMENTS.starter.mcpDailyCallLimit} calls a day. Growth and Agency have no daily cap. Paid research needs Agency or your own DataForSEO login. The daily count is per account. A new token does not reset it.
 
 ## Telegram Mini App
 
 - ${TELEGRAM_MINI_APP_PUBLIC_URL}
 - Bot: ${TELEGRAM_BOT_URL}
+
+## Markdown for agents
+
+Same pages as markdown. HTML heads on the home and pricing pages link these with rel=alternate.
+
+- Home: https://www.luminarasuite.com/index.md
+- Pricing: https://www.luminarasuite.com/pricing.md
+- MCP: https://www.luminarasuite.com/mcp.md
 
 ## Product
 
@@ -260,6 +331,14 @@ ${llmsPaidPlanBlock()}
 Competitor rows cite each vendor's public pages as of ${HUB_REVIEWED}. No scores are published for other products.
 
 ${HUB_PAGES.map((page) => `- ${page.label}: https://www.luminarasuite.com${page.path}`).join('\n')}
+
+## Learn
+
+Guides for independent real estate agencies and for developers who ship their sites.
+
+- ${LEARN_INDEX.label}: https://www.luminarasuite.com${LEARN_INDEX.path}
+${LEARN_ARTICLES.map((article) => `- ${article.label}: https://www.luminarasuite.com${article.path}`).join('\n')}
+${LIVE_ANSWER_CHECKS}
 
 ## Free tools
 
@@ -303,6 +382,7 @@ Allow: /contact
 Allow: /desktop
 Allow: /compare/
 Allow: /best/
+Allow: /learn/
 Allow: /docs/
 Allow: /docs/what-is-aeo.html
 Allow: /llms.txt

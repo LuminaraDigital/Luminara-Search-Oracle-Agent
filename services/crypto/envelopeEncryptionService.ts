@@ -32,7 +32,7 @@ function bytesToBase64(bytes: Uint8Array): string {
 }
 
 /** Convert base64 string to Uint8Array */
-function base64ToBytes(base64: string): Uint8Array {
+function base64ToBytes(base64: string): Uint8Array<ArrayBuffer> {
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) {
@@ -42,7 +42,7 @@ function base64ToBytes(base64: string): Uint8Array {
 }
 
 /** Derive an AES-256-GCM key from a secret passphrase and salt using PBKDF2 */
-async function deriveAesKey(passphrase: string, salt: Uint8Array): Promise<CryptoKey> {
+async function deriveAesKey(passphrase: string, salt: Uint8Array<ArrayBuffer>): Promise<CryptoKey> {
   const encoder = new TextEncoder();
   const rawKeyMaterial = encoder.encode(passphrase);
 

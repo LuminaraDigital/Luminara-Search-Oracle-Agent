@@ -10,7 +10,10 @@ import { planCapsFor } from './telegramBot';
 import { identify, json } from './workerUtils';
 import { identifyApiKey } from './apiKeyService';
 import { bearerFromAuthorization } from './firebaseAuth';
-import { identifyMcpOAuthToken, mcpResourceMetadataUrl } from './mcpOAuth';
+import { identifyMcpOAuthToken } from './mcpOAuth';
+import { mcpResourceMetadataUrl } from './mcpOAuthDiscovery';
+import { acceptedMcpResources } from './mcpOAuthResource';
+import { logMcpAbuse } from './mcpLimits';
 import { identifyHabitatToken } from './selfDrivingHabitat';
 import { AGENT_SESSION_ACTIONS } from './oracleAgent/approvals';
 
@@ -134,24 +137,60 @@ export async function resolveMcpUser(
   }
 
   const oauth = bearer ? await identifyMcpOAuthToken(env, bearer) : null;
-  if (oauth) {
-    const denied = await requireMcpAccess(env, oauth.user);
-    if (denied) return { response: denied };
-    const scopes = oauth.scopeEnforced ? oauth.scope.split(/\s+/).filter(Boolean) : null;
-    return { user: oauth.user, credential: { kind: 'oauth', id: null, scopes } };
-  }
-
-  const who = await identify(request, env);
-  if (who.error || !who.user) {
+  if (oauth?.resource && !acceptedMcpResources(new URL(request.url).origin, env).has(oauth.resource)) {
+    const metadata = mcpResourceMetadataUrl(request);
     return {
       response: json(
         {
           ok: false,
-          error: who.error || 'Unauthorized: Authentication required',
-          code: 'AUTH_REQUIRED',
+          error: 'This token was issued for a different resource.',
+          code: 'invalid_token',
         },
         401,
-        { 'WWW-Authenticate': `Bearer resource_metadata="${mcpResourceMetadataUrl(request)}"` },
+        {
+          'WWW-Authenticate': `Bearer error="invalid_token", error_description="token was issued for a different resource", resource_metadata="${metadata}"`,
+        },
+      ),
+    };
+  }
+  if (oauth) {
+    const denied = await requireMcpAccess(env, oauth.user);
+    if (denied) return { response: denied };
+    const scopes = oauth.scopeEnforced ? oauth.scope.split(/\s+/).filter(Boolean) : null;
+    return { user: oauth.user, credential: { kind: 'oauth', id: null, scopes, clientId: oauth.clientId } };
+  }
+
+  if (bearer?.startsWith('mcp_')) {
+    logMcpAbuse({ kind: 'invalid_mcp_token' });
+    return {
+      response: json(
+        {
+          ok: false,
+          error: 'token revoked or expired, reconnect',
+          code: 'invalid_token',
+        },
+        401,
+        {
+          'WWW-Authenticate': `Bearer error="invalid_token", error_description="token revoked or expired, reconnect", resource_metadata="${mcpResourceMetadataUrl(request)}"`,
+        },
+      ),
+    };
+  }
+
+  const who = await identify(request, env);
+  if (who.error || !who.user) {
+    // Most callers here are agents, so say how to connect rather than how to open the web app.
+    const metadata = mcpResourceMetadataUrl(request);
+    return {
+      response: json(
+        {
+          ok: false,
+          error: 'Connect to Luminara with OAuth: read the resource metadata, register, then sign in. Or send a Luminara API key as a Bearer token.',
+          code: 'AUTH_REQUIRED',
+          resource_metadata: metadata,
+        },
+        401,
+        { 'WWW-Authenticate': `Bearer resource_metadata="${metadata}"` },
       ),
     };
   }

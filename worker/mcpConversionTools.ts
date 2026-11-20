@@ -4,6 +4,7 @@
  */
 
 import type { McpToolDef, McpToolResult } from './mcpServer';
+import { MCP_PAGE_PROPERTIES, pageList } from './mcpToolMeta';
 import {
   ingestInboundEnquiry,
   listProjectEnquiries,
@@ -60,27 +61,37 @@ function toTextResult(
 export const CONVERSION_SPINE_MCP_TOOLS: McpToolDef[] = [
   {
     name: 'list_enquiries',
-    description: 'Uses no credits. Lists enquiries, SLA status, and evidence-bound qualification briefs for a project.',
+    description:
+      'Lists enquiries for one project, at most 50 per page, with SLA status and qualification briefs. Uses no credits. Pass cursor when nextCursor is set.',
     creditClass: 'free',
     inputSchema: {
       type: 'object',
       properties: {
         projectId: { type: 'string' },
+        ...MCP_PAGE_PROPERTIES,
       },
       additionalProperties: false,
     },
     handler: async (args, ctx) => {
       const projectId = typeof args.projectId === 'string' && args.projectId.trim() ? args.projectId.trim() : 'default';
       const enquiries = await listProjectEnquiries(ctx.env, ctx.accountId, projectId);
-      const lines = enquiries.length
-        ? enquiries.map((e) => `- ${e.id}: ${e.contactName} [${e.intentType}] status=${e.status} paused=${Boolean(e.automationPaused)}`).join('\n')
+      const page = pageList(enquiries, args);
+      const lines = page.items.length
+        ? page.items.map((e) => `- ${e.id}: ${e.contactName} [${e.intentType}] status=${e.status} paused=${Boolean(e.automationPaused)}`).join('\n')
         : 'No enquiries recorded yet.';
-      return toTextResult(lines, { projectId, count: enquiries.length, enquiries });
+      return toTextResult(lines, {
+        projectId,
+        count: page.items.length,
+        limit: page.limit,
+        truncated: page.truncated,
+        nextCursor: page.nextCursor,
+        enquiries: page.items,
+      });
     },
   },
   {
     name: 'ingest_enquiry',
-    description: 'Uses no credits. Ingests an inbound real-estate or SME enquiry with Australian statutory valuation/legal guard and ClaimLedger brief extraction.',
+    description: 'Uses no credits. Records an inbound real-estate or small-business enquiry for one project and returns a qualification brief. Requests for a price valuation or legal advice are marked for a licensed person to answer.',
     creditClass: 'free',
     inputSchema: {
       type: 'object',
@@ -103,7 +114,7 @@ export const CONVERSION_SPINE_MCP_TOOLS: McpToolDef[] = [
       const fullName = requireStr(args, 'fullName');
       const initialMessage = requireStr(args, 'initialMessage');
       if (!fullName || !initialMessage) {
-        return toTextResult('fullName and initialMessage are required', undefined, true);
+        return toTextResult('fullName and initialMessage are required', { code: 'BAD_INPUT' }, true);
       }
       const res = await ingestInboundEnquiry(ctx.env, {
         accountId: ctx.accountId,
@@ -155,7 +166,7 @@ export const CONVERSION_SPINE_MCP_TOOLS: McpToolDef[] = [
         ? (args.proposedSlots as ProposedBookingSlot[])
         : [];
       if (!enquiryId || !contactId || proposedSlots.length === 0) {
-        return toTextResult('enquiryId, contactId, and non-empty proposedSlots are required', undefined, true);
+        return toTextResult('enquiryId, contactId, and non-empty proposedSlots are required', { code: 'BAD_INPUT' }, true);
       }
       const res = await createBookingProposal(ctx.env, {
         accountId: ctx.accountId,
@@ -192,7 +203,7 @@ export const CONVERSION_SPINE_MCP_TOOLS: McpToolDef[] = [
       const appointmentId = requireStr(args, 'appointmentId');
       const decision = requireStr(args, 'decision');
       if (!appointmentId || (decision !== 'approve' && decision !== 'decline')) {
-        return toTextResult('appointmentId and decision ("approve" | "decline") required', undefined, true);
+        return toTextResult('appointmentId and decision ("approve" | "decline") required', { code: 'BAD_INPUT' }, true);
       }
       const res = await decideBookingAppointment(ctx.env, {
         accountId: ctx.accountId,
@@ -231,7 +242,7 @@ export const CONVERSION_SPINE_MCP_TOOLS: McpToolDef[] = [
   },
   {
     name: 'classify_cms_remediation',
-    description: 'Uses no credits. Classifies an audit finding into Tier 1 (Instant MCP), Tier 2 (Guided Builder / Squarespace Injection), or Tier 3 (Luminara Digital Engineering Brief).',
+    description: 'Uses no credits. Sorts an audit finding by how it can be fixed: Tier 1, a change a CMS connector can make; Tier 2, a guided change in the site builder (for example Squarespace code injection); Tier 3, a written brief for a developer.',
     creditClass: 'free',
     inputSchema: {
       type: 'object',
@@ -264,7 +275,7 @@ export const CONVERSION_SPINE_MCP_TOOLS: McpToolDef[] = [
       const domain = requireStr(args, 'domain');
       const findingCategory = requireStr(args, 'findingCategory');
       if (!domain || !findingCategory) {
-        return toTextResult('domain and findingCategory are required', undefined, true);
+        return toTextResult('domain and findingCategory are required', { code: 'BAD_INPUT' }, true);
       }
       const summary =
         requireStr(args, 'summary') ||
@@ -315,7 +326,7 @@ export const CONVERSION_SPINE_MCP_TOOLS: McpToolDef[] = [
       const connectorId = requireStr(args, 'connectorId');
       const domain = requireStr(args, 'domain');
       if (!connectorId || !(connectorId in CMS_MCP_CONNECTOR_CATALOG) || !domain) {
-        return toTextResult('Valid connectorId and domain are required', undefined, true);
+        return toTextResult('Valid connectorId and domain are required', { code: 'BAD_INPUT' }, true);
       }
       const typedConnector = connectorId as CmsMcpConnectorId;
       const projectId = typeof args.projectId === 'string' && args.projectId.trim() ? args.projectId.trim() : 'default';

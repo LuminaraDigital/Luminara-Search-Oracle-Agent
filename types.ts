@@ -26,6 +26,8 @@ export enum AppView {
   COMPARE = 'COMPARE',
   /** /free-tools and /free-tools/* pages. The tool comes from the pathname. */
   FREE_TOOLS = 'FREE_TOOLS',
+  /** /learn and /learn/* pages. The article comes from the pathname. */
+  LEARN = 'LEARN',
   PRICING = 'PRICING',
   METHODOLOGY = 'METHODOLOGY',
   WHITE_PAPER = 'WHITE_PAPER',
@@ -137,6 +139,8 @@ export interface BusinessDNA {
   perceivedGaps: string[];
   rawContext: string; // Condensed summary for LLM context
   industry?: string;
+  /** Industry profile id. Omitted keeps the real estate agency checks. */
+  industryId?: string;
   /** Suburb the free AI answer asks about. Optional until the profile is filled in. */
   suburb?: string;
   /** State or territory that goes with suburb. */

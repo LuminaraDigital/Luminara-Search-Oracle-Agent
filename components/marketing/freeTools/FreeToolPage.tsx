@@ -5,6 +5,7 @@ import {
   FREE_TOOLS,
   FREE_TOOLS_CLOSING,
   FREE_TOOLS_HUB,
+  FREE_TOOLS_PATH,
   type FreeTool,
   type FreeToolId,
 } from '../../../services/marketing/freeTools';
@@ -15,6 +16,8 @@ import { SerpPreviewTool } from './SerpPreviewTool';
 import { RobotsTxtTool } from './RobotsTxtTool';
 import { LlmsTxtTool } from './LlmsTxtTool';
 import { SchemaTool } from './SchemaTool';
+import { LearnReadingList } from '../LearnReadingList';
+import { learnLinksForPath } from '../../../services/marketing/learnPages';
 
 const PANELS: Record<FreeToolId, React.FC<{ onCopied: () => void }>> = {
   'serp-preview': SerpPreviewTool,
@@ -65,6 +68,7 @@ const ToolBody: React.FC<{ tool: FreeTool }> = ({ tool }) => {
 
       <MarketingFaq embedded className="mt-16" items={tool.faq} heading="Common questions" />
 
+      <LearnReadingList links={learnLinksForPath(tool.path)} />
       <section aria-labelledby="more-tools-heading" className={SECTION}>
         <h2 id="more-tools-heading" className="lx-eyebrow mb-6">More free tools</h2>
         <ToolCards tools={FREE_TOOLS.filter((other) => other.id !== tool.id)} />
@@ -124,6 +128,7 @@ const FreeToolPage: React.FC<FreeToolPageProps> = ({ tool, isAuthenticated, onFu
             <ToolCards tools={FREE_TOOLS} />
           </section>
           <MarketingFaq embedded className="mt-16" items={FREE_TOOLS_HUB.faq} heading="Common questions" />
+          <LearnReadingList links={learnLinksForPath(FREE_TOOLS_PATH)} />
         </>
       )}
     </MarketingPageShell>

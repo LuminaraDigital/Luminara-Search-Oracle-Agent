@@ -25,10 +25,14 @@ describe('jobsForCron', () => {
       'ton_pending_sweep',
       'payment_support_sweep',
       'weekly_decision_digest',
+      'weekly_visibility_email',
       'rsi_skill_curator',
       'rsi_posting_reflection',
       'citation_watch',
       'recovery_campaign_sweep',
+      'project_monitor',
+      'mcp_oauth_refresh_prune',
+      'outcome_followup',
     ]);
   });
 
@@ -41,10 +45,14 @@ describe('jobsForCron', () => {
       'ton_pending_sweep',
       'payment_support_sweep',
       'weekly_decision_digest',
+      'weekly_visibility_email',
       'rsi_skill_curator',
       'rsi_posting_reflection',
       'citation_watch',
       'recovery_campaign_sweep',
+      'project_monitor',
+      'mcp_oauth_refresh_prune',
+      'outcome_followup',
     ]);
   });
 
@@ -73,10 +81,14 @@ describe('jobsForCron', () => {
       'ton_pending_sweep',
       'payment_support_sweep',
       'weekly_decision_digest',
+      'weekly_visibility_email',
       'rsi_skill_curator',
       'rsi_posting_reflection',
       'citation_watch',
       'recovery_campaign_sweep',
+      'project_monitor',
+      'mcp_oauth_refresh_prune',
+      'outcome_followup',
     ]);
   });
 

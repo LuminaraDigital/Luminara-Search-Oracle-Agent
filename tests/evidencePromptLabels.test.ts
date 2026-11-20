@@ -176,10 +176,11 @@ describe('audit prompt evidence labels', () => {
 
   // SW0a-7: the preliminary trust block carries no cite-worthiness value.
   it('labels the preliminary trust pack ESTIMATED and prints no cite-worthiness value or formula', () => {
-    // A failed security check caps the composite at 50. The raw value (30 + 30 + 20 = 80) is above it,
-    // so the pack holds the finding that quotes the raw composite.
+    // A failed security check caps the composite at 50 and adds nothing to it. The raw value
+    // (30 + 20 + 20 = 70) is above the cap, so the pack holds the finding that quotes the raw composite.
     const pack = aeoTrustPackService.build({
       security: { ...entity('failed').security, trustScore: 100 },
+      schemaSafety: { okToDeploy: true, severity: 'ok', issues: [], parsedTypes: ['Organization'] },
       empirical: { ...summary, entityClarityScore: 100 },
       integrity: { integrityScore: 100, deadCitationCount: 0, spoofRisk: 'low', sameAsConflict: false, details: [], measuredAt: 1 },
       reportText: 'Acme makes anvils',

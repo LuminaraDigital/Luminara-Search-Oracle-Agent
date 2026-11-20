@@ -1,0 +1,12 @@
+{
+  "name": "luminara",
+  "description": "Official Luminara plugins for Claude Code.",
+  "owner": { "name": "Luminara", "url": "https://luminarasuite.com" },
+  "plugins": [
+    {
+      "name": "luminara",
+      "source": "./plugins/luminara",
+      "description": "Luminara Suite: AI visibility and SEO audits, project memory and reports, signed in with your Luminara account."
+    }
+  ]
+}

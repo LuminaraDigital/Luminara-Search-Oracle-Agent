@@ -8,6 +8,8 @@ import { MAX_BODY_BYTES, readBody } from './security';
 import { identify, json, billingId } from './workerUtils';
 import { DataPlaneConfigError, readPlane, type DataPlaneDeps } from './dataPlane';
 import { openAuditHistoryStore } from './auditHistoryRepo';
+import { mirrorSnapshotForDomain } from './projectHistoryService';
+import { instantAuditSnapshot } from '../services/history/snapshotCapture';
 
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 50;
@@ -120,6 +122,22 @@ export async function handleAuditHistoryRoute(request: Request, env: Env, deps?:
     if (!checked.ok) return json({ ok: false, error: checked.error, code: 'INVALID_ENTRY' }, 400);
     // A re-save of the same audit keeps the time it was first measured, as the browser list does.
     const entry = await store.upsert({ accountId, entry: checked.entry, now: Date.now() });
+    if (entry && env.DB) {
+      await mirrorSnapshotForDomain(
+        env,
+        accountId,
+        entry.domain,
+        (projectId) =>
+          instantAuditSnapshot({
+            projectId,
+            entryId: entry.id,
+            measuredAt: entry.measuredAt,
+            citationRatePercent: entry.citationRatePercent,
+            schemaGapCount: entry.schemaGapCount,
+          }),
+        { clientId: entry.clientId, replace: true },
+      );
+    }
     return json({ ok: true, entry });
   }
 

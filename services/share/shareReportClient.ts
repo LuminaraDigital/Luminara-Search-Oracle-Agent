@@ -17,7 +17,9 @@ export interface CreateShareReportInput {
     accentColor?: string;
     preparedBy?: string;
     clientName?: string;
+    showPoweredBy?: boolean;
   };
+  projectId?: string;
   password?: string;
   clientId?: string;
   expiresInMs?: number;

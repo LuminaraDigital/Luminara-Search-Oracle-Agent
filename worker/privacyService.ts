@@ -58,6 +58,21 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
     accountId,
   );
   const projects = await q<Record<string, unknown>>(`SELECT * FROM projects WHERE account_id = ?`, accountId);
+  const accountIndustry = await q<Record<string, unknown>>(
+    `SELECT industry_id, updated_at FROM account_industries WHERE account_id = ?`,
+    accountId,
+  ).catch((err) => {
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+    return [] as Record<string, unknown>[];
+  });
+  const workspaces = await q<Record<string, unknown>>(
+    `SELECT id, name, display_name, logo_url, primary_colour, report_domain, created_at, updated_at
+       FROM client_workspaces WHERE account_id = ?`,
+    accountId,
+  ).catch((err) => {
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+    return [] as Record<string, unknown>[];
+  });
   const reports = await q<Record<string, unknown>>(
     `SELECT id, project_id, title, summary, skill, created_at FROM agent_reports WHERE account_id = ?`,
     accountId,
@@ -243,6 +258,47 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
     if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
     return [] as Record<string, unknown>[];
   });
+  const projectMeasurementSnapshots = await q<Record<string, unknown>>(
+    `SELECT id, project_id, kind, measured_at, source_ref, signals_json
+       FROM project_measurement_snapshots WHERE account_id = ? ORDER BY measured_at DESC LIMIT 1000`,
+    accountId,
+  ).catch((err) => {
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+    return [] as Record<string, unknown>[];
+  });
+  const projectActionOutcomes = await q<Record<string, unknown>>(
+    `SELECT id, project_id, action_key, title, kind, metric, subject, status, before_value, after_value, lift, data_label, recommended_at, resolved_at
+       FROM project_action_outcomes WHERE account_id = ? ORDER BY recommended_at DESC LIMIT 500`,
+    accountId,
+  ).catch((err) => {
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+    return [] as Record<string, unknown>[];
+  });
+  const projectOutcomeFollowUps = await q<Record<string, unknown>>(
+    `SELECT id, project_id, outcome_id, horizon_days, due_at, status, attempts, before_value, after_value, delta,
+            source_ref, baseline_measured_at, measured_at, judged_at, note
+       FROM project_outcome_followups WHERE account_id = ? ORDER BY due_at DESC LIMIT 500`,
+    accountId,
+  ).catch((err) => {
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+    return [] as Record<string, unknown>[];
+  });
+  const projectMonitors = await q<Record<string, unknown>>(
+    `SELECT id, project_id, enabled, cadence, email_opt_in, query_list_json, last_run_at, next_run_at, created_at, updated_at
+       FROM project_monitors WHERE account_id = ?`,
+    accountId,
+  ).catch((err) => {
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+    return [] as Record<string, unknown>[];
+  });
+  const projectMonitorAlerts = await q<Record<string, unknown>>(
+    `SELECT id, project_id, monitor_id, kind, summary, snapshot_id, created_at, read_at
+       FROM project_monitor_alerts WHERE account_id = ? ORDER BY created_at DESC LIMIT 500`,
+    accountId,
+  ).catch((err) => {
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+    return [] as Record<string, unknown>[];
+  });
   const externalEffects = await q<Record<string, unknown>>(
     `SELECT effect_key, project_id, target_system, action_kind, payload_hash, status, result_json, created_at, updated_at FROM external_effects WHERE account_id = ?`,
     accountId,
@@ -288,6 +344,13 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
       'recovery_runs',
       'outcome_stage_events',
       'external_effects',
+      'project_measurement_snapshots',
+      'project_action_outcomes',
+      'project_outcome_followups',
+      'project_monitors',
+      'project_monitor_alerts',
+      'account_industries',
+      'client_workspaces',
     ],
     users,
     workspace: workspace.map((w) => ({
@@ -302,6 +365,8 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
       })(),
     })),
     projects,
+    accountIndustry,
+    workspaces,
     agentReports: reports,
     memoryFacts: facts,
     memoryEdges,
@@ -334,6 +399,11 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
     recoveryRuns,
     outcomeStageEvents,
     externalEffects,
+    projectMeasurementSnapshots,
+    projectActionOutcomes,
+    projectOutcomeFollowUps,
+    projectMonitors,
+    projectMonitorAlerts,
     note: 'Financial ledger rows may be retained in minimized form for legal obligations.',
   };
 }
@@ -441,8 +511,31 @@ async function softDeleteAccount(env: Env, accountId: string, deps?: DataPlaneDe
   await drop('project_competitors', `DELETE FROM project_competitors WHERE project_id IN (SELECT id FROM projects WHERE account_id = ?)`);
   await drop('project_key_pages', `DELETE FROM project_key_pages WHERE project_id IN (SELECT id FROM projects WHERE account_id = ?)`);
   await drop('project_research_log', `DELETE FROM project_research_log WHERE project_id IN (SELECT id FROM projects WHERE account_id = ?)`);
+  await drop('project_measurement_snapshots', `DELETE FROM project_measurement_snapshots WHERE account_id = ?`);
+  await drop('project_outcome_followups', `DELETE FROM project_outcome_followups WHERE account_id = ?`);
+  await drop('project_action_outcomes', `DELETE FROM project_action_outcomes WHERE account_id = ?`);
+  await drop('project_monitor_alerts', `DELETE FROM project_monitor_alerts WHERE account_id = ?`);
+  await drop('project_monitors', `DELETE FROM project_monitors WHERE account_id = ?`);
   await drop('agent_reports', `DELETE FROM agent_reports WHERE account_id = ?`);
+  // Connected assistants: approval requests hold tool inputs, and refresh families keep a connection alive.
+  await drop('mcp_action_requests', `DELETE FROM mcp_action_requests WHERE user_id = ?`);
+  await drop(
+    'mcp_oauth_refresh_access',
+    `DELETE FROM mcp_oauth_refresh_access WHERE family_id IN (SELECT family_id FROM mcp_oauth_refresh_family WHERE account_id = ?)`,
+  );
+  await drop(
+    'mcp_oauth_refresh_retired',
+    `DELETE FROM mcp_oauth_refresh_retired WHERE family_id IN (SELECT family_id FROM mcp_oauth_refresh_family WHERE account_id = ?)`,
+  );
+  await drop('mcp_oauth_refresh_family', `DELETE FROM mcp_oauth_refresh_family WHERE account_id = ?`);
+  await drop('project_industries', `DELETE FROM project_industries WHERE project_id IN (SELECT id FROM projects WHERE account_id = ?)`);
   await drop('projects', `DELETE FROM projects WHERE account_id = ?`);
+  await drop('account_industries', `DELETE FROM account_industries WHERE account_id = ?`);
+  await drop(
+    'client_workspace_members',
+    `DELETE FROM client_workspace_members WHERE workspace_id IN (SELECT id FROM client_workspaces WHERE account_id = ?)`,
+  );
+  await drop('client_workspaces', `DELETE FROM client_workspaces WHERE account_id = ?`);
   await drop('win_shares', `DELETE FROM win_shares WHERE owner_id = ?`);
   await drop('shared_reports', `DELETE FROM shared_reports WHERE owner_account_id = ?`);
   // Anonymize login rows; keep account_id for ledger FK honesty (anonymize path when legal holds exist).

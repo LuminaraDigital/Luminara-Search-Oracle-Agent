@@ -5,6 +5,8 @@ export type HostedIdentity = {
   source: 'telegram' | 'firebase';
   email?: string;
   name?: string;
+  /** Set from the Firebase token at login. Undefined leaves the stored flag alone. */
+  emailVerified?: boolean;
   /**
    * Shared billing + workspace id after upsert/link.
    * Stars, TON, and (later) Stripe all write `sub:{accountId}`.
@@ -22,6 +24,8 @@ export type McpCredential = {
   /** api_keys.id for api_key, the token record id for habitat; null otherwise. Never a secret. */
   id: string | null;
   scopes: string[] | null;
+  /** OAuth dynamic client id. Null for API keys, sessions, and tokens minted before this field. */
+  clientId?: string | null;
   /** Project a habitat token is locked to. */
   projectId?: string | null;
   /** Domain of that project. */

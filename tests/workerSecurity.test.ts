@@ -139,6 +139,9 @@ describe('security headers', () => {
 
   it('caches a hashed asset for a year and leaves other files alone', async () => {
     expect(immutableAssetCache('/assets/index-Ab12cd34.js')).toBe('public, max-age=31536000, immutable');
+    expect(immutableAssetCache('/marketing/white-paper/web-landing-1280.f528283b67.webp')).toBe('public, max-age=31536000, immutable');
+    expect(immutableAssetCache('/marketing/white-paper/og.813bf4ef48.png')).toBe('public, max-age=31536000, immutable');
+    expect(immutableAssetCache('/marketing/white-paper/web-landing.png')).toBeNull();
     expect(immutableAssetCache('/favicon.ico')).toBeNull();
     expect(immutableAssetCache('/assets/index.js')).toBeNull();
     const locked = new Response('console.log(1)', { headers: { 'content-type': 'text/javascript' } });
@@ -803,7 +806,7 @@ describe('crawl surfaces', () => {
     const unknown = await worker.fetch(req('/some-unknown-page', { headers: { accept: 'text/html' } }), env, ctx);
     expect(unknown.status).toBe(404);
     const unknownHtml = await unknown.text();
-    expect(unknownHtml).toContain('<html class="lx-skip-splash" lang="en">');
+    expect(unknownHtml).toContain('<html data-hero-ab="off" class="lx-skip-splash" lang="en">');
     expect(unknownHtml).toContain('html.lx-skip-splash #boot-splash { display: none; }');
 
     for (const path of ['/dashboard', '/labs', '/audit/example.com', '/']) {

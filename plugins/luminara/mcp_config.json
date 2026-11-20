@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "luminara": {
+      "serverUrl": "https://luminarasuite.com/api/mcp"
+    }
+  }
+}

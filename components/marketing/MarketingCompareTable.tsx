@@ -6,13 +6,15 @@ export const MarketingCompareTable: React.FC<{
   themLabel: string;
   usLabel: string;
   rows: readonly HubRow[];
-}> = ({ themLabel, usLabel, rows }) => (
+  /** First column name. Comparison pages use Dimension. */
+  labelHeading?: string;
+}> = ({ themLabel, usLabel, rows, labelHeading = 'Dimension' }) => (
   <div className="lx-glass mt-12 rounded-3xl px-6 py-2 sm:px-8" data-reveal>
     <table className="block w-full text-left md:table">
       <thead className="hidden md:table-header-group">
         <tr>
           <th scope="col" className="py-5 pr-6 text-[11px] font-medium uppercase tracking-[0.24em] text-[var(--color-ink-2)]">
-            Dimension
+            {labelHeading}
           </th>
           <th scope="col" className="py-5 pr-6 text-[11px] font-medium uppercase tracking-[0.24em] text-[var(--color-ink-2)]">
             {themLabel}

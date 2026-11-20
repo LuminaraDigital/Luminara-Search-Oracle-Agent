@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import type { BoardFinding } from '../../services/audit/findingBoardService';
 import { formatAuDate } from '../../utils/formatAuDate';
+import { fetchProjectReportBrand } from '../../services/reports/reportBrandClient';
+import { luminaraReportBrand } from '../../services/reports/reportBrand';
 import { Spinner } from '../ui/Button';
 
 interface ReportPdfButtonProps {
@@ -9,6 +11,7 @@ interface ReportPdfButtonProps {
   clientName?: string;
   measured?: boolean;
   findings?: ReadonlyArray<Pick<BoardFinding, 'title' | 'severity' | 'description' | 'evidence'>>;
+  projectId?: string;
 }
 
 /** PDF of the report on screen, using the existing executive report renderer. */
@@ -18,6 +21,7 @@ export const ReportPdfButton: React.FC<ReportPdfButtonProps> = ({
   clientName,
   measured = false,
   findings = [],
+  projectId,
 }) => {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -31,12 +35,16 @@ export const ReportPdfButton: React.FC<ReportPdfButtonProps> = ({
     try {
       const { downloadExecutiveReportPdf } = await import('../pdf/pdfService');
       const { withReportLead } = await import('../../services/audit/reportBlocks');
+      const brand = (projectId && (await fetchProjectReportBrand(projectId))) || luminaraReportBrand(true);
       const name = clientName?.trim() || domain || 'Report';
       await downloadExecutiveReportPdf({
-        agencyName: 'Luminara Suite',
+        agencyName: brand.displayName,
+        agencyLogoUrl: brand.logoUrl || undefined,
         clientName: name,
         targetDomain: domain,
-        preparedBy: 'Luminara Suite',
+        preparedBy: brand.displayName,
+        primaryColor: brand.primaryColour,
+        showPoweredBy: brand.showPoweredBy,
         markdownText: withReportLead(markdownText, measured, findings),
         auditDate: formatAuDate(new Date()),
       });

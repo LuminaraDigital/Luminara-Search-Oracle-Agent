@@ -18,10 +18,10 @@ const { createDesktopCoordinator } = require('./coordinator/desktopCoordinator.c
 function configureLlmSessionSecurity() {
   if (!session?.defaultSession?.webRequest) return;
   const allowedLlmPatterns = [
-    '*://127.0.0.1:11434/*',
-    '*://localhost:11434/*',
-    '*://127.0.0.1:3001/*',
-    '*://localhost:3001/*',
+    'http://127.0.0.1:11434/*',
+    'http://localhost:11434/*',
+    'http://127.0.0.1:3001/*',
+    'http://localhost:3001/*',
     '*://*.groq.com/*',
     '*://integrate.api.nvidia.com/*',
     '*://openrouter.ai/*',

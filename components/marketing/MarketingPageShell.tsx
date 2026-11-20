@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import './space.css';
 import { MarketingNav } from '../MarketingNav';
 import { MarketingAtmosphere } from './MarketingAtmosphere';
+import { CursorTrail } from './CursorTrail';
 import { MarketingFooter } from './MarketingFooter';
 import { useMarketingChrome } from './marketingChrome';
 import { prefersReducedMotion } from './deviceCapability';
@@ -33,6 +34,9 @@ interface MarketingPageShellProps {
   /** Wider main for tables / grids */
   wide?: boolean;
   closing?: MarketingClosing;
+  /** First focusable control, before the nav. */
+  skipLink?: boolean;
+  rootClassName?: string;
 }
 
 /** Evidence label glyphs, the same marks as the landing legend: filled, half, dashed. */
@@ -78,6 +82,8 @@ export const MarketingPageShell: React.FC<MarketingPageShellProps> = ({
   children,
   wide = false,
   closing,
+  skipLink = false,
+  rootClassName = '',
 }) => {
   const chrome = useMarketingChrome();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -112,9 +118,15 @@ export const MarketingPageShell: React.FC<MarketingPageShellProps> = ({
   return (
     <div
       ref={rootRef}
-      className="lx-root isolate relative min-h-[100dvh] overflow-x-clip font-sans antialiased selection:bg-gold selection:text-black"
+      className={`lx-root isolate relative min-h-[100dvh] overflow-x-clip font-sans antialiased selection:bg-gold selection:text-black ${rootClassName}`}
     >
+      {skipLink ? (
+        <a href="#main" className="lx-skip">
+          Skip to content
+        </a>
+      ) : null}
       <MarketingAtmosphere intensity="page" />
+      <CursorTrail />
       <MarketingNav
         brandLabel="Luminara Suite"
         onBrandClick={chrome.onHome}

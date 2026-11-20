@@ -53,6 +53,17 @@ SELECT COUNT(*) AS decisions FROM weekly_decisions;
 SELECT name FROM sqlite_master WHERE type='table' ORDER BY 1;
 ```
 
+## MCP security log input strip
+
+`scripts/strip-mcp-audit-inputs.ts` removes `args` and `projectId` from existing `org_audit_logs` rows whose action starts with `mcp_tool_`, then recomputes that org's hash chain in insertion order. Tool name, outcome, time, account, actor, and action stay. D1 SQL cannot recompute SHA-256, so this is not a file under `migrations/`. It does not run as part of `d1 migrations apply`.
+
+The deploy workflow runs it after the Time Travel bookmark and after `d1 migrations apply`, and before the Worker deploy:
+
+- Staging: the staging deploy job runs `npm run db:strip-mcp-audit-inputs -- --staging` against `luminara-users-staging`.
+- Production: the production deploy job on `main` runs `CONFIRM_PROD_AUDIT_STRIP=1 npm run db:strip-mcp-audit-inputs -- --prod` against `luminara-users`. A laptop run with `--prod` and without that variable refuses before any request.
+
+A second run finds nothing to change. If a tool call lands while the rewrite is in progress, the script reads the chain again and retries. If the job fails, re-run the same command. The bookmark printed just before migrations is the restore point for the whole step.
+
 ## Migration rollback
 
 1. Stop promotion: do not deploy a Worker that requires newer tables onto an unmigrated DB.

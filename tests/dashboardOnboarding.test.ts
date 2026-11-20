@@ -56,5 +56,7 @@ describe('dashboard onboarding and labs', () => {
     }));
     expect(auditStep(html)).toContain('Done');
     expect(html).not.toContain('DEV MODE');
+    expect(html).toContain('Clients');
+    expect(html).toContain('Loading clients.');
   });
 });

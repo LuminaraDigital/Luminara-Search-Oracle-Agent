@@ -14,11 +14,12 @@ import {
   approveActionRequest,
   denyActionRequest,
   consumeApprovedRequest,
-  getActionRequestById,
+  getOwnedToolRequest,
+  hashToolArgs,
 } from '../worker/mcpGovernance';
 import { redactSensitive } from '../worker/logRedaction';
 import { handleMcpRequest } from '../worker/mcpServer';
-import type { HostedIdentity } from '../worker/userTypes';
+import type { HostedIdentity, McpCredential } from '../worker/userTypes';
 import { createSqliteD1 } from './helpers/sqliteD1';
 
 function mockKv(store = new Map<string, string>()): KVNamespace {
@@ -54,7 +55,9 @@ const ctxSub = { subscriptionActive: true, creditClass: 'free', identityPlan: 'g
 describe('tool governance catalogue', () => {
   it('covers every MCP-exposed tool name', () => {
     const known = [
-      'whoami', 'list_projects', 'create_project', 'get_project_context',
+      'whoami', 'list_industries', 'list_projects', 'create_project', 'get_project_context',
+      'get_project_history', 'compare_snapshots', 'get_project_outcomes', 'get_outcome_report', 'mark_project_action_done',
+      'get_project_monitor', 'set_project_monitor', 'list_project_alerts', 'ack_project_alert',
       'update_project_context', 'list_reports', 'get_report', 'save_report',
       'research_keywords', 'get_domain_overview', 'get_serp_results',
       'get_backlinks_overview', 'get_visibility_snapshot', 'get_pagespeed_summary',
@@ -63,6 +66,7 @@ describe('tool governance catalogue', () => {
       'list_enquiries', 'ingest_enquiry', 'propose_booking_slots', 'decide_booking_signoff',
       'get_outcomes_funnel', 'classify_cms_remediation', 'prepare_cms_mcp_call',
       'create_dev_ticket_from_finding', 'compile_review_to_skill', 'mint_habitat_token',
+      'draft_fix',
     ];
     for (const name of known) {
       expect(TOOL_GOVERNANCE[name], name).toBeDefined();
@@ -170,6 +174,17 @@ describe('action request lifecycle', () => {
     expect(b.id).not.toBe(a.id);
   });
 
+  it('does not reuse a pending request that has expired', async () => {
+    const env = makeEnv();
+    const first = await createActionRequest(env, { userId: 'u1', toolName: 'browse_goal', projectId: 'p1' });
+    await env.DB!.prepare('UPDATE mcp_action_requests SET expires_at = 1 WHERE id = ?').bind(first.id).run();
+    const second = await createActionRequest(env, { userId: 'u1', toolName: 'browse_goal', projectId: 'p1' });
+    expect(second.existing).toBe(false);
+    expect(second.id).not.toBe(first.id);
+    expect(second.expiresAt).toBeGreaterThan(Date.now());
+    expect(await approveActionRequest(env, first.id, 'admin_1')).toBe(false);
+  });
+
   it('approveActionRequest marks pending row approved; double approve fails', async () => {
     const env = makeEnv();
     const { id } = await createActionRequest(env, { userId: 'u1', toolName: 'browse_goal' });
@@ -211,6 +226,93 @@ describe('action request lifecycle', () => {
     await approveActionRequest(env, id, 'admin');
     expect(await consumeApprovedRequest(env, 'u1', 'browse_goal', null, { url: 'https://evil.test' })).toBe(false);
     expect(await consumeApprovedRequest(env, 'u1', 'browse_goal', null, { url: 'https://a.test' })).toBe(true);
+  });
+
+  it('an approval for one redacted value is not spent by a call with another', async () => {
+    const env = makeEnv();
+    const reviewed = { url: 'https://a.test', token: 'A', login: { username: 'alice', password: 'one' } };
+    const { id } = await createActionRequest(env, { userId: 'u1', toolName: 'browse_goal', args: reviewed });
+    await approveActionRequest(env, id, 'admin');
+
+    // Each of these stores the same redacted text as the reviewed call.
+    const swaps = [
+      { ...reviewed, token: 'B' },
+      { ...reviewed, login: { username: 'alice', password: 'two' } },
+      { ...reviewed, login: { username: 'adam', password: 'one' } },
+    ];
+    for (const args of swaps) {
+      expect(JSON.stringify(redactSensitive(args))).toBe(JSON.stringify(redactSensitive(reviewed)));
+      expect(await consumeApprovedRequest(env, 'u1', 'browse_goal', null, args)).toBe(false);
+    }
+    expect((await getOwnedToolRequest(env, id, 'u1'))?.status).toBe('approved');
+
+    expect(await consumeApprovedRequest(env, 'u1', 'browse_goal', null, reviewed)).toBe(true);
+    expect(await consumeApprovedRequest(env, 'u1', 'browse_goal', null, reviewed)).toBe(false);
+  });
+
+  it('a call that differs only in a redacted value opens its own request', async () => {
+    const env = makeEnv();
+    const a = await createActionRequest(env, { userId: 'u1', toolName: 'browse_goal', args: { url: 'https://a.test', token: 'A' } });
+    const same = await createActionRequest(env, { userId: 'u1', toolName: 'browse_goal', args: { url: 'https://a.test', token: 'A' } });
+    const b = await createActionRequest(env, { userId: 'u1', toolName: 'browse_goal', args: { url: 'https://a.test', token: 'B' } });
+    expect(same).toMatchObject({ id: a.id, existing: true });
+    expect(b.existing).toBe(false);
+    expect(b.id).not.toBe(a.id);
+
+    // Approving B's request leaves A's call waiting.
+    await approveActionRequest(env, b.id, 'admin');
+    expect(await consumeApprovedRequest(env, 'u1', 'browse_goal', null, { url: 'https://a.test', token: 'A' })).toBe(false);
+    expect(await consumeApprovedRequest(env, 'u1', 'browse_goal', null, { url: 'https://a.test', token: 'B' })).toBe(true);
+  });
+
+  it('key order does not change which call an approval covers', async () => {
+    const env = makeEnv();
+    const asked = { goal: 'tidy', checks: { textIncludes: 'Done', urlIncludes: '/ok' }, steps: [{ a: 1, b: 2 }] };
+    const reordered = { steps: [{ b: 2, a: 1 }], checks: { urlIncludes: '/ok', textIncludes: 'Done' }, goal: 'tidy' };
+    const first = await createActionRequest(env, { userId: 'u1', toolName: 'browse_goal', args: asked });
+    const second = await createActionRequest(env, { userId: 'u1', toolName: 'browse_goal', args: reordered });
+    expect(second).toMatchObject({ id: first.id, existing: true });
+    await approveActionRequest(env, first.id, 'admin');
+    // Array order is part of the call; object key order is not.
+    expect(await consumeApprovedRequest(env, 'u1', 'browse_goal', null, { ...asked, steps: [{ a: 2, b: 1 }] })).toBe(false);
+    expect(await consumeApprovedRequest(env, 'u1', 'browse_goal', null, reordered)).toBe(true);
+  });
+
+  it('stores the hash beside the redacted copy and never returns it', async () => {
+    const env = makeEnv();
+    const { id } = await createActionRequest(env, { userId: 'u1', toolName: 'browse_goal', args: { token: 'A' } });
+    const stored = await env.DB.prepare('SELECT args_json, args_hash FROM mcp_action_requests WHERE id = ?')
+      .bind(id)
+      .first<{ args_json: string; args_hash: string }>();
+    expect(stored?.args_json).toBe('{"token":"[redacted]"}');
+    expect(stored?.args_hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(stored?.args_hash).toBe(await hashToolArgs({ token: 'A' }));
+    expect((await listActionRequests(env, 'u1'))[0]).not.toHaveProperty('args_hash');
+    expect(await getOwnedToolRequest(env, id, 'u1')).not.toHaveProperty('args_hash');
+  });
+
+  it('refuses an approval stored without a hash (a row from before migration 0049)', async () => {
+    const env = makeEnv();
+    const args = { url: 'https://a.test' };
+    const { id } = await createActionRequest(env, { userId: 'u1', toolName: 'browse_goal', args });
+    await approveActionRequest(env, id, 'admin');
+    await env.DB.prepare('UPDATE mcp_action_requests SET args_hash = NULL WHERE id = ?').bind(id).run();
+    expect(await consumeApprovedRequest(env, 'u1', 'browse_goal', null, args)).toBe(false);
+    // The caller asks again and gets a fresh request, not the dead one.
+    const again = await createActionRequest(env, { userId: 'u1', toolName: 'browse_goal', args });
+    expect(again.existing).toBe(false);
+  });
+
+  it('never spends an approval for args nested too deep to hash', async () => {
+    const env = makeEnv();
+    let nested: Record<string, unknown> = { goal: 'x' };
+    for (let i = 0; i < 40; i++) nested = { inner: nested };
+    expect(await hashToolArgs(nested)).toBeNull();
+    const first = await createActionRequest(env, { userId: 'u1', toolName: 'browse_goal', args: nested });
+    const second = await createActionRequest(env, { userId: 'u1', toolName: 'browse_goal', args: nested });
+    expect(second).toMatchObject({ id: first.id, existing: true });
+    await approveActionRequest(env, first.id, 'admin');
+    expect(await consumeApprovedRequest(env, 'u1', 'browse_goal', null, nested)).toBe(false);
   });
 
   it('expired approvals never authorize', async () => {
@@ -295,7 +397,7 @@ describe('mcp integration', () => {
     const body = (await res.json()) as { result?: { isError?: boolean; structuredContent?: { code?: string } } };
     expect(body.result?.isError).toBe(true);
     expect(body.result?.structuredContent?.code).toBe('PAID_TOOL_FORBIDDEN');
-    expect((await getActionRequestById(env, id))?.status).toBe('approved');
+    expect((await getOwnedToolRequest(env, id, 'acct_gov'))?.status).toBe('approved');
   });
 
   it('free-credit write tool without subscription passes governance', async () => {
@@ -311,6 +413,68 @@ describe('mcp integration', () => {
       .bind('org_acct_gov')
       .first<{ action: string }>();
     expect(audit?.action).toBe('mcp_tool_allow');
+  });
+
+  it('records the tool name and outcome and leaves call inputs out of the audit log', async () => {
+    const env = makeEnv();
+    const marker = 'do-not-persist-this-tool-input';
+    const habitat: McpCredential = {
+      kind: 'habitat',
+      id: 'hab-1',
+      scopes: ['mcp:free'],
+      projectId: 'proj-bound',
+      domain: 'bound.example',
+      maxRisk: 'read',
+    };
+
+    const blocked = await handleMcpRequest(
+      mcpCall('save_report', { projectId: 'other-project', title: marker, summary: marker, html: marker }),
+      env,
+      user,
+      habitat,
+    );
+    const allowed = await handleMcpRequest(mcpCall('whoami', { note: marker }), env, user);
+    const approval = await handleMcpRequest(mcpCall('browse_close', { sessionId: marker }), env, user);
+    expect(blocked.status).toBe(200);
+    expect(allowed.status).toBe(200);
+    expect(approval.status).toBe(200);
+
+    const { results } = await env.DB.prepare(
+      `SELECT action, target_id, details FROM org_audit_logs WHERE org_id = ? AND action LIKE 'mcp_tool_%' ORDER BY rowid ASC`,
+    )
+      .bind('org_acct_gov')
+      .all<{ action: string; target_id: string; details: string }>();
+    expect(results.map((row) => `${row.action}:${row.target_id}`)).toEqual([
+      'mcp_tool_block:save_report',
+      'mcp_tool_allow:whoami',
+      'mcp_tool_require_approval:browse_close',
+    ]);
+    for (const row of results) {
+      expect(row.details).not.toContain(marker);
+      const details = JSON.parse(row.details) as Record<string, unknown>;
+      expect(details).toMatchObject({ tool: row.target_id });
+      expect(details).not.toHaveProperty('args');
+      expect(details).not.toHaveProperty('projectId');
+      expect(details).not.toHaveProperty('sessionId');
+      expect(details).not.toHaveProperty('title');
+      expect(details).not.toHaveProperty('html');
+    }
+    expect(JSON.parse(results[0].details)).toEqual({
+      tool: 'save_report',
+      decision: 'block',
+      reason: 'HABITAT_RISK_CEILING_EXCEEDED',
+    });
+    expect(JSON.parse(results[1].details)).toEqual({ tool: 'whoami', decision: 'allow' });
+    expect(JSON.parse(results[2].details)).toEqual({
+      tool: 'browse_close',
+      decision: 'require_approval',
+      reason: 'destructive_requires_approval',
+    });
+
+    const request = await env.DB.prepare(`SELECT args_json FROM mcp_action_requests WHERE user_id = ?`)
+      .bind('acct_gov')
+      .first<{ args_json: string }>();
+    expect(request?.args_json).toContain(marker);
   });
 
   it('read tool allowed without subscription and writes audit row', async () => {
@@ -417,5 +581,74 @@ describe('mcp integration', () => {
       { waitUntil: () => {}, passThroughOnException: () => {} } as unknown as ExecutionContext,
     );
     expect([401, 403]).toContain(res.status);
+  });
+});
+
+describe('mcp protocol version', () => {
+  const user: HostedIdentity = { id: 'ver-user', source: 'firebase', accountId: 'acct_ver' };
+
+  function post(body: unknown, headers: Record<string, string> = {}) {
+    return handleMcpRequest(
+      new Request('https://luminarasuite.com/api/mcp', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...headers },
+        body: JSON.stringify(body),
+      }),
+      makeEnv(),
+      user,
+    );
+  }
+
+  it('echoes a supported protocolVersion and falls back to the newest', async () => {
+    for (const version of ['2025-06-18', '2025-03-26', '2024-11-05']) {
+      const res = await post({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: version } });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        result: { protocolVersion: string; serverInfo: { title: string; name: string } };
+      };
+      expect(body.result.protocolVersion).toBe(version);
+      expect(body.result.serverInfo).toMatchObject({ name: 'luminara-mcp', title: 'Luminara Suite' });
+    }
+
+    const unknown = await post({
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'initialize',
+      params: { protocolVersion: '2025-11-25' },
+    });
+    const unknownBody = (await unknown.json()) as { result: { protocolVersion: string } };
+    expect(unknownBody.result.protocolVersion).toBe('2025-06-18');
+  });
+
+  it('accepts a supported or missing MCP-Protocol-Version header and rejects the rest', async () => {
+    const supported = await post(
+      { jsonrpc: '2.0', id: 1, method: 'ping' },
+      { 'mcp-protocol-version': '2025-03-26' },
+    );
+    expect(supported.status).toBe(200);
+
+    const absent = await post({ jsonrpc: '2.0', id: 1, method: 'ping' });
+    expect(absent.status).toBe(200);
+    expect(await absent.json()).toEqual({ jsonrpc: '2.0', id: 1, result: {} });
+
+    const rejected = await post(
+      { jsonrpc: '2.0', id: 1, method: 'tools/list' },
+      { 'mcp-protocol-version': '1999-01-01' },
+    );
+    expect(rejected.status).toBe(400);
+    expect(await rejected.json()).toEqual({ error: 'Unsupported MCP-Protocol-Version' });
+
+    const info = await handleMcpRequest(new Request('https://luminarasuite.com/api/mcp'), makeEnv(), user);
+    expect(info.status).toBe(200);
+    const infoBody = (await info.json()) as { protocolVersion: string; supportedProtocolVersions: string[] };
+    expect(infoBody.protocolVersion).toBe('2025-06-18');
+    expect(infoBody.supportedProtocolVersions).toEqual(['2025-06-18', '2025-03-26', '2024-11-05']);
+
+    const infoRejected = await handleMcpRequest(
+      new Request('https://luminarasuite.com/api/mcp', { headers: { 'mcp-protocol-version': '2025-11-25' } }),
+      makeEnv(),
+      user,
+    );
+    expect(infoRejected.status).toBe(400);
   });
 });

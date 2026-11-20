@@ -1,7 +1,7 @@
 {
   "name": "luminara-suite",
   "private": true,
-  "version": "1.0.2",
+  "version": "1.0.3",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -22,6 +22,7 @@
     "db:migrate": "wrangler d1 migrations apply luminara-users --remote",
     "db:migrate:staging": "wrangler d1 migrations apply luminara-users-staging --remote --env staging",
     "db:migrate:local": "wrangler d1 migrations apply luminara-users --local",
+    "db:strip-mcp-audit-inputs": "node --experimental-strip-types --import ./scripts/register-worker-ts.mjs scripts/strip-mcp-audit-inputs.ts",
     "db:backfill:firestore": "node --experimental-strip-types --import ./scripts/register-worker-ts.mjs scripts/backfill-d1-to-firestore.ts",
     "db:backup:staging": "node scripts/d1-backup.mjs --staging",
     "db:backup:prod": "node scripts/d1-backup.mjs --prod",
@@ -52,8 +53,9 @@
     "cli": "node --experimental-strip-types services/harness/standaloneCli.ts",
     "crawler": "node crawler/server.mjs",
     "playbooks": "node scripts/build-playbooks.mjs",
-    "prebuild": "node scripts/build-playbooks.mjs",
-    "pretest": "node scripts/build-playbooks.mjs",
+    "mcp:catalog": "MCP_CATALOG_WRITE=1 vitest run tests/mcpCatalogGenerate.test.ts",
+    "prebuild": "node scripts/build-playbooks.mjs && node scripts/build-mcp-guides.mjs && node --experimental-strip-types --import ./scripts/register-worker-ts.mjs scripts/write-white-paper-pdf.ts",
+    "pretest": "node scripts/build-playbooks.mjs && node scripts/build-mcp-guides.mjs",
     "prepare": "node scripts/install-git-hooks.mjs",
     "secrets:check": "node scripts/check-secrets.mjs --all",
     "secrets:check:staged": "node scripts/check-secrets.mjs --staged",

@@ -51,13 +51,21 @@ Each paid plan lasts 30 days and starts as soon as payment is confirmed. It does
 ## MCP
 
 - Docs: https://www.luminarasuite.com/docs/mcp.html
-- Endpoint: https://luminarasuite.com/api/mcp
-- MCP is on every plan: 100 calls a day on Free, no daily cap on Growth and Agency. Paid research needs Agency or your own DataForSEO login.
+- Endpoint: https://www.luminarasuite.com/api/mcp
+- MCP is on every plan. Free: 100 calls a day. Starter: 300 calls a day. Growth and Agency have no daily cap. Paid research needs Agency or your own DataForSEO login. The daily count is per account. A new token does not reset it.
 
 ## Telegram Mini App
 
 - https://t.me/LuminaraSuiteBot/app
 - Bot: https://t.me/LuminaraSuiteBot
+
+## Markdown for agents
+
+Same pages as markdown. HTML heads on the home and pricing pages link these with rel=alternate.
+
+- Home: https://www.luminarasuite.com/index.md
+- Pricing: https://www.luminarasuite.com/pricing.md
+- MCP: https://www.luminarasuite.com/mcp.md
 
 ## Product
 
@@ -86,6 +94,22 @@ Competitor rows cite each vendor's public pages as of October 2026. No scores ar
 - Best AI visibility tools for real estate: https://www.luminarasuite.com/best/ai-visibility-tools-for-real-estate-agencies
 - Best AEO audit tools for small business: https://www.luminarasuite.com/best/aeo-audit-tools-for-small-business
 - Best AI visibility tools with MCP: https://www.luminarasuite.com/best/ai-visibility-tools-with-mcp
+
+## Learn
+
+Guides for independent real estate agencies and for developers who ship their sites.
+
+- Learn: https://www.luminarasuite.com/learn
+- What is AEO: https://www.luminarasuite.com/learn/what-is-aeo
+- How AI picks an agency: https://www.luminarasuite.com/learn/how-ai-recommends-an-agency
+- llms.txt for agencies: https://www.luminarasuite.com/learn/llms-txt-for-real-estate
+- AI crawlers in robots.txt: https://www.luminarasuite.com/learn/robots-txt-and-ai-crawlers
+- RealEstateAgent schema: https://www.luminarasuite.com/learn/real-estate-agent-schema
+- Suburb pages AI can quote: https://www.luminarasuite.com/learn/suburb-pages
+- Check if AI names you: https://www.luminarasuite.com/learn/check-if-ai-names-your-agency
+- MCP for marketing data: https://www.luminarasuite.com/learn/mcp-for-marketing-data
+- Claim your agency in ChatGPT: https://www.luminarasuite.com/learn/claim-your-agency-in-chatgpt
+Live answers from specific AI products stay Not measured unless you are on Agency or you connect your own search login.
 
 ## Free tools
 

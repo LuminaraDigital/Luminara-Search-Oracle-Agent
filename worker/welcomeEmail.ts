@@ -226,7 +226,7 @@ ${LEGAL_FOOTER}
   return { html, text, subject };
 }
 
-function newUnsubToken(): string {
+export function newUnsubToken(): string {
   const bytes = new Uint8Array(32);
   crypto.getRandomValues(bytes);
   let binary = '';
@@ -363,8 +363,27 @@ export async function handleEmailUnsubscribe(request: Request, env: WelcomeEnv):
     return unsubscribePage('Unsubscribe is unavailable right now. Write to info@luminara.digital and we will stop these emails.', 503);
   }
   try {
+    const list = url.searchParams.get('list') || '';
+    if (list === 'weekly') {
+      const weekly = await env.DB.prepare(
+        `UPDATE users SET weekly_report_opt_in_at = NULL WHERE email_unsub_token = ? RETURNING id`,
+      ).bind(token).first<{ id: string }>();
+      if (!weekly?.id) return unsubscribePage('This unsubscribe link is not valid.', 400);
+      return unsubscribePage('You are unsubscribed from the weekly visibility email.', 200);
+    }
+    if (list === 'monitor') {
+      const owner = await env.DB.prepare(
+        `SELECT id, account_id FROM users WHERE email_unsub_token = ?`,
+      ).bind(token).first<{ id: string; account_id: string | null }>();
+      if (!owner?.id) return unsubscribePage('This unsubscribe link is not valid.', 400);
+      await env.DB.prepare(
+        `UPDATE project_monitors SET email_opt_in = 0, updated_at = ? WHERE account_id = ?`,
+      ).bind(Date.now(), owner.account_id || owner.id).run();
+      return unsubscribePage('You are unsubscribed from project check emails.', 200);
+    }
+    if (list) return unsubscribePage('This unsubscribe link is not valid.', 400);
     const row = await env.DB.prepare(
-      `UPDATE users SET email_opt_out_at = COALESCE(email_opt_out_at, ?)
+      `UPDATE users SET email_opt_out_at = COALESCE(email_opt_out_at, ?), weekly_report_opt_in_at = NULL
        WHERE email_unsub_token = ? RETURNING id`,
     ).bind(Date.now(), token).first<{ id: string }>();
     if (!row?.id) return unsubscribePage('This unsubscribe link is not valid.', 400);

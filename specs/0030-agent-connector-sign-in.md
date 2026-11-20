@@ -11,7 +11,8 @@ Agents are becoming the operators of software, and the account holder is still t
 ## Design
 
 - **The agent is a delegate, not a user.** Every token belongs to a human account and names the client on it. There is no account or email for the agent, so quotas, deletion and consent keep working.
-- **Discovery.** A 401 from `/api/mcp` names protected resource metadata (RFC 9728), which leads to server metadata (RFC 8414). Both are served outside `/api` and before the www redirect, so the issuer does not move.
+- **Discovery.** A 401 from `/api/mcp` names protected resource metadata (RFC 9728), which leads to server metadata (RFC 8414). Both are served outside `/api` and before the www redirect, so the issuer does not move. The metadata `resource` is that request's origin plus `/api/mcp`.
+- **Resource indicator.** RFC 8707. ChatGPT and Codex send `resource` on authorize and token. If it is present, it must name this deployment: the request origin plus `/api/mcp`, the configured public origin, `https://www.luminarasuite.com/api/mcp`, and `https://luminarasuite.com/api/mcp`. Staging also accepts `https://staging.luminarasuite.com/api/mcp`. Anything else is `invalid_target`. The value is kept on the consent, the code, the KV access token, and the refresh family's connection row, so rotation carries it without a D1 column. A token that has a resource is rejected when the MCP call is not for that server. A token with no resource, including clients that never send one, is unchanged. The server does not advertise `authorization_response_iss_parameter_supported`.
 - **Registration.** Open dynamic registration (RFC 7591) for public clients with PKCE. Any https callback may register, so the exact-match check at authorize and the consent screen are the protection. The chosen name is shown as self-reported.
 - **Consent.** A server-rendered page bound to the signed-in user, with one-time approval records and a page-specific CSP. Its `form-action` names the callback because browsers apply that rule to the redirect after submit.
 - **Money.** Connector tokens carry `mcp:free` only, whatever the plan. An agent cannot pay or spend research credits. A plan without agent access sees an upgrade page instead of Allow.
@@ -31,4 +32,8 @@ Free agent access is meant to build Luminara's outcome data. That use needs a ch
 
 ## Not in this slice
 
-Refresh tokens (a connection lasts 30 days, then the owner reconnects) and agent payment rails. Free-plan access follows the plan entitlements, so it arrives with the free MCP packaging change.
+Agent payment rails. Free-plan access follows the plan entitlements, so it arrives with the free MCP packaging change.
+
+## Refresh tokens
+
+A public client receives a refresh token and a 1 hour access token only when its registered `grant_types` include `refresh_token`. RFC 7591 section 2: omitting `grant_types` registers `authorization_code` only, and the registration response echoes that. A client record written before refresh tokens existed has no `grant_types` field and is treated the same way: a 30 day access token, no refresh token, and `unauthorized_client` if it later sends `grant_type=refresh_token`. Unknown grant types are ignored. The access token lasts 1 hour when a refresh token is issued, and 30 days otherwise. The refresh token lasts 90 days. Rotation is a conditional D1 update. RFC 9700: a retry within 30 seconds returns the same new tokens so a lost response is not treated as theft. After that, presenting the old refresh token revokes the family. The server stores SHA-256 hashes. The new pair is encrypted only for that retry window. A refresh cannot widen scope, and it re-reads the account's plan. A failed plan read can be retried. A deleted account is refused. The daily MCP counter key stays the account id and the UTC day.

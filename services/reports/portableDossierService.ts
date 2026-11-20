@@ -16,6 +16,14 @@
 
 import { fastHash } from '../audit/evidenceLedgerService';
 import { gateReportText } from '../audit/reportColumnGate';
+import { escapeHtml as escapeText } from '../../utils/html';
+import {
+  luminaraReportBrand,
+  POWERED_BY_LINE,
+  safeLogoSrc,
+  safePrimaryColour,
+  type ReportBrand,
+} from './reportBrand';
 
 export interface DossierSection {
   id: string;
@@ -30,6 +38,8 @@ export interface PortableDossierData {
   /** Short non-cryptographic checksum of the report text. Omitted: the line is left out. */
   contentFingerprint?: string;
   sections: DossierSection[];
+  /** Omitted: Luminara Suite, with the powered-by line. */
+  brand?: ReportBrand;
 }
 
 /** What the audit report screen has when a founder downloads the dossier. */
@@ -37,6 +47,7 @@ export interface AuditDossierInput {
   domain: string;
   markdownText: string;
   generatedAt: number;
+  brand?: ReportBrand;
 }
 
 function escapeHtml(str: string): string {
@@ -55,6 +66,16 @@ export function generatePortableDossierHtml(data: PortableDossierData): string {
   const formattedDate = new Date(data.generatedAt).toUTCString();
   const safeTitle = escapeHtml(data.title);
   const safeDomain = escapeHtml(data.targetDomain);
+  const brand = data.brand ?? luminaraReportBrand(true);
+  const brandTitle = brand.kind === 'workspace' ? escapeText(brand.displayName) : 'Luminara Suite';
+  const logo = brand.kind === 'workspace' ? safeLogoSrc(brand.logoUrl) : null;
+  const accent = brand.kind === 'workspace' ? ` style="--accent:${safePrimaryColour(brand.primaryColour)}"` : '';
+  const logoHtml = logo
+    ? `<img src="${escapeText(logo)}" alt="" style="display:block;max-height:48px;width:auto;margin-bottom:12px" referrerpolicy="no-referrer" />`
+    : '';
+  const poweredBy = brand.showPoweredBy
+    ? `<footer style="margin-top:2rem;padding-top:1rem;border-top:1px solid var(--surface-border);font-size:0.75rem;color:var(--text-secondary)">${POWERED_BY_LINE}</footer>`
+    : '';
   const fingerprintBlock = data.contentFingerprint
     ? `
         <div style="margin-top: 1rem;">
@@ -251,9 +272,10 @@ export function generatePortableDossierHtml(data: PortableDossierData): string {
   </style>
 </head>
 <body>
-  <div class="container">
+  <div class="container"${accent}>
     <aside class="sidebar">
-      <div class="brand-title">Luminara Suite</div>
+      ${logoHtml}
+      <div class="brand-title">${brandTitle}</div>
       <p style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 1rem;">
         Executive Audit Dossier
       </p>
@@ -279,6 +301,7 @@ export function generatePortableDossierHtml(data: PortableDossierData): string {
       </div>
 
       ${sectionBlocks}
+      ${poweredBy}
     </main>
   </div>
 </body>
@@ -299,6 +322,7 @@ export function buildAuditDossierHtml(input: AuditDossierInput): string {
     generatedAt: input.generatedAt,
     // fastHash repeats one 16-character value four times. Print it once.
     contentFingerprint: fastHash(text || input.domain).slice(0, 16),
+    brand: input.brand,
     sections: [
       {
         id: 'executive-summary',

@@ -7,6 +7,8 @@ import { HomeCtaStrip } from './HomeCtaStrip';
 import { VisibilityRetentionCard } from './VisibilityRetentionCard';
 import { auditCountFromStorage, shouldShowHomeCta } from './homeCtaStripLogic';
 import { WeeklyDecisionCard } from '../audit/WeeklyDecisionCard';
+import { ProjectHistoryOutcomes } from './ProjectHistoryOutcomes';
+import { WorkspaceClientsCard } from './WorkspaceClientsCard';
 import { DreamingDashboardCard } from './DreamingDashboardCard';
 import {
   listLocalFindings,
@@ -252,6 +254,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, dna, a
 
       {/* Zero-audit home primary CTA strip */}
       {shouldShowHomeCta(auditCount) && <HomeCtaStrip onNavigate={onNavigate} />}
+
+      <WorkspaceClientsCard signedIn={signedIn} />
+      <ProjectHistoryOutcomes signedIn={signedIn} />
 
       {homeDomain && boardFindings.length > 0 && (
         <WeeklyDecisionCard

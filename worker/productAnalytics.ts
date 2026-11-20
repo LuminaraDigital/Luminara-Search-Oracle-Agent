@@ -41,6 +41,7 @@ const ALLOWED_TYPES = new Set([
   'share_clicked',
   'share_page_view',
   'free_tool_copied',
+  'hero_exposed',
 ]);
 
 const MAX_BATCH = 40;
@@ -66,16 +67,21 @@ function scrubPayload(raw: unknown): string {
 }
 
 /** One server-side event with no account attached. Failure never affects the caller. */
-export async function recordAnonymousEvent(db: D1Database | undefined, type: string, path: string): Promise<void> {
+export async function recordAnonymousEvent(
+  db: D1Database | undefined,
+  type: string,
+  path: string,
+  payload?: Record<string, string>,
+): Promise<void> {
   if (!db) return;
   try {
     await db
       .prepare(
         `INSERT INTO product_analytics_events
           (id, account_id, session_id, event_type, path, payload_json, created_at)
-         VALUES (?, NULL, NULL, ?, ?, '{}', ?)`,
+         VALUES (?, NULL, NULL, ?, ?, ?, ?)`,
       )
-      .bind(crypto.randomUUID(), type, path, Date.now())
+      .bind(crypto.randomUUID(), type, path, payload ? scrubPayload(payload) : '{}', Date.now())
       .run();
   } catch {
     // A missed count must not stop the request.

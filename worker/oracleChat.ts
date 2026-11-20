@@ -764,7 +764,7 @@ export async function handleOracleChatSse(
       let memoryFacts: string[] = [];
       try {
         const { ragContextForOracle } = await import('./memoryRag');
-        const memory = await ragContextForOracle(env, billingId(user), message);
+        const memory = await ragContextForOracle(env, billingId(user), message, { projectId: body.projectId ?? null });
         if (memory.block) {
           systemPrompt = `${systemPrompt}\n\n${memory.block}`;
           memoryFacts = memory.facts;
@@ -875,17 +875,22 @@ export async function handleOracleChatSse(
         });
       }
 
-      // Chat -> facts pipeline (best-effort; high-confidence lines auto-store)
-      try {
+      // Chat -> facts pipeline (best-effort; high-confidence lines auto-store). A model extractor
+      // can take seconds, so with MEMORY_LLM_EXTRACT on it runs after the reply, not before 'done'.
+      const extraction = (async () => {
         const { extractFactsFromChat } = await import('./memoryRag');
         await extractFactsFromChat(env, user, {
           message,
           sessionId,
           autoStore: true,
+          projectId: body.projectId ?? null,
         });
-      } catch {
+      })().catch(() => {
         /* ignore */
-      }
+      });
+      const { memoryLlmExtractEnabled } = await import('./memoryExtract');
+      if (memoryLlmExtractEnabled(env)) scheduleWaitUntil(extraction);
+      else await extraction;
 
       await write('done', {
         ok: true,

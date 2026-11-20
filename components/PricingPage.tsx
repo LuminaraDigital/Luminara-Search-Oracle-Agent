@@ -9,6 +9,7 @@ import React, { useEffect, useState } from 'react';
 import { accountCallsAllowed, getServerHealthSync, openPaywallModal } from '../services/apiClient';
 import { beginCardCheckout, CARD_CHECKOUT_ERROR_EVENT, readCardCheckoutError } from './paywall/pendingCardCheckout';
 import { EvidenceGlyph, MarketingPageHeader, MarketingPageShell } from './marketing/MarketingPageShell';
+import { TrustStrip } from './marketing/TrustStrip';
 import { PLAN_ENTITLEMENTS } from '../services/plans/planEntitlements';
 import { TELEGRAM_MINI_APP_URL, isStripeCheckoutAvailable, isTonAvailable } from './paywall/paymentOptions';
 import {
@@ -71,7 +72,7 @@ const buyerFitCards = [
     badge: 'Profile 02 · Growth Pass (Recommended)',
     title: 'In-house marketer or multi-suburb team',
     term: cardTermLabel('growth'),
-    summary: 'Built for teams monitoring up to 5 domains who share read-only audit links with vendors or executives, connect Claude or Cursor via /api/mcp, and run weekly re-audit reminders in Telegram.',
+    summary: 'Built for teams monitoring up to 10 domains who share read-only audit links with vendors or executives, connect Claude or Cursor via /api/mcp, and run weekly re-audit reminders in Telegram.',
   },
   {
     badge: 'Profile 03 · Agency Pass',
@@ -86,7 +87,7 @@ const capabilityMatrixRows = [
     feature: 'Monitored domains',
     free: '1 domain',
     starter: '2 domains',
-    growth: '5 domains',
+    growth: '10 domains',
     agency: '25 domains',
   },
   {
@@ -295,6 +296,8 @@ const PricingPage: React.FC<PricingPageProps> = ({
           {WAITLIST_LINE}
         </p>
       )}
+
+      <TrustStrip className="mx-auto mt-12 max-w-4xl" />
 
       <section aria-labelledby="plans-heading" className="lx-enter-rise lx-d5 mt-16 sm:mt-20">
         <h2 id="plans-heading" className="sr-only">

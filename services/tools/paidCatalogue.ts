@@ -7,7 +7,7 @@ export const PAID_TOOL_CATALOGUE: ToolDefinitionMeta[] = [
   {
     name: 'research_keywords',
     description:
-      'Uses paid DataForSEO credits unless BYOK. Discover keyword ideas from seed topics. Check research log first.',
+      'Uses paid DataForSEO credits unless BYOK. Discover keyword ideas from up to 5 seed topics. Returns at most 20 rows. This is a sample, not a full export.',
     creditClass: 'paid',
     inputSchema: {
       type: 'object',
@@ -22,7 +22,7 @@ export const PAID_TOOL_CATALOGUE: ToolDefinitionMeta[] = [
   {
     name: 'get_domain_overview',
     description:
-      'Uses paid DataForSEO credits unless BYOK. High-level domain rank overview. Check research log first.',
+      'Uses paid DataForSEO credits unless BYOK. Returns a high-level rank overview for one domain.',
     creditClass: 'paid',
     inputSchema: {
       type: 'object',
@@ -34,7 +34,7 @@ export const PAID_TOOL_CATALOGUE: ToolDefinitionMeta[] = [
   {
     name: 'get_serp_results',
     description:
-      'Uses paid DataForSEO credits unless BYOK. SERP snapshot for a query. Check research log first.',
+      'Uses paid DataForSEO credits unless BYOK. SERP snapshot for one query. Returns at most 10 rows. This is a sample, not a ranked export.',
     creditClass: 'paid',
     inputSchema: {
       type: 'object',
@@ -49,7 +49,7 @@ export const PAID_TOOL_CATALOGUE: ToolDefinitionMeta[] = [
   {
     name: 'get_backlinks_overview',
     description:
-      'Uses paid DataForSEO credits unless BYOK. Backlink profile overview. Check research log first.',
+      'Uses paid DataForSEO credits unless BYOK. Returns a backlink profile overview for one domain.',
     creditClass: 'paid',
     inputSchema: {
       type: 'object',
@@ -79,7 +79,7 @@ export const PAID_TOOL_CATALOGUE: ToolDefinitionMeta[] = [
   {
     name: 'get_pagespeed_summary',
     description:
-      'Uses paid credits when live. PageSpeed / CWV summary. Returns not_measured until W5 registry wiring.',
+      'Uses paid credits. Returns Google PageSpeed Insights scores and Core Web Vitals (LCP, CLS, INP) for one URL, mobile by default. Says not_measured when PageSpeed returns no data.',
     creditClass: 'paid',
     inputSchema: {
       type: 'object',

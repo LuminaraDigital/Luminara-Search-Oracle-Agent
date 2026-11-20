@@ -28,6 +28,8 @@ import { verdictCitationLine } from '../../components/audit/VisibilityRadar';
 import { brandFromEvidence, readableStem, rememberScrapedBrand } from './brandName';
 import { recordAudit } from './auditHistoryService';
 import { evaluateRealEstateChecks, formatRealEstateChecks } from './realEstateChecks';
+import { industryProfile } from '../industries/industryProfiles';
+import { formatPublicProfile, reportFromAuditPages } from './publicProfileMatch';
 import { includeRealEstateChecks, wantsAgencyMentions } from './jevVerifier';
 
 export function instantAuditPrimaryLabel(crewRunning: boolean, _isFullAudit: boolean): string {
@@ -149,12 +151,15 @@ export async function generateAuditReportUnlessDegraded(input: {
     report.answeredBy ? { model: report.answeredBy, provider: report.answeredByProvider } : undefined,
   );
   const body = modelLine && !guarded.includes(modelLine) ? `${guarded}\n\n${modelLine}` : guarded;
-  const estate = includeRealEstateChecks(input.siteType, pages.length)
-    ? formatRealEstateChecks(evaluateRealEstateChecks(pages)).trimEnd()
-    : '';
+  const estateOn = includeRealEstateChecks(input.siteType, pages.length);
+  const industryId = input.dna?.industryId;
+  const estateHeading = industryId ? industryProfile(industryId).reportHeading : 'Real estate checks';
+  const estate = estateOn ? formatRealEstateChecks(evaluateRealEstateChecks(pages, industryId), industryId).trimEnd() : '';
+  const profile = estateOn ? formatPublicProfile(reportFromAuditPages(pages)).trimEnd() : '';
   const mention = await agencyMentionLine(input.siteType, scrapedBrand || '', input.formattedUrl);
   const parts = [body];
-  if (estate && !body.includes('## Real estate checks')) parts.push(estate);
+  if (estate && !body.includes(`## ${estateHeading}`)) parts.push(estate);
+  if (profile && !body.includes('## Public profile')) parts.push(profile);
   if (mention) parts.push(mention);
   const text = parts.join('\n\n');
   try {

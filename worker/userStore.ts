@@ -107,6 +107,7 @@ export async function upsertAppUser(env: UserStoreEnv, user: HostedIdentity, dep
       && now - existing.last_seen_at < PROFILE_TOUCH_MS
       && (existing.email ?? null) === (user.email ?? null)
       && (existing.display_name ?? null) === (user.name ?? null)
+      && (user.emailVerified === undefined || existing.email_verified === (user.emailVerified ? 1 : 0))
     ) {
       return {
         id: user.id,
@@ -133,6 +134,7 @@ export async function upsertAppUser(env: UserStoreEnv, user: HostedIdentity, dep
       createdAt,
       lastSeenAt: now,
       accountId,
+      emailVerified: user.emailVerified === undefined ? null : (user.emailVerified ? 1 : 0),
     });
 
     return {

@@ -38,6 +38,7 @@ const REQUIRED_D1_MIGRATIONS = [
   'migrations/0033_community_feed.sql',
   'migrations/0043_conversion_enquiry_spine.sql',
   'migrations/0046_scoped_review_rules.sql',
+  'migrations/0047_weekly_visibility_email.sql',
 ];
 
 const REQUIRED_D1_TABLES = [

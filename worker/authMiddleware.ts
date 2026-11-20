@@ -109,6 +109,8 @@ export const PROTECTED_API_ROUTES: ProtectedRouteSpec[] = [
   { pattern: /^\/audit-receipts$/, methods: ['POST'] },
   { pattern: /^\/audit-receipts\/[^/]+\/revoke$/, methods: ['POST'] },
   { pattern: /^\/auth\/quota$/, methods: ['GET'] },
+  { pattern: /^\/email\/weekly-report$/, methods: ['GET', 'POST'] },
+  { pattern: /^\/fix-drafts$/, methods: ['POST'] },
   { pattern: /^\/boot$/, methods: ['GET'] },
   // /auth/link is not guarded here. guardApiRoute calls identify(), which upserts
   // each login. The link handler must reject a missing { confirm: true } before any
@@ -141,7 +143,7 @@ export const PROTECTED_API_ROUTES: ProtectedRouteSpec[] = [
   { pattern: /^\/agent-connections(\/|$)/ },
   { pattern: /^\/memory\/facts$/, methods: ['GET', 'POST'] },
   { pattern: /^\/budgets\/self(\/resume)?$/, methods: ['GET', 'PUT', 'POST'] },
-  { pattern: /^\/mcp-action-requests$/, methods: ['GET'] },
+  { pattern: /^\/mcp-action-requests(\/[^/]+)?$/, methods: ['GET'] },
   { pattern: /^\/mcp-action-requests\/[^/]+\/(approve|deny)$/, methods: ['POST'] },
   { pattern: /^\/agent-habitat(\/|$)/ },
   { pattern: /^\/enquiries(\/|$)/ },

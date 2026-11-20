@@ -41,7 +41,7 @@ export const BROWSE_ACT_TOOL: ToolDefinitionMeta = {
 export const BROWSE_GOAL_TOOL: ToolDefinitionMeta = {
   name: 'browse_goal',
   description:
-    'Paid (same gate as browse_act). Run a bounded indexed DOM loop for a natural-language goal. Requires independent verifier checks (urlIncludes / textIncludes / titleIncludes). Agent DONE is never proof. Prefer get_project_context first.',
+    'Paid (same gate as browse_act). Run a bounded indexed DOM loop for a natural-language goal. Requires independent verifier checks (urlIncludes / textIncludes / titleIncludes). Agent DONE is never proof.',
   creditClass: 'paid',
   inputSchema: {
     type: 'object',
@@ -69,7 +69,7 @@ export const BROWSE_GOAL_TOOL: ToolDefinitionMeta = {
 
 export const BROWSE_CLOSE_TOOL: ToolDefinitionMeta = {
   name: 'browse_close',
-  description: 'End a crawler browse session. Free.',
+  description: 'Close one crawler browse session by sessionId. Uses no credits. Does not delete the project or its reports.',
   creditClass: 'free',
   inputSchema: {
     type: 'object',

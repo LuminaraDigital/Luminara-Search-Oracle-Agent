@@ -387,7 +387,7 @@ describe('P1 MCP OAuth token hashing', () => {
     // Drive the token endpoint directly (PKCE code flow).
     const code = 'oc_test_code_hashing';
     // Pre-place an auth code record the token exchange can consume.
-    const challenge = await sha256Base64Url('verifier123');
+    const challenge = await sha256Base64Url('pkce-verifier-0123456789-abcdefghijklmnopqrst');
     await store.set(`mcp_oauth_code:${code}`, JSON.stringify({
       accountId: 'acct_1',
       userId: 'fb:u1',
@@ -401,7 +401,7 @@ describe('P1 MCP OAuth token hashing', () => {
       req('/api/oauth/mcp/token', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ grant_type: 'authorization_code', code, redirect_uri: 'http://localhost:8123/callback', code_verifier: 'verifier123' }),
+        body: JSON.stringify({ grant_type: 'authorization_code', code, redirect_uri: 'http://localhost:8123/callback', code_verifier: 'pkce-verifier-0123456789-abcdefghijklmnopqrst' }),
       }),
       env,
       ctx,

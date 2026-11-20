@@ -9,11 +9,14 @@ import { ReportDisplay } from './ReportDisplay';
 import { WeeklyDecisionCard } from './WeeklyDecisionCard';
 import { PageSpeedPanel } from './PageSpeedPanel';
 import { GscPanel } from './GscPanel';
+import { FixDraftPanel } from './FixDraftPanel';
 import { pickPrimaryFinding, readLastBoardDomain } from '../../services/audit/findingBoardService';
 import { PastReports } from './PastReports';
 import { focusLabel, focusTip } from '../../services/audit/focusLabel';
 import { auditReportHash, publishReportHash } from '../../services/audit/auditReportUrl';
 import { FreeAiAnswerCard } from './FreeAiAnswerCard';
+import { AiAnswerSamplePanel } from '../marketing/AiAnswerSamplePanel';
+import type { AiAnswerSample } from '../../services/audit/aiAnswerSample';
 import { FirstRunTour } from '../onboarding/FirstRunTour';
 import { ReportPdfButton } from './ReportPdfButton';
 import type { AuditHistoryEntry } from '../../services/audit/auditHistoryService';
@@ -144,6 +147,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
   const [briefing, setBriefing] = useState(false);
   const [crewEvents, setCrewEvents] = useState<AgentActivityEvent[]>([]);
   const [crewMeasurement, setCrewMeasurement] = useState<'measured' | 'not_measured' | null>(null);
+  const [probeSample, setProbeSample] = useState<AiAnswerSample | null>(null);
   const [scoutSummary, setScoutSummary] = useState<GuestScoutSummary | null>(null);
   const [shareNote, setShareNote] = useState<string | null>(null);
   const [sharing, setSharing] = useState(false);
@@ -151,6 +155,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
   const [showAttestationModal, setShowAttestationModal] = useState(false);
   const [persistHint, setPersistHint] = useState<string | null>(null);
   const [strategySaved, setStrategySaved] = useState(false);
+  const [savedProjectId, setSavedProjectId] = useState<string | undefined>(undefined);
   const [mcpMinting, setMcpMinting] = useState(false);
   const [mcpKey, setMcpKey] = useState<string | null>(null);
   const [mcpError, setMcpError] = useState<string | null>(null);
@@ -254,6 +259,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
     setLoading(true);
     setCrewEvents([]);
     setCrewMeasurement(null);
+    setProbeSample(null);
     setScoutSummary(null);
     setReport(null);
     setStrategySaved(false);
@@ -403,6 +409,8 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
         guest: Boolean(isGuest),
       });
       void fetchProbeCrawl(formattedUrl).then((probe) => {
+        if (seq !== runSeq.current) return;
+        if (probe.ok && probe.aiSample) setProbeSample(probe.aiSample);
         if (probe.ok && probe.page?.platform) {
           productTelemetry.track('site_platform_detected', { platform: probe.page.platform });
         }
@@ -420,6 +428,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
           productTelemetry.recordOnboardingStep('strategy_saved');
           productTelemetry.track('strategy_saved', { projectIdPrefix: saved.projectId.slice(0, 8) });
           setStrategySaved(true);
+          setSavedProjectId(saved.projectId);
           setPersistHint(withInvite(`Strategy saved to project ${saved.projectId.slice(0, 12)}…`));
         } else if (isGuest) {
           setStrategySaved(false);
@@ -902,6 +911,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       {/* Audit Report Result */}
       {report && (
         <div className="space-y-6">
+          {probeSample ? <AiAnswerSamplePanel sample={probeSample} tone="night" /> : null}
           {dna?.suburb && dna.state ? (
             <FreeAiAnswerCard suburb={dna.suburb} state={dna.state} brandName={dna.name} />
           ) : null}
@@ -957,7 +967,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
             >
               {briefing ? 'Speaking…' : 'Brief aloud'}
             </button>
-            <ReportPdfButton markdownText={report.text} domain={url} clientName={dna?.name} measured={crewMeasurement !== 'not_measured'} findings={boardFindings} />
+            <ReportPdfButton markdownText={report.text} domain={url} clientName={dna?.name} measured={crewMeasurement !== 'not_measured'} findings={boardFindings} projectId={savedProjectId} />
             <button
               type="button"
               onClick={handleReset}
@@ -972,6 +982,13 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
             <PageSpeedPanel url={url.startsWith('http') ? url : `https://${url}`} />
             <GscPanel domain={url} />
           </div>
+          <FixDraftPanel
+            domain={url}
+            businessName={dna?.name}
+            suburb={dna?.suburb}
+            serviceArea={dna?.suburb && dna.state ? `${dna.suburb}, ${dna.state}` : dna?.suburb}
+            findingTitle={pickPrimaryFinding(boardFindings)?.title}
+          />
           <ReportDisplay
             markdownText={report.text}
             sources={report.sources}
@@ -987,6 +1004,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
             trustPack={report.trustPack}
             shareOfVoice={report.shareOfVoice}
             suppressLiveMetrics={crewMeasurement === 'not_measured'}
+            projectId={savedProjectId}
             hostedRail={hostedRail}
             sourceGraph={report.sourceGraph}
             enterpriseTrust={report.enterpriseTrust}

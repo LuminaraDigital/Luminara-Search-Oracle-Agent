@@ -162,7 +162,7 @@ describe('APPCHECK_ENFORCE', () => {
   });
 
   it('exempts health, robots.txt, llms.txt, llm.txt, ai.txt, and webhooks', () => {
-    for (const path of ['/api/health', '/health', '/robots.txt', '/llms.txt', '/llm.txt', '/ai.txt', '/api/stripe/webhook', '/api/webhooks/auth', '/api/telegram/webhook']) {
+    for (const path of ['/api/health', '/health', '/robots.txt', '/llms.txt', '/llm.txt', '/ai.txt', '/index.md', '/pricing.md', '/mcp.md', '/api/stripe/webhook', '/api/webhooks/auth', '/api/telegram/webhook']) {
       expect(isAppCheckExempt(new URL(path, 'https://luminarasuite.com'))).toBe(true);
     }
     expect(isAppCheckExempt(new URL('/api/projects', 'https://luminarasuite.com'))).toBe(false);
@@ -286,6 +286,10 @@ describe('APPCHECK_ENFORCE on the worker', () => {
     expect((await worker.fetch(new Request('https://luminarasuite.com/robots.txt'), enforced, ctx)).status).toBe(200);
     expect((await worker.fetch(new Request('https://luminarasuite.com/llms.txt'), enforced, ctx)).status).toBe(200);
     expect((await worker.fetch(new Request('https://luminarasuite.com/llm.txt'), enforced, ctx)).status).toBe(200);
+    const markdown = await worker.fetch(new Request('https://luminarasuite.com/index.md'), enforced, ctx);
+    expect(markdown.status).toBe(200);
+    expect(markdown.headers.get('content-type')).toContain('text/markdown');
+    expect(await markdown.text()).toContain('An AI employee');
   });
 
   it('returns 401 for a missing token only in enforce mode', async () => {

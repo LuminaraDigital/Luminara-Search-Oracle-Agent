@@ -3,6 +3,7 @@ import type { GuestScoutSummary } from '../../services/audit/guestScoutSummary';
 import { GUEST_FULL_AUDIT_CTA } from '../../services/audit/hostedScoutRail';
 import { renderMarkdown } from '../../utils/markdown';
 import { ActionableFixList } from '../retention/ActionableFixList';
+import { FixDraftPanel } from './FixDraftPanel';
 import { DailyStreakCard } from '../retention/DailyStreakCard';
 import { isDowngradedFinding } from '../../services/audit/reportBlocks';
 import { teaserFailureLine } from '../../services/audit/teaserFailureCodes';
@@ -175,6 +176,7 @@ export const GuestScoutSummaryPanel: React.FC<GuestScoutSummaryPanelProps> = ({
           findings={listedFindings}
         />
       )}
+      <FixDraftPanel domain={summary.domain} findingTitle={listedFindings.find((item) => item.title)?.title} />
 
       {/* Retention: Daily Verification Streak Card */}
       <DailyStreakCard domain={summary.domain} />

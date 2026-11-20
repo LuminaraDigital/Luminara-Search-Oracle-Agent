@@ -13,6 +13,14 @@
     "crons": ["0 8 * * *"]
   },
 
+  // Ceiling for one Worker invocation, including the 08:00 UTC cron. Without this field the
+  // platform default is 30 seconds of CPU, shared by every scheduled job. 120 seconds is the
+  // ceiling, not a hold: HTTP requests still finish when they finish. Project checks also stop
+  // after MONITOR_TICK_CAP projects so this cron cannot spend the whole budget alone.
+  "limits": {
+    "cpu_ms": 120000
+  },
+
   // The Vite build output is served as static assets. Every request goes through the Worker first
   // so the HTML shell and API responses carry security headers (CSP, HSTS, nosniff, ...).
   "assets": {
@@ -107,6 +115,8 @@
     "REQUIRE_TG_AUTH": "true",
     "REQUIRE_SUBSCRIPTION": "false",
     "FREE_DAILY_LIMIT": "3",
+    // Free-check Tavily samples per UTC day for every caller. 0 pauses them. Needs secret TAVILY_API_KEY.
+    "FREE_AI_SAMPLE_DAILY_BUDGET": "30",
     // Sovereign Ollama Base URL (optional, defaults to https://ollama.com if unset)
     "OLLAMA_BASE_URL": "",
     // Firebase Auth project id (same as VITE_FIREBASE_PROJECT_ID). Empty disables Firebase token checks.
@@ -158,16 +168,22 @@
     "ORACLE_AUTO_TOOLS": "false",
     "ORACLE_AGENT_ENABLED": "false",
     "WATCH_AGENT_ENABLED": "false",
+    "MEMORY_RECALL_V2": "false",
+    "MEMORY_LLM_EXTRACT": "false",
     "LAUNCHPAD_ENABLED": "false",
     "LAUNCHPAD_MAINNET_ENABLED": "false",
     "LAUNCHPAD_SKIP_CHAIN_VERIFY": "false",
     "OTP_SMS_ENABLED": "false",
+    // Search Console OAuth stays off until Google verifies webmasters.readonly. See docs/runbooks/gsc-oauth-setup.md.
+    "GSC_OAUTH_ENABLED": "false",
     "REQUEST_SIGNING_REQUIRED": "false",
     "AUDIT_QUEUE_ENABLED": "true",
     // Budget hard stops: off | soft | hard. Production defaults to hard; staging stays soft for dogfood.
     // Card checkout stays closed until test keys are set and this is flipped to "true".
     "STRIPE_CHECKOUT_LIVE": "false",
-    "BUDGET_ENFORCEMENT": "hard"
+    "BUDGET_ENFORCEMENT": "hard",
+    // Homepage hero experiment. Off until the owner turns it on. Staging is the exception.
+    "HERO_AB_ENABLED": "false"
     // Optional secrets (wrangler secret put): SENTRY_DSN, AZURE_AI_SEARCH_KEY, GCP_VERTEX_ACCESS_TOKEN
     // Optional Vectorize: add vectorize binding MEMORY_VECTORS after `wrangler vectorize create luminara-memory`
   },
@@ -260,6 +276,7 @@
         "REQUIRE_TG_AUTH": "true",
         "REQUIRE_SUBSCRIPTION": "false",
         "FREE_DAILY_LIMIT": "3",
+        "FREE_AI_SAMPLE_DAILY_BUDGET": "30",
         "FIREBASE_PROJECT_ID": "luminara-suite-staging",
         "FIREBASE_PROJECT_NUMBER": "449283385852",
         "REQUIRE_APP_CHECK": "false",
@@ -302,15 +319,21 @@
         "ORACLE_AUTO_TOOLS": "false",
         "ORACLE_AGENT_ENABLED": "false",
         "WATCH_AGENT_ENABLED": "false",
+        "MEMORY_RECALL_V2": "false",
+        "MEMORY_LLM_EXTRACT": "false",
         "LAUNCHPAD_ENABLED": "false",
         "LAUNCHPAD_MAINNET_ENABLED": "false",
         "LAUNCHPAD_SKIP_CHAIN_VERIFY": "false",
         "OTP_SMS_ENABLED": "false",
+    // Search Console OAuth stays off until Google verifies webmasters.readonly. See docs/runbooks/gsc-oauth-setup.md.
+    "GSC_OAUTH_ENABLED": "false",
         "REQUEST_SIGNING_REQUIRED": "false",
         "AUDIT_QUEUE_ENABLED": "true",
         // Test keys and the staging webhook are set. Production stays "false".
         "STRIPE_CHECKOUT_LIVE": "true",
-        "BUDGET_ENFORCEMENT": "soft"
+        "BUDGET_ENFORCEMENT": "soft",
+        // Homepage hero experiment. On here so staging can measure it. Production stays off.
+        "HERO_AB_ENABLED": "true"
       }
     },
     "production": {
@@ -376,6 +399,7 @@
         "REQUIRE_TG_AUTH": "true",
         "REQUIRE_SUBSCRIPTION": "false",
         "FREE_DAILY_LIMIT": "3",
+        "FREE_AI_SAMPLE_DAILY_BUDGET": "30",
         "FIREBASE_PROJECT_ID": "luminara-suite",
         "FIREBASE_PROJECT_NUMBER": "274315225068",
         // Keep false until the prod build step passes VITE_FIREBASE_APPCHECK_SITE_KEY (validate-env enforces this).
@@ -417,15 +441,21 @@
         "ORACLE_AUTO_TOOLS": "false",
         "ORACLE_AGENT_ENABLED": "false",
         "WATCH_AGENT_ENABLED": "false",
+        "MEMORY_RECALL_V2": "false",
+        "MEMORY_LLM_EXTRACT": "false",
         "LAUNCHPAD_ENABLED": "false",
         "LAUNCHPAD_MAINNET_ENABLED": "false",
         "LAUNCHPAD_SKIP_CHAIN_VERIFY": "false",
         "OTP_SMS_ENABLED": "false",
+    // Search Console OAuth stays off until Google verifies webmasters.readonly. See docs/runbooks/gsc-oauth-setup.md.
+    "GSC_OAUTH_ENABLED": "false",
         "REQUEST_SIGNING_REQUIRED": "false",
         "AUDIT_QUEUE_ENABLED": "true",
         // Live card checkout. Opens only with the sk_live_ key and live webhook secret set as Worker secrets.
         "STRIPE_CHECKOUT_LIVE": "true",
-        "BUDGET_ENFORCEMENT": "hard"
+        "BUDGET_ENFORCEMENT": "hard",
+        // Homepage hero experiment. Off until the owner turns it on.
+        "HERO_AB_ENABLED": "false"
       }
     }
   }

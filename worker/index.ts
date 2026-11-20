@@ -6,7 +6,7 @@
  *   GET  /api/auth/session                current Telegram or Firebase identity (if signed in)
  *   GET  /api/boot                        signed-in workspace, quota, and session cookie
  *   POST /api/auth/reset-password         IP-throttled password reset (anti-enumeration)
- *   POST /api/auth/sign-up                IP-throttled Identity Toolkit sign-up
+ *   POST /api/auth/sign-up                IP-throttled Identity Toolkit sign-up, then verification mail
  *   POST /api/auth/sign-in                IP-throttled Identity Toolkit sign-in
  *   POST /api/auth/refresh                IP-throttled ID token renewal for native clients
  *   POST /api/auth/google                 IP-throttled Google ID token exchange for native clients
@@ -60,8 +60,10 @@ import { activateLicenseKey, generateLicenseKeys, importLicenseKeys } from './li
 import { TERMS_HTML, buildTermsHtml } from './termsPolicy';
 import { DELETE_ACCOUNT_HTML, maybeServeAndroidLegalHtml } from './androidLegalHtml';
 import { isAndroidPlayClientSearch } from '../services/legal/playClient';
+import { markdownForPath } from '../services/marketing/agentMarkdown';
 import { AI_TXT, LLMS_TXT, SITEMAP_XML, applyHostRobots, buildSitemapXml, robotsTxtForHost } from './crawlDocuments';
-import { maybeServeMarketingHtml, maybeServeReceiptHtml, maybeServeShareHtml, withSkippedBootSplash } from './marketingShell';
+import { heroAbEnabled } from '../services/marketing/heroExperiment';
+import { maybeServeMarketingHtml, maybeServeReceiptHtml, maybeServeShareHtml, withHeroAbFlag, withSkippedBootSplash } from './marketingShell';
 import { desktopLatestJson, desktopWindowsDownload } from './desktopDownloads';
 import { resolveAppView } from '../utils/marketingRoutes';
 import { AppView } from '../types';
@@ -87,7 +89,7 @@ import { getOrCreateUserOrg, hasPermission } from './enterpriseStore';
 import { auditOrgIdFor, recordAuditLog, getAuditLogs, recordAuditLogBestEffort, getAuditChainEntries, verifyAuditChain } from './auditLog';
 import { isAdminAuthorized } from './adminAuth';
 
-import { applyCorsHeaders, corsHeaders, getSessionCookieToken, identify, json, secretEquals, billingId, sha256Hex } from './workerUtils';
+import { applyCorsHeaders, corsHeaders, getSessionCookieToken, identify, json, secretEquals, billingId, sha256Hex, sessionIsTelegramUser } from './workerUtils';
 import { getActiveSubscription, mapHostedEntitlement, readQuotaSnapshot } from './quotaMiddleware';
 import { handleReferralRoute } from './referrals';
 import { handleIdeaScoutRoute } from './ideaScout';
@@ -124,7 +126,8 @@ import { handleMcpRequest, listMcpToolCatalogue } from './mcpServer';
 import { getBudgetStatus, upsertBudgetPolicy, approveBudgetResume } from './budgets';
 import {
   listActionRequests,
-  getActionRequestById,
+  getOwnedToolRequest,
+  approvalConsequence,
   approveActionRequest,
   denyActionRequest,
 } from './mcpGovernance';
@@ -143,7 +146,10 @@ import {
 } from './auditQueue';
 import { handleAuditScoutRun } from './auditScoutRun';
 import { dispatchQueueBatch } from './queueDispatch';
-import { MCP_OAUTH_PUBLIC_CORS, handleMcpOAuthRoute, handleOAuthDiscovery, listAgentConnections, revokeAgentConnection } from './mcpOAuth';
+import { MCP_OAUTH_PUBLIC_CORS, handleMcpOAuthRoute, listAgentConnections, revokeAgentConnection } from './mcpOAuth';
+import { handleMcpRegistryAuth, handleOAuthDiscovery } from './mcpOAuthDiscovery';
+import { pruneMcpOAuthRefreshRows } from './mcpOAuthRefresh';
+import { enforceMcpOauthIpLimit, MCP_OAUTH_REGISTER_PER_MIN, MCP_OAUTH_TOKEN_PER_MIN } from './mcpLimits';
 import { executeOracleGatewayTask, type OracleGatewayRequest } from './oracleGateway';
 import { createMemoryFact, listMemoryFacts } from './memoryService';
 import { compileFeedbackIntoSkillRule, handleAgentHabitatRoute } from './selfDrivingHabitat';
@@ -151,6 +157,9 @@ import { handlePrivacyRoute, purgeExpiredPrivacyDeletes } from './privacyService
 import { isCronMapped, jobsForCron, shouldRunScheduledJob } from './scheduledJobs';
 import { ingestProductAnalytics } from './productAnalytics';
 import { handleWeeklyDecisionsRoute, sendWeeklyDecisionDigest } from './weeklyDecisionService';
+import { handleWeeklyReportRoute, sendWeeklyVisibilityEmails } from './weeklyVisibilityEmail';
+import { handleFixDraftRoute } from './fixDraftRoute';
+import { handleGscRoute } from './gscOAuth';
 import { handleDreamingRoute } from './dreamingService';
 import { handleRsiRoute } from './rsiRoutes';
 import { handleEnquiryDeskRoute } from './enquiryDeskService';
@@ -188,9 +197,17 @@ import { settleFirebaseErase } from './accountDeletion';
 import { handleEmailUnsubscribe, runWithWaitUntil } from './welcomeEmail';
 
 export { DailyQuota } from './dailyQuota';
-import { createProject, listProjects, getProject } from './projectService';
+import { createProject, deleteProject, getProject, setProjectIndustry } from './projectService';
+import { handleIndustryWorkspaceRoute } from './workspaceRoutes';
+import { accountForProjectPath, accountForReportId, createTargetAccount, listVisibleProjects } from './tenantGate';
+import { assertNewClientAllowed } from './clientWorkspace';
+import { parseIndustryId, readOptionalIndustry } from '../services/industries/industryProfiles';
+import { handleProjectHistoryRoute } from './projectHistoryRoute';
+import { handleProjectMonitorRoute, runProjectMonitorTick } from './projectMonitor';
+import { runOutcomeFollowUpTick } from './outcomeFollowups';
 import { getProjectContext, updateProjectContext, seedContextFromDna } from './projectContextService';
 import { getAgentReport, listAgentReports, saveAgentReport, getAgentReportHtmlForAccount } from './agentReportService';
+import { reportBrandForAccount } from './reportBrand';
 import { createApiKey, listApiKeys, revokeApiKey } from './apiKeyService';
 import { loadAgentSkill, setAgentSkillEnabled, upsertAgentSkillVersion, type AgentSkill } from './agentSkills';
 import type { ProjectContextPatch } from '../services/projects/types';
@@ -321,11 +338,18 @@ async function compileDenialIntoRule(
   }
 }
 
+/** Public MCP OAuth posts. Separate buckets: hosted agents share egress IPs. */
+const MCP_OAUTH_PUBLIC_POST_LIMITS: Record<string, { action: string; limitPerKey: number }> = {
+  '/oauth/mcp/token': { action: 'mcp_oauth_token', limitPerKey: MCP_OAUTH_TOKEN_PER_MIN },
+  '/oauth/mcp/register': { action: 'mcp_oauth_register', limitPerKey: MCP_OAUTH_REGISTER_PER_MIN },
+  '/oauth/mcp/revoke': { action: 'mcp_oauth_revoke', limitPerKey: 60 },
+};
+
 async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   const url = new URL(request.url);
   const path = url.pathname.replace(/^\/api/, '');
-  // MCP clients run on any origin. These two routes never read a cookie, so a wildcard is safe.
-  const cors = path === '/oauth/mcp/token' || path === '/oauth/mcp/register' ? MCP_OAUTH_PUBLIC_CORS : corsHeaders(env, request);
+  // MCP clients run on any origin. These routes never read a cookie, so a wildcard is safe.
+  const cors = MCP_OAUTH_PUBLIC_POST_LIMITS[path] ? MCP_OAUTH_PUBLIC_CORS : corsHeaders(env, request);
 
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
 
@@ -389,6 +413,13 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
   // Agency API surfaces require apiAccess (Agency) after authentication
   const apiAccessGuard = await guardApiAccessRoute(request, env, path);
   if (apiAccessGuard) return withCors(apiAccessGuard);
+
+  const weeklyMail = await handleWeeklyReportRoute(request, env, path);
+  if (weeklyMail) return withCors(weeklyMail);
+  const fixDraft = await handleFixDraftRoute(request, env, path);
+  if (fixDraft) return withCors(fixDraft);
+  const gscConnect = await handleGscRoute(request, env, path);
+  if (gscConnect) return withCors(gscConnect);
 
   const oidc = handleGcpOidcRoute(request, env, path);
   if (oidc) return withCors(oidc);
@@ -574,6 +605,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
         source: 'firebase',
         email: verified.user.email,
         name: verified.user.name,
+        emailVerified: verified.user.emailVerified === true,
       };
       const stored = await withAccountId(env, fbIdentity);
       const { org, membership } = await getOrCreateUserOrg(env, stored);
@@ -729,11 +761,13 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       }
     } else if ((event === 'user.created' || event === 'user.updated') && (data.uid || data.id)) {
       const uid = String(data.uid || data.id).replace(/^fb:/, '');
+      const verifiedFlag = data.emailVerified ?? data.email_verified;
       const userObj: HostedIdentity = {
         id: `fb:${uid}`,
         source: 'firebase',
         email: data.email,
         name: data.displayName || data.name,
+        ...(typeof verifiedFlag === 'boolean' ? { emailVerified: verifiedFlag } : {}),
       };
       await withAccountId(env, userObj);
     }
@@ -1042,9 +1076,17 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     if (typeof initData !== 'string' || !initData) return withCors(json({ error: 'initData required' }, 400));
     if (!env.BOT_TOKEN) return withCors(json({ error: 'BOT_TOKEN not configured' }, 503));
     const v = await validateInitData(initData, env.BOT_TOKEN);
-    if (!v.ok) return withCors(json({ error: v.reason }, 401));
+    // Stars from a Mini App open over an hour: the initData is stale but Telegram's signature still
+    // names the buyer, so the session the app holds may stand in when it is that same user.
+    // Signing in again (/telegram/auth) stays strict.
+    const buyerId = v.ok
+      ? v.user.id
+      : path === '/telegram/invoice' && (await sessionIsTelegramUser(request, env, v.staleUserId))
+        ? (v.staleUserId as number)
+        : null;
+    if (!v.ok && buyerId === null) return withCors(json({ error: v.reason }, 401));
 
-    if (path === '/telegram/auth') {
+    if (path === '/telegram/auth' && v.ok) {
       const csrf = refuseCrossSiteSessionWrite(request, env);
       if (csrf) return withCors(csrf);
       const tgIdentity: HostedIdentity = { id: String(v.user.id), source: 'telegram' };
@@ -1064,8 +1106,8 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       );
       return withCors(res);
     }
-    if (typeof plan !== 'string' || !plan) return withCors(json({ error: 'initData and plan required' }, 400));
-    const link = await createInvoiceLink(env, v.user.id, normalizePlanId(plan));
+    if (typeof plan !== 'string' || !plan || buyerId === null) return withCors(json({ error: 'initData and plan required' }, 400));
+    const link = await createInvoiceLink(env, buyerId, normalizePlanId(plan));
     return withCors(link.ok ? json({ ok: true, url: link.url }) : json({ error: link.error }, 400));
   }
 
@@ -1612,17 +1654,20 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     return withCors(handleEntityEnrichment(request, env));
   }
 
-  // MCP OAuth 2.1 + PKCE (token + metadata public; authorize needs session)
+  // MCP OAuth 2.1 + PKCE (token, revoke, and metadata public; authorize needs session)
   if (path.startsWith('/oauth/mcp')) {
-    if ((path === '/oauth/mcp/token' || path === '/oauth/mcp/register') && request.method === 'POST') {
-      const dual = await enforceDualRateLimit(env, {
-        // Hosted agents share egress IPs, so token and register keep separate, wider buckets.
-        action: path === '/oauth/mcp/token' ? 'mcp_oauth_token' : 'mcp_oauth_register',
-        accountId: null,
-        ip,
-        limitPerKey: path === '/oauth/mcp/token' ? 60 : 20,
-        windowSec: 60,
-      });
+    const limit = request.method === 'POST' ? MCP_OAUTH_PUBLIC_POST_LIMITS[path] : undefined;
+    if (limit) {
+      const dual =
+        path === '/oauth/mcp/register' || path === '/oauth/mcp/token'
+          ? await enforceMcpOauthIpLimit(env, limit.action, ip, limit.limitPerKey)
+          : await enforceDualRateLimit(env, {
+              action: limit.action,
+              accountId: null,
+              ip,
+              limitPerKey: limit.limitPerKey,
+              windowSec: 60,
+            });
       if (!dual.ok) return withCors(dual.response);
     }
     const oauthRes = await handleMcpOAuthRoute(request, env, path);
@@ -1903,20 +1948,61 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       return withCors(json({ ok: true, requests: rows }));
     }
 
+    // The page behind an agent's approval link (spec 0031) reads one request, for its owner only.
+    const APPROVAL_ARGS_SHOWN = 4000;
+    // Too long to show, or nested so deep that redaction cut part of it out: either way the owner cannot read it all.
+    const cannotReview = (argsJson: string) =>
+      argsJson.length > APPROVAL_ARGS_SHOWN || argsJson.includes('"[truncated]"');
+    // Never ends on half of a character pair.
+    const shownArgs = (argsJson: string) =>
+      argsJson.slice(0, APPROVAL_ARGS_SHOWN).replace(/[\ud800-\udbff]$/, '');
+    const oneMatch = path.match(/^\/mcp-action-requests\/([^/]+)$/);
+    if (oneMatch && request.method === 'GET') {
+      const row = await getOwnedToolRequest(env, oneMatch[1], accountId);
+      if (!row) {
+        return withCors(json({ ok: false, error: 'Action request not found', code: 'NOT_FOUND' }, 404));
+      }
+      const project = row.project_id ? await getProject(env, accountId, row.project_id) : null;
+      return withCors(
+        json({
+          ok: true,
+          request: {
+            id: row.id,
+            toolName: row.tool_name,
+            domain: project?.domain ?? null,
+            // Stored already redacted. The owner must see everything they approve, so a request
+            // that cannot be shown in full says so and the page offers Deny only.
+            args: shownArgs(row.args_json),
+            argsTruncated: cannotReview(row.args_json),
+            consequence: approvalConsequence(row.tool_name),
+            status: row.status,
+            expiresAt: row.expires_at,
+          },
+        }),
+      );
+    }
+
     const decideMatch = path.match(/^\/mcp-action-requests\/([^/]+)\/(approve|deny)$/);
     if (decideMatch && request.method === 'POST') {
       const requestId = decideMatch[1];
       const decision = decideMatch[2] as 'approve' | 'deny';
-      const row = await getActionRequestById(env, requestId);
+      // Another account's request answers exactly like a missing one.
+      const row = await getOwnedToolRequest(env, requestId, accountId);
       if (!row) {
         return withCors(json({ ok: false, error: 'Action request not found', code: 'NOT_FOUND' }, 404));
-      }
-      if (row.user_id !== accountId) {
-        return withCors(json({ ok: false, error: 'Forbidden', code: 'FORBIDDEN' }, 403));
       }
       if (row.status !== 'pending') {
         return withCors(
           json({ ok: false, error: 'Already decided', code: 'ALREADY_DECIDED', status: row.status }, 409),
+        );
+      }
+      if (decision === 'approve' && row.expires_at <= Date.now()) {
+        return withCors(json({ ok: false, error: 'This request has expired. Ask the agent to try again.', code: 'EXPIRED' }, 409));
+      }
+      // The approval page cannot show these details in full, so nobody can have read what they would approve.
+      if (decision === 'approve' && cannotReview(row.args_json)) {
+        return withCors(
+          json({ ok: false, error: 'This request is too long to review. Deny it and ask for a shorter one.', code: 'TOO_LONG_TO_REVIEW' }, 409),
         );
       }
       const ok =
@@ -1994,26 +2080,54 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     return withCors(handleMcpRequest(request, env, resolved.user, resolved.credential));
   }
 
+  if (
+    path === '/industries'
+    || path === '/account/industry'
+    ||     path === '/workspaces/current'
+    || path.startsWith('/workspaces/current/')
+    || path === '/workspaces/invites'
+    || path.startsWith('/workspaces/invites/')
+  ) {
+    const industryResponse = await handleIndustryWorkspaceRoute(request, env, path);
+    if (industryResponse) return withCors(industryResponse);
+  }
+
   // APS: projects + context
   if (path === '/projects' || path.startsWith('/projects/')) {
     const who = await identify(request, env);
     if (who.error || !who.user) {
       return withCors(json({ ok: false, error: who.error || 'Unauthorized', code: 'AUTH_REQUIRED' }, 401));
     }
-    const accountId = billingId(who.user);
+    const scoped = await accountForProjectPath(env, who.user, path, request.method);
+    if (!scoped.ok) return withCors(json({ ok: false, error: scoped.error }, scoped.status));
+    const accountId = scoped.accountId;
+    const historyResponse = await handleProjectHistoryRoute(request, env, path, accountId);
+    if (historyResponse) return withCors(historyResponse);
+    const monitorResponse = await handleProjectMonitorRoute(request, env, path, accountId);
+    if (monitorResponse) return withCors(monitorResponse);
 
     if (path === '/projects' && request.method === 'GET') {
-      const projects = await listProjects(env, accountId);
+      const projects = await listVisibleProjects(env, who.user);
       return withCors(json({ ok: true, projects }));
     }
     if (path === '/projects' && request.method === 'POST') {
       const body = await readBody(request, MAX_SMALL_BODY_BYTES);
       if (!body.ok) return withCors(json({ error: body.error }, body.status));
       const raw = (body.value || {}) as Record<string, unknown>;
-      const created = await createProject(env, accountId, {
+      const industryId = readOptionalIndustry(raw.industryId);
+      if (industryId === null) {
+        return withCors(json({ ok: false, error: 'industryId is not a known industry.' }, 400));
+      }
+      const target = await createTargetAccount(env, who.user, typeof raw.workspaceId === 'string' ? raw.workspaceId : null);
+      if (!target.ok) return withCors(json({ ok: false, error: target.error }, target.status));
+      const clientId = typeof raw.clientId === 'string' ? raw.clientId : undefined;
+      const slot = await assertNewClientAllowed(env, target.accountId, clientId);
+      if (!slot.ok) return withCors(json({ ok: false, error: slot.error }, slot.status));
+      const created = await createProject(env, target.accountId, {
         domain: String(raw.domain || ''),
         name: typeof raw.name === 'string' ? raw.name : undefined,
-        clientId: typeof raw.clientId === 'string' ? raw.clientId : undefined,
+        clientId,
+        industryId,
       });
       if (!created.ok) return withCors(json({ ok: false, error: created.error }, created.status));
       if (raw.dna && typeof raw.dna === 'object') {
@@ -2029,7 +2143,25 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       if (!isContext && request.method === 'GET') {
         const project = await getProject(env, accountId, projectId);
         if (!project) return withCors(json({ ok: false, error: 'Not found' }, 404));
-        return withCors(json({ ok: true, project }));
+        const live = await reportBrandForAccount(env, project.accountId);
+        return withCors(json({ ok: true, project, reportBrand: live.brand }));
+      }
+      if (!isContext && request.method === 'DELETE') {
+        const deleted = await deleteProject(env, accountId, projectId, who.user.id);
+        if (!deleted.ok) return withCors(json({ ok: false, error: deleted.error }, deleted.status));
+        return withCors(json({ ok: true }));
+      }
+      if (!isContext && request.method === 'PATCH') {
+        const body = await readBody(request, MAX_SMALL_BODY_BYTES);
+        if (!body.ok) return withCors(json({ error: body.error }, body.status));
+        const raw = (body.value || {}) as Record<string, unknown>;
+        const industryId = parseIndustryId(raw.industryId);
+        if (!industryId) return withCors(json({ ok: false, error: 'industryId is not a known industry.' }, 400));
+        const project = await getProject(env, accountId, projectId);
+        if (!project) return withCors(json({ ok: false, error: 'Not found' }, 404));
+        await setProjectIndustry(env, project.id, industryId);
+        const updated = await getProject(env, accountId, projectId);
+        return withCors(json({ ok: true, project: updated }));
       }
       if (isContext && request.method === 'GET') {
         const context = await getProjectContext(env, accountId, projectId);
@@ -2060,10 +2192,13 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     if (who.error || !who.user) {
       return withCors(json({ ok: false, error: who.error || 'Unauthorized', code: 'AUTH_REQUIRED' }, 401));
     }
-    const accountId = billingId(who.user);
+    let accountId = billingId(who.user);
     if (path === '/reports' && request.method === 'GET') {
       const projectId = url.searchParams.get('projectId') || '';
       if (!projectId) return withCors(json({ ok: false, error: 'projectId required' }, 400));
+      const opened = await accountForProjectPath(env, who.user, `/projects/${projectId}`, 'GET');
+      if (!opened.ok) return withCors(json({ ok: false, error: opened.error }, opened.status));
+      accountId = opened.accountId;
       const reports = await listAgentReports(env, accountId, projectId);
       if (!reports) return withCors(json({ ok: false, error: 'Project not found' }, 404));
       return withCors(json({ ok: true, reports }));
@@ -2072,6 +2207,10 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       const body = await readBody(request, 600_000);
       if (!body.ok) return withCors(json({ error: body.error }, body.status));
       const raw = (body.value || {}) as Record<string, unknown>;
+      const projectId = String(raw.projectId || '');
+      const opened = await accountForProjectPath(env, who.user, `/projects/${projectId}`, 'POST');
+      if (!opened.ok) return withCors(json({ ok: false, error: opened.error }, opened.status));
+      accountId = opened.accountId;
       const saved = await saveAgentReport(env, accountId, {
         projectId: String(raw.projectId || ''),
         title: String(raw.title || ''),
@@ -2088,6 +2227,9 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     const rptMatch = path.match(/^\/reports\/([^/]+)(?:\/(html))?$/);
     if (rptMatch && request.method === 'GET') {
       const reportId = decodeURIComponent(rptMatch[1]);
+      const opened = await accountForReportId(env, who.user, reportId, false);
+      if (!opened.ok) return withCors(json({ ok: false, error: opened.error }, opened.status));
+      accountId = opened.accountId;
       if (rptMatch[2] === 'html') {
         const doc = await getAgentReportHtmlForAccount(env, accountId, reportId);
         if (!doc) return withCors(json({ ok: false, error: 'Not found' }, 404));
@@ -2097,7 +2239,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
             headers: {
               'content-type': 'text/html; charset=utf-8',
               'content-security-policy':
-                "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox allow-popups allow-popups-to-escape-sandbox",
+                "default-src 'none'; style-src 'unsafe-inline'; img-src https: data:; sandbox allow-popups allow-popups-to-escape-sandbox",
               'x-content-type-options': 'nosniff',
             },
           }),
@@ -2340,11 +2482,15 @@ const handler = {
     const guard = async (res: Response) => {
       const secured = withSecurityHeaders(res);
       const html = await decoratePublicHtml(secured, env.ASSETS);
-      return applyHostRobots(url, env.ENVIRONMENT, html);
+      const flagged = await withHeroAbFlag(html, heroAbEnabled(env));
+      return applyHostRobots(url, env.ENVIRONMENT, flagged);
     };
 
     const oauthDiscovery = handleOAuthDiscovery(request);
     if (oauthDiscovery) return guard(oauthDiscovery);
+
+    const registryAuth = handleMcpRegistryAuth(request, env);
+    if (registryAuth) return registryAuth;
 
     const assetLinks = handleAssetLinks(request, env);
     if (assetLinks) return guard(assetLinks);
@@ -2415,6 +2561,18 @@ const handler = {
           status: 200,
           headers: {
             'Content-Type': 'application/xml; charset=utf-8',
+            'Cache-Control': 'public, max-age=3600',
+          },
+        }),
+      );
+    }
+    const agentMarkdown = markdownForPath(url.pathname);
+    if (agentMarkdown && (request.method === 'GET' || request.method === 'HEAD')) {
+      return guard(
+        new Response(request.method === 'HEAD' ? null : agentMarkdown, {
+          status: 200,
+          headers: {
+            'Content-Type': 'text/markdown; charset=utf-8',
             'Cache-Control': 'public, max-age=3600',
           },
         }),
@@ -2502,7 +2660,7 @@ const handler = {
     if (androidLegal) return guard(androidLegal);
 
     // Marketing paths: SPA shell with path-specific title, description, canonical and JSON-LD.
-    const marketingHtml = await maybeServeMarketingHtml(request, env.ASSETS);
+    const marketingHtml = await maybeServeMarketingHtml(request, env.ASSETS, env);
     if (marketingHtml) {
       return guard(marketingHtml);
     }
@@ -2525,7 +2683,7 @@ const handler = {
     const contentType = assetResponse.headers.get('content-type') || '';
     const isStaticFile =
       url.pathname.startsWith('/assets/') ||
-      /\.(ico|png|jpe?g|gif|svg|webp|avif|webmanifest|json|xml|txt|map|css|js|woff2?|ttf|otf|eot|wasm)$/i.test(
+      /\.(ico|png|jpe?g|gif|svg|webp|avif|pdf|webmanifest|json|xml|txt|map|css|js|woff2?|ttf|otf|eot|wasm)$/i.test(
         url.pathname,
       );
     if (isStaticFile && assetResponse.ok && contentType.includes('text/html')) {
@@ -2573,6 +2731,13 @@ const handler = {
     if (jobs.includes('stars_charge_sweep')) ctx.waitUntil(runStarsChargeSweep(env).then(() => undefined));
     if (jobs.includes('payment_support_sweep')) ctx.waitUntil(runPaymentSupportSweep(env).then(() => undefined));
     if (jobs.includes('weekly_decision_digest')) ctx.waitUntil(sendWeeklyDecisionDigest(env).then(() => undefined));
+    if (jobs.includes('weekly_visibility_email')) {
+      ctx.waitUntil(
+        sendWeeklyVisibilityEmails(env)
+          .then(() => undefined)
+          .catch((err) => console.error('[WeeklyEmail] sweep failed', err)),
+      );
+    }
     if (jobs.includes('rsi_skill_curator')) ctx.waitUntil(runRsiSkillCurator(env).then(() => undefined));
     if (jobs.includes('rsi_posting_reflection')) ctx.waitUntil(runPostingReflection(env).then(() => undefined));
     if (jobs.includes('citation_watch')) {
@@ -2591,6 +2756,29 @@ const handler = {
         sweepDueRecoveryRuns(env)
           .then(() => undefined)
           .catch((err) => console.error('[Recovery] scheduled sweep failed', err)),
+      );
+    }
+    if (jobs.includes('project_monitor')) {
+      const scheduledAt = controller.scheduledTime;
+      ctx.waitUntil(
+        runProjectMonitorTick(env, { scheduledAt })
+          .then(() => undefined)
+          .catch((err) => console.error('[Monitor] sweep failed', err)),
+      );
+    }
+    if (jobs.includes('outcome_followup')) {
+      const scheduledAt = controller.scheduledTime;
+      ctx.waitUntil(
+        runOutcomeFollowUpTick(env, { now: scheduledAt })
+          .then(() => undefined)
+          .catch((err) => console.error('[outcome-followup] sweep failed', err)),
+      );
+    }
+    if (jobs.includes('mcp_oauth_refresh_prune')) {
+      ctx.waitUntil(
+        pruneMcpOAuthRefreshRows(env)
+          .then(() => undefined)
+          .catch((err) => console.error('[mcp-oauth] refresh prune failed', err)),
       );
     }
   },

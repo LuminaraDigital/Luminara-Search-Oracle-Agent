@@ -16,11 +16,21 @@ export interface PlanEntitlements {
   sentinelLimit: number;
   auditHistoryDepth: number; // 0 = unlimited
   agencyClientLimit: number;
+  /**
+   * How many client projects a workspace may add.
+   * Placeholder until a workspace price exists. Not a Stripe price and not a billed quantity.
+   */
+  workspaceClientLimit: number;
   competitorWatchLimit: number;
   scheduledReaudit: 'none' | 'monthly' | 'weekly' | 'daily';
   apiAccess: boolean;
   whiteLabelPdf: boolean;
-  /** Public report URLs, every plan. Custom branding needs whiteLabelPdf. Redacted scout teasers are a separate artifact. */
+  /**
+   * Placeholder until a white-label price exists. Not a Stripe price and not a billed quantity.
+   * Reports keep the "Powered by Luminara Suite" line unless this is true.
+   */
+  whiteLabelRemovePoweredBy: boolean;
+  /** Public report URLs, every plan. Client-supplied branding needs whiteLabelPdf. A workspace brand applies on every plan. */
   shareLinks: boolean;
   /** MCP free tools (projects, context, reports), every plan. Paid research stays Agency or BYOK. */
   mcpAccess: boolean;
@@ -39,10 +49,12 @@ export const PLAN_ENTITLEMENTS: Record<PlanId, PlanEntitlements> = {
     sentinelLimit: 0,
     auditHistoryDepth: 5,
     agencyClientLimit: 0,
+    workspaceClientLimit: 1,
     competitorWatchLimit: 3,
     scheduledReaudit: 'none',
     apiAccess: false,
     whiteLabelPdf: false,
+    whiteLabelRemovePoweredBy: false,
     shareLinks: true,
     mcpAccess: true,
     teamSeats: 1,
@@ -56,10 +68,12 @@ export const PLAN_ENTITLEMENTS: Record<PlanId, PlanEntitlements> = {
     sentinelLimit: 2,
     auditHistoryDepth: 30,
     agencyClientLimit: 0,
+    workspaceClientLimit: 2,
     competitorWatchLimit: 10,
     scheduledReaudit: 'monthly',
     apiAccess: false,
     whiteLabelPdf: true,
+    whiteLabelRemovePoweredBy: false,
     shareLinks: true,
     mcpAccess: true,
     teamSeats: 1,
@@ -73,10 +87,12 @@ export const PLAN_ENTITLEMENTS: Record<PlanId, PlanEntitlements> = {
     sentinelLimit: 10,
     auditHistoryDepth: 90,
     agencyClientLimit: 0,
+    workspaceClientLimit: 5,
     competitorWatchLimit: 25,
     scheduledReaudit: 'weekly',
     apiAccess: false,
     whiteLabelPdf: true,
+    whiteLabelRemovePoweredBy: false,
     shareLinks: true,
     mcpAccess: true,
     teamSeats: 3,
@@ -90,10 +106,12 @@ export const PLAN_ENTITLEMENTS: Record<PlanId, PlanEntitlements> = {
     sentinelLimit: 25,
     auditHistoryDepth: 0,
     agencyClientLimit: 10,
+    workspaceClientLimit: 10,
     competitorWatchLimit: 100,
     scheduledReaudit: 'daily',
     apiAccess: true,
     whiteLabelPdf: true,
+    whiteLabelRemovePoweredBy: true,
     shareLinks: true,
     mcpAccess: true,
     teamSeats: 10,

@@ -9,6 +9,9 @@ import { productTelemetry } from '../../services/analytics/productTelemetry';
 import { dreamingClient } from '../../services/dreaming/dreamingClient';
 import { BusinessDnaSkeleton } from '../ui/Skeleton';
 import { optionalPortalUrl } from '../../services/audit/agencyProfile';
+import { IndustrySelect } from '../industries/IndustrySelect';
+import { DEFAULT_INDUSTRY_ID, industryProfile } from '../../services/industries/industryProfiles';
+import { saveAccountIndustry } from '../../services/industries/industryClient';
 
 interface BusinessDNAViewProps {
   currentDNA: BusinessDNA | null;
@@ -126,6 +129,7 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
       setProfileError(null);
       setFormData(next);
       onDNAGenerated(next);
+      if (next.industryId) void saveAccountIndustry(next.industryId);
       syncToVfs(next);
       draftPersistenceService.clearDraft(DRAFT_KEYS.BUSINESS_DNA_INPUT);
       productTelemetry.recordOnboardingStep('business_dna');
@@ -276,6 +280,23 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
                   />
                 ) : (
                   <p className="text-xs text-gray-300 leading-relaxed bg-black/40 p-3 rounded-xl border border-white/5">{formData.usp || formData.mission || 'Not set'}</p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-gold-light mb-1" htmlFor="dna-industry">Industry</label>
+                {editing ? (
+                  <IndustrySelect
+                    id="dna-industry"
+                    value={formData.industryId || DEFAULT_INDUSTRY_ID}
+                    onChange={(industryId) => {
+                      const profile = industryProfile(industryId);
+                      setFormData({ ...formData, industryId: profile.id, industry: profile.label });
+                    }}
+                    className="w-full bg-black/60 border border-white/20 rounded-xl p-3 text-xs text-white"
+                  />
+                ) : (
+                  <p className="text-xs text-gray-300 bg-black/40 p-3 rounded-xl border border-white/5">{industryProfile(formData.industryId).label}</p>
                 )}
               </div>
 

@@ -14,8 +14,12 @@ import { isInTelegram } from '../../services/telegram/tma';
 import { linkTelegramFirebaseAccounts } from '../../services/apiClient';
 import { pullWorkspaceOnLogin } from '../../services/sync/workspaceSyncService';
 import { productTelemetry } from '../../services/analytics/productTelemetry';
+import { signupHeroData } from '../../services/marketing/heroExperimentClient';
 import '../marketing/space.css';
 import { ConfirmModal } from '../ui/ConfirmModal';
+import { IndustrySelect } from '../industries/IndustrySelect';
+import { DEFAULT_INDUSTRY_ID, parseIndustryId } from '../../services/industries/industryProfiles';
+import { rememberIndustryChoice, saveAccountIndustry } from '../../services/industries/industryClient';
 
 export type AuthMode = 'signin' | 'signup';
 
@@ -86,6 +90,7 @@ export const AuthPanel: React.FC<{
   }, [initialMode]);
 
   const [email, setEmail] = useState('');
+  const [industryId, setIndustryId] = useState(DEFAULT_INDUSTRY_ID);
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [keepSignedIn, setKeepSignedIn] = useState(false);
@@ -225,9 +230,11 @@ export const AuthPanel: React.FC<{
       return;
     }
     if (mode === 'signup') {
+      rememberIndustryChoice(industryId);
       void run(async () => {
         await signUpWithEmail(trimmedEmail, password, { keepSignedIn });
-        productTelemetry.track('signup_completed', { method: 'email' });
+        await saveAccountIndustry(industryId);
+        productTelemetry.track('signup_completed', { method: 'email', ...signupHeroData() });
       });
     } else {
       void run(async () => {
@@ -283,6 +290,25 @@ export const AuthPanel: React.FC<{
       )}
 
       <form className="space-y-4" onSubmit={handleSubmit} noValidate>
+        {mode === 'signup' && (
+          <div className="space-y-1.5">
+            <label htmlFor={`${baseId}-industry`} className="block text-sm text-ink">
+              Industry
+            </label>
+            <div className="rounded-xl border border-gold/20 bg-black/50 transition-colors focus-within:border-gold/60">
+              <IndustrySelect
+                id={`${baseId}-industry`}
+                value={industryId}
+                onChange={(id) => {
+                  const parsed = parseIndustryId(id);
+                  if (parsed) setIndustryId(parsed);
+                }}
+              />
+            </div>
+            <p className="text-xs text-[var(--color-ink-2)]">Checks, keywords, and report wording follow this. Real estate agency is the default.</p>
+          </div>
+        )}
+
         <div className="space-y-1.5">
           <label htmlFor={emailId} className="block text-sm text-ink">
             Email
@@ -403,9 +429,11 @@ export const AuthPanel: React.FC<{
         disabled={busy}
         onClick={() =>
           run(async () => {
+            if (mode === 'signup') rememberIndustryChoice(industryId);
             await signInWithGoogle({ keepSignedIn });
             if (mode === 'signup') {
-              productTelemetry.track('signup_completed', { method: 'google' });
+              await saveAccountIndustry(industryId);
+              productTelemetry.track('signup_completed', { method: 'google', ...signupHeroData() });
             }
           })
         }

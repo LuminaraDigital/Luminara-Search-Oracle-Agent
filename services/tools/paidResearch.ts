@@ -2,6 +2,13 @@
  * Live DataForSEO paid research tool handlers (shared by MCP registry).
  */
 import { findResearchLogHit, researchLogHitResult } from './researchLogGate';
+import {
+  domainOverviewSnapshot,
+  keywordSnapshot,
+  sameProjectHost,
+  visibilitySnapshot,
+  type MeasuredSnapshot,
+} from '../history/snapshotCapture';
 import type { PaidToolRuntime, ToolResult } from './types';
 import { dfsFirstResult } from './dfsParse';
 import { runVisibilityRouter } from '../visibility/engineVisibilityRouter';
@@ -20,6 +27,15 @@ function notMeasured(text: string, structured: Record<string, unknown>): ToolRes
 
 function asArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
+}
+
+async function mirrorMeasured(rt: PaidToolRuntime, event: MeasuredSnapshot): Promise<void> {
+  if (!rt.onMeasured) return;
+  try {
+    await rt.onMeasured(event);
+  } catch {
+    /* the tool result already stands; history is a mirror */
+  }
 }
 
 export async function researchKeywords(
@@ -94,6 +110,15 @@ export async function researchKeywords(
     .join('; ');
   const summary = `Keyword research: seeds=${seeds.join(', ')}. Top ideas: ${top}.`;
   await rt.appendResearchLog(projectId, summary);
+  const measuredAt = Date.now();
+  await mirrorMeasured(
+    rt,
+    keywordSnapshot({
+      projectId,
+      measuredAt,
+      keywords: keywords.map((row) => ({ keyword: row.keyword, searchVolume: row.searchVolume })),
+    }),
+  );
   return {
     text: summary,
     structuredContent: {
@@ -155,6 +180,20 @@ export async function getDomainOverview(
 
   const summary = `Domain overview: ${domain}. Organic count=${overview.organicCount ?? 'unknown'}, etv=${overview.organicEtv ?? 'unknown'}.`;
   await rt.appendResearchLog(projectId, summary);
+  if (
+    sameProjectHost(project.domain, domain) &&
+    (overview.organicCount !== null || overview.organicEtv !== null)
+  ) {
+    await mirrorMeasured(
+      rt,
+      domainOverviewSnapshot({
+        projectId,
+        measuredAt: Date.now(),
+        organicCount: overview.organicCount,
+        organicEtv: overview.organicEtv,
+      }),
+    );
+  }
   return {
     text: summary,
     structuredContent: { measurementStatus: 'measured', ...overview, code: 'OK' },
@@ -339,7 +378,30 @@ export async function getVisibilitySnapshot(
 
   const summary = `Visibility snapshot: ${domain}. Status=${out.measurementStatus}. Aggregate citation rate=${out.aggregateCitationRatePercent ?? 'n/a'}.`;
   // Only append successful measured runs; estimated / not_measured must not block retries.
-  if (projectId && out.measurementStatus === 'measured') {
+  if (
+    projectId &&
+    project &&
+    out.measurementStatus === 'measured' &&
+    typeof out.aggregateCitationRatePercent === 'number' &&
+    Number.isFinite(out.aggregateCitationRatePercent) &&
+    sameProjectHost(project.domain, domain)
+  ) {
+    await rt.appendResearchLog(projectId, summary);
+    await mirrorMeasured(
+      rt,
+      visibilitySnapshot({
+        projectId: project.id,
+        measuredAt: Date.now(),
+        aggregateCitationRatePercent: out.aggregateCitationRatePercent,
+        queries,
+        engines: out.engines.map((row) => ({
+          engine: row.engine,
+          cited: row.cited,
+          measurementStatus: row.measurementStatus,
+        })),
+      }),
+    );
+  } else if (projectId && out.measurementStatus === 'measured') {
     await rt.appendResearchLog(projectId, summary);
   }
   return {

@@ -261,6 +261,23 @@ async function listPending(db: D1Database): Promise<EraseTarget[]> {
   }
 }
 
+/** True when this account or login is on the erase ledger, including a delete still in progress. */
+export async function isErasedSubject(db: D1Database, accountId: string, userId: string): Promise<boolean> {
+  if (!accountId && !userId) return false;
+  try {
+    const row = await db.prepare(
+      `SELECT account_id FROM firestore_erase_ledger
+       WHERE status IN ('pending', 'pending_firebase', 'done')
+         AND (account_id = ? OR user_ids_json LIKE ? ESCAPE '\\')
+       LIMIT 1`,
+    ).bind(accountId, `%${jsonQuotedLike(userId)}%`).first<{ account_id: string }>();
+    return row !== null;
+  } catch (err) {
+    if (missingTable(err)) return false;
+    throw err;
+  }
+}
+
 export async function findErasedLogin(
   db: D1Database,
   loginId: string,

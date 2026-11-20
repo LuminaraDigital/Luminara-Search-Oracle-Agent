@@ -1,0 +1,87 @@
+.lx-claim {
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.lx-story-stage {
+  perspective: 1800px;
+}
+
+.lx-story-page {
+  transform-origin: left center;
+  transition: transform 0.65s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.4s ease;
+  backface-visibility: hidden;
+}
+
+.lx-story[data-motion='turn'] .lx-story-page.is-out {
+  transform: rotateY(-78deg);
+  opacity: 0.15;
+}
+
+.lx-story[data-motion='fade'] .lx-story-page,
+.lx-story[data-motion='fade'] .lx-story-page.is-out {
+  transform: none;
+}
+
+.lx-story[data-motion='fade'] .lx-story-page.is-out {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lx-story-page,
+  .lx-story-page.is-out {
+    transform: none !important;
+    transition: opacity 0.2s ease !important;
+  }
+}
+
+@media print {
+  .lx-wp {
+    background: #fff !important;
+    color: #111 !important;
+  }
+  .lx-wp .lx-nav,
+  .lx-wp .lx-stars,
+  .lx-wp .lx-horizon,
+  .lx-wp .lx-skip,
+  .lx-wp .lx-wp-screen,
+  .lx-wp .pointer-events-none {
+    display: none !important;
+  }
+  .lx-wp,
+  .lx-wp main,
+  .lx-wp p,
+  .lx-wp li,
+  .lx-wp h1,
+  .lx-wp h2,
+  .lx-wp td,
+  .lx-wp th,
+  .lx-wp figcaption {
+    color: #111 !important;
+    background: transparent !important;
+  }
+  .lx-wp .lx-claim {
+    color: #111 !important;
+    border-color: #111 !important;
+  }
+  .lx-wp a {
+    color: #111 !important;
+    text-decoration: underline;
+  }
+  .lx-wp a[href^='http']::after {
+    content: ' (' attr(href) ')';
+    font-size: 0.85em;
+    word-break: break-all;
+  }
+  .lx-wp img {
+    max-width: 100% !important;
+  }
+  .lx-wp tr,
+  .lx-wp figure {
+    break-inside: avoid;
+  }
+}
+
+@page {
+  margin: 16mm;
+}

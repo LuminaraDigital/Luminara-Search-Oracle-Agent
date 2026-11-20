@@ -369,12 +369,19 @@ describe('MCP gate integration', () => {
     expect(body.result?.structuredContent?.reason).toBe('budget_exhausted');
 
     const audit = await env.DB!.prepare(
-      `SELECT action, target_id FROM org_audit_logs WHERE org_id = ? ORDER BY created_at DESC LIMIT 1`,
+      `SELECT action, target_id, details FROM org_audit_logs WHERE org_id = ? ORDER BY created_at DESC LIMIT 1`,
     )
       .bind('org_acct_gate')
-      .first<{ action: string; target_id: string }>();
+      .first<{ action: string; target_id: string; details: string }>();
     expect(audit?.action).toBe('mcp_tool_block');
     expect(audit?.target_id).toBe('get_pagespeed_summary');
+    expect(audit?.details).not.toContain('https://x.test');
+    expect(audit?.details).not.toContain('p1');
+    expect(JSON.parse(audit?.details || '{}')).toEqual({
+      tool: 'get_pagespeed_summary',
+      decision: 'block',
+      reason: 'budget_exhausted',
+    });
   });
 
   it('budget block wins over destructive require_approval too', async () => {

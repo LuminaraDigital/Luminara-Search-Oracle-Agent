@@ -1,5 +1,7 @@
-import { CONTACT_EMAIL, OPERATOR_LINE } from '../legal/consumerTerms';
+import { CONTACT_EMAIL, OPERATOR_LINE, REFUND_LINE } from '../legal/consumerTerms';
 import { MARKETING_FAQ } from '../marketing/marketingFaqContent';
+
+export { REFUND_LINE };
 
 function esc(value: string): string {
   return value
@@ -10,8 +12,6 @@ function esc(value: string): string {
 }
 
 export const HOW_LINE = 'You run Instant Audit on your agency site. Luminara checks the site and live web results, then gives a verdict and one fix. Each result is Measured, Estimated, or Not measured.';
-
-export const REFUND_LINE = 'A paid plan lasts 30 days and does not renew, so there is nothing to cancel. For a refund, email info@luminara.digital. Australian Consumer Law still applies.';
 
 const faqItems = MARKETING_FAQ.map((item) => `<h3>${esc(item.question)}</h3><p>${esc(item.answer)}</p>`).join('\n');
 

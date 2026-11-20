@@ -13,9 +13,10 @@ Orient the user. Prefer free tools. Do not dump novels into chat.
 
 1. `whoami` then `list_projects` (or ask which domain).
 2. `get_project_context`. If missing sections, suggest `luminara-project-setup`.
-3. Before paid tools, read research log. Reuse work younger than 30 days.
-4. Offer 2-4 next options: setup, audit, keyword research, visibility.
-5. Hand off to a product skill for deliverables. Those skills save via `luminara-report`.
+3. `ask_coach` for the project: it returns this week's decision, or a candidate. A candidate is not a decision; say so.
+4. Before paid tools, read research log. Reuse work younger than 30 days.
+5. Offer 2-4 next options: setup, audit, keyword research, visibility.
+6. Hand off to a product skill for deliverables. Those skills save via `luminara-report`.
 
 ## Reply shape
 

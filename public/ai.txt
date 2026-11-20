@@ -21,6 +21,7 @@ Allow: /contact
 Allow: /desktop
 Allow: /compare/
 Allow: /best/
+Allow: /learn/
 Allow: /docs/
 Allow: /docs/what-is-aeo.html
 Allow: /llms.txt
