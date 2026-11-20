@@ -1,6 +1,6 @@
 # Allora Concepts Implementation Plan (Fix Retest Loop)
 
-**Status:** v2.3 - three review rounds applied (section 13). CL0-0 recorded on 2026-11-15 (section 1.3): paid limits apply today, but the Workers Paid subscription reads "Expired", so the owner checks billing before Phase 1. CL0-1 is draft PR #400. Awaiting owner gate. Phase 3a waits on owner decision 1  
+**Status:** v2.4 - three review rounds applied (section 13). Phase 0 in drafts #400, #401, #403, #420, #423, #424, #425. Owner decisions 2, 3 and 5 answered 2026-11-21 (section 12). CL1-0 re-baseline done 2026-11-21 (section 1.4). The owner reported billing fixed on 2026-11-21; the Cloudflare API still read "Expired" that day (1.3), so re-check before Phase 1 runs on paid limits. Phase 3a waits on owner decision 1  
 **Date:** 2026-10-03  
 **Owner:** Luminara Digital (owner gate before every production step)  
 **Source:** "Allora: a Self-Improving, Decentralized Machine Intelligence Network" (Kruijssen et al., 2024). Concepts only.  
@@ -117,6 +117,50 @@ Read with the operator's Cloudflare API token, `gh`, and read-only `wrangler d1 
 - Owner decision 1 gets its input: no account reached the estimated path in 30 days, so the study would measure a path nobody uses yet.
 - The promotion path is a fact (2.2). CL0-1 may reach production once the owner promotes.
 
+### 1.4 CL1-0 re-baseline (2026-11-21)
+
+Every row of 1.1 and every code claim in section 3 was re-checked against `origin/staging` at `d0a8f3c8`. Of the 18 rows in 1.1, 9 still hold, 6 changed and 3 are fixed; almost every line number moved. Phase 0 work in open drafts (#400, #403, #420, #423, #424) is not on staging and is noted where it applies. Section 1.1 is kept as the 2026-10-03 record; this table supersedes it.
+
+| 1.1 row | Now | Current citations |
+|---|---|---|
+| Audit location | Holds. The queued audit is still a reduced graph that stays `not_measured` | `worker/auditQueue.ts:231-352` |
+| Crew rules | Holds, with a fifth rule: `finding-schema-org-partial`. `AuditFinding` has no URL, `ruleId` or `targetUrls` field until #423 | `services/agentCore/agents/playbookAuditorAgent.ts:89-190`; `services/agentCore/types.ts:128-146` |
+| Findings sync bug | **Fixed on the server** by `b83df89b` (2026-10-20): the server mints `randomId('fnd')`. Patch by stable key, provenance and the client side are #400 | `worker/findingsService.ts:163`; PATCH `:223-259` |
+| Actions | Holds. Same three action ids; the decision's `findingId` is still the top finding | `components/audit/ShipActionGate.tsx:13-28`; `components/audit/WeeklyDecisionCard.tsx:98` |
+| Decision storage | Changed in one detail: `verify_by` is now read, by the MCP agents' text. Still client-controlled and moved on re-post | `worker/weeklyDecisionService.ts:68-159`; `worker/mcpAgents.ts:320-395` |
+| Card durability | Holds. `fetchWeeklyDecision` has no caller; two of three mounts pass `commitment={null}` | `worker/weeklyDecisionService.ts:38-70`; `services/privacy/privacyClient.ts:6`; `components/suite/DashboardView.tsx:262-266`; `components/audit/InstantAuditView.tsx:894-897` |
+| Decision route | Holds. Inline auth, no rate limit, body read with no cap. `enforceDualRateLimit` (rule 6 in 3.3) and `readBody` both exist for CL1-4 to use | `worker/index.ts:1722-1736`; `worker/securityHardening.ts:240`; `worker/security.ts:206` |
+| Scheduled work | **Changed** (see 1.3): 15 jobs on the daily cron, nothing awaited. An unmapped cron now runs no job and logs an error (`28c051e5`), which removes the hazard 2.2's last bullet guards against | `worker/scheduledJobs.ts:11-90`; `worker/index.ts:2718-2780` |
+| Public fetch | **Changed in part.** DNS lookups now time out internally; no overall deadline, size cap, type check or port rule; `fec0::/10`, `2001::/32`, `100::/64` still open. All covered by #403 | `worker/security.ts:277-425` |
+| Plans | Holds. `domainLimit` 1/2/10/25, plans last 30 days | `worker/telegramBot.ts:66-160`, `days: 30` at `:87`; `planCapsFor` `:195` |
+| Account linking | **Changed:** linking now moves payment, feed and audit-history rows, but still not `weekly_decisions` or `audit_findings`. CL1-1's link rule still applies | `worker/userStore.ts:436-545` |
+| Privacy lists | **Changed:** `audit_findings` is now deleted, but still not exported. CL1-1 adds export | `worker/privacyService.ts:49-95`, delete at `:498` |
+| Visibility path | Holds, wording narrowed: the probe also runs when any provider engine is not measured | `services/visibility/engineVisibilityRouter.ts:161-206` |
+| Output validators | Holds, lines moved | `worker/agentOutputValidators.ts:96-210`; `worker/oracleChat.ts:773` |
+| Deploy | **Fixed:** both deploy jobs have `concurrency` groups and production checks the release came from a green staging deploy (`28c051e5`). Migrations still apply with a Time Travel bookmark, not a dump | `.github/workflows/deploy-cloudflare.yml:41-43,143-145,171-190` |
+| Branches | Holds: `origin/main` is not an ancestor of `origin/staging`; 5 commits behind on 2026-11-21 | `git rev-list --count origin/staging..origin/main` |
+| Tests | Holds | `tests/helpers/sqliteD1.ts:14,40` |
+| Honesty gates | Holds; the trigger words are wider than written (also authority, traffic, keyword) | `scripts/honesty-gates-lib.mjs:96-124` |
+
+Section 3 claims: the modules 3.1, 3.2 and 3.8 name (`ruleDefinitions.ts`, `publicFetch.ts`, the `AuditFinding` fields, the `resolvesToPublicAddress` signal) exist only in drafts #423 and #403. The latest migration on staging is `0058`; 3.7's note about `0018` is stale, and the `decision_checks` migration takes the next free number at PR time.
+
+**Trigger map (3.1 confirmed, with one row added).** Rule ids are the ones `playbookAuditorAgent.ts` emits on staging; action ids are the three in `ShipActionGate.tsx`.
+
+| Trigger | Kind | Check | URLs |
+|---|---|---|---|
+| `finding-schema-org` | rule | `org_schema_present` | Site root |
+| `finding-schema-org-partial` | rule | `org_schema_present` | The pages missing the tag, at most 3 (new; the rule postdates this plan) |
+| `finding-deprecated-howto` | rule | `howto_schema_absent` | The HowTo pages, at most 3 |
+| `finding-thin-content` | rule | `min_words_250` | The thin pages, at most 3 |
+| `finding-zero-citations` | rule | none | "Server re-check: not available for this finding" |
+| `deploy-schema` | action | `org_schema_present` | Site root |
+| `rewrite-answer`, `citation-gap` | action | none | No action row |
+| `finding-scout-<n>` (guest scout panel) | display only | none | Never synced to `audit_findings`, so never a trigger |
+
+The organization type test follows `isOrganizationEntityType`, which is wider than the three types 3.1 named; one module now defines it for both the browser rule and the server check (#423).
+
+**Coverage rule** (from CL1-0, unchanged): fourteen days after `DECISION_CHECKS_ENABLED` is on in production, if fewer than half of decisions have a measured baseline, report to the owner before Phase 2 promotes.
+
 ---
 
 ## 2. Rules for every task
@@ -214,7 +258,7 @@ A check is a pure function over page source fetched by the server. It returns `p
 
 | Check id | Triggered by | URLs checked | `pass` | `fail` | `not_measured` |
 |---|---|---|---|---|---|
-| `org_schema_present` | Rule `finding-schema-org`, or action `deploy-schema` | Site root | A JSON-LD block (including `@graph` and arrays) has type Organization, Corporation or LocalBusiness | 200, HTML, complete, no such type | Non-200, non-HTML, deadline, truncated, unparseable, off-domain redirect |
+| `org_schema_present` | Rule `finding-schema-org`, or action `deploy-schema` (site root); rule `finding-schema-org-partial` (its pages, at most 3; added by CL1-0, 1.4) | Site root, or the partial rule's pages | A JSON-LD block (including `@graph` and arrays) has an organization type as `isOrganizationEntityType` in `services/audit/ruleDefinitions.ts` defines it (Organization or a name ending in Organization, Corporation, LocalBusiness, ProfessionalService, RealEstateAgent) | 200, HTML, complete, no such type | Non-200, non-HTML, deadline, truncated, unparseable, off-domain redirect |
 | `howto_schema_absent` | Rule `finding-deprecated-howto` | Pages whose schemas include HowTo, at most 3 | No JSON-LD type HowTo | HowTo present | As above |
 | `min_words_250` | Rule `finding-thin-content` | The thin pages, at most 3 | At least 250 words of visible text | Fewer than 250 and the page is not an app shell | App shell (under 50 words and at least one script bundle), or as above |
 
@@ -460,7 +504,7 @@ CREATE INDEX IF NOT EXISTS idx_decision_checks_lease ON decision_checks(lease_un
 
 | ID | Task | Files | Acceptance |
 |---|---|---|---|
-| CL1-0 | Re-baseline. Re-check every citation in sections 1 and 3. Record which action ids and rule ids map to a check. | this document | Section 3.1 confirmed or corrected. **Coverage rule:** fourteen days after the flag is on in production, if fewer than half of decisions have a measured baseline, report to the owner before Phase 2 promotes. (Staging has no users and the fixtures are written by the team, so coverage cannot be judged earlier.) |
+| CL1-0 | **Done 2026-11-21 (1.4).** Re-baseline. Re-check every citation in sections 1 and 3. Record which action ids and rule ids map to a check. | this document | Section 3.1 confirmed or corrected. **Coverage rule:** fourteen days after the flag is on in production, if fewer than half of decisions have a measured baseline, report to the owner before Phase 2 promotes. (Staging has no users and the fixtures are written by the team, so coverage cannot be judged earlier.) |
 | CL1-1 | Migration per 3.7; smoke lists; export and delete for `decision_checks` and `audit_findings`; account-link move per 2.3. | `migrations/`, `scripts/smoke-check.mjs`, `worker/privacyService.ts`, `worker/userStore.ts`, `worker/privacyPolicy.ts`, tests | Applies on a fresh database and re-applies. Export includes both tables. Delete removes both. The four link tests in 2.3 pass: no row carries the losing id, every check names a decision of the same account, no two open rows share an account, check and URL, and linking logins that already share an account changes nothing. The privacy page contains the sentence approved in owner decision 5. |
 | CL1-2 | Check registry per 3.1 as pure functions over text, returning a status and a code. | new `worker/decisionChecks/checks.ts`, `tests/decisionChecksRegistry.test.ts`, fixtures under `tests/fixtures/decision-checks/` | One fixture per cell of the 3.1 table: `@graph` nesting, array types, malformed JSON-LD, app shell, truncated body, 404, PDF, 25 script blocks. A page whose JSON-LD and title contain a marker string: the marker is absent from the result. |
 | CL1-3 | Characterisation test for `/weekly-decisions` as it is today, written before any change to the route. | new `tests/weeklyDecisions.test.ts` | Pins the current `POST` and `GET` responses and rows. This is the flag-off parity oracle for CL1-4. |
