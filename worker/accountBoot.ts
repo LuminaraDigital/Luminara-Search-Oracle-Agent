@@ -27,7 +27,7 @@ async function reuseOrMint(
     if (existing?.uid === uid) return null;
   }
   if (!bearerFromAuthorization(request.headers.get('authorization'))) return null;
-  return mintOpaqueSession(env, { uid, email: user.email, name: user.name });
+  return mintOpaqueSession(env, { uid, email: user.email, name: user.name, emailVerified: user.emailVerified });
 }
 
 /**

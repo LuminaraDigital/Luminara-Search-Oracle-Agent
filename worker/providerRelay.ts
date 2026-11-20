@@ -6,6 +6,7 @@ import { isUserSubscribed, checkHostedQuota, QUOTA_CAPACITY_ERROR, refundMetered
 import { sameSiteHost } from '../services/audit/sameSiteHost';
 import { noteAuditRunSuccess, requestTargetHost, takeAuditRunCall } from './auditScoutRun';
 import { requireApiAccess } from './apiAccess';
+import { HOSTED_CEILING_ERROR, isHostedProvider, takeFreeHostedCall, unverifiedEmailRefusal } from './hostedFreeGuards';
 import {
   WORKERS_AI_FALLBACK_PROVIDER,
   runWorkersAiChatFallback,
@@ -446,6 +447,10 @@ export async function proxyProvider(
     // - NVIDIA NIM Enterprise, Sovereign Ollama, and OpenRouter are behind our Paid Tier!
     const isPaidSubscriber = await isUserSubscribed(env, who.user);
     paidSubscriber = isPaidSubscriber;
+    if (!isPaidSubscriber) {
+      const unverified = unverifiedEmailRefusal(env, who.user);
+      if (unverified) return unverified;
+    }
     fallbackAccountId = who.user ? (scoutAccountId || billingId(who.user)) : `anon:${(clientIp(request) || '').trim() || 'unknown'}`;
     const PAID_TIER_PROVIDERS = new Set(['nim', 'ollama', 'openrouter', 'dataforseo']);
     if (!isPaidSubscriber && PAID_TIER_PROVIDERS.has(providerId)) {
@@ -545,6 +550,11 @@ export async function proxyProvider(
     }
     return response;
   };
+
+  // Free callers share one daily ceiling per provider, so many throwaway accounts cannot drain a hosted key.
+  if (!userKey && !paidSubscriber && isHostedProvider(providerId) && !(await takeFreeHostedCall(env, providerId))) {
+    return releaseUnmeasured(json({ error: HOSTED_CEILING_ERROR, code: 'HOSTED_CAPACITY', upgrade: true }, 503));
+  }
 
   const url = new URL(request.url);
   const baseUrl = typeof spec.base === 'function' ? spec.base(env) : spec.base;

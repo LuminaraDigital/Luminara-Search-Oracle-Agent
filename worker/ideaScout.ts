@@ -7,6 +7,7 @@ import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
 import { billingId, identify, json } from './workerUtils';
 import { checkHostedQuota, isUserSubscribed, QUOTA_CAPACITY_ERROR } from './quotaMiddleware';
+import { HOSTED_CEILING_ERROR, takeFreeHostedCall } from './hostedFreeGuards';
 import {
   MAX_SMALL_BODY_BYTES,
   clientIp,
@@ -419,6 +420,9 @@ async function createIdea(request: Request, env: Env, user: HostedIdentity, acco
     if (!quota.ok) {
       const capacity = quota.error === QUOTA_CAPACITY_ERROR;
       return json({ ok: false, error: quota.error || 'Hosted limit reached.', code: capacity ? 'HOSTED_CAPACITY' : 'HOSTED_QUOTA' }, capacity ? 503 : 429);
+    }
+    if (!subscribed && !(await takeFreeHostedCall(env, 'groq'))) {
+      return json({ ok: false, error: HOSTED_CEILING_ERROR, code: 'HOSTED_CAPACITY' }, 503);
     }
   }
 

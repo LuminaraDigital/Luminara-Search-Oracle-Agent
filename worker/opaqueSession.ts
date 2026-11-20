@@ -13,6 +13,8 @@ export type OpaqueSessionRecord = {
   uid: string;
   email?: string;
   name?: string;
+  /** From the Firebase token at sign-in. Absent on sessions minted before it was recorded. */
+  emailVerified?: boolean;
   createdAt: number;
   exp: number;
 };
@@ -55,7 +57,7 @@ export async function isSessionRevokedUser(env: Env, userId: string): Promise<bo
 
 export async function mintOpaqueSession(
   env: Env,
-  user: { uid: string; email?: string; name?: string },
+  user: { uid: string; email?: string; name?: string; emailVerified?: boolean },
 ): Promise<string | null> {
   if (!env.LUMINARA_KV) return null;
   const bytes = crypto.getRandomValues(new Uint8Array(24));
@@ -66,6 +68,7 @@ export async function mintOpaqueSession(
     uid: user.uid,
     email: user.email,
     name: user.name,
+    ...(typeof user.emailVerified === 'boolean' ? { emailVerified: user.emailVerified } : {}),
     createdAt: now,
     exp: now + SESSION_TTL_SECONDS * 1000,
   };

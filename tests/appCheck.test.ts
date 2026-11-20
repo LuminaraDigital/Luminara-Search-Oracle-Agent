@@ -256,13 +256,14 @@ describe('APPCHECK_ENFORCE', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
-  it('keeps production APPCHECK_ENFORCE off and staging on log', () => {
+  // Log soak (2026-11-20): every environment logs, none rejects. Enforce is its own reviewed change.
+  it('keeps production and staging APPCHECK_ENFORCE on log, never enforce', () => {
     const cfg = parseJsonc(readFileSync(resolve(__dirname, '..', 'wrangler.jsonc'), 'utf8')) as {
       vars: { APPCHECK_ENFORCE: string };
       env: { staging: { vars: { APPCHECK_ENFORCE: string } }; production: { vars: { APPCHECK_ENFORCE: string } } };
     };
-    expect(cfg.vars.APPCHECK_ENFORCE).toBe('off');
-    expect(cfg.env.production.vars.APPCHECK_ENFORCE).toBe('off');
+    expect(cfg.vars.APPCHECK_ENFORCE).toBe('log');
+    expect(cfg.env.production.vars.APPCHECK_ENFORCE).toBe('log');
     expect(cfg.env.staging.vars.APPCHECK_ENFORCE).toBe('log');
   });
 });

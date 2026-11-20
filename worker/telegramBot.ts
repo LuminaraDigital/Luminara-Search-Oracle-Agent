@@ -7,6 +7,7 @@ import { resolveAccountId, writeSubscriptionRecord, listAllUsers, getWorkspace }
 import { ragContextForOracle } from './memoryRag';
 import { memoryRecallV2Enabled } from './memoryRecall';
 import { QUOTA_CAPACITY_ERROR, refundDailyQuota, spendDailyQuota } from './quotaMiddleware';
+import { HOSTED_CEILING_ERROR, takeFreeHostedCall } from './hostedFreeGuards';
 import { readRetentionSnapshot } from './referrals';
 import { nichePulseReply } from './ideaScout';
 import { guardPasteReadyCopy } from '../services/audit/healthClaimGuard';
@@ -880,6 +881,11 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
           return;
         }
         meterKey = spent.meterKey;
+        if (!(await takeFreeHostedCall(env, 'groq'))) {
+          await refundDailyQuota(env, meterKey, limit);
+          await api(env, 'sendMessage', { chat_id: chatId, text: HOSTED_CEILING_ERROR });
+          return;
+        }
       }
     }
 

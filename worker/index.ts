@@ -611,6 +611,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
         uid: verified.user.uid,
         email: verified.user.email,
         name: verified.user.name,
+        emailVerified: verified.user.emailVerified === true,
       });
       const res = json({
         ok: true,

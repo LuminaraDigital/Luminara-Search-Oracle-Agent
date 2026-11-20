@@ -118,6 +118,10 @@ export interface Env extends DataPlaneEnv {
    * Default 30. 0 pauses live calls. The key is the existing TAVILY_API_KEY secret.
    */
   FREE_AI_SAMPLE_DAILY_BUDGET?: string;
+  /** JSON map of provider to free hosted calls per UTC day, e.g. {"tavily":500}. See worker/hostedFreeGuards.ts. */
+  HOSTED_FREE_DAILY_CEILING?: string;
+  /** "true": free email sign-ups must confirm their address before using hosted keys. */
+  HOSTED_REQUIRE_VERIFIED_EMAIL?: string;
   FIRECRAWL_API_KEY?: string;
   EXA_API_KEY?: string;
   /** Free hosted Exa calls per account per UTC day. Default 15. Paid plans are not counted. */
