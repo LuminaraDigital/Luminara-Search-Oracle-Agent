@@ -14,6 +14,8 @@ import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
 import { spendDailyQuota } from './quotaMiddleware';
 import { json } from './workerUtils';
+import { bearerFromAuthorization } from './firebaseAuth';
+import { identityToolkitHeaders } from './identityToolkit';
 
 export type HostedProvider = 'groq' | 'gemini' | 'tavily' | 'firecrawl' | 'exa';
 
@@ -60,15 +62,54 @@ export async function takeFreeHostedCall(env: Env, provider: HostedProvider): Pr
 
 export const VERIFY_EMAIL_ERROR = 'Confirm your email address to use free hosted AI. Check your inbox for the link, then try again.';
 
+const IDENTITY_LOOKUP = 'https://identitytoolkit.googleapis.com/v1/accounts:lookup';
+const CONFIRMED_KV_PREFIX = 'email_confirmed:';
+const CONFIRMED_TTL_SECONDS = 60 * 60 * 24 * 30;
+
+/**
+ * Whether Firebase says the address is confirmed now. An ID token, and a session minted from one,
+ * keeps the email_verified it had when it was issued, so a user who just clicked the link still
+ * reads as unverified until the token refreshes. The lookup returns the account behind the token.
+ */
+async function confirmedSinceToken(env: Env, uid: string, idToken: string, fetchImpl: typeof fetch): Promise<boolean> {
+  const key = env.FIREBASE_WEB_API_KEY?.trim();
+  if (!key) return false;
+  try {
+    const res = await fetchImpl(`${IDENTITY_LOOKUP}?key=${encodeURIComponent(key)}`, {
+      method: 'POST',
+      headers: identityToolkitHeaders(env),
+      body: JSON.stringify({ idToken }),
+    });
+    if (!res.ok) return false;
+    const data = (await res.json()) as { users?: Array<{ localId?: string; emailVerified?: boolean }> };
+    const account = data.users?.[0];
+    return account?.localId === uid && account.emailVerified === true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * With HOSTED_REQUIRE_VERIFIED_EMAIL=true, a free email sign-up must confirm its address before it
  * spends hosted keys, so a script cannot mint unlimited accounts from made-up addresses.
  * Only an explicit false refuses: Telegram and Google sign-ins, and older sessions that never
- * recorded the flag, pass.
+ * recorded the flag, pass. Before refusing, Firebase is asked once whether the address was confirmed
+ * after the token was issued; a confirmed login is remembered so later requests skip the lookup.
  */
-export function unverifiedEmailRefusal(env: Pick<Env, 'HOSTED_REQUIRE_VERIFIED_EMAIL'>, user: HostedIdentity | null): Response | null {
+export async function unverifiedEmailRefusal(
+  env: Env,
+  user: HostedIdentity | null,
+  request: Request,
+  fetchImpl: typeof fetch = fetch,
+): Promise<Response | null> {
   if (env.HOSTED_REQUIRE_VERIFIED_EMAIL !== 'true') return null;
   if (!user || user.source !== 'firebase' || user.emailVerified !== false) return null;
+  const uid = user.id.replace(/^fb:/, '');
+  if (await env.LUMINARA_KV?.get(`${CONFIRMED_KV_PREFIX}${uid}`)) return null;
+  const idToken = bearerFromAuthorization(request.headers.get('authorization'));
+  if (idToken && (await confirmedSinceToken(env, uid, idToken, fetchImpl))) {
+    await env.LUMINARA_KV?.put(`${CONFIRMED_KV_PREFIX}${uid}`, '1', { expirationTtl: CONFIRMED_TTL_SECONDS });
+    return null;
+  }
   return json({ error: VERIFY_EMAIL_ERROR, code: 'EMAIL_UNVERIFIED' }, 403);
 }
-

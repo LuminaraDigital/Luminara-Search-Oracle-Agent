@@ -63,19 +63,46 @@ describe('free hosted ceiling', () => {
 
 describe('verified email gate', () => {
   const unverified = { id: 'fb:u1', source: 'firebase' as const, emailVerified: false };
+  const plain = new Request('https://luminarasuite.com/api/providers/groq/chat/completions');
+  const withToken = new Request('https://luminarasuite.com/api/providers/groq/chat/completions', {
+    headers: { authorization: 'Bearer stale-id-token' },
+  });
+  const lookup = (account: { localId: string; emailVerified: boolean }) => {
+    const calls: string[] = [];
+    const fetchImpl = (async (url: string | URL | Request) => {
+      calls.push(String(url));
+      return new Response(JSON.stringify({ users: [account] }), { status: 200 });
+    }) as typeof fetch;
+    return { calls, fetchImpl };
+  };
+  const gateEnv = () => testEnv({ HOSTED_REQUIRE_VERIFIED_EMAIL: 'true', FIREBASE_WEB_API_KEY: 'web-key' });
 
-  it('is off unless HOSTED_REQUIRE_VERIFIED_EMAIL is true', () => {
-    expect(unverifiedEmailRefusal({}, unverified)).toBeNull();
+  it('is off unless HOSTED_REQUIRE_VERIFIED_EMAIL is true', async () => {
+    expect(await unverifiedEmailRefusal(testEnv(), unverified, plain)).toBeNull();
   });
 
   it('refuses only an explicitly unverified email sign-up', async () => {
-    const env = { HOSTED_REQUIRE_VERIFIED_EMAIL: 'true' };
-    const refused = unverifiedEmailRefusal(env, unverified);
+    const env = gateEnv();
+    const refused = await unverifiedEmailRefusal(env, unverified, plain);
     expect(refused?.status).toBe(403);
     expect(((await refused!.json()) as { code: string }).code).toBe('EMAIL_UNVERIFIED');
-    expect(unverifiedEmailRefusal(env, { ...unverified, emailVerified: true })).toBeNull();
-    expect(unverifiedEmailRefusal(env, { id: 'fb:u2', source: 'firebase' })).toBeNull();
-    expect(unverifiedEmailRefusal(env, { id: '42', source: 'telegram' })).toBeNull();
+    expect(await unverifiedEmailRefusal(env, { ...unverified, emailVerified: true }, plain)).toBeNull();
+    expect(await unverifiedEmailRefusal(env, { id: 'fb:u2', source: 'firebase' }, plain)).toBeNull();
+    expect(await unverifiedEmailRefusal(env, { id: '42', source: 'telegram' }, plain)).toBeNull();
+  });
+
+  it('lets a user through once Firebase says they confirmed after the token was issued, then remembers it', async () => {
+    const env = gateEnv();
+    const confirmed = lookup({ localId: 'u1', emailVerified: true });
+    expect(await unverifiedEmailRefusal(env, unverified, withToken, confirmed.fetchImpl)).toBeNull();
+    expect(confirmed.calls).toHaveLength(1);
+    expect(await unverifiedEmailRefusal(env, unverified, plain, confirmed.fetchImpl)).toBeNull();
+    expect(confirmed.calls).toHaveLength(1);
+  });
+
+  it('still refuses when Firebase says unconfirmed, or the token belongs to someone else', async () => {
+    expect(await unverifiedEmailRefusal(gateEnv(), unverified, withToken, lookup({ localId: 'u1', emailVerified: false }).fetchImpl)).not.toBeNull();
+    expect(await unverifiedEmailRefusal(gateEnv(), unverified, withToken, lookup({ localId: 'other', emailVerified: true }).fetchImpl)).not.toBeNull();
   });
 });
 

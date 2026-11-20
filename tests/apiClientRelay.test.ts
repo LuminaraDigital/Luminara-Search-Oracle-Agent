@@ -123,7 +123,10 @@ describe('the header that asks the Worker for a fallback answer', () => {
     expect(calls[0].headers.get(api.ACCEPT_FALLBACK_HEADER)).toBeNull();
   }, 15000);
 
-  it('a foreign audit site is a 403 and does not open the auth circuit or refresh the token', async () => {
+  it.each([
+    ['a foreign audit site', 'AUDIT_RUN_REJECTED', 'This audit run is for a different site.'],
+    ['an unconfirmed email', 'EMAIL_UNVERIFIED', 'Confirm your email address to use free hosted AI.'],
+  ])('%s is a 403 and does not open the auth circuit or refresh the token', async (_label, code, error) => {
     vi.stubGlobal('window', {
       location: { protocol: 'https:', hostname: 'luminarasuite.com', port: '', origin: 'https://luminarasuite.com' },
       dispatchEvent: () => true,
@@ -135,10 +138,7 @@ describe('the header that asks the Worker for a fallback answer', () => {
         return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'content-type': 'application/json' } });
       }
       providerCalls += 1;
-      return new Response(JSON.stringify({
-        error: 'This audit run is for a different site.',
-        code: 'AUDIT_RUN_REJECTED',
-      }), { status: 403, headers: { 'content-type': 'application/json' } });
+      return new Response(JSON.stringify({ error, code }), { status: 403, headers: { 'content-type': 'application/json' } });
     }));
     const api = await import('../services/apiClient');
     const circuit = await import('../services/resilience/hostedAuthCircuit');

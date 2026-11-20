@@ -448,7 +448,7 @@ export async function proxyProvider(
     const isPaidSubscriber = await isUserSubscribed(env, who.user);
     paidSubscriber = isPaidSubscriber;
     if (!isPaidSubscriber) {
-      const unverified = unverifiedEmailRefusal(env, who.user);
+      const unverified = await unverifiedEmailRefusal(env, who.user, request);
       if (unverified) return unverified;
     }
     fallbackAccountId = who.user ? (scoutAccountId || billingId(who.user)) : `anon:${(clientIp(request) || '').trim() || 'unknown'}`;
