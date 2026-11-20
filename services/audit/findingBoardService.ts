@@ -4,6 +4,7 @@
  */
 import type { AuditFinding, FindingWorkStatus } from '../agentCore/types';
 import { findingStableKey } from './findingStableKey';
+import { MAX_TARGET_URLS } from './ruleDefinitions';
 import { workerFetchWithAuthRetry, apiBase } from '../apiClient';
 import { noteWorkspaceDirty } from '../sync/workspaceSyncService';
 import { formatAuDay } from '../../utils/formatAuDate';
@@ -199,7 +200,14 @@ export async function ingestCrewFindings(opts: {
         leadingIndicator: f.leadingIndicator,
         criticVerified: f.criticVerified,
         source: 'instant_audit_crew',
-        ...(f.id ? { provenance: { ruleId: f.id } } : {}),
+        ...(f.ruleId || f.id
+          ? {
+              provenance: {
+                ruleId: f.ruleId || f.id,
+                ...(f.targetUrls?.length ? { targetUrls: f.targetUrls.slice(0, MAX_TARGET_URLS) } : {}),
+              },
+            }
+          : {}),
       },
       auditRunId,
       synced: false,

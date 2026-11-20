@@ -65,6 +65,20 @@ describe('finding board client ids (Allora CL0-1)', () => {
     expect(again.status).toBe('in_progress');
   });
 
+  it('stores the rule id and at most 3 target URLs as provenance (Allora CL0-5)', async () => {
+    const { ingestCrewFindings } = await import('../services/audit/findingBoardService');
+    const urls = ['a', 'b', 'c', 'd'].map((p) => `https://movida.com.au/${p}`);
+    const [row] = await ingestCrewFindings({
+      domain: 'movida.com.au',
+      findings: [{ ...crew, id: 'finding-thin-content', ruleId: 'finding-thin-content', targetUrls: urls, category: 'content_quality', title: 'This page is too short' }],
+      syncRemote: false,
+    });
+    expect((row.evidence as { provenance?: unknown }).provenance).toEqual({
+      ruleId: 'finding-thin-content',
+      targetUrls: urls.slice(0, 3),
+    });
+  });
+
   it('patches an unsynced row by stable key with its domain, and a synced row by server id', async () => {
     const { ingestCrewFindings, patchFindingStatus, isServerFindingId } = await import(
       '../services/audit/findingBoardService'

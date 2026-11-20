@@ -144,6 +144,10 @@ export interface AuditFinding {
   auditRunId?: string;
   /** Upsert key across re-audits: domain|category|title fingerprint. */
   stableKey?: string;
+  /** The audit rule that raised this finding (services/audit/ruleDefinitions.ts RULE_IDS). */
+  ruleId?: string;
+  /** Pages a server re-check would read for this finding, at most 3. Absent when no page applies. */
+  targetUrls?: string[];
 }
 
 export interface CodeRemediationPatch {
