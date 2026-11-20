@@ -1,5 +1,5 @@
 /**
- * Visibility Unit Tests store (migration 0057): raw in R2, verdict rows in D1. Routes live in visibilityTestsRoute.ts.
+ * Visibility Unit Tests store (migration 0059): raw in R2, verdict rows in D1. Routes live in visibilityTestsRoute.ts.
  */
 import type { Env } from './env';
 import { entitlementsFor } from '../services/plans/planEntitlements';

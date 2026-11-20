@@ -39,7 +39,7 @@ const REQUIRED_D1_MIGRATIONS = [
   'migrations/0043_conversion_enquiry_spine.sql',
   'migrations/0046_scoped_review_rules.sql',
   'migrations/0047_weekly_visibility_email.sql',
-  'migrations/0057_visibility_tests.sql',
+  'migrations/0059_visibility_tests.sql',
 ];
 
 const REQUIRED_D1_TABLES = [
