@@ -774,7 +774,7 @@ Added owner decisions:
 | # | Decision | Blocks | Default if no answer |
 |---|---|---|---|
 | 7 | Verifier models: V1, V2, V3 host and model | P1-4 | V1 Llama on NIM, V2 DeepSeek on NIM, V3 Qwen on Groq (to be confirmed callable with the hosted keys) |
-| 8 | How `contradicted` is shown | P1-10 | A fourth state, "Contradicted", in the evidence drawer only |
+| 8 | How `contradicted` is shown | P1-10 | A fourth state, "Contradicted", in the evidence drawer only. **Approved by the owner 2026-11-21, together with Allora decision 3.** |
 | 9 | Add hosted LLM keys to staging | Phase 1 soak | None; needs the owner |
 
 Known over-claims left for P1-10: the drawer title "Empirical Multi-LLM Citation Proof" and its hardcoded confidence; `EntityAuthorityCard` "Verified across Google & Cloudflare security standards" when the check was CORS-limited; `mem0MemoryEngine` and `serpRadarAgent` storing the sampled rate at confidence 0.9; `EmpiricalCitationSummary.measurementStatus` reading `measured` for a search sample.
