@@ -114,7 +114,7 @@ function promptFor(question: string, sources: readonly CitedSource[]): string {
   ].join('\n');
 }
 
-async function searchTavily(env: Env, query: string): Promise<CitedSource[]> {
+export async function searchTavily(env: Env, query: string): Promise<CitedSource[]> {
   if (!env.TAVILY_API_KEY) return [];
   try {
     const res = await fetch('https://api.tavily.com/search', {
