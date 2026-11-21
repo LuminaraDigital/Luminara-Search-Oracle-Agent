@@ -5,6 +5,7 @@
  */
 
 import { apiBase, workerFetchWithAuthRetry } from '../apiClient';
+import type { AgentToday } from './agentToday';
 import type {
   EnquiryIntentType,
   OutcomeEvidenceType,
@@ -354,4 +355,18 @@ export async function prepareCmsMcpCallApi(input: {
     code: typeof data.code === 'string' ? data.code : undefined,
     error: typeof data.error === 'string' ? data.error : undefined,
   };
+}
+
+export type AgentTodayResponse = { ok: boolean; status: number; today?: AgentToday; error?: string };
+
+export async function fetchAgentTodayApi(projectId = 'default'): Promise<AgentTodayResponse> {
+  const base = apiBase() || '';
+  try {
+    const r = await workerFetchWithAuthRetry(`${base}/api/enquiries/today?projectId=${encodeURIComponent(projectId)}`);
+    const data = (await r.json().catch(() => ({}))) as Record<string, unknown>;
+    if (!r.ok) return { ok: false, status: r.status, error: typeof data.error === 'string' ? data.error : `HTTP ${r.status}` };
+    return { ok: true, status: r.status, today: data as unknown as AgentToday };
+  } catch {
+    return { ok: false, status: 0, error: 'network' };
+  }
 }

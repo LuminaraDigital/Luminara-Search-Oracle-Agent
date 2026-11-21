@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -16,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -44,6 +46,7 @@ import com.luminarasuite.app.core.designsystem.ObsidianBackdrop
 fun WelcomeScreen(
     onCheckSite: (String) -> Unit,
     onSkip: () -> Unit,
+    onAgent: () -> Unit = {},
 ) {
     var host by rememberSaveable { mutableStateOf("") }
     ObsidianBackdrop {
@@ -95,6 +98,13 @@ fun WelcomeScreen(
             )
             TextButton(onClick = onSkip, modifier = Modifier.testTag("welcome_skip_button")) {
                 Text(text = "Look around first", color = LuminaraColors.Ink2)
+            }
+            OutlinedButton(
+                onClick = onAgent,
+                shape = RoundedCornerShape(999.dp),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("welcome_agent_button"),
+            ) {
+                Text(text = "I'm a real-estate agent", color = LuminaraColors.GoldLight)
             }
             Text(
                 text =

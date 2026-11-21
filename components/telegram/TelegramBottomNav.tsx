@@ -22,6 +22,7 @@ const TOOL_VIEWS: AppView[] = [
   AppView.VISION,
   AppView.HARNESS,
   AppView.TRUST_CENTER,
+  AppView.AGENT_TODAY,
 ];
 
 function NavItem({
