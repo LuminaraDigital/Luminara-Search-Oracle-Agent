@@ -117,6 +117,8 @@
     "FREE_DAILY_LIMIT": "3",
     // Free-check Tavily samples per UTC day for every caller. 0 pauses them. Needs secret TAVILY_API_KEY.
     "FREE_AI_SAMPLE_DAILY_BUDGET": "30",
+    // Free email sign-ups confirm their address before using hosted AI (worker/hostedFreeGuards.ts).
+    "HOSTED_REQUIRE_VERIFIED_EMAIL": "true",
     // Sovereign Ollama Base URL (optional, defaults to https://ollama.com if unset)
     "OLLAMA_BASE_URL": "",
     // Firebase Auth project id (same as VITE_FIREBASE_PROJECT_ID). Empty disables Firebase token checks.
@@ -125,8 +127,9 @@
     "FIREBASE_PROJECT_NUMBER": "274315225068",
     // Keep false until VITE_FIREBASE_APPCHECK_SITE_KEY is set and console registration is live.
     "REQUIRE_APP_CHECK": "false",
-    // API-wide App Check: off | log | enforce. Production stays off until a log soak is clean.
-    "APPCHECK_ENFORCE": "off",
+    // API-wide App Check: off | log | enforce. Log soak since 2026-11-20 (web site key and Android
+    // Play Integrity both ship tokens); enforce once the appcheck "missing"/"invalid" logs are quiet.
+    "APPCHECK_ENFORCE": "log",
     // Public Firebase web API key (same as VITE_FIREBASE_API_KEY). Enables Worker-mediated password reset.
     "FIREBASE_WEB_API_KEY": "AIzaSyDPX87WXZHFQu7XuCJyHhDoVcyY1-z8bxc",
     // Soft killswitch for outbound Auth emails (password reset). Raise only with monitoring.
@@ -275,6 +278,8 @@
         "REQUIRE_SUBSCRIPTION": "false",
         "FREE_DAILY_LIMIT": "3",
         "FREE_AI_SAMPLE_DAILY_BUDGET": "30",
+        // Free email sign-ups confirm their address before using hosted AI (worker/hostedFreeGuards.ts).
+        "HOSTED_REQUIRE_VERIFIED_EMAIL": "true",
         "FIREBASE_PROJECT_ID": "luminara-suite-staging",
         "FIREBASE_PROJECT_NUMBER": "449283385852",
         "REQUIRE_APP_CHECK": "false",
@@ -396,12 +401,15 @@
         "REQUIRE_SUBSCRIPTION": "false",
         "FREE_DAILY_LIMIT": "3",
         "FREE_AI_SAMPLE_DAILY_BUDGET": "30",
+        // Free email sign-ups confirm their address before using hosted AI (worker/hostedFreeGuards.ts).
+        "HOSTED_REQUIRE_VERIFIED_EMAIL": "true",
         "FIREBASE_PROJECT_ID": "luminara-suite",
         "FIREBASE_PROJECT_NUMBER": "274315225068",
         // Keep false until the prod build step passes VITE_FIREBASE_APPCHECK_SITE_KEY (validate-env enforces this).
         "REQUIRE_APP_CHECK": "false",
-        // Stay off. Flip to log only after the client sends tokens, then enforce after that soak.
-        "APPCHECK_ENFORCE": "off",
+        // Log soak since 2026-11-20: the web build passes VITE_FIREBASE_APPCHECK_SITE_KEY and Android
+        // sends Play Integrity tokens. Enforce once the appcheck "missing"/"invalid" logs are quiet.
+        "APPCHECK_ENFORCE": "log",
         "FIREBASE_WEB_API_KEY": "AIzaSyDPX87WXZHFQu7XuCJyHhDoVcyY1-z8bxc",
         "OUTBOUND_EMAIL_DAILY_LIMIT": "200",
         "CHAIN_NETWORK": "mainnet",

@@ -1,6 +1,6 @@
 import { configService } from '../configService';
 import { providerFetch } from '../apiClient';
-import { hostedAuthBlocked, isAuditSiteMismatch, noteHostedAuthFailure } from '../resilience/hostedAuthCircuit';
+import { hostedAuthBlocked, isNotSignInRefusal, noteHostedAuthFailure } from '../resilience/hostedAuthCircuit';
 import { exaService } from './exaService';
 
 export interface TavilySearchResult {
@@ -76,7 +76,7 @@ export class TavilyService {
         }
         if (
           (response.status === 401 || response.status === 403 || response.status === 429)
-          && !(await isAuditSiteMismatch(response))
+          && !(await isNotSignInRefusal(response))
         ) {
           noteHostedAuthFailure(response.status, 'tavily', `HTTP ${response.status} ${response.statusText}`);
         }
