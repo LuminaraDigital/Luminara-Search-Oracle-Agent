@@ -45,8 +45,26 @@ suspend fun readModelStream(
     }
 }
 
+/** Models sometimes bold or head their labels, so VERDICT: and **VERDICT:** both match. */
+private fun answerLabel(name: String) = Regex("^[\\s*#_]*$name[\\s*_]*:[\\s*_]*", RegexOption.IGNORE_CASE)
+
+internal val VERDICT_LABEL = answerLabel("VERDICT")
+internal val ACTION_LABEL = answerLabel("NEXT_ACTION")
+
+internal fun labelledLine(
+    text: String,
+    label: Regex,
+): String? =
+    text.lineSequence()
+        .firstOrNull { label.containsMatchIn(it) }
+        ?.replace(label, "")
+        ?.trim(' ', '*', '_')
+        ?.takeIf { it.isNotEmpty() }
+
+internal fun String.withoutEmDash() = replace("\u2014", "-")
+
 fun streamingVerdict(raw: String): String =
-    raw.replace("—", "-")
+    raw.withoutEmDash()
         .substringBefore("NEXT_ACTION")
-        .removePrefix("VERDICT:")
-        .trim()
+        .replace(VERDICT_LABEL, "")
+        .trim(' ', '\n', '*', '_')
