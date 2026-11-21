@@ -65,6 +65,8 @@ test.describe('header does not overlap from 1024 to 1440', () => {
       const header = await openAudit(page, width);
       await pillFullyVisible(page.getByTestId('add-business-pill'));
       expect(await noOverlap(header)).toEqual([]);
+      // From 1024px the business pill, tools, search and quota live in the left rail.
+      expect(await noOverlap(page.getByRole('complementary', { name: 'Workspace' }))).toEqual([]);
       await mkdir('/opt/cursor/artifacts/screenshots', { recursive: true });
       await header.screenshot({ path: `/opt/cursor/artifacts/screenshots/header-${width}.png` });
     });
@@ -90,6 +92,7 @@ test.describe('header with the free daily quota badge', () => {
       await pillFullyVisible(pill);
       await expect(search).toBeVisible();
       expect(await noOverlap(header)).toEqual([]);
+      expect(await noOverlap(page.getByRole('complementary', { name: 'Workspace' }))).toEqual([]);
       await mkdir('/opt/cursor/artifacts/screenshots', { recursive: true });
       await header.screenshot({ path: `/opt/cursor/artifacts/screenshots/header-quota-${width}.png` });
     });

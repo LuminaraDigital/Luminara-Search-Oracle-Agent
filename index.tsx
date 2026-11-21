@@ -11,6 +11,7 @@ import { installDialogFocus } from './services/a11y/dialogFocus';
 import { initBrowserSentry } from './services/observability/sentryBrowser';
 import './tokens.css';
 import './index.css';
+import './ledger.css';
 
 initBrowserSentry();
 installAppCheckOnApiFetch();

@@ -1,5 +1,6 @@
 import React, { Suspense } from 'react';
 import type { Message, OracleMode } from '../../types';
+import type { Starter } from '../MessageList';
 import { lazyWithReload } from '../../utils/lazyWithReload';
 
 const MessageList = lazyWithReload(() => import('../MessageList'));
@@ -10,6 +11,10 @@ export function ChatTranscript(props: {
   isThinking?: boolean;
   activeTool?: { name: string; stage: string; output?: string } | null;
   onSimplify?: (content: string) => void;
+  agentStep?: string | null;
+  onStop?: () => void;
+  starters?: Starter[];
+  onStarter?: (query: string) => void;
 }) {
   return (
     <Suspense fallback={null}>
@@ -24,6 +29,10 @@ export function ChatComposer(props: {
   isVoiceActive: boolean;
   isThinking: boolean;
   mode: OracleMode;
+  onModeChange?: (mode: OracleMode) => void;
+  onStop?: () => void;
+  onClear?: () => void;
+  canClear?: boolean;
 }) {
   return (
     <Suspense fallback={null}>
