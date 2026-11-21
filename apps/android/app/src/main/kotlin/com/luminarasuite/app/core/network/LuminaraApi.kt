@@ -34,6 +34,8 @@ import com.luminarasuite.app.core.model.IdeaCreateRequest
 import com.luminarasuite.app.core.model.IdeaCreateResponse
 import com.luminarasuite.app.core.model.IdeaDetailResponse
 import com.luminarasuite.app.core.model.IdeaListResponse
+import com.luminarasuite.app.core.model.PasswordResetRequest
+import com.luminarasuite.app.core.model.PasswordResetResponse
 import com.luminarasuite.app.core.model.PrivacyExportResponse
 import com.luminarasuite.app.core.model.ProbeCrawlResponse
 import com.luminarasuite.app.core.model.ScoutRecheckRequest
@@ -155,6 +157,11 @@ interface LuminaraApi {
     suspend fun signUp(
         @Body body: AuthCredentialsRequest,
     ): AuthTokenResponse
+
+    @POST("api/auth/reset-password")
+    suspend fun requestPasswordReset(
+        @Body body: PasswordResetRequest,
+    ): PasswordResetResponse
 
     @POST("api/auth/google")
     suspend fun signInWithGoogle(
