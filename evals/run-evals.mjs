@@ -120,7 +120,64 @@ export async function run(dir) {
   const passed = rows.filter((r) => r.passed).length;
   const failed = rows.length - passed;
   console.log(`${rows.length} cases, ${passed} passed, ${failed} failed`);
-  return failed === 0 ? 0 : 1;
+  const visibilityFailed = dir ? 0 : await runVisibilityCases(mod);
+  return failed + visibilityFailed === 0 ? 0 : 1;
+}
+
+// The scorer imports other repo modules, so it is bundled rather than compiled file by file.
+async function loadScorer() {
+  const { build } = await import('esbuild');
+  const outfile = path.join(os.tmpdir(), `visibility-scorer-${process.pid}-${Date.now()}.mjs`);
+  await build({
+    entryPoints: [path.join(repoRoot, 'services', 'visibilityTests', 'scorer.ts')],
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    outfile,
+    logLevel: 'error',
+  });
+  const mod = await import(pathToFileURL(outfile).href);
+  try {
+    unlinkSync(outfile);
+  } catch {
+    /* best effort */
+  }
+  return mod;
+}
+
+// A case states the verdict each named test must reach. Every reason must also read as plain words.
+export function evaluateVisibilityCase(scorer, validators, kase) {
+  const answers = kase.answers.map((answer) => ({ kind: 'search', provider: 'search', model: 'search', ...answer }));
+  const verdicts = scorer.score({ facts: kase.facts, answers, snapshot: null });
+  const problems = [];
+  for (const [testId, want] of Object.entries(kase.expect)) {
+    const got = verdicts.find((v) => v.testId === testId)?.result ?? 'missing';
+    if (got !== want) problems.push(`${testId}: wanted ${want}, got ${got}`);
+  }
+  for (const verdict of verdicts) {
+    const words = `${verdict.label} ${verdict.why}`;
+    if (validators.plainLanguage(words).length) problems.push(`jargon in: ${words}`);
+    if (!validators.runAllValidators(verdict.why).ok) problems.push(`failed honesty check: ${verdict.why}`);
+  }
+  return problems;
+}
+
+async function runVisibilityCases(validators) {
+  const scorer = await loadScorer();
+  const casesDir = path.join(here, 'visibility');
+  let failed = 0;
+  let total = 0;
+  for (const file of readdirSync(casesDir).filter((f) => f.endsWith('.json')).sort()) {
+    for (const kase of JSON.parse(readFileSync(path.join(casesDir, file), 'utf8'))) {
+      total += 1;
+      const problems = evaluateVisibilityCase(scorer, validators, kase);
+      if (problems.length) failed += 1;
+      console.log(`${problems.length ? 'FAIL' : 'PASS'} ${file} :: ${kase.name}`);
+      for (const problem of problems) console.log(`  ${problem}`);
+    }
+  }
+  console.log(`${total} visibility cases, ${total - failed} passed, ${failed} failed`);
+  return failed;
 }
 
 const invokedAsMain =

@@ -305,7 +305,7 @@ export class CrewOrchestrator {
         organizationName: page?.organizationName,
         title: page?.title,
       });
-      const { serpEvidence, citationRatePercent, shareOfVoiceScore } = await serpRadarAgent.execute(
+      const { serpEvidence, discoveryEvidence, citationRatePercent, shareOfVoiceScore } = await serpRadarAgent.execute(
         cleanDomain,
         ctx.dna,
         emit,
@@ -316,6 +316,7 @@ export class CrewOrchestrator {
         : ctx.errors;
       return {
         serpEvidence,
+        discoveryEvidence,
         citationRatePercent,
         shareOfVoiceScore,
         errors,

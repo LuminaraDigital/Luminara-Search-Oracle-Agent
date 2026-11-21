@@ -18,6 +18,11 @@ export interface Env extends DataPlaneEnv {
    * When unset or empty, `/desktop/windows` redirects to GitHub Releases.
    */
   DESKTOP_RELEASES?: R2Bucket;
+  /**
+   * Optional private R2 bucket for raw Visibility Unit Test answers and crawl snapshots.
+   * When unset, verdicts are still saved and those runs cannot be regraded.
+   */
+  AUDIT_EVIDENCE?: R2Bucket;
   /** Override GitHub repo slug for desktop download fallback (owner/name). */
   DESKTOP_GITHUB_REPO?: string;
   BOT_TOKEN?: string;

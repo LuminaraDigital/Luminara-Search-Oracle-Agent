@@ -11,6 +11,7 @@ export interface CreateShareReportInput {
   domain?: string;
   dnaName?: string;
   sources?: Array<{ uri: string; title: string }>;
+  visibilityRunId?: string;
   branding?: {
     agencyName?: string;
     logoUrl?: string;
@@ -45,6 +46,7 @@ export interface SharedReportResponse {
     markdownText: string;
     sources?: Array<{ uri: string; title: string }>;
     branding?: CreateShareReportInput['branding'];
+    visibilityPassList?: string[];
     createdAt: number;
     expiresAt: number | null;
     passwordRequired: boolean;

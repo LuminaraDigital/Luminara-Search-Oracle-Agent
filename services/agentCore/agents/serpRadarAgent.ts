@@ -15,10 +15,15 @@ import { hostedAuthBlocked } from '../../resilience/hostedAuthCircuit';
 import { hostedAuthRecoveryHint } from '../../audit/hostedScoutRail';
 import { isSampleSearchRow } from '../auditEvidenceGate';
 import { AgentActivityEvent, SerpEvidenceItem } from '../types';
+import { discoveryQuestion } from '../../visibilityTests/scorer';
 import { readableStem } from '../../audit/brandName';
 import { classifyMention } from '../../audit/entityMatch';
 import { BusinessDNA } from '../../../types';
 import { countPhrase } from '../../audit/reportSentence';
+
+const DISCOVERY_RESULTS = 5;
+/** This search must never hold up the audit. */
+const DISCOVERY_TIMEOUT_MS = 8_000;
 
 export class SerpRadarAgent {
   public readonly name = 'Search results';
@@ -31,6 +36,7 @@ export class SerpRadarAgent {
     legalName?: string | null,
   ): Promise<{
     serpEvidence: SerpEvidenceItem[];
+    discoveryEvidence?: SerpEvidenceItem[];
     citationRatePercent: number | null;
     /** Count of returned serpEvidence rows that mention the brand. Not a 0-100 score. */
     shareOfVoiceScore: number | null;
@@ -83,6 +89,8 @@ export class SerpRadarAgent {
       });
       return { serpEvidence, citationRatePercent: null, shareOfVoiceScore: null };
     }
+
+    const discovery = tavilyKey ? this.searchDiscovery(dna) : Promise.resolve([]);
 
     if (tavilyKey) {
       const responses = await Promise.all(
@@ -174,9 +182,36 @@ export class SerpRadarAgent {
 
     return {
       serpEvidence: liveEvidence,
+      discoveryEvidence: await discovery,
       citationRatePercent,
       shareOfVoiceScore,
     };
+  }
+
+  /** Kept apart from serpEvidence so this question never moves the citation rate. */
+  private async searchDiscovery(dna: BusinessDNA | null | undefined): Promise<SerpEvidenceItem[]> {
+    const query = discoveryQuestion(dna?.industry, dna?.suburb);
+    if (!query) return [];
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const res = await Promise.race([
+      tavilyService.search(query, { maxResults: DISCOVERY_RESULTS, includeAnswer: true }).catch(() => null),
+      new Promise<null>((done) => {
+        timer = setTimeout(() => done(null), DISCOVERY_TIMEOUT_MS);
+      }),
+    ]);
+    clearTimeout(timer);
+    if (!res || res.degraded || res.searchDegraded) return [];
+    return res.results
+      .filter((item) => !(item as any).sample)
+      .map((item) => ({
+        query,
+        engine: item.source === 'exa' ? ('exa' as const) : ('tavily' as const),
+        title: item.title,
+        url: item.url,
+        snippet: item.content,
+        aiOverviewText: res.answer,
+        brandMentioned: false,
+      }));
   }
 }
 

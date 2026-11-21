@@ -18,11 +18,19 @@ function domainCited(text: string, domain: string, brand?: string): boolean {
 }
 
 /** Probe labels map to product engine slots for UI, but status stays estimated. */
-const PROBES: Array<{ engine: VisibilityEngineId; model: string }> = [
+export const PROBES: Array<{ engine: VisibilityEngineId; model: string }> = [
   { engine: 'chatgpt', model: 'openai/gpt-4o-mini' },
   { engine: 'perplexity', model: 'perplexity/sonar' },
   { engine: 'google_aio', model: 'google/gemini-2.0-flash-001' },
 ];
+
+export function probePrompt(query: string): string {
+  return `Answer briefly (under 120 words) as a helpful search assistant. Question: ${query}\nMention real brands/domains if relevant.`;
+}
+
+export function urlsInAnswer(answer: string): string[] {
+  return [...answer.matchAll(/https?:\/\/[^\s)>\]"',]+/gi)].map((m) => m[0]);
+}
 
 export async function probeLlmAnswers(opts: {
   generate: LlmGenerateFn;
@@ -46,11 +54,10 @@ export async function probeLlmAnswers(opts: {
     let failed = 0;
     for (const query of queries) {
       try {
-        const prompt = `Answer briefly (under 120 words) as a helpful search assistant. Question: ${query}\nMention real brands/domains if relevant.`;
-        const answer = await opts.generate(prompt, probe.model);
+        const answer = await opts.generate(probePrompt(query), probe.model);
         const cited = domainCited(answer, opts.domain, opts.brand);
         const competitorsMentioned = findMentionedCompetitors(answer, competitors);
-        const urlMatches = [...answer.matchAll(/https?:\/\/[^\s)>\]"',]+/gi)].map((m) => m[0]);
+        const urlMatches = urlsInAnswer(answer);
         const brandStatus = classifyBrandMentionStatus(cited, answer);
         evidence.push({
           query,

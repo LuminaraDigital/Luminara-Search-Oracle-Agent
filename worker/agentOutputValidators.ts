@@ -199,6 +199,23 @@ export function noVendorNames(text: string): ValidatorFinding[] {
   return findings;
 }
 
+const JARGON_RE = /\b(?:json-?ld|schema(?:\.org)?|structured data|serp|crawler|llm|aeo|geo|byok|not_measured|canonical)\b/gi;
+
+/** Visibility test reasons are read by owners with nobody to ask, so they stay in plain words. */
+export function plainLanguage(text: string): ValidatorFinding[] {
+  const findings: ValidatorFinding[] = [];
+  for (const m of text.matchAll(JARGON_RE)) {
+    findings.push({
+      validator: 'plainLanguage',
+      severity: 'block',
+      span: { start: m.index, end: m.index + m[0].length },
+      excerpt: normalizeExcerpt(text, m.index, m.index + m[0].length),
+      detail: `"${m[0]}" is jargon. Say what it means for the business.`,
+    });
+  }
+  return findings;
+}
+
 const SEVERITY_ORDER: Record<ValidatorFinding['severity'], number> = {
   block: 0,
   warn: 1,

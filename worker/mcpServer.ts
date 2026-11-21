@@ -37,6 +37,7 @@ import {
 import { clipText, MCP_RESULT_TEXT_CAP, MCP_STRUCTURED_CHAR_CAP, mcpToolAnnotations } from './mcpToolMeta';
 import { entitlementsFor } from '../services/plans/planEntitlements';
 import { gateMcpTenant } from './tenantGate';
+import { VISIBILITY_MCP_TOOLS } from './mcpVisibilityTools';
 import {
   BYOK_PAID_CALL_COST_CENTS,
   HOSTED_PAID_CALL_COST_CENTS,
@@ -399,6 +400,7 @@ const TOOLS: McpToolDef[] = [
       );
     },
   },
+  ...VISIBILITY_MCP_TOOLS,
   {
     name: 'get_business_memory',
     description: 'Uses no credits. Retrieves active Business DNA, visibility profiles, action memories, and preferences.',

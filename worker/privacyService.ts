@@ -9,6 +9,7 @@ import { trackAndScheduleErase } from './accountMirror';
 import { billingId, json } from './workerUtils';
 import { auditOrgIdFor, recordAuditLogBestEffort } from './auditLog';
 import { deleteHostedAccount } from './accountDeletion';
+import { eraseVisibilityRaw, exportVisibilityRaw, VISIBILITY_TABLES } from './visibilityTests';
 
 const EXPORT_TTL_MS = 48 * 60 * 60 * 1000;
 const DELETE_CANCEL_MS = 24 * 60 * 60 * 1000;
@@ -45,8 +46,18 @@ async function countRecentJobs(env: Env, accountId: string, kind: PrivacyJobKind
   return Number(row?.n ?? 0);
 }
 
+/** Resolves to `fallback` when the query hit a table this database does not have yet; any other error still throws. */
+async function missingTableAs<T>(fallback: T, query: Promise<T>): Promise<T> {
+  try {
+    return await query;
+  } catch (err) {
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+    return fallback;
+  }
+}
+
 /** Collect account-linked JSON for Article 15/20 style export (Luminara processors). */
-async function collectExportPayload(env: Env, accountId: string): Promise<Record<string, unknown>> {
+export async function collectExportPayload(env: Env, accountId: string): Promise<Record<string, unknown>> {
   const db = env.DB!;
   const q = async <T>(sql: string, ...binds: unknown[]) => {
     const res = await db.prepare(sql).bind(...binds).all<T>();
@@ -195,6 +206,20 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
     if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
     return [] as Record<string, unknown>[];
   });
+  // A database migrated before the visibility tests tables exist exports nothing for them, not an error.
+  const visibilityTestRuns = await missingTableAs([] as Record<string, unknown>[], q<Record<string, unknown>>(
+    `SELECT id, domain, scorer_version, summary_json, created_at, graded_at FROM visibility_test_runs WHERE account_id = ?`,
+    accountId,
+  ));
+  const visibilityTestAnswers = await missingTableAs([] as Record<string, unknown>[], q<Record<string, unknown>>(
+    `SELECT run_id, id, kind, engine, provider, model, status, cost_usd, latency_ms, answered_at FROM visibility_test_answers WHERE account_id = ?`,
+    accountId,
+  ));
+  const visibilityTestVerdicts = await missingTableAs([] as Record<string, unknown>[], q<Record<string, unknown>>(
+    `SELECT run_id, test_id, answer_id, test_type, family, derivation, tags_json, label, result, why FROM visibility_test_verdicts WHERE account_id = ?`,
+    accountId,
+  ));
+  const visibilityTestRaw = await missingTableAs({ records: [] as unknown[], omitted: 0 }, exportVisibilityRaw(env, accountId));
   const signedAuditReceipts = await q<Record<string, unknown>>(
     `SELECT id, domain, payload_json, signature, kid, created_at, revoked_at, revoked_reason FROM signed_audit_receipts WHERE account_id = ?`,
     accountId,
@@ -390,6 +415,11 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
     communityFeedVotes,
     citationWatches,
     citationWatchRuns,
+    visibilityTestRuns,
+    visibilityTestAnswers,
+    visibilityTestVerdicts,
+    visibilityTestRawRecords: visibilityTestRaw.records,
+    visibilityTestRawRecordsOmitted: visibilityTestRaw.omitted,
     signedAuditReceipts,
     enquiries,
     crmContacts,
@@ -430,6 +460,9 @@ async function softDeleteAccount(env: Env, accountId: string, deps?: DataPlaneDe
   await run('user_workspace', `DELETE FROM user_workspace WHERE account_id = ?`, accountId);
   await run('product_analytics_events', `DELETE FROM product_analytics_events WHERE account_id = ?`, accountId);
   await run('ai_answer_captures', `DELETE FROM ai_answer_captures WHERE account_id = ?`, accountId);
+  // Raw records first: their keys live on the run rows, and a failure here stops the erase so a retry finds them.
+  counts.visibility_raw_records = await eraseVisibilityRaw(env, accountId);
+  for (const table of VISIBILITY_TABLES) await run(table, `DELETE FROM ${table} WHERE account_id = ?`, accountId);
   await run('prepared_assets', `DELETE FROM prepared_assets WHERE account_id = ?`, accountId);
   await run('reputation_alerts', `DELETE FROM reputation_alerts WHERE account_id = ?`, accountId);
   await run('thin_stack_inventory', `DELETE FROM thin_stack_inventory WHERE account_id = ?`, accountId);

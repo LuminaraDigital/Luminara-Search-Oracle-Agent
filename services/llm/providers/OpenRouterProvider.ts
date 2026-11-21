@@ -46,7 +46,8 @@ export class OpenRouterProvider extends BaseAIProvider {
   }
 
   async generateText(prompt: string, options?: GenerateOptions): Promise<GenerateResult> {
-    const key = this.getActiveApiKey();
+    const key = options?.ownKeyOnly ? configService.getByokKey('luminara_openrouter_key') : this.getActiveApiKey();
+    if (options?.ownKeyOnly && !key) throw new Error('No OpenRouter key of your own is set.');
     const model = options?.model || this.config.model;
     const startTime = Date.now();
     const messages = buildChatMessages(prompt, options);
@@ -61,6 +62,7 @@ export class OpenRouterProvider extends BaseAIProvider {
     if (options?.jsonMode) {
       body.response_format = { type: 'json_object' };
     }
+    if (options?.reportCost) body.usage = { include: true };
     applyToolsToChatBody(body, options);
 
     const headers: Record<string, string> = {
@@ -91,6 +93,7 @@ export class OpenRouterProvider extends BaseAIProvider {
 
     return {
       text,
+      tokensEstimated: typeof usage.prompt_tokens !== 'number',
       tokenUsage: {
         prompt: usage.prompt_tokens || this.estimateTokens(prompt),
         completion: usage.completion_tokens || this.estimateTokens(text),
@@ -99,6 +102,7 @@ export class OpenRouterProvider extends BaseAIProvider {
       finishReason: (data.choices?.[0]?.finish_reason as GenerateFinishReason) || 'stop',
       toolCalls,
       latencyMs,
+      costUsd: typeof usage.cost === 'number' ? usage.cost : undefined,
     };
   }
 
