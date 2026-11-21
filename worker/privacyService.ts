@@ -528,6 +528,8 @@ async function softDeleteAccount(env: Env, accountId: string, deps?: DataPlaneDe
     `DELETE FROM mcp_oauth_refresh_retired WHERE family_id IN (SELECT family_id FROM mcp_oauth_refresh_family WHERE account_id = ?)`,
   );
   await drop('mcp_oauth_refresh_family', `DELETE FROM mcp_oauth_refresh_family WHERE account_id = ?`);
+  // An API key authenticates on its hash alone, so a surviving row would keep acting for the erased account.
+  await drop('api_keys', `DELETE FROM api_keys WHERE account_id = ?`);
   await drop('project_industries', `DELETE FROM project_industries WHERE project_id IN (SELECT id FROM projects WHERE account_id = ?)`);
   await drop('projects', `DELETE FROM projects WHERE account_id = ?`);
   await drop('account_industries', `DELETE FROM account_industries WHERE account_id = ?`);

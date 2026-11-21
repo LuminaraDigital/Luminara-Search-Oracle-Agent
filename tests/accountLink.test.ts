@@ -37,9 +37,9 @@ import { createSqliteD1, type SqliteD1 } from './helpers/sqliteD1';
 
 const botToken = '123456:ACCOUNT_LINK_TEST';
 
-function signInitData(userId: number, firstName: string): string {
+function signInitData(userId: number, firstName: string, ageSec = 0): string {
   const fields: Record<string, string> = {
-    auth_date: String(Math.floor(Date.now() / 1000)),
+    auth_date: String(Math.floor(Date.now() / 1000) - ageSec),
     user: JSON.stringify({ id: userId, first_name: firstName }),
   };
   const dcs = Object.keys(fields).sort().map((k) => `${k}=${fields[k]}`).join('\n');
@@ -348,5 +348,22 @@ describe('linkTelegramFirebaseAccounts', () => {
     expect(denied.error).toMatch(/Confirm/);
     const stringConfirm = await linkTelegramFirebaseAccounts({ confirm: false });
     expect(stringConfirm.ok).toBe(false);
+  });
+});
+
+describe('POST /api/auth/link freshness', () => {
+  it('refuses initData older than 15 minutes, though ordinary requests accept it for an hour', async () => {
+    const { env, db } = await seedPair({ tgId: '88071', tgAccount: 'acct-tg', fbAccount: 'acct-fb' });
+    const res = await worker.fetch(
+      linkRequest(88071, JSON.stringify({ confirm: true }), '10.8.7.1', {
+        'x-telegram-init-data': signInitData(88071, 'Ada', 20 * 60),
+      }),
+      env,
+      ctx,
+    );
+    expect(res.status).toBe(401);
+    expect((await res.json() as { error: string }).error).toContain('fresh Telegram session');
+    expect((await accountOf(db, '88071'))?.account_id).toBe('acct-tg');
+    expect((await accountOf(db, 'fb:uid-web'))?.account_id).toBe('acct-fb');
   });
 });

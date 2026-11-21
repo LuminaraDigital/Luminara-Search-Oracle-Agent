@@ -53,6 +53,7 @@ export function createTaskContext(options: TaskLifecycleOptions): TaskLifecycleC
  */
 async function updateAuditRunState(
   env: Env,
+  accountId: string,
   runId: string | null | undefined,
   status: string,
   errorMsg: string | null,
@@ -63,9 +64,9 @@ async function updateAuditRunState(
     await env.DB.prepare(
       `UPDATE audit_runs
        SET status = ?, error = ?, updated_at = ?, completed_at = COALESCE(?, completed_at)
-       WHERE id = ?`,
+       WHERE id = ? AND account_id = ?`,
     )
-      .bind(status, errorMsg, now, now, runId)
+      .bind(status, errorMsg, now, now, runId, accountId)
       .run();
   } catch (err) {
     console.warn('[TaskLifecycle] DB run status update failed best-effort', err);
@@ -101,7 +102,7 @@ export async function executeWithLifecycle<T>(
     ctx.state = 'settled';
     ctx.diagnostics.push(`[settled] Task ${ctx.taskId} completed successfully`);
 
-    await updateAuditRunState(env, ctx.runId, 'completed', null);
+    await updateAuditRunState(env, ctx.accountId, ctx.runId, 'completed', null);
 
     return {
       ok: true,
@@ -114,7 +115,7 @@ export async function executeWithLifecycle<T>(
     const rawError = err instanceof Error ? err.message : String(err || 'Unknown error');
     ctx.diagnostics.push(`[reverted] Task ${ctx.taskId} reverted: ${rawError}`);
 
-    await updateAuditRunState(env, ctx.runId, 'failed', rawError);
+    await updateAuditRunState(env, ctx.accountId, ctx.runId, 'failed', rawError);
 
     return {
       ok: false,

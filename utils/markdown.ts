@@ -14,7 +14,15 @@ if (purify) {
       node.setAttribute('target', '_blank');
       node.setAttribute('rel', 'noopener noreferrer');
     }
+    // A remote image is fetched the moment it renders. Injected text in a scraped page can make the
+    // model write one whose URL carries the user's data, so only inline and same-site images stay.
+    if (node.tagName === 'IMG' && !isLocalImageSrc(node.getAttribute('src') || '')) node.remove();
   });
+}
+
+export function isLocalImageSrc(src: string): boolean {
+  const value = src.trim();
+  return /^data:image\/(png|jpe?g|gif|webp);/i.test(value) || (value.startsWith('/') && !/^\/[/\\]/.test(value));
 }
 
 /**
