@@ -156,6 +156,24 @@ export const SpaceStage: React.FC<SpaceStageProps> = ({ anchors, onChapterChange
     window.addEventListener('resize', onScroll);
     onScroll();
 
+    let failed = false;
+    let detachDrag: (() => void) | null = null;
+    const enableDrag = () => {
+      // The story wrapper, which holds both the stage and the sections above it.
+      const surface = stage.closest<HTMLElement>('[data-globe-surface]');
+      if (!surface || !window.matchMedia('(any-pointer: coarse)').matches) return;
+      import('./earth/globeDrag')
+        .then(({ attachGlobeDrag }) => {
+          const globe = rendererRef.current;
+          if (cancelled || failed || !globe) return;
+          detachDrag = attachGlobeDrag(surface, globe);
+        })
+        .catch((err: unknown) => {
+          // The globe still spins and follows the scroll without the drag.
+          console.warn('[SpaceStage] no touch drag:', err);
+        });
+    };
+
     let visible = true;
     const io =
       typeof IntersectionObserver === 'undefined'
@@ -181,9 +199,14 @@ export const SpaceStage: React.FC<SpaceStageProps> = ({ anchors, onChapterChange
               return targetForProgress(s, w, h, { wide: wideQuery.matches, reduced });
             },
             onReady: () => {
-              if (!cancelled) setReady(true);
+              if (cancelled) return;
+              setReady(true);
+              enableDrag();
             },
             onFail: () => {
+              failed = true;
+              detachDrag?.();
+              detachDrag = null;
               if (!cancelled) setReady(false);
             },
           });
@@ -214,6 +237,7 @@ export const SpaceStage: React.FC<SpaceStageProps> = ({ anchors, onChapterChange
       io?.disconnect();
       if (idleId !== null) idleWin.cancelIdleCallback?.(idleId);
       if (timerId !== null) window.clearTimeout(timerId);
+      detachDrag?.();
       rendererRef.current?.destroy();
       rendererRef.current = null;
     };
