@@ -77,3 +77,4 @@ Screenshot-click automation uses `services/grounding/` (PointerBench protocol): 
 - `docs/plans/indexed-dom-action-agent.md` (B0-B5)
 - `docs/plans/evidence-bound-decision-100x.md` (claim ledger + intent router + citation gate; no TypeSafe)
 - `docs/plans/genui-canvas-100x-architecture.md` (Luminara GenUI 100x Canvas streaming DSL)
+- `docs/plans/allora-concepts-implementation-plan.md` (server re-check and fix retest CL0-CL2, spec 0033; invariants in `services/audit/README.md`)
