@@ -4,8 +4,10 @@
  */
 import type { Env } from './index';
 import { resolveAccountId, writeSubscriptionRecord, listAllUsers, getWorkspace } from './userStore';
-import { ragContextForOracle } from './memoryRag';
-import { memoryRecallV2Enabled } from './memoryRecall';
+import { memoryRecallV2Enabled, NO_RECALL, recallBlock } from './memoryRecall';
+import { extractChatFacts, memoryLlmExtractEnabled } from './memoryExtract';
+import { withinBudget } from './workerUtils';
+import { scheduleWaitUntil } from './welcomeEmail';
 import { QUOTA_CAPACITY_ERROR, refundDailyQuota, spendDailyQuota } from './quotaMiddleware';
 import { readRetentionSnapshot } from './referrals';
 import { nichePulseReply } from './ideaScout';
@@ -910,24 +912,12 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
       : '';
 
     // 6b. Account memory, the same ranked recall the Oracle chat uses (flag MEMORY_RECALL_V2).
-    // Off by default; when off, the prompt is exactly what it was before.
-    let memoryPromptAddition = '';
-    let memoryFacts: string[] = [];
-    if (env.DB && memoryRecallV2Enabled(env)) {
-      try {
-        const memory = await ragContextForOracle(env, accountId, text);
-        if (memory.block) {
-          memoryPromptAddition = `\n\n${memory.block}`;
-          memoryFacts = memory.facts;
-        }
-      } catch {
-        /* memory is best-effort */
-      }
-    }
+    // Off by default; when off, the prompt is exactly what it was before. recallBlock never throws.
+    const memory = env.DB && memoryRecallV2Enabled(env) ? await recallBlock(env, accountId, text) : NO_RECALL;
 
     const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
       // Plan facts in the prompt are built from PLANS on every turn, never typed by hand.
-      { role: 'system', content: TELEGRAM_ORACLE_SYSTEM_PROMPT + planPricePromptBlock(plansOfferedToBuyers()) + dnaPromptAddition + domainPromptAddition + memoryPromptAddition },
+      { role: 'system', content: TELEGRAM_ORACLE_SYSTEM_PROMPT + planPricePromptBlock(plansOfferedToBuyers()) + dnaPromptAddition + domainPromptAddition + (memory.block ? `\n\n${memory.block}` : '') },
       ...history.slice(-6),
       { role: 'user', content: text },
     ];
@@ -942,7 +932,7 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
       ? filterChatReply(modelReply, {
           plans: plansOfferedToBuyers(),
           // Remembered facts came from this user's own messages, as in the Oracle chat.
-          userTexts: [...memoryFacts, ...history.filter((turn) => turn?.role === 'user').map((turn) => String(turn.content ?? '')), text],
+          userTexts: [...memory.facts, ...history.filter((turn) => turn?.role === 'user').map((turn) => String(turn.content ?? '')), text],
           allowedHosts: [String(env.WEBAPP_URL || '').replace(/^https?:\/\//i, '').split(/[/:?#]/)[0]],
         })
       : null;
@@ -977,6 +967,15 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
     }
     // The unit paid for an answer that reached the user.
     if (delivered) meterKey = '';
+    // Facts from what the user said, after the reply (flag MEMORY_LLM_EXTRACT): the same extractor
+    // and store as the Oracle chat, so web and Telegram fill one account memory.
+    if (delivered && env.DB && memoryLlmExtractEnabled(env)) {
+      scheduleWaitUntil(
+        extractChatFacts(env, accountId, { message: text, autoStore: true }).catch((err) =>
+          console.warn(JSON.stringify({ event: 'memory_extract_error', surface: 'telegram', error: String(err) })),
+        ),
+      );
+    }
   } catch (e) {
     console.error('telegram update failed', e);
   } finally {
@@ -1482,14 +1481,6 @@ function refundPendingText(stars: number, chargeId: string): string {
 /** True when the payer has their Stars back, whether or not the ledger row could be closed. */
 function starsWentBack(outcome: StarsRefundOutcome): boolean {
   return outcome.settled || outcome.moneyReturned === true;
-}
-
-/** Resolves false when the check has not answered inside `ms`, or fails. */
-function withinBudget<T>(check: Promise<T>, ms: number, fallback: T): Promise<T> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => resolve(fallback), ms);
-    check.then(resolve, () => resolve(fallback)).finally(() => clearTimeout(timer));
-  });
 }
 
 /** The title a buyer knows a plan by. */

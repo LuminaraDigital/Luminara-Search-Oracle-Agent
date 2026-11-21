@@ -41,6 +41,7 @@ import { useMcpApproval } from './components/settings/McpApprovalDialog';
 import { WorkspaceInviteBanner } from './components/suite/WorkspaceInviteBanner';
 import { entitlementsFor } from './services/plans/planEntitlements';
 import { createOracleTurnCollector, useOracleAgent } from './hooks/useOracleAgent';
+import { fetchAccountMemory, NO_ACCOUNT_MEMORY, rememberFromMessage, type AccountMemoryContext } from './services/memory/accountMemoryClient';
 import { hasPersistedAuthSession } from './services/auth/firebaseIdToken';
 import type { AuditHandoff } from './services/activation/auditHandoff';
 import { MarketingChromeContext, type MarketingChrome } from './components/marketing/marketingChrome';
@@ -870,11 +871,16 @@ const App: React.FC = () => {
         return;
       }
 
+      // Account memory for every signed-in plan on the app's own chat path (the server Oracle
+      // reads and writes memory itself). Empty and skipped when the server has it switched off.
+      let accountMemory: Promise<AccountMemoryContext> = Promise.resolve(NO_ACCOUNT_MEMORY);
       if (!usedServerOracle && !controller.signal.aborted) {
         const { geminiService } = await import('./services/geminiService');
+        if (appAuth.authenticated) accountMemory = fetchAccountMemory(content);
         for await (const chunk of geminiService.streamQuery(content, mode, dna, {
           history,
           skipSearch: opts.skipSearch,
+          accountMemory: accountMemory.then((m) => m.block),
         })) {
           if (controller.signal.aborted) break;
 
@@ -905,6 +911,7 @@ const App: React.FC = () => {
       );
       const extras = usedServerOracle ? turnExtras.extras() : null;
       if (extras) setMessages((prev) => prev.map((m) => (m.id === modelId ? { ...m, ...extras } : m)));
+      if ((await accountMemory).extract && !controller.signal.aborted) void rememberFromMessage(content);
     } catch (error: any) {
       console.error('Luminara Search Error:', error);
       const reason = error?.message || 'Unknown error';

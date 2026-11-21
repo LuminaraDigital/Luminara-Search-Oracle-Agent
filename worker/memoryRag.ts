@@ -5,8 +5,7 @@
  */
 import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
-import { billingId, json } from './workerUtils';
-import { wrapUntrustedContent } from '../utils/untrustedContent';
+import { billingId, json, sha256Hex } from './workerUtils';
 
 export type VectorProvider = 'vectorize' | 'azure' | 'gcp' | 'none';
 
@@ -289,102 +288,161 @@ export async function searchMemoryVectors(
     .slice(0, topK);
 }
 
-/** Chat turn → pending extraction → optional auto-store when confidence high. */
-export async function extractFactsFromChat(
+export type ChatFactCandidate = { kind: string; text: string; confidence: number };
+
+export type StoreChatFactsResult = { extractionIds: string[]; stored: number; duplicates: number };
+
+/** Auto-stored chat facts per account per day. Anything over this waits as pending. */
+export const CHAT_FACTS_DAILY_CAP = 50;
+const AUTO_STORE_CONFIDENCE = 0.7;
+const EVENT_FACT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Dedupe key for a fact in a scope: project | domain | normalised text. Owner rules
+ * (scopedMemory.rememberConstraint) and chat facts use this same key, so they dedupe together.
+ */
+export function memoryContentKey(scope: { projectId?: string | null; domain?: string | null }, text: string): Promise<string> {
+  return sha256Hex(`${scope.projectId || ''}|${scope.domain || ''}|${text.toLowerCase().replace(/\s+/g, ' ')}`);
+}
+
+/**
+ * The one write path for facts taken from a chat message, used by the regex extractor here and
+ * the model extractor (memoryExtract.ts). For each candidate:
+ * - the same text in the same scope is logged as NONE and not stored again;
+ * - a confident one is stored, and its fact, history and extraction rows go in one batch;
+ * - anything else, or anything over the daily cap, is filed as pending.
+ * An `event` fact expires after 30 days.
+ */
+export async function storeChatFacts(
   env: Env,
-  user: HostedIdentity,
-  opts: { sessionId?: string; turnId?: string; message: string; autoStore?: boolean; projectId?: string | null },
-): Promise<Response> {
-  if (!env.DB) return json({ ok: false, error: 'Database unavailable' }, 503);
-  const accountId = billingId(user);
-  const message = opts.message.trim().slice(0, 4000);
-  if (!message) return json({ ok: false, error: 'message required' }, 400);
-
-  const { memoryLlmExtractEnabled, extractTypedFacts } = await import('./memoryExtract');
-  if (memoryLlmExtractEnabled(env)) {
-    const typed = await extractTypedFacts(env, accountId, { ...opts, message });
-    if (typed) return json(typed);
-    // No model answered: the regex below still runs.
-  }
-
-  // Heuristic extractor (LLM optional later): durable preference / brand lines.
-  const candidates: Array<{ text: string; confidence: number }> = [];
-  const lines = message.split(/[\n.!?]+/).map((s) => s.trim()).filter((s) => s.length > 12);
-  for (const line of lines.slice(0, 8)) {
-    const lower = line.toLowerCase();
-    let confidence = 0.35;
-    if (/\b(prefer|always|never|our brand|we are|competitor|located|serves)\b/.test(lower)) {
-      confidence = 0.72;
-    }
-    if (confidence >= 0.5) candidates.push({ text: line.slice(0, 500), confidence });
-  }
-
-  const ids: string[] = [];
+  accountId: string,
+  candidates: ChatFactCandidate[],
+  opts: { sessionId?: string; turnId?: string; projectId?: string | null; autoStore?: boolean; extractor: 'regex' | 'model' },
+): Promise<StoreChatFactsResult> {
+  const result: StoreChatFactsResult = { extractionIds: [], stored: 0, duplicates: 0 };
+  if (!env.DB || !candidates.length) return result;
+  const db = env.DB;
+  const projectId = opts.projectId ?? null;
   const now = Date.now();
-  for (const c of candidates) {
-    const id = crypto.randomUUID();
-    let memoryFactId: string | null = null;
-    let status: 'pending' | 'stored' = 'pending';
-    if (opts.autoStore && c.confidence >= 0.7) {
-      memoryFactId = `mem_${Date.now().toString(36)}_${ids.length}`;
-      const vector = await upsertMemoryVector(env, accountId, memoryFactId, c.text, { source: 'chat' });
-      await env.DB.prepare(
-        `INSERT INTO memory_facts (id, account_id, text, source, created_at, embedding_provider, vector_id, metadata_json)
-         VALUES (?, ?, ?, 'chat', ?, ?, ?, ?)`,
-      )
+  const keys = await Promise.all(candidates.map((c) => memoryContentKey({ projectId }, c.text)));
+  const storedToday = opts.autoStore
+    ? ((await db
+        .prepare(`SELECT COUNT(*) AS n FROM memory_facts WHERE account_id = ? AND source = 'chat' AND created_at >= ?`)
+        .bind(accountId, now - DAY_MS)
+        .first<{ n: number }>())?.n ?? 0)
+    : 0;
+  let room = Math.max(0, CHAT_FACTS_DAILY_CAP - storedToday);
+
+  for (const [i, c] of candidates.entries()) {
+    const contentSha256 = keys[i];
+    const existing = await db
+      .prepare(`SELECT id FROM memory_facts WHERE account_id = ? AND content_sha256 = ? AND status = 'active' LIMIT 1`)
+      .bind(accountId, contentSha256)
+      .first<{ id: string }>();
+    if (existing) {
+      result.duplicates += 1;
+      await appendMemoryHistory(env, {
+        accountId,
+        memoryFactId: existing.id,
+        event: 'NONE',
+        text: c.text,
+        metadata: { source: 'chat', extractor: opts.extractor, reason: 'duplicate' },
+      });
+      continue;
+    }
+
+    const extractionId = crypto.randomUUID();
+    const store = Boolean(opts.autoStore) && c.confidence >= AUTO_STORE_CONFIDENCE && room > 0;
+    if (!store) {
+      await db
+        .prepare(
+          `INSERT INTO memory_chat_extractions
+            (id, account_id, session_id, source_turn_id, fact_text, confidence, status, memory_fact_id, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, 'pending', NULL, ?)`,
+        )
+        .bind(extractionId, accountId, opts.sessionId || null, opts.turnId || null, c.text, c.confidence, now)
+        .run();
+      result.extractionIds.push(extractionId);
+      continue;
+    }
+
+    room -= 1;
+    const factId = `mem_${now.toString(36)}_${crypto.randomUUID().slice(0, 8)}`;
+    const vector = await upsertMemoryVector(env, accountId, factId, c.text, { source: 'chat', kind: c.kind });
+    await db.batch([
+      db
+        .prepare(
+          `INSERT INTO memory_facts (
+            id, account_id, project_id, kind, text, source, importance, confidence, content_sha256,
+            status, expires_at, created_at, updated_at, embedding_provider, vector_id, metadata_json
+          ) VALUES (?, ?, ?, ?, ?, 'chat', 0.5, ?, ?, 'active', ?, ?, ?, ?, ?, ?)`,
+        )
         .bind(
-          memoryFactId,
+          factId,
           accountId,
+          projectId,
+          c.kind,
           c.text,
+          c.confidence,
+          contentSha256,
+          c.kind === 'event' ? now + EVENT_FACT_TTL_MS : null,
+          now,
           now,
           vector.provider === 'none' ? null : vector.provider,
           vector.vectorId,
-          JSON.stringify({ sessionId: opts.sessionId || null }),
+          JSON.stringify({ sessionId: opts.sessionId || null, extractor: opts.extractor }),
+        ),
+      db
+        .prepare(
+          `INSERT INTO memory_history (id, account_id, memory_fact_id, event, text_snapshot, metadata_json, created_at)
+           VALUES (?, ?, ?, 'ADD', ?, ?, ?)`,
         )
-        .run();
-      await appendMemoryHistory(env, {
-        accountId,
-        memoryFactId,
-        event: 'ADD',
-        text: c.text,
-        metadata: { source: 'chat', confidence: c.confidence, provider: vector.provider },
-      });
-      status = 'stored';
-    }
-    await env.DB.prepare(
-      `INSERT INTO memory_chat_extractions
-        (id, account_id, session_id, source_turn_id, fact_text, confidence, status, memory_fact_id, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-      .bind(id, accountId, opts.sessionId || null, opts.turnId || null, c.text, c.confidence, status, memoryFactId, now)
-      .run();
-    ids.push(id);
+        .bind(
+          crypto.randomUUID(),
+          accountId,
+          factId,
+          c.text.slice(0, 2000),
+          JSON.stringify({ source: 'chat', extractor: opts.extractor, kind: c.kind, confidence: c.confidence, provider: vector.provider }),
+          now,
+        ),
+      db
+        .prepare(
+          `INSERT INTO memory_chat_extractions
+            (id, account_id, session_id, source_turn_id, fact_text, confidence, status, memory_fact_id, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, 'stored', ?, ?)`,
+        )
+        .bind(extractionId, accountId, opts.sessionId || null, opts.turnId || null, c.text, c.confidence, factId, now),
+    ]);
+    result.stored += 1;
+    result.extractionIds.push(extractionId);
   }
-
-  return json({ ok: true, extractionIds: ids, candidates: candidates.length });
+  return result;
 }
 
-/** The prompt block, and the facts in it as the account stored them. */
-export async function ragContextForOracle(
-  env: Env,
-  accountId: string,
-  query: string,
-  opts: { projectId?: string | null } = {},
-): Promise<{ block: string; facts: string[] }> {
-  const { memoryRecallV2Enabled, recallMemory, formatRecallLines } = await import('./memoryRecall');
-  if (memoryRecallV2Enabled(env)) {
-    const ranked = await recallMemory(env, accountId, query, { projectId: opts.projectId ?? null });
-    if (!ranked.length) return { block: '', facts: [] };
-    return {
-      block: `## Account memory (retrieved)\n${wrapUntrustedContent('ACCOUNT_MEMORY', formatRecallLines(ranked))}`.trim(),
-      facts: ranked.map((h) => h.text),
-    };
+/**
+ * The message's sentences, with questions left out: only these can become facts. A sentence ends
+ * at . ! or ? followed by a space, or at a line break, so "£1.50" and "v2.0" stay whole.
+ */
+export function assertedSentences(message: string): string[] {
+  return message
+    .split(/(?<=[.!?])\s+|\n+/)
+    .map((s) => s.trim())
+    .filter((s) => s && !s.endsWith('?'));
+}
+
+/** Regex extractor: durable preference and brand lines. The fallback when no model answers. */
+export function regexFactCandidates(message: string): ChatFactCandidate[] {
+  const candidates: ChatFactCandidate[] = [];
+  const lines = assertedSentences(message)
+    .map((s) => s.replace(/[.!]+$/, '').trim())
+    .filter((s) => s.length > 12);
+  for (const line of lines.slice(0, 8)) {
+    if (/\b(prefer|always|never|our brand|we are|competitor|located|serves)\b/.test(line.toLowerCase())) {
+      candidates.push({ kind: 'fact', text: line.slice(0, 500), confidence: 0.72 });
+    }
   }
-  const hits = await searchMemoryVectors(env, accountId, query, 5);
-  if (!hits.length) return { block: '', facts: [] };
-  const joined = hits.map((h, i) => `${i + 1}. (${h.score.toFixed(2)}) ${h.text}`).join('\n');
-  // Memory may contain attacker-influenced chat extracts; fence before system prompt merge.
-  return { block: `## Account memory (retrieved)\n${wrapUntrustedContent('ACCOUNT_MEMORY', joined)}`.trim(), facts: hits.map((h) => h.text) };
+  return candidates;
 }
 
 export async function handleMemoryRagRoute(
@@ -398,20 +456,6 @@ export async function handleMemoryRagRoute(
     if (!body.query) return json({ ok: false, error: 'query required' }, 400);
     const hits = await searchMemoryVectors(env, billingId(user), body.query, body.topK || 5);
     return json({ ok: true, provider: resolveVectorProvider(env), hits });
-  }
-  if (path === '/memory/extract' && request.method === 'POST') {
-    const body = (await request.json().catch(() => ({}))) as {
-      message?: string;
-      sessionId?: string;
-      turnId?: string;
-      autoStore?: boolean;
-    };
-    return extractFactsFromChat(env, user, {
-      message: body.message || '',
-      sessionId: body.sessionId,
-      turnId: body.turnId,
-      autoStore: Boolean(body.autoStore),
-    });
   }
   return null;
 }
