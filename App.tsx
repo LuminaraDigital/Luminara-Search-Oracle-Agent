@@ -40,6 +40,7 @@ import { agentConnectTarget, resumeAgentConnect } from './services/auth/agentCon
 import { useMcpApproval } from './components/settings/McpApprovalDialog';
 import { WorkspaceInviteBanner } from './components/suite/WorkspaceInviteBanner';
 import { entitlementsFor } from './services/plans/planEntitlements';
+import { createOracleTurnCollector, useOracleAgent } from './hooks/useOracleAgent';
 import { fetchAccountMemory, NO_ACCOUNT_MEMORY, rememberFromMessage, type AccountMemoryContext } from './services/memory/accountMemoryClient';
 import { hasPersistedAuthSession } from './services/auth/firebaseIdToken';
 import type { AuditHandoff } from './services/activation/auditHandoff';
@@ -130,6 +131,8 @@ interface SendOptions {
   displayContent?: string;
   /** Skip the live SERP lookup for this turn. */
   skipSearch?: boolean;
+  /** Oracle step-by-step mode: continue after this approval card was decided (the server builds the text). */
+  continueAfterAction?: string;
 }
 
 import { parseUrlSwapRoute, type UrlSwapRouteParams } from './utils/urlSwapRouting';
@@ -720,6 +723,8 @@ const App: React.FC = () => {
     };
   }, [view]);
 
+  const oracleAgent = useOracleAgent({ authenticated: appAuth.authenticated, setMessages });
+
   const handleSendMessage = useCallback(async (content: string, opts: SendOptions = {}) => {
     if (isThinking || !content.trim()) return;
 
@@ -781,22 +786,28 @@ const App: React.FC = () => {
       let firstToken = true;
       let usedServerOracle = false;
 
-      // Agency hosted Oracle (validators + provenance). Fall back to BYOK client path on soft failure.
-      // Free plans get 403 from /oracle/chat. The server path is Agency apiAccess only.
+      // Hosted Oracle (validators + provenance). Fall back to BYOK client path on soft failure.
+      // Agency always; every signed-in plan while the server's step-by-step mode is open.
+      const agentOpen = oracleAgent.isOpen();
       const preferServer =
         appAuth.authenticated &&
         Boolean(apiBase()) &&
         !opts.skipSearch &&
-        entitlementsFor(getCurrentQuotaSync()?.plan).apiAccess;
+        (entitlementsFor(getCurrentQuotaSync()?.plan).apiAccess || agentOpen);
+      const turnExtras = createOracleTurnCollector();
 
       if (preferServer) {
         let softFail = false;
+        const projectId = agentOpen ? await oracleAgent.resolveProjectId() : null;
         for await (const ev of streamOracleChat({
           message: content,
+          projectId: projectId ?? undefined,
           history: history.map((h) => ({ role: h.role, content: h.content })),
+          continueAfterAction: opts.continueAfterAction,
           signal: controller.signal,
         })) {
           if (controller.signal.aborted) break;
+          turnExtras.onEvent(ev);
           if (ev.type === 'error') {
             if (!usedServerOracle) {
               softFail = true;
@@ -805,7 +816,7 @@ const App: React.FC = () => {
             throw new Error(ev.error);
           }
           if (ev.type === 'status') {
-            setAgentStep(ev.stage === 'thinking' ? 'Thinking' : ev.stage || 'Getting ready');
+            setAgentStep(ev.text || (ev.stage === 'thinking' ? 'Thinking' : ev.stage || 'Getting ready'));
             setProgress(20);
           }
           if (ev.type === 'tool') {
@@ -841,7 +852,23 @@ const App: React.FC = () => {
           usedServerOracle = false;
           reply = newStreamedReply();
           firstToken = true;
+          turnExtras.reset();
         }
+      }
+      if (opts.continueAfterAction && !usedServerOracle) {
+        // A continue turn has no text of its own for the simple chat to answer.
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === modelId
+              ? {
+                  ...m,
+                  isStreaming: false,
+                  content: 'Oracle could not continue this time. The result of your card is saved; ask again and it will pick up from there.',
+                }
+              : m,
+          ),
+        );
+        return;
       }
 
       // Account memory for every signed-in plan on the app's own chat path (the server Oracle
@@ -882,6 +909,8 @@ const App: React.FC = () => {
         { question: content, stopped: controller.signal.aborted, skipSearch: opts.skipSearch },
         replyEffects,
       );
+      const extras = usedServerOracle ? turnExtras.extras() : null;
+      if (extras) setMessages((prev) => prev.map((m) => (m.id === modelId ? { ...m, ...extras } : m)));
       if ((await accountMemory).extract && !controller.signal.aborted) void rememberFromMessage(content);
     } catch (error: any) {
       console.error('Luminara Search Error:', error);
@@ -907,7 +936,18 @@ const App: React.FC = () => {
       setProgress(0);
       setHeaderSearch('');
     }
-  }, [mode, isThinking, dna, view, messages, setView, appAuth.authenticated]);
+  }, [mode, isThinking, dna, view, messages, setView, appAuth.authenticated, oracleAgent]);
+
+  const handleDecideAction = useCallback(
+    (messageId: string, actionId: string, approved: boolean) =>
+      void oracleAgent.decide(messageId, actionId, approved, (decidedId, wasApproved) => {
+        void handleSendMessage('Continue', {
+          displayContent: wasApproved ? 'Continue after approving' : 'Continue after rejecting',
+          continueAfterAction: decidedId,
+        });
+      }),
+    [oracleAgent, handleSendMessage],
+  );
 
   const handleStop = useCallback(() => {
     abortRef.current?.abort();
@@ -1962,7 +2002,14 @@ const App: React.FC = () => {
                   </div>
                 </div>
               )}
-              <ChatTranscript messages={messages} isThinking={isThinking} activeTool={activeTool} onSimplify={handleSimplify} />
+              <ChatTranscript
+                messages={messages}
+                isThinking={isThinking}
+                activeTool={activeTool}
+                onSimplify={handleSimplify}
+                // Cards cannot be decided while a reply is running: the continue turn would be dropped.
+                onDecideAction={isThinking ? undefined : handleDecideAction}
+              />
               
               {agentStep && (
                 <div
