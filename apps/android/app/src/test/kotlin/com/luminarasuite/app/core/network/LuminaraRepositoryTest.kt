@@ -86,6 +86,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import retrofit2.HttpException
 import retrofit2.Response
+import java.io.IOException
 
 class FakeLuminaraDao : LuminaraDao {
     private val historyState = MutableStateFlow<List<AuditHistoryEntity>>(emptyList())
@@ -156,6 +157,10 @@ class FakeLuminaraDao : LuminaraDao {
 
 class FakeLuminaraApi : LuminaraApi {
     val queriedFindingDomains = mutableListOf<String?>()
+    var chatReply: String? = null
+    var chatFailure: Exception? = null
+    var filesFailure: Exception? = null
+    var lastChat: GroqChatRequest? = null
     var lastPatchedFindingId: String? = null
     var lastPatchedFindingStatus: String? = null
     var remoteHistoryEntries: List<AuditHistoryEntry> = emptyList()
@@ -176,8 +181,10 @@ class FakeLuminaraApi : LuminaraApi {
             crawl = ProbeCrawlData(status = "measured", note = "Live crawl OK"),
         )
 
-    override suspend fun fetchCrawlerFiles(url: String): CrawlerFilesResponse =
-        CrawlerFilesResponse(ok = true, snapshot = snapshotToReturn)
+    override suspend fun fetchCrawlerFiles(url: String): CrawlerFilesResponse {
+        filesFailure?.let { throw it }
+        return CrawlerFilesResponse(ok = true, snapshot = snapshotToReturn)
+    }
 
     override suspend fun executeGateway(body: GatewayExecuteRequest): GatewayExecuteResponse =
         GatewayExecuteResponse(
@@ -445,6 +452,8 @@ class FakeLuminaraApi : LuminaraApi {
         body: GroqChatRequest,
     ): GroqChatResponse {
         groqCalls += 1
+        lastChat = body
+        chatFailure?.let { throw it }
         return GroqChatResponse(
             choices =
             listOf(
@@ -453,8 +462,11 @@ class FakeLuminaraApi : LuminaraApi {
                     GroqMessage(
                         role = "assistant",
                         content =
-                        "VERDICT: Publish /llms.txt \u2014 and allow GPTBot.\n" +
-                            "NEXT_ACTION: Add H1 and canonical links to /llms.txt.",
+                        chatReply
+                            ?: (
+                                "VERDICT: Publish /llms.txt \u2014 and allow GPTBot.\n" +
+                                    "NEXT_ACTION: Add H1 and canonical links to /llms.txt."
+                                ),
                     ),
                 ),
             ),
@@ -463,6 +475,89 @@ class FakeLuminaraApi : LuminaraApi {
 }
 
 class LuminaraRepositoryTest {
+    private suspend fun byokRepo(api: FakeLuminaraApi): DefaultLuminaraRepository {
+        val vault = InMemoryVaultStorage()
+        vault.saveByokKeys(ByokKeyBag(groqKey = "gsk_test"))
+        vault.setDeveloperByok(true)
+        return DefaultLuminaraRepository(api = api, dao = FakeLuminaraDao(), vault = vault)
+    }
+
+    @Test
+    fun askOracle_blankModelReplyIsAnErrorNotAFakeVerdict() =
+        runTest {
+            val repo = byokRepo(FakeLuminaraApi().apply { chatReply = "" })
+
+            val result = repo.askOracle("What is llms.txt?")
+
+            assertEquals("The AI did not answer. Try again.", result.exceptionOrNull()?.message)
+        }
+
+    @Test
+    fun askOracle_readsMarkdownLabels() =
+        runTest {
+            val api = FakeLuminaraApi().apply { chatReply = "**VERDICT:** Ship it.\n**NEXT_ACTION:** Add llms.txt." }
+
+            val turn = byokRepo(api).askOracle("What now?").getOrThrow()
+
+            assertEquals("Ship it.", turn.verdict)
+            assertEquals("Add llms.txt.", turn.nextAction)
+        }
+
+    @Test
+    fun askOracle_tellsTheModelTheLastAuditedSite() =
+        runTest {
+            val api = FakeLuminaraApi()
+            val repo = byokRepo(api)
+            repo.runInstantAudit("example.com").getOrThrow()
+
+            repo.askOracle("What is missing on my site?").getOrThrow()
+
+            assertTrue(requireNotNull(api.lastChat).messages.last().content.contains("example.com"))
+        }
+
+    @Test
+    fun offlineFailuresUseFriendlyCopy() =
+        runTest {
+            val api = FakeLuminaraApi().apply { filesFailure = IOException("Unable to resolve host") }
+            val repo = byokRepo(api)
+
+            val message = repo.runInstantAudit("example.com").exceptionOrNull()?.message
+
+            assertEquals("Could not reach Luminara. Check your connection and try again.", message)
+        }
+
+    @Test
+    fun runInstantAudit_closesCrawlerFindingsThatNowPass() =
+        runTest {
+            val api = FakeLuminaraApi()
+            val repo = byokRepo(api)
+            repo.runInstantAudit("example.com").getOrThrow()
+            val failing = repo.findingsFlow.first().filter { it.stableKey.startsWith("crawler::") }
+            assertTrue(failing.any { it.status == "open" })
+
+            api.snapshotToReturn =
+                api.snapshotToReturn.copy(
+                    llmsTxt = "# Example\n\n> Summary\n\n## Docs\n- [Home](https://example.com/)\n",
+                    llmsHttpStatus = 200,
+                    aiTxt = "User-agent: *\nAllow: /",
+                    aiHttpStatus = 200,
+                )
+            repo.runInstantAudit("example.com").getOrThrow()
+
+            assertTrue(repo.findingsFlow.first().none { it.status != "done" })
+        }
+
+    @Test
+    fun generateAudioOverview_truncatedReplyGivesFriendlyError() =
+        runTest {
+            val repo = byokRepo(FakeLuminaraApi().apply { chatReply = "{\"title\":\"cut off" })
+            repo.addStudioSource("Note", "Text", "note")
+
+            val message = repo.generateAudioOverview().exceptionOrNull()?.message
+
+            assertEquals("The briefing came back empty. Try again.", message)
+        }
+
     @Test
     fun runInstantAudit_storesHistoryAndFindingsWithHonestNullHealthScore() =
         runTest {
