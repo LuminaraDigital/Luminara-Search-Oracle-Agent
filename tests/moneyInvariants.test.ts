@@ -293,10 +293,12 @@ describe('public health carries the Stars catalogue and nothing private', () => 
       expect(body.plans![id]).toEqual({ title: PLANS[id].title, description: PLANS[id].description, stars: PLANS[id].stars, days: PLANS[id].days });
       expect(body.plans![id].stars).toBeGreaterThan(0);
     }
-    expect(Object.keys(body).sort()).toEqual(['hostedAudit', 'hostedGemini', 'jettonCheckout', 'lumens', 'ok', 'plans', 'stripeCheckout', 'ton', 'trust']);
+    expect(Object.keys(body).sort()).toEqual(['decisionChecks', 'hostedAudit', 'hostedGemini', 'jettonCheckout', 'lumens', 'ok', 'plans', 'stripeCheckout', 'ton', 'trust']);
     expect(body.hostedGemini).toBe(false);
     expect(body.lumens).toBe(false);
     expect(body.trust).toEqual({ receiptsEnabled: false, domainVerifyEnabled: false });
+    // Allora CL0-4: flags and a run stamp only, never counts or account data.
+    expect(body.decisionChecks).toEqual({ checksVar: false, retestVar: false, checksOn: false, retestOn: false, lastRunAt: null });
   });
 
   it('echoes trust flags and leaves them off unless the env says true', async () => {

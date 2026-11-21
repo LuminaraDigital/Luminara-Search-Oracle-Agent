@@ -47,6 +47,9 @@ TELEGRAM_MINI_APP_URL=
 COMMUNITY_FEED_ENABLED=false
 # "true" switches points on (daily check-in, points in the referral summary). Off by default.
 LUMENS_ENABLED=false
+# Allora fix retest. "true" turns on server re-checks at commit / the daily retest. Off by default; KV key decision_checks:off pauses either (docs/runbooks/decision-checks.md).
+DECISION_CHECKS_ENABLED=false
+DECISION_RETEST_ENABLED=false
 TON_API_KEY=
 # Chain network gate (must match merchant address + API hosts)
 CHAIN_NETWORK=mainnet
