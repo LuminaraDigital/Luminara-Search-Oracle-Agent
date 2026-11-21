@@ -23,7 +23,7 @@
  *   POST /api/telegram/invoice            creates a Telegram Stars invoice link for a plan
  *   GET  /api/findings?domain=            signed-in Instant Audit findings board (D1)
  *   POST /api/findings/bulk               upsert crew findings by stable_key (never Oracle validators)
- *   PATCH /api/findings/:id               status / owner / due_at
+ *   PATCH /api/findings/:id               status / owner / due_at (:id may be a stable key with body.domain)
  *   GET/PUT /api/audits/history           signed-in Instant Audit history (D1); the browser list is a cache
  *   POST /api/privacy/export|delete       self-serve GDPR export / soft-delete
  *   GET/POST /api/email/unsubscribe       one-click welcome-mail opt-out (D1)
