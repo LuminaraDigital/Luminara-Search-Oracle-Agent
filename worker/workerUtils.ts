@@ -115,6 +115,14 @@ export function secretEquals(a: string, b: string): boolean {
   return diff === 0;
 }
 
+/** Settles with the task's value, or with `fallback` if it rejects or is still running after `ms`. */
+export function withinBudget<T>(task: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(fallback), ms);
+    task.then(resolve, () => resolve(fallback)).finally(() => clearTimeout(timer));
+  });
+}
+
 export async function sha256Hex(data: string): Promise<string> {
   const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(data));
   return Array.from(new Uint8Array(hash))
