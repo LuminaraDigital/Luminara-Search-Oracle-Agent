@@ -53,7 +53,7 @@ export class CriticReflectionEngine {
         const titleLower = finding.title.toLowerCase();
         
         // E.g., claim: "Missing Organization Schema"
-        if (finding.id !== 'finding-schema-org-partial' && titleLower.includes('organization') && orgTypePresent) {
+        if (finding.id !== 'finding-schema-org-partial' && finding.id !== 'finding-schema-org-broken' && titleLower.includes('organization') && orgTypePresent) {
           isHallucination = true;
           correctionMessage = 'Ground truth check: Organization schema was actually present in raw DOM. Finding suppressed.';
         } else if (titleLower.includes('website') && rawSchemaTypes.has('website')) {
