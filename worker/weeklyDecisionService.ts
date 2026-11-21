@@ -388,14 +388,16 @@ export async function sendWeeklyDecisionDigest(
 
   try {
     const { results } = await env.DB.prepare(
-      `SELECT wd.domain, wd.title, wd.why_text, wd.data_freshness, u.telegram_id
+      `SELECT wd.id, wd.domain, wd.title, wd.why_text, wd.data_freshness, u.telegram_id
        FROM weekly_decisions wd
-       JOIN users u ON wd.account_id = u.id
-       WHERE u.telegram_id IS NOT NULL AND wd.week_key = ?
+       JOIN users u ON COALESCE(u.account_id, u.id) = wd.account_id AND u.telegram_id IS NOT NULL
+       WHERE wd.week_key = ? AND wd.telegram_sent_at IS NULL
+       ORDER BY wd.created_at, wd.id
        LIMIT 100`,
     )
       .bind(week)
       .all<{
+        id: string;
         domain: string;
         title: string;
         why_text: string;
@@ -427,6 +429,17 @@ export async function sendWeeklyDecisionDigest(
         `${env.WEBAPP_URL || 'https://www.luminarasuite.com'}/#instant_audit`,
       ].join('\n');
 
+      // Claim first so an overlapping run cannot send the same row twice.
+      const claim = await env.DB.prepare(
+        'UPDATE weekly_decisions SET telegram_sent_at = ? WHERE id = ? AND telegram_sent_at IS NULL',
+      )
+        .bind(Date.now(), row.id)
+        .run();
+      if (claim.meta.changes !== 1) {
+        skipped++;
+        continue;
+      }
+
       const res = await api(env, 'sendMessage', {
         chat_id: chatId,
         text,
@@ -435,6 +448,9 @@ export async function sendWeeklyDecisionDigest(
       if (res.ok) {
         sent++;
       } else {
+        await env.DB.prepare('UPDATE weekly_decisions SET telegram_sent_at = NULL WHERE id = ?')
+          .bind(row.id)
+          .run();
         skipped++;
       }
     }
