@@ -1677,6 +1677,10 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     if (who.error || !who.user) {
       return withCors(json({ ok: false, error: who.error || 'Unauthorized', code: 'AUTH_REQUIRED' }, 401));
     }
+    if (path === '/memory/extract' && request.method === 'POST') {
+      const { handleMemoryExtractRoute } = await import('./memoryExtract');
+      return withCors(await handleMemoryExtractRoute(request, env, who.user));
+    }
     const rag = await handleMemoryRagRoute(request, env, who.user, path);
     if (rag) return withCors(rag);
     if (path === '/memory/facts') {
