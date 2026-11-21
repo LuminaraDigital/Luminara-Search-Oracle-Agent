@@ -28,13 +28,17 @@ export type PreprodGatedFlag = (typeof PREPROD_GATED_FLAGS)[number];
 
 const ENABLING = new Set(['true', 'on', 'enforce', '1', 'yes']);
 
+/** True when a flag var's value turns its feature on. Missing, empty and "false" are off. */
+export function flagEnabled(value: unknown): boolean {
+  return ENABLING.has(String(value ?? '').trim().toLowerCase());
+}
+
 /** Flag names whose prod value would turn the feature on. Missing means off. */
 export function enabledPreprodFlags(vars: Record<string, unknown> | undefined): PreprodGatedFlag[] {
   const source = vars ?? {};
   const enabled: PreprodGatedFlag[] = [];
   for (const flag of PREPROD_GATED_FLAGS) {
-    const value = String(source[flag] ?? '').trim().toLowerCase();
-    if (ENABLING.has(value)) enabled.push(flag);
+    if (flagEnabled(source[flag])) enabled.push(flag);
   }
   return enabled;
 }

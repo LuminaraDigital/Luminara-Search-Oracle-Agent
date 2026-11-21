@@ -674,14 +674,14 @@ export async function handleOracleChatSse(
       let systemPrompt = withHealthClaimRule(oracleSkill?.promptBody || bundledOraclePrompt);
       let memoryFacts: string[] = [];
       try {
-        const { ragContextForOracle } = await import('./memoryRag');
-        const memory = await ragContextForOracle(env, billingId(user), message, { projectId: body.projectId ?? null });
+        const { recallBlock } = await import('./memoryRecall');
+        const memory = await recallBlock(env, billingId(user), message, { projectId: body.projectId ?? null });
         if (memory.block) {
           systemPrompt = `${systemPrompt}\n\n${memory.block}`;
           memoryFacts = memory.facts;
         }
-      } catch {
-        /* memory RAG is best-effort */
+      } catch (err) {
+        console.warn(JSON.stringify({ event: 'memory_recall_failed', error: String(err) }));
       }
       try {
         const { ownerRulesPromptBlock } = await import('./scopedMemory');
@@ -792,22 +792,15 @@ export async function handleOracleChatSse(
         });
       }
 
-      // Chat -> facts pipeline (best-effort; high-confidence lines auto-store). A model extractor
-      // can take seconds, so with MEMORY_LLM_EXTRACT on it runs after the reply, not before 'done'.
-      const extraction = (async () => {
-        const { extractFactsFromChat } = await import('./memoryRag');
-        await extractFactsFromChat(env, user, {
-          message,
-          sessionId,
-          autoStore: true,
-          projectId: body.projectId ?? null,
-        });
-      })().catch(() => {
-        /* ignore */
-      });
-      const { memoryLlmExtractEnabled } = await import('./memoryExtract');
-      if (memoryLlmExtractEnabled(env)) scheduleWaitUntil(extraction);
-      else await extraction;
+      // Chat -> facts (best-effort, high-confidence facts auto-store). It runs after the reply,
+      // so a model extractor never holds up 'done'.
+      scheduleWaitUntil(
+        import('./memoryExtract')
+          .then(({ extractChatFacts }) =>
+            extractChatFacts(env, billingId(user), { message, sessionId, autoStore: true, projectId: body.projectId ?? null }),
+          )
+          .catch((err) => console.warn(JSON.stringify({ event: 'memory_extract_error', error: String(err) }))),
+      );
 
       await write('done', {
         ok: true,
