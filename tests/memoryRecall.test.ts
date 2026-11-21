@@ -182,8 +182,11 @@ describe('recallBlock', () => {
   });
 
   it('flag on: ranked lines carry the kind and no score', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
     const env = envWith(seed([{ id: 'f1', kind: 'preference', text: 'We prefer short replies' }]), { MEMORY_RECALL_V2: 'true' });
     const out = await recallBlock(env, 'acc_a', 'short replies');
+    expect(log).toHaveBeenCalledWith(JSON.stringify({ event: 'memory_recall', hits: 1 }));
+    log.mockRestore();
     expect(out.facts).toEqual(['We prefer short replies']);
     expect(out.block).toContain('1. [preference] We prefer short replies');
     expect(out.block).toMatch(/UNTRUSTED_ACCOUNT_MEMORY_[0-9a-f]+_BEGIN/);

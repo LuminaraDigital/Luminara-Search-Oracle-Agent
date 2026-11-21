@@ -84,6 +84,13 @@ describe('parseExtraction', () => {
     expect(keep(source, [{ text: 'We deliver to York' }])).toEqual([]);
   });
 
+  it('compares the negation with the clause, so a negation never moves to the other place', () => {
+    const source = "We don't deliver to York, but we deliver to Leeds.";
+    expect(keep(source, [{ text: 'We do not deliver to Leeds' }])).toEqual([]);
+    expect(keep(source, [{ text: 'We deliver to Leeds' }])).toEqual(['We deliver to Leeds']);
+    expect(keep(source, [{ text: 'We do not deliver to York' }])).toEqual(['We do not deliver to York']);
+  });
+
   it('never turns a question into a fact', () => {
     expect(assertedSentences('Do we deliver to York? We bake daily.')).toEqual(['We bake daily.']);
     expect(keep('Do we deliver to York?', [{ text: 'The user delivers to York' }])).toEqual([]);
@@ -115,9 +122,11 @@ describe('extractChatFacts', () => {
   ];
 
   it('stores confident facts with kind, project and dedupe key; files the rest as pending', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
     const db = createSqliteD1();
     const out = await extractChatFacts(envWith(db), 'acc_a', { message: SOURCE, autoStore: true, projectId: 'p1' }, modelReply(facts));
     expect(out).toMatchObject({ ok: true, extractor: 'model', candidates: 3, stored: 2, duplicates: 0 });
+    expect(log).toHaveBeenCalledWith(JSON.stringify({ event: 'memory_extract', extractor: 'model', candidates: 3, stored: 2, duplicates: 0 }));
     const rows = db.sqlite.prepare(`SELECT kind, project_id, status, content_sha256 FROM memory_facts ORDER BY kind`).all();
     expect(rows.map((r: any) => [r.kind, r.project_id, r.status])).toEqual([
       ['instruction', 'p1', 'active'],

@@ -75,6 +75,11 @@ const NUMBER_WORDS = new Set([
 
 const NEGATION = /\b(not|no|never|none|nobody|nothing|neither|nor|without|cannot)\b|n['’]t\b/i;
 
+/** Clauses of the asserted sentences: a negation belongs to its clause ("not York, but Leeds"). */
+function clauses(sentences: string[]): string[] {
+  return sentences.flatMap((s) => s.split(/[,;:]|\s+(?:but|while|whereas|however|although|though)\s+/i)).map((c) => c.trim()).filter(Boolean);
+}
+
 function contentWords(text: string): string[] {
   return (text.toLowerCase().match(/[\p{L}]+/gu) || []).filter((w) => w.length >= 4 && !STOP_WORDS.has(w));
 }
@@ -107,8 +112,9 @@ function refusal(text: string, asserted: string[]): string | null {
   const allowed = numberTokens(source);
   if ([...numberTokens(text)].some((n) => !allowed.has(n))) return 'number';
   if (groundedShare(text, source) < GROUNDED_SHARE) return 'ungrounded';
-  // Negation must match the user's sentence this fact comes from.
-  const origin = asserted.reduce((best, s) => (groundedShare(text, s) > groundedShare(text, best) ? s : best), asserted[0]);
+  // Negation must match the user's clause this fact comes from.
+  const parts = clauses(asserted);
+  const origin = parts.reduce((best, c) => (groundedShare(text, c) > groundedShare(text, best) ? c : best), parts[0]);
   if (NEGATION.test(text) !== NEGATION.test(origin)) return 'negation';
   return null;
 }
@@ -213,6 +219,8 @@ export async function extractChatFacts(
   const extractor = fromModel ? 'model' : 'regex';
   const candidates = fromModel ?? regexFactCandidates(message);
   const saved = await storeChatFacts(env, accountId, candidates, { ...opts, extractor });
+  // Success counts, so logs show memory filling as well as failing (no text, no account id).
+  console.log(JSON.stringify({ event: 'memory_extract', extractor, candidates: candidates.length, stored: saved.stored, duplicates: saved.duplicates }));
   return { ok: true, extractor, candidates: candidates.length, ...saved };
 }
 

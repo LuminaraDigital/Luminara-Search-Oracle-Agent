@@ -185,6 +185,8 @@ export async function recallBlock(
 ): Promise<RecallBlock> {
   if (memoryRecallV2Enabled(env)) {
     const hits = await recallMemory(env, accountId, query, opts);
+    // Success counts, so logs show recall working (no text, no account id).
+    console.log(JSON.stringify({ event: 'memory_recall', hits: hits.length }));
     if (!hits.length) return NO_RECALL;
     const lines = hits.map((h, i) => `${i + 1}. [${h.kind}] ${h.text}`).join('\n');
     return {
