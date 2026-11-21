@@ -62,7 +62,7 @@ ${termsNav(android)}
     <h2>Labs features</h2>
     <p>Screens marked "Labs" (OracleMind, TimesFM, the Archy harness) are demonstrations. Their numbers are simulated for illustration and must not be relied on as measurements. Labs stay behind developer tools in the default product path.</p>
     <h2>Your keys and accounts</h2>
-    <p>You may use your own provider API keys. You are responsible for those accounts, their costs and their terms. Hosted keys on luminarasuite.com are provided to signed-in users within the free daily allowance or an active plan, and may be rate-limited or withdrawn to prevent abuse. If you enable workspace sync while signed in, workspace content and optional key bags may be stored on our Cloudflare backend for that account.</p>
+    <p>You may use your own provider API keys. You are responsible for those accounts, their costs and their terms. Hosted keys on luminarasuite.com are provided to signed-in users within the free daily allowance or an active plan, and may be rate-limited or withdrawn to prevent abuse. When you are signed in on the website or in the Telegram Mini App, workspace content is synced to our Cloudflare backend for that account automatically. API keys are synced only as an encrypted key bag.</p>
     <h2>Plans and payments</h2>
     <p>${plans}</p>
     <h2>Acceptable use</h2>

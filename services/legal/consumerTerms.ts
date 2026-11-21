@@ -34,7 +34,7 @@ export const COMPANY_SERVICES_URL = 'https://luminara.digital/services/';
 export const ACL_RIGHTS_CLAUSE =
   'Nothing in these terms excludes, restricts or modifies rights you have under the Australian Consumer Law, including a refund or remedy for a major failure.';
 
-export const TERMS_UPDATED = '23 October 2026';
+export const TERMS_UPDATED = '20 November 2026';
 
 export const STARS_REFUND_CLAUSE =
   'For a Stars refund, contact support@luminarasuite.com first. Telegram\'s process is how a Stars refund is paid. Refunds are subject to the Australian Consumer Law.';
