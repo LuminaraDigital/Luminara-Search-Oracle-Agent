@@ -34,6 +34,9 @@ const MAX_FACT_CHARS = 300;
 /** Below this many characters of asserted text there is nothing durable to extract. */
 const MIN_ASSERTED_CHARS = 12;
 const GROUNDED_SHARE = 0.6;
+/** Extraction rows per account per day (stored and pending). At the cap: no model call, no rows. */
+export const CHAT_EXTRACTIONS_DAILY_CAP = 100;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 export function memoryLlmExtractEnabled(env: Pick<Env, 'MEMORY_LLM_EXTRACT'>): boolean {
   return flagEnabled(env.MEMORY_LLM_EXTRACT);
@@ -192,6 +195,8 @@ export type ExtractionResult = {
   candidates: number;
   stored: number;
   duplicates: number;
+  /** True when the account hit the daily cap, so nothing was sent to a model or stored. */
+  capped?: boolean;
 };
 
 type ExtractOpts = { message: string; sessionId?: string; turnId?: string; projectId?: string | null; autoStore?: boolean };
@@ -215,7 +220,15 @@ export async function extractChatFacts(
   fetcher: Fetcher = fetch,
 ): Promise<ExtractionResult> {
   const message = opts.message.trim().slice(0, 4000);
-  const fromModel = memoryLlmExtractEnabled(env) ? await modelCandidates(env, message, fetcher) : null;
+  const useModel = memoryLlmExtractEnabled(env);
+  const today = await env.DB?.prepare(`SELECT COUNT(*) AS n FROM memory_chat_extractions WHERE account_id = ? AND created_at >= ?`)
+    .bind(accountId, Date.now() - DAY_MS)
+    .first<{ n: number }>();
+  if ((today?.n ?? 0) >= CHAT_EXTRACTIONS_DAILY_CAP) {
+    console.warn(JSON.stringify({ event: 'memory_extract_capped', cap: CHAT_EXTRACTIONS_DAILY_CAP }));
+    return { ok: true, extractor: useModel ? 'model' : 'regex', extractionIds: [], candidates: 0, stored: 0, duplicates: 0, capped: true };
+  }
+  const fromModel = useModel ? await modelCandidates(env, message, fetcher) : null;
   const extractor = fromModel ? 'model' : 'regex';
   const candidates = fromModel ?? regexFactCandidates(message);
   const saved = await storeChatFacts(env, accountId, candidates, { ...opts, extractor });

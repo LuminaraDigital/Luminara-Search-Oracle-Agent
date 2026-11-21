@@ -11,9 +11,11 @@
  * published in TencentDB Agent Memory (MIT). This file is written from scratch for Luminara.
  */
 import type { Env } from './env';
+import type { HostedIdentity } from './userTypes';
 import { resolveVectorProvider, searchMemoryVectors } from './memoryRag';
+import { memoryLlmExtractEnabled } from './memoryExtract';
 import { flagEnabled } from './preprodFlags';
-import { withinBudget } from './workerUtils';
+import { billingId, json, withinBudget } from './workerUtils';
 import { wrapUntrustedContent } from '../utils/untrustedContent';
 
 export type RecallBudget = { maxItems: number; maxChars: number; timeoutMs: number };
@@ -199,4 +201,20 @@ export async function recallBlock(
   const lines = hits.map((h, i) => `${i + 1}. (${h.score.toFixed(2)}) ${h.text}`).join('\n');
   // Memory may contain attacker-influenced chat extracts; fence before system prompt merge.
   return { block: `${BLOCK_HEADING}\n${wrapUntrustedContent('ACCOUNT_MEMORY', lines)}`.trim(), facts: hits.map((h) => h.text) };
+}
+
+/**
+ * POST /api/memory/context for any signed-in plan: the memory block the web app's own chat adds
+ * to its prompt (the server Oracle chat adds it itself), and whether the app should send the
+ * user's message to /api/memory/extract afterwards. With MEMORY_RECALL_V2 off the block is
+ * empty, so nothing changes; `recall` and `extract` report the two flags, so the app can stop
+ * asking while both are off.
+ */
+export async function handleMemoryContextRoute(request: Request, env: Env, user: HostedIdentity): Promise<Response> {
+  const body = (await request.json().catch(() => ({}))) as { query?: unknown };
+  const query = typeof body.query === 'string' ? body.query.trim().slice(0, 2000) : '';
+  if (!query) return json({ ok: false, error: 'query required' }, 400);
+  const recall = memoryRecallV2Enabled(env);
+  const memory = recall ? await recallBlock(env, billingId(user), query) : NO_RECALL;
+  return json({ ok: true, ...memory, recall, extract: memoryLlmExtractEnabled(env) });
 }

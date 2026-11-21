@@ -52,6 +52,11 @@ export interface StreamQueryOptions {
   preferredProvider?: NativeEngineId;
   /** When true, native providers may call live_search via tool_calls (also luminara_oracle_native_tools=1). */
   enableNativeTools?: boolean;
+  /**
+   * The server's account-memory block (already fenced as untrusted), from /api/memory/context.
+   * A promise is awaited only when the prompt is built, so the fetch overlaps the live search.
+   */
+  accountMemory?: string | Promise<string>;
 }
 
 import { empiricalCitationService, type EmpiricalCitationSummary } from './audit/empiricalCitationService';
@@ -367,7 +372,8 @@ Respect these consolidated business memories and historical recommendation outco
 
     const chatPlaybooks = opts.skipSearch ? '' : playbookContext(selectChatPlaybooks(prompt), 9000);
     const grounded = tavilyContext ? wrapUntrustedContent('LIVE_SEARCH', tavilyContext) : '';
-    const fullPrompt = `${dnaContext ? dnaContext + '\n\n' : ''}${chatPlaybooks ? chatPlaybooks + '\n\n' : ''}${vfsContext ? vfsContext + '\n\n' : ''}${grounded ? grounded + '\n\n' : ''}USER DIRECTIVE:\n${prompt}`;
+    const accountMemory = ((await opts.accountMemory) ?? '').trim();
+    const fullPrompt = `${dnaContext ? dnaContext + '\n\n' : ''}${accountMemory ? accountMemory + '\n\n' : ''}${chatPlaybooks ? chatPlaybooks + '\n\n' : ''}${vfsContext ? vfsContext + '\n\n' : ''}${grounded ? grounded + '\n\n' : ''}USER DIRECTIVE:\n${prompt}`;
 
     // 1. Primary Native LLM Focus: Groq LPU / NVIDIA NIM / Ollama Local & Cloud
     // With automatic native engine discovery, searching, and instant auto-failover
