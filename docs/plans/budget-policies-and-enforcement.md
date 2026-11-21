@@ -339,6 +339,9 @@ stay the access layer underneath budgets.
   in the tool path, per-project budget cards in the UI, resume-once
   resolution. Optionally extend hard stops to other paid surfaces
   (`providerRelay`, scheduled Sentinel audits) once the MCP path proves out.
+  The one-off Allora study (account `system:calibration`) is a paid surface
+  outside MCP. Its ceiling is a `budget_policies` row. `recordCostEvent`
+  rounds up and requires a provider.
 
 Each phase is independently shippable; P0 data makes P1 threshold defaults
 defensible.
