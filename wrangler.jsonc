@@ -167,7 +167,7 @@
     // Paid Oracle tools require invokeTool+confirmTool unless explicitly enabled.
     "ORACLE_AUTO_TOOLS": "false",
     "MEMORY_RECALL_V2": "true",
-    "MEMORY_LLM_EXTRACT": "true",
+    "MEMORY_LLM_EXTRACT": "false",
     "LAUNCHPAD_ENABLED": "false",
     "LAUNCHPAD_MAINNET_ENABLED": "false",
     "LAUNCHPAD_SKIP_CHAIN_VERIFY": "false",
@@ -436,7 +436,7 @@
         "ORACLE_SERVER_ENABLED": "true",
         "ORACLE_AUTO_TOOLS": "false",
         "MEMORY_RECALL_V2": "true",
-        "MEMORY_LLM_EXTRACT": "true",
+        "MEMORY_LLM_EXTRACT": "false",
         "LAUNCHPAD_ENABLED": "false",
         "LAUNCHPAD_MAINNET_ENABLED": "false",
         "LAUNCHPAD_SKIP_CHAIN_VERIFY": "false",
