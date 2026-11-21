@@ -1675,10 +1675,31 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
   }
 
   // Hosted memory facts (W8 incremental) + RAG / chat→facts
-  if (path === '/memory/facts' || path === '/memory/search' || path === '/memory/extract') {
+  if (path === '/memory/facts' || path === '/memory/search' || path === '/memory/extract' || path === '/memory/context') {
     const who = await identify(request, env);
     if (who.error || !who.user) {
       return withCors(json({ ok: false, error: who.error || 'Unauthorized', code: 'AUTH_REQUIRED' }, 401));
+    }
+    // Account memory for every signed-in plan: the web app's chat reads context before a reply
+    // and sends the user's message for extraction after it. Both are rate limited per account.
+    if ((path === '/memory/extract' || path === '/memory/context') && request.method === 'POST') {
+      const limits =
+        path === '/memory/extract'
+          ? [
+              { action: 'memory_extract', limitPerKey: 6, windowSec: 60 },
+              { action: 'memory_extract_day', limitPerKey: 300, windowSec: 86_400 },
+            ]
+          : [{ action: 'memory_context', limitPerKey: 60, windowSec: 60 }];
+      for (const limit of limits) {
+        const dual = await enforceDualRateLimit(env, { ...limit, accountId: billingId(who.user), ip });
+        if (!dual.ok) return withCors(dual.response);
+      }
+      if (path === '/memory/context') {
+        const { handleMemoryContextRoute } = await import('./memoryRecall');
+        return withCors(await handleMemoryContextRoute(request, env, who.user));
+      }
+      const { handleMemoryExtractRoute } = await import('./memoryExtract');
+      return withCors(await handleMemoryExtractRoute(request, env, who.user));
     }
     const rag = await handleMemoryRagRoute(request, env, who.user, path);
     if (rag) return withCors(rag);
