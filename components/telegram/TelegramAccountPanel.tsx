@@ -1,6 +1,7 @@
 import React, { Suspense, useEffect, useState } from 'react';
 import { isInTelegram, getTelegramUserUnsafe, payWithStars, haptic } from '../../services/telegram/tma';
-import { telegramAuth, createStarsInvoice, activateLicenseKey, fetchQuotaStatus, getServerHealthSync, type TelegramSession } from '../../services/apiClient';
+import { telegramAuth, createStarsInvoice, activateLicenseKey, fetchQuotaStatus, getServerHealthSync, accountKnownSignedIn, type TelegramSession } from '../../services/apiClient';
+import { hasPersistedAuthSession } from '../../services/auth/firebaseIdToken';
 import { TELEGRAM_MINI_APP_URL, isTonAvailable } from '../paywall/paymentOptions';
 import { CHECKOUT_TERM_LINE, TELEGRAM_STARS_HANDOFF } from '../paywall/planCopy';
 import { lazyWithReload } from '../../utils/lazyWithReload';
@@ -66,6 +67,8 @@ export const TelegramAccountBody: React.FC<TelegramAccountPanelProps> = ({
 
   useEffect(() => {
     if (typeof fetch !== 'function') return;
+    // Signed-out web visitors (Pricing) would only get a 401 here.
+    if (!isInTelegram() && !accountKnownSignedIn() && !hasPersistedAuthSession()) return;
     void fetchEnquiryDesk('default')
       .then((res) => {
         if (res.ok && Array.isArray(res.enquiries) && res.enquiries.length > 0) {
