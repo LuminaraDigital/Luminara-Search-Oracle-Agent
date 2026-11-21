@@ -317,7 +317,7 @@
         "DESKTOP_GITHUB_REPO": "LuminaraDigital/Luminara-Search-Oracle-Agent",
         "ORACLE_SERVER_ENABLED": "true",
         "ORACLE_AUTO_TOOLS": "false",
-        "ORACLE_AGENT_ENABLED": "false",
+        "ORACLE_AGENT_ENABLED": "true",
         "WATCH_AGENT_ENABLED": "false",
         "MEMORY_RECALL_V2": "true",
         "MEMORY_LLM_EXTRACT": "true",
