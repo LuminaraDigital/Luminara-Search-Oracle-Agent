@@ -64,6 +64,7 @@ import { PROJECT_MONITOR_MCP_TOOLS } from './mcpProjectMonitorTools';
 import { refuseMonitorMeter } from './projectMonitor';
 import { FIX_DRAFT_MCP_TOOLS } from './fixDraftRoute';
 import { enforceHabitatScope, SELF_DRIVING_MCP_TOOLS } from './selfDrivingHabitat';
+import { AGENTIC_MEMORY_MCP_TOOLS } from './mcpAgenticMemoryTools';
 import { AGENT_MCP_TOOLS, agentPromptGet, agentPromptsList } from './mcpAgents';
 import { webappOrigin } from './agentReportService';
 import {
@@ -148,7 +149,7 @@ export function capToolResult(result: McpToolResult): McpToolResult {
 
 const DAILY_LIMIT_CODES = new Set(['MCP_DAILY_LIMIT', 'MCP_PAID_DAILY_LIMIT', 'MCP_QUOTA_STORE']);
 
-function textResult(text: string, structured?: Record<string, unknown>, isError = false): McpToolResult {
+export function textResult(text: string, structured?: Record<string, unknown>, isError = false): McpToolResult {
   return { text, structuredContent: structured, isError };
 }
 
@@ -469,6 +470,7 @@ const TOOLS: McpToolDef[] = [
   ...PROJECT_HISTORY_MCP_TOOLS,
   ...PROJECT_MONITOR_MCP_TOOLS,
   ...SELF_DRIVING_MCP_TOOLS,
+  ...AGENTIC_MEMORY_MCP_TOOLS,
   ...AGENT_MCP_TOOLS,
   ...PAID_TOOL_CATALOGUE.map((meta) => ({
     name: meta.name,

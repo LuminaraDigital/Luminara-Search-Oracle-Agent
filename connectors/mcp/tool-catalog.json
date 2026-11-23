@@ -1124,6 +1124,214 @@
     }
   },
   {
+    "name": "memory_remember",
+    "title": "Remember a scoped fact",
+    "description": "Uses no credits. Stores or supersedes a project-scoped memory fact or bi-temporal entity relationship edge.",
+    "creditClass": "free",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "domain": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "preference",
+            "brand_fact",
+            "decision",
+            "finding_outcome",
+            "episode",
+            "constraint",
+            "fact"
+          ]
+        },
+        "importance": {
+          "type": "number"
+        },
+        "confidence": {
+          "type": "number"
+        },
+        "supersedesFactId": {
+          "type": "string"
+        },
+        "subjectEntity": {
+          "type": "string"
+        },
+        "predicate": {
+          "type": "string"
+        },
+        "objectEntity": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Remember a scoped fact",
+      "readOnlyHint": false,
+      "openWorldHint": false,
+      "destructiveHint": true
+    }
+  },
+  {
+    "name": "memory_recall",
+    "title": "Recall unified memory",
+    "description": "Uses no credits. Performs symbolic dRAG + hybrid vector/recency/importance recall across project context, findings, temporal edges, and facts.",
+    "creditClass": "free",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string"
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "domain": {
+          "type": "string"
+        },
+        "topK": {
+          "type": "number"
+        }
+      },
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Recall unified memory",
+      "readOnlyHint": true,
+      "openWorldHint": false,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "memory_forget",
+    "title": "Forget a memory fact",
+    "description": "Uses no credits. Soft-deletes a memory fact, removes its vector embedding, and appends a verifiable DELETE entry in memory_history.",
+    "creditClass": "free",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "factId": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "factId"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Forget a memory fact",
+      "readOnlyHint": false,
+      "openWorldHint": false,
+      "destructiveHint": true
+    }
+  },
+  {
+    "name": "memory_timeline",
+    "title": "Query relationship timeline",
+    "description": "Uses no credits. Queries the bi-temporal knowledge graph (valid_from .. valid_to) with optional point-in-time asOfTimestamp.",
+    "creditClass": "free",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "domain": {
+          "type": "string"
+        },
+        "subjectEntity": {
+          "type": "string"
+        },
+        "predicate": {
+          "type": "string"
+        },
+        "activeOnly": {
+          "type": "boolean"
+        },
+        "asOfTimestamp": {
+          "type": "number"
+        },
+        "limit": {
+          "type": "number"
+        }
+      },
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Query relationship timeline",
+      "readOnlyHint": true,
+      "openWorldHint": false,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "memory_vault_snapshot",
+    "title": "Create a memory vault snapshot",
+    "description": "Uses no credits. Builds a canonical Merkle-rooted memory snapshot, optionally encrypts with AES-256-GCM, and prepares a TON anchor payload.",
+    "creditClass": "free",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "domain": {
+          "type": "string"
+        },
+        "passphrase": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Create a memory vault snapshot",
+      "readOnlyHint": false,
+      "openWorldHint": false,
+      "destructiveHint": true
+    }
+  },
+  {
+    "name": "memory_vault_verify_leaf",
+    "title": "Verify a memory vault leaf",
+    "description": "Uses no credits. Generates and verifies a selective-disclosure Merkle inclusion proof for a single memory leaf hash.",
+    "creditClass": "free",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "snapshotId": {
+          "type": "string"
+        },
+        "leafHash": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "snapshotId",
+        "leafHash"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Verify a memory vault leaf",
+      "readOnlyHint": true,
+      "openWorldHint": false,
+      "destructiveHint": false
+    }
+  },
+  {
     "name": "ask_auditor",
     "title": "Luminara Auditor",
     "description": "Uses no credits. Luminara Auditor. Reports what Luminara last recorded as wrong with a site: stored findings, the date of the last audit on record, and the latest saved report. Reads stored records only: it does not crawl, re-check or change anything.",

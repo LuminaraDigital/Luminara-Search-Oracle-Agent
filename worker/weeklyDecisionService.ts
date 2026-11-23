@@ -125,13 +125,25 @@ export async function handleWeeklyDecisionsRoute(
         .run();
       const row = await env.DB.prepare(`SELECT * FROM weekly_decisions WHERE id = ?`).bind(existing.id).first();
       try {
-        await enqueueDreamEvent(env, {
-          accountId,
-          domain,
-          eventType: 'recommendation_updated',
-          sourceId: existing.id,
-          payload: { title, whyText: body.whyText, status: 'updated', confidence: body.confidence },
-        });
+        const { ingestWeeklyDecisionToGraph } = await import('./memoryAutoIngest');
+        await Promise.all([
+          enqueueDreamEvent(env, {
+            accountId,
+            domain,
+            eventType: 'recommendation_updated',
+            sourceId: existing.id,
+            payload: { title, whyText: body.whyText, status: 'updated', confidence: body.confidence },
+          }),
+          ingestWeeklyDecisionToGraph(env, {
+            accountId,
+            projectId: body.projectId || null,
+            domain,
+            weekStart: week,
+            headline: title,
+            actionText: body.whyText || title,
+            decisionId: existing.id,
+          }),
+        ]);
       } catch {
         /* ignore dreaming queue failure */
       }
@@ -168,13 +180,25 @@ export async function handleWeeklyDecisionsRoute(
       .run();
     const row = await env.DB.prepare(`SELECT * FROM weekly_decisions WHERE id = ?`).bind(id).first();
     try {
-      await enqueueDreamEvent(env, {
-        accountId,
-        domain,
-        eventType: 'recommendation_updated',
-        sourceId: id,
-        payload: { title, whyText: body.whyText, status: 'created', confidence: body.confidence },
-      });
+      const { ingestWeeklyDecisionToGraph } = await import('./memoryAutoIngest');
+      await Promise.all([
+        enqueueDreamEvent(env, {
+          accountId,
+          domain,
+          eventType: 'recommendation_updated',
+          sourceId: id,
+          payload: { title, whyText: body.whyText, status: 'created', confidence: body.confidence },
+        }),
+        ingestWeeklyDecisionToGraph(env, {
+          accountId,
+          projectId: body.projectId || null,
+          domain,
+          weekStart: week,
+          headline: title,
+          actionText: body.whyText || title,
+          decisionId: id,
+        }),
+      ]);
     } catch {
       /* ignore dreaming queue failure */
     }

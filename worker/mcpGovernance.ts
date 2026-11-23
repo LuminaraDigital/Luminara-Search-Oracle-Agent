@@ -74,6 +74,13 @@ export const TOOL_GOVERNANCE: Record<string, ToolGovernanceEntry> = {
   ask_auditor: { risk: 'read', status: 'active' },
   ask_fixer: { risk: 'read', status: 'active' },
   ask_coach: { risk: 'read', status: 'active' },
+  // Unified Agentic Memory, Temporal Graph, and Anamnesis Vault catalogue (0059)
+  memory_remember: { risk: 'write', status: 'active' },
+  memory_recall: { risk: 'read', status: 'active' },
+  memory_forget: { risk: 'write', status: 'active' },
+  memory_timeline: { risk: 'read', status: 'active' },
+  memory_vault_snapshot: { risk: 'write', status: 'active' },
+  memory_vault_verify_leaf: { risk: 'read', status: 'active' },
 };
 
 /** What approving does, shown to the owner. Fixed text: never built from a caller's arguments. */

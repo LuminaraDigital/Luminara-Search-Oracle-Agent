@@ -53,6 +53,12 @@ const MCP_TOOL_TITLES: Record<string, string> = {
   compile_review_to_skill: 'Compile a review into a skill',
   mint_habitat_token: 'Mint a habitat token',
   draft_fix: 'Draft a fix',
+  memory_remember: 'Remember a scoped fact',
+  memory_recall: 'Recall unified memory',
+  memory_forget: 'Forget a memory fact',
+  memory_timeline: 'Query relationship timeline',
+  memory_vault_snapshot: 'Create a memory vault snapshot',
+  memory_vault_verify_leaf: 'Verify a memory vault leaf',
 };
 
 /** Reaches a live index, a public page, or an external CMS. Closed tools stay false. */

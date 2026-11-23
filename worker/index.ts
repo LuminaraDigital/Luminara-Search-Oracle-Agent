@@ -151,6 +151,8 @@ import { pruneMcpOAuthRefreshRows } from './mcpOAuthRefresh';
 import { enforceMcpOauthIpLimit, MCP_OAUTH_REGISTER_PER_MIN, MCP_OAUTH_TOKEN_PER_MIN } from './mcpLimits';
 import { executeOracleGatewayTask, type OracleGatewayRequest } from './oracleGateway';
 import { createMemoryFact, listMemoryFacts } from './memoryService';
+import { handleUnifiedMemoryRoute } from './unifiedMemoryRouter';
+import { handleMemoryVaultRoute } from './memoryVaultService';
 import { compileFeedbackIntoSkillRule, handleAgentHabitatRoute } from './selfDrivingHabitat';
 import { handlePrivacyRoute, purgeExpiredPrivacyDeletes } from './privacyService';
 import { isCronMapped, jobsForCron, shouldRunScheduledJob } from './scheduledJobs';
@@ -1672,10 +1674,36 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
   }
 
   // Hosted memory facts (W8 incremental) + RAG / chat→facts
-  if (path === '/memory/facts' || path === '/memory/search' || path === '/memory/extract' || path === '/memory/context') {
-    const who = await identify(request, env);
+  // Hosted memory facts (W8 incremental) + RAG / chat->facts + Unified Agentic Memory + Anamnesis Vault
+  if (
+    path === '/memory/facts' ||
+    path === '/memory/search' ||
+    path === '/memory/extract' ||
+    path === '/memory/context' ||
+    path.startsWith('/memory/unified/') ||
+    path.startsWith('/memory/vault/')
+  ) {
+    const who = identifiedForRequest(request) ?? (await identify(request, env));
     if (who.error || !who.user) {
       return withCors(json({ ok: false, error: who.error || 'Unauthorized', code: 'AUTH_REQUIRED' }, 401));
+    }
+    if (request.method === 'POST' && (path.startsWith('/memory/unified/') || path.startsWith('/memory/vault/'))) {
+      const dual = await enforceDualRateLimit(env, {
+        action: 'memory_agentic',
+        accountId: billingId(who.user),
+        ip,
+        limitPerKey: 30,
+        windowSec: 60,
+      });
+      if (!dual.ok) return withCors(dual.response);
+    }
+    if (path.startsWith('/memory/unified/')) {
+      const unifiedRes = await handleUnifiedMemoryRoute(request, env, who.user, path);
+      if (unifiedRes) return withCors(unifiedRes);
+    }
+    if (path.startsWith('/memory/vault/')) {
+      const vaultRes = await handleMemoryVaultRoute(request, env, who.user, path);
+      if (vaultRes) return withCors(vaultRes);
     }
     // Account memory for every signed-in plan: the web app's chat reads context before a reply
     // and sends the user's message for extraction after it. Both are rate limited per account.
@@ -2378,7 +2406,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
   }
 
   const oracleSessionMatch = path.match(
-    /^\/oracle\/session\/([^/]+)\/(events|approval|callback|state(?:\/patch)?|history)$/,
+    /^\/oracle\/session\/([^/]+)\/(events|approval|callback|state(?:\/patch)?|history|checkpoint)$/,
   );
   if (oracleSessionMatch) {
     if (!isOracleServerEnabled(env)) {
