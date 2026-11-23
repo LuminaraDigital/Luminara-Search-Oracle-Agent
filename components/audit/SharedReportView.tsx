@@ -146,6 +146,16 @@ export const SharedReportView: React.FC<{
                 )}
               </div>
             )}
+            {Boolean(payload.visibilityPassList?.length) && (
+              <section className="mb-6 rounded-2xl border border-white/10 p-4" aria-label="Checks passed">
+                <p className="font-mono text-[10px] uppercase tracking-widest text-gold-light">Checks passed</p>
+                <ul className="mt-2 space-y-1">
+                  {payload.visibilityPassList?.map((label) => (
+                    <li key={label} className="text-sm text-gray-200">{label}</li>
+                  ))}
+                </ul>
+              </section>
+            )}
             <ReportDisplay
               markdownText={payload.markdownText}
               sources={payload.sources}

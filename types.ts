@@ -150,6 +150,10 @@ export interface BusinessDNA {
   realestateProfileUrl?: string;
   domainProfileUrl?: string;
   negativeConstraints?: string[]; // Topics to never bring up, blacklisted competitors, or banned claims
+  /** Short facts AI should get right, in the owner's words: a phone number, a founding year. */
+  keyFacts?: string[];
+  /** When the owner confirmed these facts. Unset means every visibility check reads as Estimated. */
+  factsConfirmedAt?: number;
 }
 
 export interface ToolExecution {
@@ -900,6 +904,10 @@ export interface GenerateOptions {
    * `fallback` marker on the result is carried into what is shown or stored with the text.
    */
   allowFallback?: boolean;
+  /** Ask the provider to report what the call cost. */
+  reportCost?: boolean;
+  /** Use only the key the person pasted. With none set the call fails, never falling back to a hosted key. */
+  ownKeyOnly?: boolean;
 }
 
 export interface ChatTurn {
@@ -916,6 +924,10 @@ export interface GenerateResult {
   finishReason: GenerateFinishReason;
   toolCalls?: ToolCall[];
   latencyMs?: number;
+  /** What the provider reported the call cost, when asked and when it said. */
+  costUsd?: number;
+  /** True when the provider reported no token counts, so `tokenUsage` is an estimate. */
+  tokensEstimated?: boolean;
   /** Present when the Worker's fallback model wrote this text. */
   fallback?: FallbackAnswerInfo;
 }

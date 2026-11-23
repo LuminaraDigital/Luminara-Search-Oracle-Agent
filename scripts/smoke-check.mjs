@@ -39,9 +39,13 @@ const REQUIRED_D1_MIGRATIONS = [
   'migrations/0043_conversion_enquiry_spine.sql',
   'migrations/0046_scoped_review_rules.sql',
   'migrations/0047_weekly_visibility_email.sql',
+  'migrations/0059_visibility_tests.sql',
 ];
 
 const REQUIRED_D1_TABLES = [
+  'visibility_test_runs',
+  'visibility_test_answers',
+  'visibility_test_verdicts',
   'mcp_action_requests',
   'budget_policies',
   'cost_events',

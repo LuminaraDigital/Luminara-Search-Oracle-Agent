@@ -63,6 +63,7 @@ export const PRIVACY_SECTIONS: PrivacySection[] = [
       'On Cloudflare: a D1 database (users, workspace JSON, and account memory facts) and KV (subscriptions, quota, workspace fallback, Sentinel targets, short-lived TON orders, and an enrichment cache). Hosting and logs are on Cloudflare.',
       'Firebase Authentication holds email, password, and Google sign-in credentials for the luminara-suite project.',
       'Stripe holds the card payment. We keep the plan id, expiry, and checkout session id.',
+      'Visibility checks: for each check, our D1 database keeps the result (pass, fail, or not checked), a short reason that can quote the business facts it was checked against, the website, and which AI model answered with the cost and time it reported. We do not keep the questions or the answers themselves. The audit history limit on your plan applies separately to audit checks and to checks on your own AI accounts. We delete older ones past that limit, delete all of them with your account, and include them in your data export.',
     ],
   },
   {

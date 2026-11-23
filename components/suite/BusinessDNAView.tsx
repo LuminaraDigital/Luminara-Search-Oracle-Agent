@@ -12,6 +12,7 @@ import { optionalPortalUrl } from '../../services/audit/agencyProfile';
 import { IndustrySelect } from '../industries/IndustrySelect';
 import { DEFAULT_INDUSTRY_ID, industryProfile } from '../../services/industries/industryProfiles';
 import { saveAccountIndustry } from '../../services/industries/industryClient';
+import { BusinessFactsPanel } from './BusinessFactsPanel';
 
 interface BusinessDNAViewProps {
   currentDNA: BusinessDNA | null;
@@ -43,6 +44,13 @@ export function savedProfile(form: BusinessDNA): { ok: true; dna: BusinessDNA } 
     return { ok: false, error: 'Portal links must be https pages on realestate.com.au or domain.com.au.' };
   }
   return { ok: true, dna: { ...form, realestateProfileUrl, domainProfileUrl } };
+}
+
+/** Visibility checks grade these, so a change means the owner has not confirmed the new version. */
+export function gradedDetailsChanged(before: BusinessDNA | null, after: BusinessDNA): boolean {
+  const graded = (dna: BusinessDNA | null) =>
+    JSON.stringify([dna?.name, dna?.suburb, dna?.industry, dna?.keyFacts ?? [], dna?.negativeConstraints ?? []]);
+  return graded(before) !== graded(after);
 }
 
 export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, onDNAGenerated, onNavigateToTool, onRouteToOracleMind: _onRouteToOracleMind }) => {
@@ -102,7 +110,14 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
     setLoading(true);
     setError(null);
     try {
-      const extracted = await geminiService.extractBusinessDNA(input);
+      const scanned = await geminiService.extractBusinessDNA(input);
+      // A scan never overwrites what the owner typed. It may change a graded detail, so confirmation is cleared.
+      const extracted: BusinessDNA = {
+        ...scanned,
+        keyFacts: currentDNA?.keyFacts,
+        negativeConstraints: currentDNA?.negativeConstraints ?? scanned.negativeConstraints,
+        factsConfirmedAt: undefined,
+      };
       setFormData(extracted);
       onDNAGenerated(extracted);
       syncToVfs(extracted);
@@ -125,7 +140,7 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
         setProfileError(saved.error);
         return;
       }
-      const next = saved.dna;
+      const next = gradedDetailsChanged(currentDNA, saved.dna) ? { ...saved.dna, factsConfirmedAt: undefined } : saved.dna;
       setProfileError(null);
       setFormData(next);
       onDNAGenerated(next);
@@ -413,6 +428,17 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
               </div>
             </div>
           </div>
+
+          <BusinessFactsPanel
+            dna={formData}
+            editing={editing}
+            onChange={setFormData}
+            onConfirm={(next) => {
+              setFormData(next);
+              onDNAGenerated(next);
+              syncToVfs(next);
+            }}
+          />
 
           {profileError && <p className="text-xs text-red-300" role="alert">{profileError}</p>}
           {editing && (

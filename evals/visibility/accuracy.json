@@ -1,0 +1,87 @@
+[
+  {
+    "name": "named-and-correct",
+    "facts": {
+      "brand": "Harbour Realty", "domain": "harbourrealty.com.au", "suburb": "Manly",
+      "keyFacts": ["Open since 2011"], "bannedClaims": ["cheapest agent"], "confirmed": true
+    },
+    "answers": [{
+      "id": "a0", "engine": "web_search", "intent": "commercial", "prompt": "best agent in Manly",
+      "text": "Harbour Realty in Manly has been open since 2011.",
+      "sources": ["https://harbourrealty.com.au/about"]
+    }],
+    "expect": {
+      "brand_named:brand": "pass",
+      "site_cited:site": "pass",
+      "fact_stated:manly": "pass",
+      "fact_stated:open-since-2011": "pass",
+      "claim_absent:cheapest-agent": "pass"
+    }
+  },
+  {
+    "name": "wrong-year-is-not-a-pass",
+    "facts": {
+      "brand": "Harbour Realty", "domain": "harbourrealty.com.au",
+      "keyFacts": ["Open since 2011"], "bannedClaims": [], "confirmed": true
+    },
+    "answers": [{
+      "id": "a0", "engine": "web_search", "intent": "informational", "prompt": "who is Harbour Realty",
+      "text": "Harbour Realty has been open since 2019.", "sources": []
+    }],
+    "expect": { "brand_named:brand": "not_measured", "site_cited:site": "not_measured", "fact_stated:open-since-2011": "fail" }
+  },
+  {
+    "name": "a-namesake-is-not-the-business",
+    "facts": { "brand": "Luminara", "domain": "luminara.digital", "keyFacts": ["Sydney"], "bannedClaims": [], "confirmed": true },
+    "answers": [{
+      "id": "a0", "engine": "web_search", "intent": "informational", "prompt": "best candles in Sydney",
+      "text": "Luminara candles are sold at luminara.com in Sydney.", "sources": ["https://luminara.com"]
+    }],
+    "expect": { "site_cited:site": "fail" }
+  },
+  {
+    "name": "not-mentioned-means-nothing-to-check",
+    "facts": { "brand": "Harbour Realty", "domain": "harbourrealty.com.au", "keyFacts": ["Open since 2011"], "bannedClaims": [], "confirmed": false },
+    "answers": [{
+      "id": "a0", "engine": "web_search", "intent": "commercial", "prompt": "best agent",
+      "text": "Try Coastal Homes.", "sources": []
+    }],
+    "expect": { "brand_named:brand": "fail", "fact_stated:open-since-2011": "not_measured" }
+  },
+  {
+    "name": "a-failed-call-measures-nothing",
+    "facts": { "brand": "Harbour Realty", "domain": "harbourrealty.com.au", "keyFacts": [], "bannedClaims": [], "confirmed": true },
+    "answers": [{
+      "id": "a0", "engine": "model", "intent": "commercial", "prompt": "best agent",
+      "text": "", "sources": [], "error": "The call to this AI failed"
+    }],
+    "expect": { "brand_named:brand": "not_measured", "site_cited:site": "not_measured" }
+  },
+  {
+    "name": "repeating-the-name-back-proves-nothing",
+    "facts": { "brand": "Apple Cleaning", "domain": "applecleaning.com.au", "keyFacts": [], "bannedClaims": [], "confirmed": true },
+    "answers": [{
+      "id": "a0", "engine": "model", "intent": "informational", "prompt": "What is applecleaning.com.au?",
+      "text": "applecleaning.com.au is a website about Apple Cleaning.", "sources": ["https://applecleaning.com.au"]
+    }],
+    "expect": { "brand_named:brand": "not_measured", "site_cited:site": "not_measured" }
+  },
+  {
+    "name": "a-denied-claim-is-not-the-claim",
+    "facts": { "brand": "Harbour Realty", "domain": "harbourrealty.com.au", "keyFacts": [], "bannedClaims": ["cheapest agent"], "confirmed": true },
+    "answers": [{
+      "id": "a0", "engine": "model", "intent": "commercial", "prompt": "best agent in Manly",
+      "text": "Harbour Realty is not the cheapest agent in town.", "sources": []
+    }],
+    "expect": { "brand_named:brand": "pass", "claim_absent:cheapest-agent": "pass" }
+  },
+  {
+    "name": "a-refusal-fails",
+    "facts": { "brand": "Harbour Realty", "domain": "harbourrealty.com.au", "keyFacts": [], "bannedClaims": [], "confirmed": true },
+    "answers": [{
+      "id": "a0", "engine": "model", "intent": "commercial", "prompt": "best agent",
+      "text": "I'm sorry, I can't help with that.", "sources": []
+    }],
+    "expect": { "brand_named:brand": "fail" }
+  }
+]

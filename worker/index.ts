@@ -117,6 +117,7 @@ import { guardApiAccessRoute, resolveMcpUser } from './apiAccess';
 import { handleShareRoute } from './shareService';
 import { handleFindingsRoute } from './findingsService';
 import { handleAuditHistoryRoute } from './auditHistoryRoute';
+import { handleVisibilityTestsRoute } from './visibilityTestsRoute';
 import { handleGcpOidcRoute } from './gcpOidc';
 import { handleWifSmokeRoute } from './wifSmoke';
 import { handleLlmCrawlerRoute } from './llmCrawlerRoute';
@@ -1585,6 +1586,19 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     });
     if (!dualFind.ok) return withCors(dualFind.response);
     return withCors(await handleFindingsRoute(request, env, path));
+  }
+
+  if (path.startsWith('/visibility-tests/')) {
+    const whoTests = await identify(request, env);
+    const dualTests = await enforceDualRateLimit(env, {
+      action: 'visibility_tests',
+      accountId: whoTests.user ? billingId(whoTests.user) : null,
+      ip,
+      limitPerKey: 60,
+      windowSec: 60,
+    });
+    if (!dualTests.ok) return withCors(dualTests.response);
+    return withCors(await handleVisibilityTestsRoute(request, env, path));
   }
 
   if (path === '/audits/history') {

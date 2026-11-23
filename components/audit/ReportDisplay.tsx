@@ -87,6 +87,8 @@ interface ReportDisplayProps {
   healthSite?: boolean;
   /** Checklist sentence from the page-health card, used when the findings do not name a check. */
   checkLine?: string;
+  /** The saved visibility run. The Worker builds the share link's list of passed checks from it. */
+  visibilityRunId?: string;
 }
 
 /**
@@ -129,6 +131,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
   crawlerChecks,
   suppressLiveMetrics = false,
   hostedRail,
+  visibilityRunId,
   healthSite = false,
   checkLine,
 }) => {
@@ -235,6 +238,7 @@ export const ReportDisplay: React.FC<ReportDisplayProps> = ({
         sources,
         projectId,
         branding: reportBrand?.kind === 'workspace' ? undefined : branding,
+        visibilityRunId,
       });
       if (!res.ok || !res.url) {
         setShareMessage(res.error || 'Could not create share link');

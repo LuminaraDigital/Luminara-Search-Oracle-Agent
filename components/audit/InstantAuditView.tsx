@@ -17,6 +17,9 @@ import { auditReportHash, publishReportHash } from '../../services/audit/auditRe
 import { FreeAiAnswerCard } from './FreeAiAnswerCard';
 import { AiAnswerSamplePanel } from '../marketing/AiAnswerSamplePanel';
 import type { AiAnswerSample } from '../../services/audit/aiAnswerSample';
+import { VisibilityTestsCard } from './VisibilityTestsCard';
+import { rawRunFromAudit } from '../../services/visibilityTests/client';
+import type { RawVisibilityRun } from '../../services/visibilityTests/types';
 import { FirstRunTour } from '../onboarding/FirstRunTour';
 import { ReportPdfButton } from './ReportPdfButton';
 import type { AuditHistoryEntry } from '../../services/audit/auditHistoryService';
@@ -135,6 +138,10 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
   const [loading, setLoading] = useState(false);
   const [progressStage, setProgressStage] = useState('');
   const [report, setReport] = useState<GuardedAuditReport | null>(null);
+  const [visibilityRun, setVisibilityRun] = useState<RawVisibilityRun | null>(null);
+  const [visibilityRunId, setVisibilityRunId] = useState<string | undefined>(undefined);
+  /** Set on a past report, whose raw record is not in memory. */
+  const [savedVisibilityDomain, setSavedVisibilityDomain] = useState<string | null>(null);
   const [boardFindings, setBoardFindings] = useState<
     import('../../services/audit/findingBoardService').BoardFinding[]
   >([]);
@@ -220,6 +227,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       setInlineValidationError(validationErr);
       setScoutSummary(null);
       setReport(null);
+      setVisibilityRun(null);
       setError(null);
       setPersistHint(null);
       setCrewEvents([]);
@@ -262,6 +270,9 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
     setProbeSample(null);
     setScoutSummary(null);
     setReport(null);
+    setVisibilityRun(null);
+    setVisibilityRunId(undefined);
+    setSavedVisibilityDomain(null);
     setStrategySaved(false);
     setShareNote(null);
     setAttestation(null);
@@ -297,6 +308,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
       });
       setCrewMeasurement(crewResult.measurementStatus);
       setScoutSummary(summary);
+      setVisibilityRun(rawRunFromAudit(formattedUrl, dna, crewResult.serpEvidence, crewResult.scrapedPages, crewResult.discoveryEvidence));
       if (degraded) {
         setLoading(false);
         setProgressStage('');
@@ -518,8 +530,15 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
     }
   };
 
+  const clearVisibilityChecks = () => {
+    setVisibilityRun(null);
+    setVisibilityRunId(undefined);
+    setSavedVisibilityDomain(null);
+  };
+
   const handleReset = () => {
     setReport(null);
+    clearVisibilityChecks();
     setError(null);
     setPersistHint(null);
     setStrategySaved(false);
@@ -541,6 +560,8 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
     setFocus(nextFocus);
     setUrl(entry.domain);
     setReport(saved);
+    clearVisibilityChecks();
+    setSavedVisibilityDomain(entry.domain);
     window.history.replaceState(null, '', `/${auditReportHash(entry.id)}`);
     setError(null);
     setScoutSummary(null);
@@ -989,6 +1010,15 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
             serviceArea={dna?.suburb && dna.state ? `${dna.suburb}, ${dna.state}` : dna?.suburb}
             findingTitle={pickPrimaryFinding(boardFindings)?.title}
           />
+          {(visibilityRun || savedVisibilityDomain) && (
+            <VisibilityTestsCard
+              raw={visibilityRun}
+              domain={visibilityRun?.facts.domain ?? savedVisibilityDomain ?? ''}
+              dna={dna}
+              isGuest={isGuest}
+              onRunSaved={setVisibilityRunId}
+            />
+          )}
           <ReportDisplay
             markdownText={report.text}
             sources={report.sources}
@@ -1013,6 +1043,7 @@ export const InstantAuditView: React.FC<InstantAuditViewProps> = ({
             boardFindings={boardFindings}
             crawlerChecks={scoutSummary?.crawlerChecks}
             checkLine={scoutSummary?.badges.find((badge) => badge.label === 'Page health')?.value}
+            visibilityRunId={visibilityRunId}
           />
         </div>
       )}
