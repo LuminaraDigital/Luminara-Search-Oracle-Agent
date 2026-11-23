@@ -30,6 +30,52 @@ const TON_WALLET_PROTOCOLS = [
 ];
 const EXTERNAL_PROTOCOLS = new Set(['https:', 'http:', 'mailto:', ...TON_WALLET_PROTOCOLS]);
 
+/**
+ * Same-origin document/marketing pages that should leave the Electron window for the system browser
+ * so users are never stranded inside static HTML or marketing chrome without a Back button.
+ */
+const EXTERNAL_DOCUMENT_PREFIXES = [
+  '/desktop',
+  '/faq',
+  '/contact',
+  '/privacy',
+  '/privacy-policy',
+  '/terms',
+  '/terms-of-service',
+  '/tos',
+  '/delete-account',
+  '/docs',
+];
+
+function isExternalDocumentPath(pathname) {
+  const normalized = pathname.toLowerCase().replace(/\/+$/, '') || '/';
+  return EXTERNAL_DOCUMENT_PREFIXES.some(
+    (prefix) => normalized === prefix || normalized.startsWith(`${prefix}/`) || normalized === `${prefix}.html`,
+  );
+}
+
+/** Strip desktop-shell query flags before opening the app URL in the user's system browser. */
+function stripDesktopClientParam(rawUrl) {
+  const parsed = parseUrl(rawUrl);
+  if (!parsed) return rawUrl;
+  if (parsed.searchParams.get('client') === 'desktop') parsed.searchParams.delete('client');
+  if (parsed.searchParams.get('desktop') === '1') parsed.searchParams.delete('desktop');
+  return parsed.toString();
+}
+
+/** Build Electron MenuItem templates for Help and Tray from electron/externalLinks.json. */
+function buildExternalMenuItems(links, openExternal) {
+  const toItem = (link) => ({
+    label: link.label,
+    click: () => openExternal(link.href),
+  });
+  const site = links.filter((link) => link.group === 'site').map(toItem);
+  const apps = links.filter((link) => link.group === 'apps').map(toItem);
+  const help = site.length && apps.length ? [...site, { type: 'separator' }, ...apps] : [...site, ...apps];
+  const tray = links.filter((link) => link.tray).map(toItem);
+  return { help, tray };
+}
+
 function parseUrl(rawUrl) {
   try {
     return new URL(rawUrl);
@@ -74,7 +120,9 @@ function createShellPolicy({ webappUrl, isDev, firebaseAuthDomain, shellPageUrls
   const shellPagePaths = new Set(shellPageUrls.map(filePathKey).filter(Boolean));
 
   function isAllowedNavigation(rawUrl) {
-    return appOrigins.has(originOf(rawUrl));
+    const parsed = parseUrl(rawUrl);
+    if (!parsed || !appOrigins.has(parsed.origin)) return false;
+    return !isExternalDocumentPath(parsed.pathname);
   }
 
   /** 'child': the sign-in popup or a blank print window; 'external': system browser; 'deny': nothing opens. */
@@ -92,7 +140,7 @@ function createShellPolicy({ webappUrl, isDev, firebaseAuthDomain, shellPageUrls
   }
 
   function isTrustedSender(frameUrl) {
-    return shellPagePaths.has(filePathKey(frameUrl)) || isAllowedNavigation(frameUrl);
+    return shellPagePaths.has(filePathKey(frameUrl)) || appOrigins.has(originOf(frameUrl));
   }
 
   return { isAllowedNavigation, windowOpenAction, isPermissionGranted, isTrustedSender };
@@ -122,4 +170,11 @@ function createTrustedIpc(ipcMain, policy) {
   };
 }
 
-module.exports = { createShellPolicy, createNavigationGuard, createTrustedIpc };
+module.exports = {
+  createShellPolicy,
+  createNavigationGuard,
+  createTrustedIpc,
+  isExternalDocumentPath,
+  stripDesktopClientParam,
+  buildExternalMenuItems,
+};

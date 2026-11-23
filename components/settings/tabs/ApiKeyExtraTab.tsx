@@ -1,5 +1,4 @@
 import React from 'react';
-import { DesktopUpdatesPanel } from '../../desktop/DesktopUpdatesPanel';
 import { labsToggleVisible } from '../../../services/ui/labsAccess';
 
 export interface ApiKeyExtraTabProps {
@@ -13,8 +12,6 @@ export const ApiKeyExtraTab: React.FC<ApiKeyExtraTabProps> = ({
 }) => {
   return (
     <div className="space-y-4 text-xs">
-      <DesktopUpdatesPanel />
-
       {labsToggleVisible() && <label className="flex items-center justify-between gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/5 cursor-pointer">
         <div>
           <span className="text-xs font-semibold text-gray-200 block">Developer Tools & Labs Previews</span>
