@@ -50,14 +50,21 @@ function makeEnv(flags: Partial<Env> = {}) {
   return env;
 }
 
-async function send(env: Env, text: string, modelReply: string) {
+async function send(env: Env, text: string, modelReply: string, extracted: unknown[] = []) {
   let systemPrompt = '';
+  let extractionCalls = 0;
   const sends: Array<Record<string, any>> = [];
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url: string, init: { body: string }) => {
       if (url.startsWith('https://api.groq.com/')) {
-        systemPrompt = JSON.parse(init.body).messages[0].content;
+        const body = JSON.parse(init.body);
+        if (body.response_format) {
+          // The fact extractor's call (JSON mode), not the chat reply.
+          extractionCalls += 1;
+          return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ facts: extracted }) } }] }));
+        }
+        systemPrompt = body.messages[0].content;
         return { ok: true, json: async () => ({ choices: [{ message: { content: modelReply } }] }) };
       }
       if (url.startsWith('https://api.telegram.org/')) {
@@ -68,8 +75,13 @@ async function send(env: Env, text: string, modelReply: string) {
     }),
   );
   await handleTelegramUpdate({ message: { chat: { id: FROM_ID }, from: { id: FROM_ID }, text } }, env);
-  return { systemPrompt, sends };
+  return { systemPrompt, sends, extractionCalls: () => extractionCalls };
 }
+
+const chatFacts = (env: Env) =>
+  (env.DB as any).sqlite
+    .prepare(`SELECT account_id, kind, text FROM memory_facts WHERE source = 'chat' ORDER BY text`)
+    .all();
 
 describe('Telegram memory recall', () => {
   beforeEach(() => {
@@ -103,5 +115,35 @@ describe('Telegram memory recall', () => {
     // Without the memory, nobody gave that figure in this chat, so the filter removes it.
     const off = await send(makeEnv(), 'Where does my bakery deliver?', reply);
     expect(off.sends.at(-1)?.text).not.toContain('1,200 visits');
+  });
+});
+
+describe('Telegram memory extraction', () => {
+  beforeEach(() => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  const message = 'We are a family bakery in Leeds and we deliver to York.';
+  const proposed = [{ kind: 'profile', text: 'Family bakery in Leeds that delivers to York', confidence: 0.9 }];
+
+  it('flag on: facts from the user’s message are saved to the same account after the reply', async () => {
+    const env = makeEnv({ MEMORY_LLM_EXTRACT: 'true' });
+    const turn = await send(env, message, 'Add a York delivery page.', proposed);
+    await vi.waitFor(() => expect(chatFacts(env)).toHaveLength(1));
+    expect(chatFacts(env)).toEqual([{ account_id: String(FROM_ID), kind: 'profile', text: 'Family bakery in Leeds that delivers to York' }]);
+    expect(turn.extractionCalls()).toBe(1);
+  });
+
+  it('flag off: nothing is extracted and no extra model call is made', async () => {
+    const env = makeEnv();
+    const turn = await send(env, message, 'Add a York delivery page.', proposed);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(turn.extractionCalls()).toBe(0);
+    expect(chatFacts(env)).toEqual([]);
   });
 });

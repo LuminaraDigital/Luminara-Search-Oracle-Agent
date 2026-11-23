@@ -3,16 +3,16 @@
  * Checks the FTS index stays in step with memory_facts, that recall never crosses accounts,
  * projects or status, that budgets hold, and that the flag-off path is the old one.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createSqliteD1 } from './helpers/sqliteD1';
 import {
   applyRecallBudget,
   ftsQueryFromText,
   memoryRecallV2Enabled,
+  recallBlock,
   recallMemory,
   rrfMerge,
 } from '../worker/memoryRecall';
-import { ragContextForOracle } from '../worker/memoryRag';
 import type { Env } from '../worker/env';
 
 type FactRow = {
@@ -66,6 +66,10 @@ describe('ftsQueryFromText', () => {
   it('quotes every term so FTS operators in user text are inert', () => {
     const q = ftsQueryFromText('bakery NEAR(leeds) -york * "x" OR col:value')!;
     expect(q).toBe('"bakery" OR "near" OR "leeds" OR "york" OR "col" OR "value"');
+  });
+
+  it('keeps two-letter terms such as AI and drops two-letter filler', () => {
+    expect(ftsQueryFromText('is AI good for us?')).toBe('"ai" OR "good"');
   });
 
   it('returns null for text with nothing searchable', () => {
@@ -142,30 +146,55 @@ describe('recallMemory', () => {
     const slow = {
       prepare: () => ({ bind: () => ({ all: () => new Promise((r) => setTimeout(() => r({ results: [{ id: 'x', text: 'late', kind: 'fact', rank: -1 }] }), 200)) }) }),
     };
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     await expect(recallMemory(envWith(slow), 'acc_a', 'candle', { budget: { timeoutMs: 20 } })).resolves.toEqual([]);
+    expect(warn.mock.calls.map((c) => String(c[0]))).toContain(JSON.stringify({ event: 'memory_recall_timeout', timeoutMs: 20 }));
+    warn.mockRestore();
+  });
+
+  it('finds a fact about AI from a two-letter query word', async () => {
+    const env = envWith(seed([{ id: 'ai', text: 'We use AI to write product descriptions' }]));
+    expect((await recallMemory(env, 'acc_a', 'what about AI?')).map((h) => h.id)).toEqual(['ai']);
+  });
+
+  it('keeps a vector hit only if D1 still allows it, with D1 text, and merges it with its FTS twin', async () => {
+    const db = seed(rows);
+    const matches = ['mine', 'rule', 'gone', 'expired', 'project_y', 'other_account', 'missing'].map((id, i) => ({
+      id: `acc_a:${id}`,
+      score: 1 - i / 10,
+      metadata: { text: 'stale index text' },
+    }));
+    const env = envWith(db, { MEMORY_VECTORS: { query: async () => ({ matches }), upsert: async () => ({}) } as any });
+    const hits = await recallMemory(env, 'acc_a', 'candle shop', { projectId: 'p_x' });
+    expect(hits.map((h) => h.id).sort()).toEqual(['mine', 'project_x']);
+    expect(hits.find((h) => h.id === 'mine')?.text).toBe('We prefer short replies about our candle shop');
+    expect(hits[0].id).toBe('mine');
   });
 });
 
-describe('ragContextForOracle', () => {
+describe('recallBlock', () => {
   it('flag off: keeps the old keyword path and block format', async () => {
     const env = envWith(seed([{ id: 'f1', text: 'We prefer short replies' }]));
     expect(memoryRecallV2Enabled(env)).toBe(false);
-    const out = await ragContextForOracle(env, 'acc_a', 'short replies');
+    const out = await recallBlock(env, 'acc_a', 'short replies');
     expect(out.facts).toEqual(['We prefer short replies']);
     expect(out.block).toContain('1. (2.00) We prefer short replies');
   });
 
   it('flag on: ranked lines carry the kind and no score', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
     const env = envWith(seed([{ id: 'f1', kind: 'preference', text: 'We prefer short replies' }]), { MEMORY_RECALL_V2: 'true' });
-    const out = await ragContextForOracle(env, 'acc_a', 'short replies');
+    const out = await recallBlock(env, 'acc_a', 'short replies');
+    expect(log).toHaveBeenCalledWith(JSON.stringify({ event: 'memory_recall', hits: 1 }));
+    log.mockRestore();
     expect(out.facts).toEqual(['We prefer short replies']);
     expect(out.block).toContain('1. [preference] We prefer short replies');
-    expect(out.block).toContain('UNTRUSTED_ACCOUNT_MEMORY');
+    expect(out.block).toMatch(/UNTRUSTED_ACCOUNT_MEMORY_[0-9a-f]+_BEGIN/);
     expect(out.block).not.toMatch(/\(\d+\.\d+\)/);
   });
 
   it('flag on with no match gives no block', async () => {
     const env = envWith(seed([{ id: 'f1', text: 'We prefer short replies' }]), { MEMORY_RECALL_V2: 'true' });
-    expect(await ragContextForOracle(env, 'acc_a', 'pricing for dentists')).toEqual({ block: '', facts: [] });
+    expect(await recallBlock(env, 'acc_a', 'pricing for dentists')).toEqual({ block: '', facts: [] });
   });
 });

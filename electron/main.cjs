@@ -10,7 +10,14 @@ const { app, BrowserWindow, shell, Menu, Tray, nativeImage, ipcMain, dialog, ses
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { applyWindowsHardening } = require('./windowsHardening.cjs');
-const { createShellPolicy, createNavigationGuard, createTrustedIpc } = require('./security.cjs');
+const {
+  createShellPolicy,
+  createNavigationGuard,
+  createTrustedIpc,
+  stripDesktopClientParam,
+  buildExternalMenuItems,
+} = require('./security.cjs');
+const { desktopLinks: DESKTOP_EXTERNAL_LINKS } = require('./externalLinks.json');
 const { setupAutoUpdater } = require('./updater.cjs');
 const { setupCrashReporting, installProcessErrorHandlers } = require('./crashReporting.cjs');
 const { createDesktopCoordinator } = require('./coordinator/desktopCoordinator.cjs');
@@ -65,14 +72,17 @@ const APP_ID = 'digital.luminara.suite';
 const IS_WINDOWS = process.platform === 'win32';
 const IS_DEV = !app.isPackaged;
 
-const DEFAULT_WEBAPP_URL = 'https://luminarasuite.com/';
+const DEFAULT_WEBAPP_URL = 'https://www.luminarasuite.com/';
 const DEV_WEBAPP_URL = process.env.LUMINARA_DEV_URL || 'http://localhost:3000/';
 
+function resolveBaseWebappUrl() {
+  if (process.env.LUMINARA_WEBAPP_URL) return process.env.LUMINARA_WEBAPP_URL;
+  if (IS_DEV && process.env.LUMINARA_USE_LOCAL !== '0') return DEV_WEBAPP_URL;
+  return DEFAULT_WEBAPP_URL;
+}
+
 function resolveWebappUrl() {
-  let raw = DEFAULT_WEBAPP_URL;
-  if (process.env.LUMINARA_WEBAPP_URL) raw = process.env.LUMINARA_WEBAPP_URL;
-  else if (IS_DEV && process.env.LUMINARA_USE_LOCAL !== '0') raw = DEV_WEBAPP_URL;
-  return withDesktopClientParam(raw);
+  return withDesktopClientParam(resolveBaseWebappUrl());
 }
 
 /** Mark the session as the native shell so the web app skips marketing views. */
@@ -107,12 +117,26 @@ const shellPolicy = createShellPolicy({
 /** The Google sign-in popup and blank print windows: no preload, so no desktop bridge. */
 const POPUP_WINDOW_OPTIONS = { webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } };
 
-const openInSystem = (url) => shell.openExternal(url);
+function openInSystem(url) {
+  if (shellPolicy.windowOpenAction(url) !== 'external') return;
+  shell.openExternal(url).catch((err) => {
+    console.warn('[desktop] openExternal failed:', err?.message || err);
+  });
+}
+
+function showMainWindow() {
+  if (!mainWindow) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+const EXTERNAL_MENU_ITEMS = buildExternalMenuItems(DESKTOP_EXTERNAL_LINKS, openInSystem);
 
 function openWindow({ url }) {
   const action = shellPolicy.windowOpenAction(url);
   if (action === 'child') return { action: 'allow', overrideBrowserWindowOptions: POPUP_WINDOW_OPTIONS };
-  if (action === 'external') void openInSystem(url);
+  if (action === 'external') openInSystem(url);
   return { action: 'deny' };
 }
 
@@ -219,7 +243,7 @@ function buildMenu() {
         },
         {
           label: 'Open in browser',
-          click: () => void shell.openExternal(resolveWebappUrl()),
+          click: () => openInSystem(stripDesktopClientParam(resolveBaseWebappUrl())),
         },
         { type: 'separator' },
         { role: 'quit', label: 'Quit Luminara Suite' },
@@ -252,10 +276,8 @@ function buildMenu() {
     {
       label: 'Help',
       submenu: [
-        {
-          label: 'Website',
-          click: () => void shell.openExternal('https://luminarasuite.com/'),
-        },
+        ...EXTERNAL_MENU_ITEMS.help,
+        { type: 'separator' },
         {
           label: 'Check for shell updates',
           click: () => {
@@ -271,7 +293,7 @@ function buildMenu() {
               type: 'info',
               title: 'Luminara Suite',
               message: 'Luminara Suite Desktop',
-              detail: `Shell version ${app.getVersion()}\nLoads ${resolveWebappUrl()}\nSame product as the web and Telegram apps.`,
+              detail: `Shell version ${app.getVersion()}\nLoads ${resolveWebappUrl()}\nSame product as the web, Telegram, and Android apps.`,
             });
           },
         },
@@ -289,11 +311,11 @@ function createTray() {
     Menu.buildFromTemplate([
       {
         label: 'Show Luminara Suite',
-        click: () => {
-          mainWindow?.show();
-          mainWindow?.focus();
-        },
+        click: showMainWindow,
       },
+      { type: 'separator' },
+      ...EXTERNAL_MENU_ITEMS.tray,
+      { type: 'separator' },
       {
         label: 'Quit',
         click: () => {
@@ -303,10 +325,7 @@ function createTray() {
       },
     ]),
   );
-  tray.on('double-click', () => {
-    mainWindow?.show();
-    mainWindow?.focus();
-  });
+  tray.on('double-click', showMainWindow);
 }
 
 let mainUpdaterApi = null;
@@ -387,13 +406,7 @@ const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
 } else {
-  app.on('second-instance', () => {
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.show();
-      mainWindow.focus();
-    }
-  });
+  app.on('second-instance', showMainWindow);
 
   app.whenReady().then(() => {
     configureLlmSessionSecurity();

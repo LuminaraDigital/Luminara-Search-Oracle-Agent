@@ -78,6 +78,11 @@ export function isNativeClientShell(): boolean {
   return isDesktopShell();
 }
 
+/** True only for the Windows desktop surface (never inside Telegram). */
+export function isDesktopSurface(inTelegram = false): boolean {
+  return !inTelegram && isDesktopShell();
+}
+
 export function getDesktopBridge(): LuminaraDesktopBridge | null {
   if (typeof window === 'undefined') return null;
   return window.luminaraDesktop || null;

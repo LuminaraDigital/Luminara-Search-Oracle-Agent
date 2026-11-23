@@ -1,10 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { Button } from '../ui/Button';
-import { getDesktopBridge, isDesktopShell, type DesktopUpdateStatus } from '../../services/desktop/desktopShell';
+import {
+  getDesktopBridge,
+  isDesktopSurface,
+  type DesktopUpdateStatus,
+} from '../../services/desktop/desktopShell';
+import { isInTelegram } from '../../services/telegram/tma';
+import { DesktopExternalLinks } from './DesktopExternalLinks';
 
 /**
- * Windows desktop shell updates (electron-updater via GitHub Releases).
- * Web/Telegram sessions never see this panel.
+ * Windows desktop shell updates (electron-updater via GitHub Releases) and outbound links.
+ * Web and Telegram sessions never see this panel.
  */
 export const DesktopUpdatesPanel: React.FC = () => {
   const bridge = getDesktopBridge();
@@ -44,7 +50,7 @@ export const DesktopUpdatesPanel: React.FC = () => {
     };
   }, [bridge]);
 
-  if (!isDesktopShell() || !bridge) return null;
+  if (!isDesktopSurface(isInTelegram())) return null;
 
   const statusLabel = (() => {
     if (!supportsPrefs) {
@@ -68,79 +74,90 @@ export const DesktopUpdatesPanel: React.FC = () => {
     <div className="space-y-3 p-3 rounded-xl bg-white/[0.02] border border-white/5">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="text-xs font-bold text-gray-200">Windows desktop shell</p>
+          <p className="text-xs font-bold text-gray-200">Windows desktop app</p>
           <p className="text-[10px] text-gray-500 font-mono">
-            Shell {shellVersion || '…'} · App content updates with every Cloudflare deploy
+            {bridge
+              ? `Shell ${shellVersion || '…'} · App content updates with every Cloudflare deploy`
+              : 'App content updates with every Cloudflare deploy'}
           </p>
         </div>
       </div>
 
-      <label className={`flex items-center justify-between gap-3 ${supportsPrefs ? 'cursor-pointer' : 'opacity-60'}`}>
-        <span className="text-xs text-gray-300">
-          Automatic shell updates
-          <span className="block text-[10px] text-gray-500 mt-0.5">
-            When on, Luminara checks GitHub Releases after launch and installs on quit
-          </span>
-        </span>
-        <input
-          type="checkbox"
-          checked={autoUpdate}
-          disabled={!supportsPrefs}
-          onChange={async (e) => {
-            if (!supportsPrefs || typeof bridge.setAutoUpdate !== 'function') return;
-            const next = e.target.checked;
-            setAutoUpdate(next);
-            try {
-              await bridge.setAutoUpdate(next);
-            } catch {
-              setAutoUpdate(!next);
-            }
-          }}
-          className="accent-gold w-4 h-4"
-        />
-      </label>
+      {bridge && (
+        <>
+          <label className={`flex items-center justify-between gap-3 ${supportsPrefs ? 'cursor-pointer' : 'opacity-60'}`}>
+            <span className="text-xs text-gray-300">
+              Automatic shell updates
+              <span className="block text-[10px] text-gray-500 mt-0.5">
+                When on, Luminara checks GitHub Releases after launch and installs on quit
+              </span>
+            </span>
+            <input
+              type="checkbox"
+              checked={autoUpdate}
+              disabled={!supportsPrefs}
+              onChange={async (e) => {
+                if (!supportsPrefs || typeof bridge.setAutoUpdate !== 'function') return;
+                const next = e.target.checked;
+                setAutoUpdate(next);
+                try {
+                  await bridge.setAutoUpdate(next);
+                } catch {
+                  setAutoUpdate(!next);
+                }
+              }}
+              className="accent-gold w-4 h-4"
+            />
+          </label>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          variant="secondary"
-          size="xs"
-          loading={busy}
-          disabled={!supportsPrefs}
-          className="normal-case tracking-normal"
-          onClick={async () => {
-            if (typeof bridge.checkForUpdates !== 'function') return;
-            setBusy(true);
-            try {
-              await bridge.checkForUpdates();
-            } finally {
-              setBusy(false);
-            }
-          }}
-        >
-          Check for updates
-        </Button>
-        {status?.status === 'downloaded' && typeof bridge.installUpdate === 'function' && (
-          <Button
-            variant="primary"
-            size="xs"
-            loading={busy}
-            disabled={busy}
-            className="normal-case tracking-normal"
-            onClick={async () => {
-              if (busy) return;
-              setBusy(true);
-              try {
-                await bridge.installUpdate?.();
-              } finally {
-                setBusy(false);
-              }
-            }}
-          >
-            Restart and install
-          </Button>
-        )}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="secondary"
+              size="xs"
+              loading={busy}
+              disabled={!supportsPrefs}
+              className="normal-case tracking-normal"
+              onClick={async () => {
+                if (typeof bridge.checkForUpdates !== 'function') return;
+                setBusy(true);
+                try {
+                  await bridge.checkForUpdates();
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              Check for updates
+            </Button>
+            {status?.status === 'downloaded' && typeof bridge.installUpdate === 'function' && (
+              <Button
+                variant="primary"
+                size="xs"
+                loading={busy}
+                disabled={busy}
+                className="normal-case tracking-normal"
+                onClick={async () => {
+                  if (busy) return;
+                  setBusy(true);
+                  try {
+                    await bridge.installUpdate?.();
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+              >
+                Restart and install
+              </Button>
+            )}
+          </div>
+          <p className="text-[10px] font-mono text-gray-500">{statusLabel}</p>
+        </>
+      )}
+
+      <div className="border-t border-white/5 pt-2.5 space-y-1.5">
+        <p className="text-[10px] font-mono uppercase tracking-wider text-gray-500">Links</p>
+        <DesktopExternalLinks />
       </div>
-      <p className="text-[10px] font-mono text-gray-500">{statusLabel}</p>
     </div>
   );
 };

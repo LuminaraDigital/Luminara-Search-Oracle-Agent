@@ -59,16 +59,3 @@ export async function requestPrivacyDelete(): Promise<{
   return (await r.json()) as { ok: boolean; jobId?: string; confirmToken?: string; error?: string };
 }
 
-export async function extractChatMemory(message: string, sessionId?: string): Promise<void> {
-  const base = apiBase();
-  if (!base) return;
-  try {
-    await workerFetchWithAuthRetry(`${base}/api/memory/extract`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ message, sessionId, autoStore: true }),
-    });
-  } catch {
-    /* best-effort */
-  }
-}

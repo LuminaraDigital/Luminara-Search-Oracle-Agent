@@ -6,8 +6,7 @@
  * project or domain, so one client's rule never reaches another client's chat.
  */
 import type { Env } from './env';
-import { sha256Hex } from './workerUtils';
-import { appendMemoryHistory } from './memoryRag';
+import { appendMemoryHistory, memoryContentKey } from './memoryRag';
 import { listProjects } from './projectService';
 import { wrapUntrustedContent } from '../utils/untrustedContent';
 import { sanitizePii } from '../services/trust/piiSanitizer';
@@ -52,9 +51,7 @@ export async function rememberConstraint(
 ): Promise<{ ok: true; factId: string; deduplicated: boolean } | { ok: false; error: string }> {
   if (!env.DB) return { ok: false, error: 'Database unavailable' };
   const { accountId, projectId, domain, text, source } = input;
-  const contentSha256 = await sha256Hex(
-    `${projectId || ''}|${domain || ''}|${text.toLowerCase().replace(/\s+/g, ' ')}`,
-  );
+  const contentSha256 = await memoryContentKey({ projectId, domain }, text);
   try {
     const existing = await env.DB.prepare(
       `SELECT id FROM memory_facts WHERE account_id = ? AND content_sha256 = ? AND status = 'active' LIMIT 1`,
