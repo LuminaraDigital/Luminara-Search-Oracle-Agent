@@ -216,6 +216,23 @@ export async function handleFindingsRoute(
       if (row) upserted.push(rowToPublic(row));
     }
 
+    try {
+      const { ingestAuditFindingsToGraph } = await import('./memoryAutoIngest');
+      await ingestAuditFindingsToGraph(env, {
+        accountId,
+        domain,
+        findings: upserted.map((f) => ({
+          id: f.id,
+          severity: f.severity,
+          category: f.category,
+          title: f.title,
+          status: (f.status as 'open' | 'in_progress' | 'done' | 'wont_fix') || 'open',
+        })),
+      });
+    } catch {
+      /* optional bi-temporal graph ingest */
+    }
+
     return json({ ok: true, auditRunId, findings: upserted, skipped });
   }
 
@@ -259,6 +276,26 @@ export async function handleFindingsRoute(
     const row = await env.DB.prepare(`SELECT * FROM audit_findings WHERE id = ? AND account_id = ?`)
       .bind(findingId, accountId)
       .first<FindingRow>();
+    if (row) {
+      try {
+        const { ingestAuditFindingsToGraph } = await import('./memoryAutoIngest');
+        await ingestAuditFindingsToGraph(env, {
+          accountId,
+          domain: row.domain,
+          findings: [
+            {
+              id: row.id,
+              severity: row.severity,
+              category: row.category,
+              title: row.title,
+              status: (row.status as 'open' | 'in_progress' | 'done' | 'wont_fix') || 'open',
+            },
+          ],
+        });
+      } catch {
+        /* optional bi-temporal graph ingest */
+      }
+    }
     return json({ ok: true, finding: row ? rowToPublic(row) : null });
   }
 

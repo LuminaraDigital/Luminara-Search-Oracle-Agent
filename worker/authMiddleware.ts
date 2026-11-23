@@ -142,6 +142,7 @@ export const PROTECTED_API_ROUTES: ProtectedRouteSpec[] = [
   { pattern: /^\/api-keys(\/|$)/ },
   { pattern: /^\/agent-connections(\/|$)/ },
   { pattern: /^\/memory\/facts$/, methods: ['GET', 'POST'] },
+  { pattern: /^\/memory\/(unified|vault)(\/|$)/ },
   { pattern: /^\/budgets\/self(\/resume)?$/, methods: ['GET', 'PUT', 'POST'] },
   { pattern: /^\/mcp-action-requests(\/[^/]+)?$/, methods: ['GET'] },
   { pattern: /^\/mcp-action-requests\/[^/]+\/(approve|deny)$/, methods: ['POST'] },

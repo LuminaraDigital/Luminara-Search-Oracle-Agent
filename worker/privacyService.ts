@@ -81,6 +81,14 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
     `SELECT id, text, source, created_at FROM memory_facts WHERE account_id = ?`,
     accountId,
   );
+  const memoryVaultSnapshots = await q<Record<string, unknown>>(
+    `SELECT id, project_id, domain, merkle_root, leaf_count, cid, storage_backend, chain, network, tx_hash, created_at
+     FROM memory_vault_snapshots WHERE account_id = ? ORDER BY created_at DESC LIMIT 100`,
+    accountId,
+  ).catch((err) => {
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+    return [] as Record<string, unknown>[];
+  });
   const decisions = await q<Record<string, unknown>>(
     `SELECT id, domain, week_key, title, status, created_at, updated_at FROM weekly_decisions WHERE account_id = ?`,
     accountId,
@@ -351,6 +359,7 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
       'project_monitor_alerts',
       'account_industries',
       'client_workspaces',
+      'memory_vault_snapshots',
     ],
     users,
     workspace: workspace.map((w) => ({
@@ -370,6 +379,7 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
     agentReports: reports,
     memoryFacts: facts,
     memoryEdges,
+    memoryVaultSnapshots,
     weeklyDecisions: decisions,
     auditRuns: audits,
     auditHistory,
@@ -506,7 +516,25 @@ async function softDeleteAccount(env: Env, accountId: string, deps?: DataPlaneDe
   await drop('crm_properties', `DELETE FROM crm_properties WHERE account_id = ?`);
   await drop('crm_contacts', `DELETE FROM crm_contacts WHERE account_id = ?`);
   await drop('external_effects', `DELETE FROM external_effects WHERE account_id = ?`);
+  if (env.DESKTOP_RELEASES) {
+    try {
+      const r2VaultRows = await db
+        .prepare(`SELECT cid FROM memory_vault_snapshots WHERE account_id = ? AND storage_backend = 'r2'`)
+        .bind(accountId)
+        .all<{ cid: string | null }>();
+      for (const r of r2VaultRows.results ?? []) {
+        if (r.cid) {
+          await env.DESKTOP_RELEASES.delete(`memory-vault/${accountId}/${r.cid}.json`).catch(() => null);
+        }
+      }
+    } catch {
+      /* best effort R2 vault cleanup */
+    }
+  }
   await drop('memory_edges', `DELETE FROM memory_edges WHERE account_id = ?`);
+  await drop('memory_vault_snapshots', `DELETE FROM memory_vault_snapshots WHERE account_id = ?`);
+  await drop('agent_trace_spans', `DELETE FROM agent_trace_spans WHERE account_id = ?`);
+  await drop('mcp_external_servers', `DELETE FROM mcp_external_servers WHERE account_id = ?`);
   await drop('project_context_sections', `DELETE FROM project_context_sections WHERE project_id IN (SELECT id FROM projects WHERE account_id = ?)`);
   await drop('project_competitors', `DELETE FROM project_competitors WHERE project_id IN (SELECT id FROM projects WHERE account_id = ?)`);
   await drop('project_key_pages', `DELETE FROM project_key_pages WHERE project_id IN (SELECT id FROM projects WHERE account_id = ?)`);
