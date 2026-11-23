@@ -17,6 +17,10 @@ import {
 } from './settings/tabs';
 import { AccountPanel } from './settings/AccountPanel';
 import { NotificationsPanel } from './settings/NotificationsPanel';
+import { DesktopUpdatesPanel } from './desktop/DesktopUpdatesPanel';
+import { isDesktopSurface } from '../services/desktop/desktopShell';
+import { isInTelegram } from '../services/telegram/tma';
+import { PUBLIC_PRIVACY_URL, PUBLIC_TERMS_URL } from '../services/legal/privacyCopy';
 
 interface ApiKeyModalProps {
   isOpen: boolean;
@@ -28,6 +32,7 @@ type TabType = 'account' | 'overview' | 'llm' | 'search' | 'scraping' | 'extra' 
 
 export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKeySaved }) => {
   const [activeTab, setActiveTab] = useState<TabType>('account');
+  const inDesktop = isDesktopSurface(isInTelegram());
   const { requestConfirm, confirmModal } = useConfirm();
   const [statuses, setStatuses] = useState<ProviderStatus[]>([]);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -371,6 +376,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
         <div className="p-6 overflow-y-auto space-y-4 flex-1">
           {activeTab === 'account' && (
             <>
+              <DesktopUpdatesPanel />
               <AccountPanel />
               <NotificationsPanel />
             </>
@@ -516,9 +522,27 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onKey
           </Button>
 
           <div className="flex items-center gap-2 text-[10px] text-gray-400">
-            <a href="/privacy" onClick={onClose} className="hover:text-gold transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none rounded">Privacy</a>
+            <a
+              href={inDesktop ? PUBLIC_PRIVACY_URL : '/privacy'}
+              target={inDesktop ? '_blank' : undefined}
+              rel={inDesktop ? 'noopener noreferrer' : undefined}
+              onClick={onClose}
+              className="hover:text-gold transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none rounded"
+            >
+              Privacy
+              {inDesktop && <span className="sr-only"> (opens in browser)</span>}
+            </a>
             <span className="text-gray-600">·</span>
-            <a href="/terms" onClick={onClose} className="hover:text-gold transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none rounded">Terms</a>
+            <a
+              href={inDesktop ? PUBLIC_TERMS_URL : '/terms'}
+              target={inDesktop ? '_blank' : undefined}
+              rel={inDesktop ? 'noopener noreferrer' : undefined}
+              onClick={onClose}
+              className="hover:text-gold transition-colors focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none rounded"
+            >
+              Terms
+              {inDesktop && <span className="sr-only"> (opens in browser)</span>}
+            </a>
           </div>
 
           <div className="flex items-center gap-3">

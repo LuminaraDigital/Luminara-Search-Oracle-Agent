@@ -2,8 +2,10 @@ import React, { Suspense, useEffect, useId, useRef, useState } from 'react';
 import type { AuthMode } from './AuthPanel';
 import { lazyWithReload } from '../../utils/lazyWithReload';
 import { isInTelegram, getTelegramUserUnsafe } from '../../services/telegram/tma';
+import { isDesktopSurface } from '../../services/desktop/desktopShell';
 import type { AppAuthState } from '../../services/auth/useAppAuth';
 import { MINI_APP_URL, botUsernameFromMiniAppUrl } from '../../services/referrals/rules';
+import { DesktopExternalLinks } from '../desktop/DesktopExternalLinks';
 import { BrandLoader } from '../intro/BrandLoader';
 import { ICONS } from '../../constants';
 import { LIVE_ANSWER_CHECKS } from '../../services/marketing/engineCoverage';
@@ -68,6 +70,7 @@ export const AuthRequiredScreen: React.FC<{
 
   // Prefer auth-hook Telegram signal (survives background init) over a one-shot module read.
   const inTelegram = Boolean(auth.retryTelegram) || isInTelegram();
+  const inDesktop = isDesktopSurface(inTelegram);
   const tgUser = inTelegram ? getTelegramUserUnsafe() : null;
 
   useEffect(() => {
@@ -192,7 +195,7 @@ export const AuthRequiredScreen: React.FC<{
     ? CARD_CHECKOUT_ACCOUNT_LINE
     : (mode === 'signup'
       ? 'Start your Luminara Suite account to save audits, build your business profile, and run hosted checks.'
-      : 'Access your account and continue your journey with us across web, Telegram, and desktop.');
+      : 'Sign in to open your saved audits, business profile, and plan across web, Windows, Android, and Telegram.');
   const accountPoints = forCardCheckout
     ? FREE_ACCOUNT_POINTS.filter((point) => !point.includes('No card needed'))
     : FREE_ACCOUNT_POINTS;
@@ -228,7 +231,7 @@ export const AuthRequiredScreen: React.FC<{
                 onClick={onBackToMarketing}
                 className="lx-link text-sm"
               >
-                ← Back to home
+                {inDesktop ? '← Back to Instant Audit' : '← Back to home'}
               </button>
             )}
           </div>
@@ -257,6 +260,13 @@ export const AuthRequiredScreen: React.FC<{
               chromeless
             />
           </Suspense>
+
+          {inDesktop && !isModal && (
+            <DesktopExternalLinks
+              className="border-t border-gold/15 pt-4"
+              linkClassName="lx-link inline-flex items-center min-h-6 py-0.5 text-xs"
+            />
+          )}
         </div>
       </div>
 
@@ -280,7 +290,7 @@ export const AuthRequiredScreen: React.FC<{
             </ul>
           </div>
           <p className="relative z-10 mt-auto text-xs text-[var(--color-ink-2)]">
-            One account works on the web, Windows, Telegram and MCP.
+            One account works on the web, Windows, Android, Telegram, and MCP.
           </p>
         </div>
       </div>

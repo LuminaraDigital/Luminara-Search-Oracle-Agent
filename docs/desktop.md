@@ -14,7 +14,7 @@ This starts Vite on port 3000 and opens Electron against `http://localhost:3000`
 To point the shell at production while developing:
 
 ```bash
-set LUMINARA_WEBAPP_URL=https://luminarasuite.com/
+set LUMINARA_WEBAPP_URL=https://www.luminarasuite.com/
 npx electron .
 ```
 
@@ -55,7 +55,7 @@ Unsigned builds trigger Windows SmartScreen ("Windows protected your PC"). Full 
 
 ## Domain, TON, and multi-user access
 
-Desktop users hit `https://luminarasuite.com`, so:
+Desktop users hit `https://www.luminarasuite.com`, so:
 
 - Firebase Auth and hosted keys use the existing Worker gates
 - `public/tonconnect-manifest.json` remains valid (same origin)
@@ -68,8 +68,8 @@ Download page: `/desktop`. Installer: `/desktop/windows` (R2 when enabled, else 
 Installed Windows builds check GitHub Releases for shell updates (`electron-updater`).
 
 - **Automatic updates (default on):** quiet check ~8s after launch; download in background; install on quit.
-- **Toggle:** Settings → Overview → "Automatic shell updates" (also Help → Check for shell updates).
-- **App content** (UI, Worker APIs, BYOK relay) updates whenever Cloudflare deploys `luminarasuite.com`; no installer required.
+- **Toggle:** Settings -> Account -> "Automatic shell updates" (also Help -> Check for shell updates).
+- **App content** (UI, Worker APIs, BYOK relay) updates whenever Cloudflare deploys `www.luminarasuite.com`; no installer required.
 - Dev (`npx electron .`) skips update checks.
 
 R2 mirror: `npm run desktop:mirror-r2`. Full checklist: [`docs/desktop-distribution.md`](desktop-distribution.md).

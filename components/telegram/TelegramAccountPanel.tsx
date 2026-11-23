@@ -1,5 +1,6 @@
 import React, { Suspense, useEffect, useState } from 'react';
 import { isInTelegram, getTelegramUserUnsafe, payWithStars, haptic } from '../../services/telegram/tma';
+import { isDesktopSurface } from '../../services/desktop/desktopShell';
 import { telegramAuth, createStarsInvoice, activateLicenseKey, fetchQuotaStatus, getServerHealthSync, type TelegramSession } from '../../services/apiClient';
 import { TELEGRAM_MINI_APP_URL, isTonAvailable } from '../paywall/paymentOptions';
 import { CHECKOUT_TERM_LINE, TELEGRAM_STARS_HANDOFF } from '../paywall/planCopy';
@@ -149,6 +150,7 @@ export const TelegramAccountBody: React.FC<TelegramAccountPanelProps> = ({
     void setEnquiryTakeoverApi(enquiryId, { paused: nextPaused }).catch(() => null);
   };
   const inTg = isInTelegram();
+  const inDesktop = isDesktopSurface(inTg);
   const tonOpen = !inTg && isTonAvailable(getServerHealthSync());
 
   const refresh = async () => {
@@ -411,12 +413,24 @@ export const TelegramAccountBody: React.FC<TelegramAccountPanelProps> = ({
       )}
 
       <div className="flex items-center justify-between text-[10px] text-gray-500 pt-2 border-t border-white/5">
-        <a href={PUBLIC_PRIVACY_URL} className="hover:text-gold transition-colors">
+        <a
+          href={PUBLIC_PRIVACY_URL}
+          target={inDesktop ? '_blank' : undefined}
+          rel={inDesktop ? 'noopener noreferrer' : undefined}
+          className="hover:text-gold transition-colors"
+        >
           Privacy Policy
+          {inDesktop && <span className="sr-only"> (opens in browser)</span>}
         </a>
         <span className="text-gray-600">·</span>
-        <a href={PUBLIC_TERMS_URL} className="hover:text-gold transition-colors">
+        <a
+          href={PUBLIC_TERMS_URL}
+          target={inDesktop ? '_blank' : undefined}
+          rel={inDesktop ? 'noopener noreferrer' : undefined}
+          className="hover:text-gold transition-colors"
+        >
           Terms of Service
+          {inDesktop && <span className="sr-only"> (opens in browser)</span>}
         </a>
         <span className="text-gray-600">·</span>
         <a href="mailto:privacy@luminarasuite.com" className="hover:text-gold transition-colors">
