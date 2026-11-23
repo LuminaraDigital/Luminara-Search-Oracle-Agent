@@ -148,6 +148,13 @@ data class EnquiryRecord(
     val automationPaused: Boolean = false,
     val conversation: List<EnquiryMessage> = emptyList(),
     val updatedAt: Long = 0L,
+    val qualificationBrief: QualificationBrief = QualificationBrief(),
+)
+
+@Serializable
+data class QualificationBrief(
+    val qualified: Boolean = false,
+    val missingRequiredFields: List<String> = emptyList(),
 )
 
 @Serializable
@@ -182,6 +189,7 @@ data class EnquiryCreateRequest(
     val projectId: String = "default",
     val sourceChannel: String = "manual",
     val intentType: String = "general_sme",
+    val propertyAddress: String? = null,
 )
 
 @Serializable
@@ -199,4 +207,81 @@ data class EnquiryTakeoverRequest(
 data class AppointmentDecisionRequest(
     val decision: String,
     val selectedSlotId: String? = null,
+)
+
+/** What every person on the agent's Today screen has, whichever list they are in. */
+interface TodayPerson {
+    val enquiryId: String
+    val name: String
+    val phone: String?
+    val email: String?
+    val address: String?
+    val segment: String
+}
+
+@Serializable
+data class SignOffItem(
+    override val enquiryId: String = "",
+    override val name: String = "",
+    override val phone: String? = null,
+    override val email: String? = null,
+    override val address: String? = null,
+    override val segment: String = "",
+    val appointmentId: String = "",
+    val slots: List<BookingSlot> = emptyList(),
+) : TodayPerson
+
+@Serializable
+data class CallBackItem(
+    override val enquiryId: String = "",
+    override val name: String = "",
+    override val phone: String? = null,
+    override val email: String? = null,
+    override val address: String? = null,
+    override val segment: String = "",
+    val reason: String = "",
+) : TodayPerson
+
+@Serializable
+data class UpcomingItem(
+    override val enquiryId: String = "",
+    override val name: String = "",
+    override val phone: String? = null,
+    override val email: String? = null,
+    override val address: String? = null,
+    override val segment: String = "",
+    val appointmentId: String = "",
+    val startAt: Long = 0L,
+    val endAt: Long = 0L,
+) : TodayPerson
+
+@Serializable
+data class ScorecardSegment(
+    val segment: String = "",
+    val label: String = "",
+    val enquiries: Int = 0,
+    val qualified: Int = 0,
+    val appraisalsBooked: Int = 0,
+)
+
+@Serializable
+data class Scorecard(
+    val since: Long = 0L,
+    val until: Long = 0L,
+    val segments: List<ScorecardSegment> = emptyList(),
+)
+
+@Serializable
+data class AgentTodayResponse(
+    val ok: Boolean = false,
+    val needsSignOff: List<SignOffItem> = emptyList(),
+    val callBack: List<CallBackItem> = emptyList(),
+    val upcoming: List<UpcomingItem> = emptyList(),
+    val scorecard: Scorecard = Scorecard(),
+)
+
+@Serializable
+data class PushDeviceRequest(
+    val token: String,
+    val platform: String = "android",
 )
