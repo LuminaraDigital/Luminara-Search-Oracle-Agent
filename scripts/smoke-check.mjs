@@ -39,6 +39,7 @@ const REQUIRED_D1_MIGRATIONS = [
   'migrations/0043_conversion_enquiry_spine.sql',
   'migrations/0046_scoped_review_rules.sql',
   'migrations/0047_weekly_visibility_email.sql',
+  'migrations/0059_agentic_memory_and_vault.sql',
 ];
 
 const REQUIRED_D1_TABLES = [
@@ -77,6 +78,8 @@ const REQUIRED_D1_TABLES = [
   'recovery_runs',
   'outcome_stage_events',
   'memory_edges',
+  'memory_vault_snapshots',
+  'agent_trace_spans',
 ];
 
 // 1. Verify build bundle integrity

@@ -304,6 +304,28 @@ export async function executeDreamRun(
   if (consolidated) writes.push(consolidated);
   await db.batch(writes);
 
+  const autoAppliedProposals = createdProposals.filter(
+    (p) => p.status === 'auto_applied' && (p.action === 'create' || p.action === 'update'),
+  );
+  if (autoAppliedProposals.length > 0) {
+    try {
+      const { ingestDreamProposalToGraph } = await import('./memoryAutoIngest');
+      for (const p of autoAppliedProposals) {
+        await ingestDreamProposalToGraph(env, {
+          accountId,
+          projectId: opts.projectId || null,
+          domain: cleanDomain,
+          memoryType: p.memoryType,
+          title: p.title,
+          content: p.proposedContent,
+          proposalId: p.id,
+        });
+      }
+    } catch {
+      /* optional unified graph sync */
+    }
+  }
+
   const run: DreamRun = {
     id: runId,
     accountId,
@@ -411,6 +433,22 @@ export async function reviewDreamProposal(
     )
       .bind(finalContent, reviewedBy, now, proposalId)
       .run();
+
+    if (row.action === 'create' || row.action === 'update') {
+      try {
+        const { ingestDreamProposalToGraph } = await import('./memoryAutoIngest');
+        await ingestDreamProposalToGraph(env, {
+          accountId,
+          domain: row.domain,
+          memoryType: row.memory_type,
+          title: row.title,
+          content: finalContent,
+          proposalId,
+        });
+      } catch {
+        /* optional unified graph sync */
+      }
+    }
   }
 
   const updatedRow = await env.DB.prepare(

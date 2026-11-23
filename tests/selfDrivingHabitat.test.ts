@@ -589,6 +589,8 @@ describe('Habitat token scope on /mcp', () => {
         'browse_observe',
         'compile_review_to_skill',
         'create_project',
+        'memory_forget',
+        'memory_vault_verify_leaf',
         'mint_habitat_token',
         'review_dream_proposal',
       ].sort(),
