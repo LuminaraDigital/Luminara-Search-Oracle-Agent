@@ -9,6 +9,7 @@ import { trackAndScheduleErase } from './accountMirror';
 import { billingId, json } from './workerUtils';
 import { auditOrgIdFor, recordAuditLogBestEffort } from './auditLog';
 import { deleteHostedAccount } from './accountDeletion';
+import { notifyCrmAccountDeletion } from './crmBridgeClient';
 
 const EXPORT_TTL_MS = 48 * 60 * 60 * 1000;
 const DELETE_CANCEL_MS = 24 * 60 * 60 * 1000;
@@ -314,6 +315,22 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
     if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
     return [] as Record<string, unknown>[];
   });
+  const crmLinks = await q<Record<string, unknown>>(
+    `SELECT workspace_slug, crm_base_url, crm_mode, primary_external_crm, auto_promote_enquiries, status, last_synced_at, created_at, updated_at
+       FROM suite_crm_links WHERE account_id = ?`,
+    accountId,
+  ).catch((err) => {
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+    return [] as Record<string, unknown>[];
+  });
+  const crmPromotions = await q<Record<string, unknown>>(
+    `SELECT enquiry_id, crm_lead_id, crm_person_id, crm_receipt_code, status, updated_at
+       FROM enquiry_crm_promotions WHERE account_id = ?`,
+    accountId,
+  ).catch((err) => {
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+    return [] as Record<string, unknown>[];
+  });
   return {
     exportedAt: new Date().toISOString(),
     accountId,
@@ -409,6 +426,8 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
     recoveryRuns,
     outcomeStageEvents,
     externalEffects,
+    crmLinks,
+    crmPromotions,
     projectMeasurementSnapshots,
     projectActionOutcomes,
     projectOutcomeFollowUps,
@@ -516,6 +535,9 @@ async function softDeleteAccount(env: Env, accountId: string, deps?: DataPlaneDe
   await drop('crm_properties', `DELETE FROM crm_properties WHERE account_id = ?`);
   await drop('crm_contacts', `DELETE FROM crm_contacts WHERE account_id = ?`);
   await drop('external_effects', `DELETE FROM external_effects WHERE account_id = ?`);
+  await notifyCrmAccountDeletion(env, accountId).catch(() => false);
+  await drop('enquiry_crm_promotions', `DELETE FROM enquiry_crm_promotions WHERE account_id = ?`);
+  await drop('suite_crm_links', `DELETE FROM suite_crm_links WHERE account_id = ?`);
   if (env.DESKTOP_RELEASES) {
     try {
       const r2VaultRows = await db

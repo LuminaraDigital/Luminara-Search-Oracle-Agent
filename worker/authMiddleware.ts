@@ -151,6 +151,8 @@ export const PROTECTED_API_ROUTES: ProtectedRouteSpec[] = [
   { pattern: /^\/outcomes(\/|$)/ },
   { pattern: /^\/recovery(\/|$)/ },
   { pattern: /^\/cms-mcp(\/|$)/ },
+  // Luminara CRM middle-layer bridge (0060); /crm/webhooks/outcome uses HMAC auth, not session.
+  { pattern: /^\/crm\/(status|activate|launch-token|briefing|enquiries\/[^/]+\/promote|approvals\/\d+\/decide)$/ },
   // /mcp auth is resolveMcpUser (session, lm_live_*, or mcp_* OAuth); not standard identify-only.
   // /oauth/mcp/authorize checks identity itself: a signed-out owner must reach sign-in, not a 401.
 ];
