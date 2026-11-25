@@ -9,6 +9,7 @@ import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
 import { billingId } from './workerUtils';
 import { getEnquiryById } from './enquiryDeskService';
+import { getWorkspace } from './userStore';
 import {
   base64UrlDecode,
   base64UrlEncode,
@@ -68,7 +69,25 @@ interface SuiteCrmLinkRow {
 }
 
 const DEFAULT_FETCH_TIMEOUT_MS = 10_000;
+const PROVISION_FETCH_TIMEOUT_MS = 25_000;
 const DELETION_FETCH_TIMEOUT_MS = 5_000;
+
+/**
+ * Normalizes CRM error payloads (both flat strings and structured `ActionOutcome::error` objects)
+ * into a concise user-facing string so MCP, Web, and Android never render "[object Object]".
+ */
+export function extractCrmErrorMessage(body: Record<string, unknown>, fallback: string): string {
+  const nestedError = body.error;
+  if (nestedError && typeof nestedError === 'object' && !Array.isArray(nestedError)) {
+    const rec = nestedError as Record<string, unknown>;
+    if (typeof rec.message === 'string' && rec.message.trim()) return rec.message.trim();
+    if (typeof rec.code === 'string' && rec.code.trim()) return rec.code.trim();
+  }
+  if (typeof body.message === 'string' && body.message.trim()) return body.message.trim();
+  if (typeof nestedError === 'string' && nestedError.trim()) return nestedError.trim();
+  if (typeof body.code === 'string' && body.code.trim()) return body.code.trim();
+  return fallback;
+}
 
 function mapLinkRow(row: SuiteCrmLinkRow): SuiteCrmLink {
   return {
@@ -102,27 +121,54 @@ async function fetchWithTimeout(
 }
 
 async function loadStoredBusinessDna(env: Env, accountId: string): Promise<Record<string, unknown> | undefined> {
-  if (!env.DB) return undefined;
   try {
-    const row = await env.DB.prepare(`SELECT payload_json FROM user_workspace WHERE user_id = ? LIMIT 1`)
-      .bind(accountId)
-      .first<{ payload_json: string | null }>();
-    if (!row?.payload_json) return undefined;
-    const payload = JSON.parse(row.payload_json) as { storage?: Record<string, unknown> };
-    const rawDna = payload?.storage?.luminara_business_dna;
+    const record = await getWorkspace(env, accountId);
+    const rawDna = record?.payload?.storage?.luminara_business_dna;
+    let parsed: Record<string, unknown> | undefined;
     if (typeof rawDna === 'string' && rawDna.trim()) {
-      const parsed = JSON.parse(rawDna) as unknown;
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        return parsed as Record<string, unknown>;
+      const obj = JSON.parse(rawDna) as unknown;
+      if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
+        parsed = obj as Record<string, unknown>;
       }
+    } else if (rawDna && typeof rawDna === 'object' && !Array.isArray(rawDna)) {
+      parsed = rawDna as Record<string, unknown>;
     }
-    if (rawDna && typeof rawDna === 'object' && !Array.isArray(rawDna)) {
-      return rawDna as Record<string, unknown>;
+    if (parsed) {
+      const name = typeof parsed.name === 'string' && parsed.name.trim() ? parsed.name.trim() : undefined;
+      return name && !parsed.brandName && !parsed.brand_name ? { ...parsed, brandName: name } : parsed;
     }
   } catch {
     // Best-effort DNA lookup; activation succeeds without DNA.
   }
   return undefined;
+}
+
+async function resolveVerifiedAccountProfile(
+  env: Env,
+  user: HostedIdentity,
+  accountId: string,
+): Promise<{ email?: string; name?: string }> {
+  const inlineEmail = user.emailVerified === true && user.email ? user.email : undefined;
+  const isAgentIdentity = /^(apk:|hab:|oauth:)/i.test(user.id || '');
+  const inlineName = !isAgentIdentity && user.name ? user.name : undefined;
+  if (inlineEmail && inlineName) return { email: inlineEmail, name: inlineName };
+  if (!env.DB) return { email: inlineEmail, name: inlineName };
+  try {
+    const row = await env.DB.prepare(
+      `SELECT email, email_verified, display_name FROM users WHERE account_id = ? ORDER BY email_verified DESC LIMIT 1`,
+    )
+      .bind(accountId)
+      .first<{ email: string | null; email_verified: number | null; display_name: string | null }>();
+    const dbEmail =
+      row?.email_verified === 1 && typeof row.email === 'string' && row.email.trim() ? row.email.trim() : undefined;
+    const dbName = typeof row?.display_name === 'string' && row.display_name.trim() ? row.display_name.trim() : undefined;
+    return {
+      email: inlineEmail ?? dbEmail,
+      name: inlineName ?? dbName,
+    };
+  } catch {
+    return { email: inlineEmail, name: inlineName };
+  }
 }
 
 export async function getCrmLink(env: Env, accountId: string): Promise<SuiteCrmLink | null> {
@@ -202,42 +248,66 @@ export async function activateCrmWorkspace(
   const accountId = billingId(user);
   const base = crmBaseUrl(env);
   const crmMode: CrmMode = opts.crmMode === 'middle_layer' ? 'middle_layer' : 'standalone';
-  const businessDna = opts.businessDna ?? (await loadStoredBusinessDna(env, accountId));
-  const verifiedEmail = user.emailVerified === true && user.email ? user.email : undefined;
+  const [businessDna, profile, existingRow] = await Promise.all([
+    opts.businessDna ? Promise.resolve(opts.businessDna) : loadStoredBusinessDna(env, accountId),
+    resolveVerifiedAccountProfile(env, user, accountId),
+    env.DB.prepare(
+      `SELECT passport_token_enc, primary_external_crm, created_at FROM suite_crm_links WHERE account_id = ?`,
+    )
+      .bind(accountId)
+      .first<{ passport_token_enc: string; primary_external_crm: string | null; created_at: number }>(),
+  ]);
+
+  const dnaBrand =
+    (typeof businessDna?.brandName === 'string' && businessDna.brandName.trim()) ||
+    (typeof businessDna?.brand_name === 'string' && businessDna.brand_name.trim()) ||
+    (typeof businessDna?.name === 'string' && businessDna.name.trim()) ||
+    '';
 
   const bodyObj = {
     suite_account_id: accountId,
-    email: verifiedEmail,
-    email_verified: Boolean(verifiedEmail),
+    email: profile.email,
+    email_verified: Boolean(profile.email),
     telegram_user_id: user.source === 'telegram' ? user.id : undefined,
-    name: user.name || 'Luminara Owner',
-    business_name: opts.businessName || (typeof businessDna?.name === 'string' && businessDna.name.trim() ? businessDna.name.trim() : user.name || 'Luminara Workspace'),
+    name: profile.name || 'Luminara Owner',
+    business_name: opts.businessName || dnaBrand || profile.name || 'Luminara Workspace',
     crm_mode: crmMode,
     primary_external_crm: opts.primaryExternalCrm || undefined,
-    rotate_passport: Boolean(opts.rotatePassport),
+    // Always request a passport token if Suite D1 has no stored row yet (recovers cleanly from cold-pool timeouts).
+    rotate_passport: Boolean(opts.rotatePassport || !existingRow?.passport_token_enc),
     business_dna: businessDna || undefined,
   };
   const rawBody = JSON.stringify(bodyObj);
   const path = '/api/suite/provision';
   const { timestamp, signature } = await signSuiteHmac(sharedSecret, 'POST', path, rawBody);
 
-  const res = await fetchWithTimeout(fetchFn, `${base}${path}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      'X-Luminara-Suite-Timestamp': timestamp,
-      'X-Luminara-Suite-Signature': signature,
+  const res = await fetchWithTimeout(
+    fetchFn,
+    `${base}${path}`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'X-Luminara-Suite-Timestamp': timestamp,
+        'X-Luminara-Suite-Signature': signature,
+      },
+      body: rawBody,
     },
-    body: rawBody,
-  });
+    PROVISION_FETCH_TIMEOUT_MS,
+  );
 
   if (!res) {
     return { ok: false, error: 'CRM workspace provisioning timed out or failed to connect.', status: 502 };
   }
 
   if (!res.ok) {
-    return { ok: false, error: `CRM workspace provisioning returned HTTP ${res.status}.`, status: 502 };
+    const errBody = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    return {
+      ok: false,
+      error: extractCrmErrorMessage(errBody, `CRM workspace provisioning returned HTTP ${res.status}.`),
+      status: 502,
+    };
   }
 
   const parsed = (await res.json().catch(() => ({}))) as {
@@ -254,12 +324,6 @@ export async function activateCrmWorkspace(
   }
 
   const now = Date.now();
-  const existingRow = await env.DB.prepare(
-    `SELECT passport_token_enc, primary_external_crm, created_at FROM suite_crm_links WHERE account_id = ?`,
-  )
-    .bind(accountId)
-    .first<{ passport_token_enc: string; primary_external_crm: string | null; created_at: number }>();
-
   const tokenEnc = parsed.passport_token
     ? await encryptPassportToken(parsed.passport_token, encKey, accountId)
     : existingRow?.passport_token_enc;
@@ -466,7 +530,7 @@ export async function promoteEnquiryToCrm(
   if (!actionRes.ok) {
     return {
       ok: false,
-      error: String(actionRes.body.message || actionRes.body.error || 'Failed to promote enquiry to CRM.'),
+      error: extractCrmErrorMessage(actionRes.body, 'Failed to promote enquiry to CRM.'),
       status: actionRes.status,
     };
   }

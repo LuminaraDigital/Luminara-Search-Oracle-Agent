@@ -10,7 +10,6 @@ import { validateInitData } from './telegramAuth';
 import { billingId, json } from './workerUtils';
 import { identityToolkitHeaders } from './identityToolkit';
 import { findErasedLogin, markFirebaseEraseDone, markFirebaseErasePending } from './accountMirror';
-import { notifyCrmAccountDeletion } from './crmBridgeClient';
 
 export const REAUTH_WINDOW_SEC = 5 * 60;
 
@@ -181,7 +180,6 @@ export async function deleteHostedAccount(request: Request, env: Env, user: Host
   }
 
   const accountId = billingId(user);
-  await notifyCrmAccountDeletion(env, accountId);
   const { eraseAccountRows } = await import('./privacyService');
   const counts = await eraseAccountRows(env, accountId);
   const removed = await env.DB.prepare(`DELETE FROM users WHERE account_id = ? OR id = ?`).bind(accountId, user.id).run();
