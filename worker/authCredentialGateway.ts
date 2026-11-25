@@ -396,6 +396,9 @@ export async function handleGoogleSignIn(
   if (!googleIdToken || googleIdToken.length > MAX_GOOGLE_ID_TOKEN_CHARS) {
     return json({ ok: false, error: 'Send the Google ID token from sign-in.', code: 'INVALID_BODY' }, 400);
   }
+  // Same attestation gate as password sign-in, so this route is not the one way around it.
+  const appCheckGate = await enforceAppCheckIfRequired(request, env);
+  if (!appCheckGate.ok) return appCheckGate.response;
   const apiKey = String(env.FIREBASE_WEB_API_KEY || '').trim();
   if (!apiKey) {
     return json({ ok: false, error: 'Sign-in is temporarily unavailable. Try again later.', code: 'AUTH_UNAVAILABLE' }, 503);

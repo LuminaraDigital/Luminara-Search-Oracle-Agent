@@ -37,12 +37,18 @@ export function hostedAuthSkipCount(): number {
   return skipCount;
 }
 
-/** A 403 from the audit run host check is a site mismatch, not a sign-in failure. */
-export async function isAuditSiteMismatch(res: Response): Promise<boolean> {
+/** 403 codes the Worker uses for a refusal that is not a sign-in failure, so the circuit stays closed. */
+const NOT_SIGN_IN_403_CODES = new Set(['AUDIT_RUN_REJECTED', 'EMAIL_UNVERIFIED']);
+
+/**
+ * A 403 that is not a sign-in failure: the audit run host check (a site mismatch), or an email
+ * sign-up that has not confirmed its address yet (it must keep working once the link is clicked).
+ */
+export async function isNotSignInRefusal(res: Response): Promise<boolean> {
   if (res.status !== 403) return false;
   try {
     const body = await res.clone().json() as { code?: unknown };
-    return body?.code === 'AUDIT_RUN_REJECTED';
+    return typeof body?.code === 'string' && NOT_SIGN_IN_403_CODES.has(body.code);
   } catch {
     return false;
   }

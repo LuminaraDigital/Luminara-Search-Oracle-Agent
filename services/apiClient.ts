@@ -8,7 +8,7 @@ import { getInitDataRaw } from './telegram/tma';
 import { loadFirebaseAuth, readCachedFirebaseIdToken, readFreshCachedFirebaseIdToken } from './auth/firebaseIdToken';
 import { takeAccountBoot } from './auth/accountBoot';
 import { toUserFacingText } from '../utils/userFacingText';
-import { hostedAuthBlocked, hostedAuthCircuitResponse, isAuditSiteMismatch, noteHostedAuthFailure } from './resilience/hostedAuthCircuit';
+import { hostedAuthBlocked, hostedAuthCircuitResponse, isNotSignInRefusal, noteHostedAuthFailure } from './resilience/hostedAuthCircuit';
 import { noteScoutReceipt } from './referrals/scoutReceiptCapture';
 import { entitlementsFor, normalizePlanId } from './plans/planEntitlements';
 import { getCurrentQuotaSync, quotaEpoch, subscribeQuota, writeQuotaSnapshot, type QuotaInfo } from './plans/quotaSnapshot';
@@ -462,7 +462,7 @@ export async function providerFetch(providerId: string, path: string, directUrl:
   }
   updateQuotaFromHeaders(res.headers, since);
   noteScoutReceipt(res.headers.get('x-scout-receipt'));
-  if ((res.status === 401 || res.status === 403) && !(await isAuditSiteMismatch(res))) {
+  if ((res.status === 401 || res.status === 403) && !(await isNotSignInRefusal(res))) {
     noteHostedAuthFailure(res.status, providerId);
   }
   if (res.status === 402) {

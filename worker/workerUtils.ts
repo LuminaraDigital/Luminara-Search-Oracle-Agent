@@ -207,6 +207,7 @@ export async function identify(request: Request, env: Env): Promise<{
           source: 'firebase',
           email: sess.email,
           name: sess.name,
+          ...(typeof sess.emailVerified === 'boolean' ? { emailVerified: sess.emailVerified } : {}),
         };
       }
     } else if (!initData || staleInitData) {

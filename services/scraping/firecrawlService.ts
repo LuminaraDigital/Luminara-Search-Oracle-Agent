@@ -6,7 +6,7 @@
 
 import { configService } from '../configService';
 import { clientHasHostedIdentity, providerFetch } from '../apiClient';
-import { hostedAuthBlocked, hostedAuthSkipError, isAuditSiteMismatch, noteHostedAuthFailure } from '../resilience/hostedAuthCircuit';
+import { hostedAuthBlocked, hostedAuthSkipError, isNotSignInRefusal, noteHostedAuthFailure } from '../resilience/hostedAuthCircuit';
 
 function hostedAuthSkipErrorForSession(): string {
   return hostedAuthSkipError(clientHasHostedIdentity());
@@ -14,7 +14,7 @@ function hostedAuthSkipErrorForSession(): string {
 
 async function noteFirecrawlAuth(res: Response): Promise<void> {
   if (res.status !== 401 && res.status !== 403) return;
-  if (await isAuditSiteMismatch(res)) return;
+  if (await isNotSignInRefusal(res)) return;
   noteHostedAuthFailure(res.status, 'firecrawl');
 }
 

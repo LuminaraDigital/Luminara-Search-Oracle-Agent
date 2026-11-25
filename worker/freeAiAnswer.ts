@@ -8,6 +8,7 @@ import { GROQ_DEFAULT_MODEL } from '../services/llm/nativeModelDefaults';
 import type { Env } from './env';
 import { invokeDailyQuota, meterName } from './dailyQuota';
 import { getActiveSubscription } from './quotaMiddleware';
+import { takeFreeHostedCall } from './hostedFreeGuards';
 import { WORKERS_AI_FALLBACK_MODEL } from './workersAiFallback';
 import { NVIDIA_FALLBACK_MODEL } from './nvidiaChatFallback';
 import { billingId, identify, json } from './workerUtils';
@@ -303,6 +304,11 @@ export async function handleFreeAiAnswer(request: Request, env: Env): Promise<Re
   const key = cacheUrl(suburb, state);
   const cached = await readCached(key);
   if (cached) return present(cached, brand, suburb, state);
+  // One search and one answer, both from the shared free ceilings.
+  if (!(await takeFreeHostedCall(env, 'tavily')) || !(await takeFreeHostedCall(env, 'groq'))) {
+    await invokeDailyQuota(env, meter, 'refund', 1);
+    return hidden();
+  }
 
   const question = questionFor(suburb, state);
   const sources = await searchTavily(env, question);
