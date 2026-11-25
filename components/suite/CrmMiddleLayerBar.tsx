@@ -21,7 +21,15 @@ export const CrmMiddleLayerBar: React.FC<CrmMiddleLayerBarProps> = ({ activeEnqu
   const [status, setStatus] = useState<CrmLinkStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [pendingApproval, setPendingApproval] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const refreshStatus = React.useCallback(async () => {
+    const res = await fetchCrmBridgeStatus();
+    setStatus(res);
+    onEnabledChange?.(Boolean(res.enabled));
+    return res;
+  }, [onEnabledChange]);
 
   useEffect(() => {
     let active = true;
@@ -34,20 +42,24 @@ export const CrmMiddleLayerBar: React.FC<CrmMiddleLayerBarProps> = ({ activeEnqu
     return () => {
       active = false;
     };
-  }, [onEnabledChange]);
+  }, [onEnabledChange, activeEnquiryId]);
 
   useEffect(() => {
     setNotice(null);
+    setPendingApproval(false);
     setError(null);
   }, [activeEnquiryId]);
 
   if (!status?.enabled) return null;
 
-  const launchCrm = async (crmMode: CrmMode, nextPath: string) => {
+  const launchCrm = async (crmMode: CrmMode | undefined, nextPath: string) => {
     setBusy(true);
     setError(null);
     setNotice(null);
-    const res = await requestCrmLaunchAssertion({ crmMode, nextPath });
+    const res = await requestCrmLaunchAssertion({
+      ...(crmMode ? { crmMode } : {}),
+      nextPath,
+    });
     setBusy(false);
     if (!res.ok) {
       setError(res.error);
@@ -65,14 +77,19 @@ export const CrmMiddleLayerBar: React.FC<CrmMiddleLayerBarProps> = ({ activeEnqu
     setBusy(true);
     setError(null);
     setNotice(null);
+    setPendingApproval(false);
     const res = await promoteEnquiryToLuminaraCrm(activeEnquiryId);
     setBusy(false);
     if (!res.ok) {
       setError(res.error);
       return;
     }
+    if (!status.activated) {
+      void refreshStatus();
+    }
     if (res.status === 'pending_approval') {
-      setNotice('Staged for approval in Luminara CRM. Open Luminara CRM to sign off.');
+      setPendingApproval(true);
+      setNotice('Staged for approval in Luminara CRM. Review and sign off in Ink.');
       return;
     }
     const receipt = res.crmReceiptCode ? ` (Receipt ${res.crmReceiptCode})` : '';
@@ -105,7 +122,7 @@ export const CrmMiddleLayerBar: React.FC<CrmMiddleLayerBarProps> = ({ activeEnqu
           <button
             type="button"
             disabled={busy}
-            onClick={() => void launchCrm('standalone', '/admin/agent/briefing')}
+            onClick={() => void launchCrm(status.activated ? undefined : 'standalone', '/admin/agent/briefing')}
             className="px-3 py-1.5 rounded-lg bg-gold text-black font-bold text-xs disabled:opacity-40"
           >
             {status.activated ? 'Open Luminara CRM' : 'Open Free CRM'}
@@ -130,7 +147,21 @@ export const CrmMiddleLayerBar: React.FC<CrmMiddleLayerBarProps> = ({ activeEnqu
           )}
         </div>
       </div>
-      {notice && <p className="text-[11px] text-emerald-300">{notice}</p>}
+      {notice && (
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-[11px] text-emerald-300">{notice}</p>
+          {pendingApproval && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void launchCrm(undefined, '/admin/agent/approvals')}
+              className="px-2.5 py-1 rounded-md border border-emerald-400/40 bg-emerald-500/15 text-[11px] font-semibold text-emerald-200 disabled:opacity-40"
+            >
+              Review Approval
+            </button>
+          )}
+        </div>
+      )}
       {error && <p className="text-[11px] text-red-400">{error}</p>}
     </div>
   );

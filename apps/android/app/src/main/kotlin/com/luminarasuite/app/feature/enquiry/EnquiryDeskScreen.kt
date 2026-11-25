@@ -56,6 +56,7 @@ data class EnquiryUiState(
     val reportedIds: Set<String> = emptySet(),
     val crmStatus: CrmBridgeStatus = CrmBridgeStatus(enabled = false),
     val crmNotice: String? = null,
+    val pendingCrmCallId: Long? = null,
 )
 
 class EnquiryDeskViewModel(
@@ -73,7 +74,8 @@ class EnquiryDeskViewModel(
 
     fun updateReply(value: String) = _uiState.update { it.copy(reply = value) }
 
-    fun select(id: String?) = _uiState.update { it.copy(selectedId = id, reply = "", crmNotice = null) }
+    fun select(id: String?) =
+        _uiState.update { it.copy(selectedId = id, reply = "", crmNotice = null, pendingCrmCallId = null) }
 
     fun load() {
         act { Result.success(Unit) }
@@ -113,8 +115,10 @@ class EnquiryDeskViewModel(
                                 errorMessage = "Could not promote enquiry to Luminara CRM.",
                             )
                         } else if (promoted.status == "pending_approval") {
+                            val parsedCallId = promoted.crmLeadId.removePrefix("pending:").toLongOrNull()
                             state.copy(
                                 isBusy = false,
+                                pendingCrmCallId = parsedCallId,
                                 crmNotice = "Staged for approval in Luminara CRM.",
                             )
                         } else {
@@ -127,6 +131,7 @@ class EnquiryDeskViewModel(
                                 }
                             state.copy(
                                 isBusy = false,
+                                pendingCrmCallId = null,
                                 crmNotice = "$prefix Lead #${promoted.crmLeadId}$receipt.",
                             )
                         }
@@ -135,6 +140,34 @@ class EnquiryDeskViewModel(
                         state.copy(
                             isBusy = false,
                             errorMessage = err.message ?: "Could not promote enquiry to Luminara CRM.",
+                        )
+                    },
+                )
+            }
+        }
+    }
+
+    fun decideCrmApproval(
+        callId: Long,
+        approve: Boolean,
+    ) {
+        if (_uiState.value.isBusy) return
+        _uiState.update { it.copy(isBusy = true, errorMessage = null) }
+        viewModelScope.launch {
+            val res = workspace.decideCrmApproval(callId, approve)
+            _uiState.update { state ->
+                res.fold(
+                    onSuccess = {
+                        state.copy(
+                            isBusy = false,
+                            pendingCrmCallId = null,
+                            crmNotice = if (approve) "Approved in Luminara CRM." else "Rejected in Luminara CRM.",
+                        )
+                    },
+                    onFailure = { err ->
+                        state.copy(
+                            isBusy = false,
+                            errorMessage = err.message ?: "Could not submit CRM approval.",
                         )
                     },
                 )
@@ -272,6 +305,25 @@ private fun EnquiryDetail(
             )
             state.crmNotice?.let {
                 Text(text = it, style = LuminaraTextStyles.Body, color = LuminaraColors.GoldLight)
+            }
+            state.pendingCrmCallId?.let { callId ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    GhostPillButton(
+                        text = "Approve in CRM",
+                        onClick = { viewModel.decideCrmApproval(callId, true) },
+                        enabled = !state.isBusy,
+                        testTag = "enquiry_crm_approve_button",
+                    )
+                    GhostPillButton(
+                        text = "Reject",
+                        onClick = { viewModel.decideCrmApproval(callId, false) },
+                        enabled = !state.isBusy,
+                        testTag = "enquiry_crm_reject_button",
+                    )
+                }
             }
         }
     }
