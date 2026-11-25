@@ -6,6 +6,7 @@ import * as Sentry from '@sentry/cloudflare';
 import type { Env } from './env';
 import {
   scrubSentryEvent,
+  SENTRY_DENIED_HEADERS,
   SENTRY_RELEASE_FALLBACK,
   SENTRY_TRACES_SAMPLE_RATE,
 } from '../services/observability/sentryScrub';
@@ -31,7 +32,7 @@ export function workerSentryOptions(env: SentryEnv): Sentry.CloudflareOptions {
       userInfo: false,
       cookies: false,
       httpBodies: [],
-      httpHeaders: { deny: ['authorization', 'cookie', 'x-firebase-appcheck'] },
+      httpHeaders: { deny: [...SENTRY_DENIED_HEADERS] },
     },
     beforeSend(event) {
       return scrubSentryEvent(event);

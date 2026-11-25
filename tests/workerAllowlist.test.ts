@@ -17,3 +17,14 @@ describe('provider path allowlist', () => {
     expect(isPathAllowed(undefined, '/models')).toBe(false);
   });
 });
+
+describe('provider path allow-list: encoded traversal', () => {
+  it('refuses an encoded slash that an upstream could decode into another path', async () => {
+    const { isPathAllowed } = await import('../worker/providerRelay');
+    const spec = { allow: ['/scrape'] };
+    expect(isPathAllowed(spec, '/scrape')).toBe(true);
+    expect(isPathAllowed(spec, '/scrape/..%2fcrawl')).toBe(false);
+    expect(isPathAllowed(spec, '/scrape/..%5Ccrawl')).toBe(false);
+    expect(isPathAllowed(spec, '/scrape/../crawl')).toBe(false);
+  });
+});

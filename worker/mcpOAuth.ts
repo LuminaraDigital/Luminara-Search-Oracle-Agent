@@ -20,7 +20,7 @@ import {
   parseRegisteredGrantTypes,
   REFRESH_ACCESS_TTL_SECONDS,
   REFRESH_TTL_SECONDS,
-  refreshFamilyAllowsAccess,
+  accessRecordAllowed,
   refreshGrantResponse,
   revokeRefreshByToken,
   revokeRefreshFamily,
@@ -38,6 +38,7 @@ import {
 } from './mcpOAuthResource';
 import { authorizationServerMetadata } from './mcpOAuthDiscovery';
 
+const CROSS_SITE_AUTHORIZE_ERROR = 'Start the connection from your editor or from Luminara, not from another website.';
 const CODES_KV_PREFIX = 'mcp_oauth_code:';
 const TOKENS_KV_PREFIX = 'mcp_oauth_token:';
 const CLIENTS_KV_PREFIX = 'mcp_oauth_client:';
@@ -543,6 +544,12 @@ async function authorize(request: Request, env: Env): Promise<Response> {
     );
   }
 
+  // This flow has no consent screen, so another website must not be able to start it for a signed-in
+  // visitor. An IDE opening the browser sends Sec-Fetch-Site: none; a link on our own site, same-origin.
+  if (request.headers.get('sec-fetch-site') === 'cross-site') {
+    return json({ error: 'access_denied', error_description: CROSS_SITE_AUTHORIZE_ERROR }, 403);
+  }
+
   const who = await identify(request, env);
   if (who.error || !who.user) {
     return json(
@@ -960,10 +967,7 @@ export async function identifyMcpOAuthToken(
 async function acceptAccessToken(env: Env, token: string, raw: string): Promise<McpOAuthIdentity | null> {
   const parsed = parseTokenRecord(raw);
   if (!parsed) return null;
-  const familyId = familyIdFromAccessRecord(raw);
-  if (!familyId) return parsed;
-  const allowed = await refreshFamilyAllowsAccess(env, familyId, await sha256Hex(token));
-  return allowed ? parsed : null;
+  return (await accessRecordAllowed(env, raw, await sha256Hex(token))) ? parsed : null;
 }
 
 function parseTokenRecord(raw: string): McpOAuthIdentity | null {

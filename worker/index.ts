@@ -34,7 +34,12 @@
 
 import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
-import { validateInitData, createTelegramSessionToken } from './telegramAuth';
+import {
+  validateInitData,
+  createTelegramSessionToken,
+  INIT_DATA_EXPIRED_REASON,
+  LINK_INIT_DATA_TTL_SECONDS,
+} from './telegramAuth';
 import { bearerFromAuthorization, verifyFirebaseIdToken } from './firebaseAuth';
 import { handleAccountBoot } from './accountBoot';
 import { withStageTiming } from './serverTiming';
@@ -806,8 +811,15 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
         code: 'CONFIRM_REQUIRED',
       }, 400));
     }
-    const tg = await validateInitData(initData, env.BOT_TOKEN);
-    if (!tg.ok) return withCors(json({ ok: false, error: tg.reason }, 401));
+    // A link is permanent, so it needs a recent Telegram launch: a copied initData must not stay
+    // linkable for the full hour that ordinary requests allow.
+    const tg = await validateInitData(initData, env.BOT_TOKEN, LINK_INIT_DATA_TTL_SECONDS);
+    if (!tg.ok) {
+      const error = tg.reason === INIT_DATA_EXPIRED_REASON
+        ? 'For your security, linking needs a fresh Telegram session. Close the Mini App, open it again, then tap Link.'
+        : tg.reason;
+      return withCors(json({ ok: false, error }, 401));
+    }
     const fb = await verifyFirebaseIdToken(bearer, env.FIREBASE_PROJECT_ID);
     if (!fb.ok) return withCors(json({ ok: false, error: fb.reason }, 401));
     const telegramUserId = String(tg.user.id);
