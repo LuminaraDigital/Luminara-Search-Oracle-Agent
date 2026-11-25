@@ -335,6 +335,23 @@ export interface Env extends DataPlaneEnv {
   /** Optional IPFS HTTP/Pinata pinning endpoint and JWT for encrypted Memory Vault snapshots. */
   IPFS_PINNING_URL?: string;
   IPFS_PINNING_JWT?: string;
+  /**
+   * Dark-launch switch for Luminara CRM Agentic Middle Layer bridge (0060).
+   * Must be "true" alongside CRM_BASE_URL; unset/false keeps all /api/crm/* routes and CRM MCP tools inert.
+   */
+  CRM_BRIDGE_ENABLED?: string;
+  /** Canonical Luminara CRM origin (e.g. https://crm.luminarasuite.com). */
+  CRM_BASE_URL?: string;
+  /** Base64 32-byte Ed25519 private seed (or PKCS8 DER) used to sign 60s single-use CRM launch assertions. */
+  CRM_BRIDGE_SIGNING_KEY_B64?: string;
+  /** Shared HMAC-SHA256 secret for server-to-server Suite <-> CRM provisioning and outcome webhooks. */
+  CRM_BRIDGE_SHARED_SECRET?: string;
+  /** Optional previous shared HMAC-SHA256 secret accepted during zero-downtime secret rotation. */
+  CRM_BRIDGE_SHARED_SECRET_PREVIOUS?: string;
+  /** Secret used to AES-256-GCM encrypt CRM Service Passport tokens stored in D1 (`suite_crm_links`). */
+  CRM_BRIDGE_ENCRYPTION_KEY?: string;
+  /** Optional previous AES-256-GCM encryption secret for zero-downtime key rotation. */
+  CRM_BRIDGE_ENCRYPTION_KEY_PREVIOUS?: string;
 }
 
 /** Minimal Vectorize binding shape (Cloudflare runtime). */

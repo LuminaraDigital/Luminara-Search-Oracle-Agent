@@ -66,6 +66,8 @@ import { FIX_DRAFT_MCP_TOOLS } from './fixDraftRoute';
 import { enforceHabitatScope, SELF_DRIVING_MCP_TOOLS } from './selfDrivingHabitat';
 import { AGENTIC_MEMORY_MCP_TOOLS } from './mcpAgenticMemoryTools';
 import { AGENT_MCP_TOOLS, agentPromptGet, agentPromptsList } from './mcpAgents';
+import { CRM_BRIDGE_MCP_TOOLS, CRM_BRIDGE_TOOL_NAMES } from './mcpCrmTools';
+import { isCrmBridgeEnabled } from './crmBridgeClient';
 import { webappOrigin } from './agentReportService';
 import {
   MCP_INSTRUCTIONS,
@@ -472,6 +474,7 @@ const TOOLS: McpToolDef[] = [
   ...SELF_DRIVING_MCP_TOOLS,
   ...AGENTIC_MEMORY_MCP_TOOLS,
   ...AGENT_MCP_TOOLS,
+  ...CRM_BRIDGE_MCP_TOOLS,
   ...PAID_TOOL_CATALOGUE.map((meta) => ({
     name: meta.name,
     description: meta.description,
@@ -487,7 +490,7 @@ const TOOLS: McpToolDef[] = [
     handler: paidHandler(meta.name),
   })),
 ];
-export function listMcpToolCatalogue(): Array<{
+export function listMcpToolCatalogue(opts: { includeCrmBridge?: boolean } = {}): Array<{
   name: string;
   title: string;
   description: string;
@@ -495,7 +498,10 @@ export function listMcpToolCatalogue(): Array<{
   inputSchema: Record<string, unknown>;
   annotations: ReturnType<typeof mcpToolAnnotations>;
 }> {
-  return TOOLS.map((tool) => {
+  const source = opts.includeCrmBridge
+    ? TOOLS
+    : TOOLS.filter((tool) => !CRM_BRIDGE_TOOL_NAMES.has(tool.name));
+  return source.map((tool) => {
     // A named agent carries its own title; every other tool takes one from the shared table.
     const annotations = { ...mcpToolAnnotations(tool.name), ...(tool.title ? { title: tool.title } : {}) };
     return {
@@ -517,12 +523,13 @@ const BROWSER_TOOL_NAMES = new Set(BROWSER_ACTION_CATALOGUE.map((meta) => meta.n
 export function isToolListedFor(name: string, ctx: Pick<McpToolContext, 'env' | 'credential'>): boolean {
   if (ctx.credential.kind === 'oauth' && OAUTH_REFUSED_TOOLS.has(name)) return false;
   if (BROWSER_TOOL_NAMES.has(name) && !(ctx.env.PATCHRIGHT_URL || '').trim()) return false;
+  if (CRM_BRIDGE_TOOL_NAMES.has(name) && !isCrmBridgeEnabled(ctx.env)) return false;
   return true;
 }
 
 function toolsListPayload(ctx: McpToolContext) {
   return {
-    tools: listMcpToolCatalogue()
+    tools: listMcpToolCatalogue({ includeCrmBridge: isCrmBridgeEnabled(ctx.env) })
       .filter((tool) => isToolListedFor(tool.name, ctx))
       .map(({ name, title, description, inputSchema, annotations }) => ({
         name,
@@ -549,6 +556,11 @@ async function callTool(
   // One clock read per call: the budget gate, cost event, and soft-alert
   // evaluation must agree on the current UTC window (spec 0014 clock rule).
   const now = Date.now();
+  // Dark-launch zero-blast-radius gate: hidden CRM bridge tools must fail closed BEFORE
+  // habitat checks, D1 approval-request creation, or daily MCP quota deduction.
+  if (CRM_BRIDGE_TOOL_NAMES.has(name) && !isCrmBridgeEnabled(ctx.env)) {
+    return textResult(`Unknown tool: ${name}`, { code: 'TOOL_NOT_FOUND' }, true);
+  }
   const sub = await getActiveSubscription(ctx.env, ctx.user);
   const subscriptionActive = !!sub;
   const tool = TOOLS.find((t) => t.name === name);
@@ -787,7 +799,7 @@ export async function handleMcpRequest(
       ...mcpServerInfo(origin),
       protocolVersion: MCP_PROTOCOL_VERSIONS[0],
       supportedProtocolVersions: [...MCP_PROTOCOL_VERSIONS],
-      tools: listMcpToolCatalogue(),
+      tools: listMcpToolCatalogue({ includeCrmBridge: isCrmBridgeEnabled(env) }),
       typedContextKeys: TYPED_CONTEXT_KEYS,
     });
   }

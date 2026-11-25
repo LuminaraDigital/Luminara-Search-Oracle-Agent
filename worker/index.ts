@@ -166,6 +166,8 @@ import { handleRsiRoute } from './rsiRoutes';
 import { handleEnquiryDeskRoute } from './enquiryDeskService';
 import { handleRecoveryRoute, sweepDueRecoveryRuns } from './recoveryCampaignService';
 import { handleCmsMcpRoute } from './cmsMcpRelay';
+import { handleCrmBridgeRoute, handleCrmOutcomeWebhook } from './crmRoutes';
+import { crmBridgeOrigin, isCrmBridgeEnabled } from './crmBridgeClient';
 import { runRsiSkillCurator } from './rsiCurator';
 import { runPostingReflection } from './rsiPosting';
 import { handleLaunchpadRoute } from './launchpadService';
@@ -1853,6 +1855,38 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     if (res) return withCors(res);
   }
 
+  // Luminara CRM Agentic Middle Layer bridge (0060). Dark-launched behind CRM_BRIDGE_ENABLED === 'true'.
+  if (path === '/crm/webhooks/outcome' && request.method === 'POST') {
+    if (!isCrmBridgeEnabled(env)) {
+      return withCors(json({ ok: false, code: 'CRM_BRIDGE_DISABLED', error: 'CRM bridge is disabled.' }, 503));
+    }
+    const hit = limited('crm_outcome_webhook', 120);
+    if (hit) return hit;
+    return withCors(await handleCrmOutcomeWebhook(request, env));
+  }
+  if (path === '/crm' || path.startsWith('/crm/')) {
+    if (!isCrmBridgeEnabled(env)) {
+      if (path === '/crm/status' && request.method === 'GET') {
+        return withCors(json({ ok: true, enabled: false, activated: false, link: null }, 200));
+      }
+      return withCors(json({ ok: false, code: 'CRM_BRIDGE_DISABLED', error: 'CRM bridge is not enabled on this deployment.' }, 503));
+    }
+    const who = identifiedForRequest(request) ?? (await identify(request, env));
+    if (who.error || !who.user) {
+      return withCors(json({ ok: false, error: who.error || 'Unauthorized', code: 'AUTH_REQUIRED' }, 401));
+    }
+    const dual = await enforceDualRateLimit(env, {
+      action: 'crm_bridge',
+      accountId: billingId(who.user),
+      ip: clientIp(request),
+      limitPerKey: 60,
+      windowSec: 60,
+    });
+    if (!dual.ok) return withCors(dual.response);
+    const crmRes = await handleCrmBridgeRoute(request, env, who.user, path);
+    if (crmRes) return withCors(crmRes);
+  }
+
   // Trust Network TN1/TN2 (migration 0020). Flag-gated inside each handler.
   if (path === '/trust/keys' || path.startsWith('/trust/receipts')) {
     const res = await handleTrustReceiptsRoute(request, env, path);
@@ -2525,8 +2559,9 @@ const SHORT_PATH_REDIRECTS: Record<string, { path: string; hash?: string }> = {
 const handler = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+    const crmOrigin = crmBridgeOrigin(env);
     const guard = async (res: Response) => {
-      const secured = withSecurityHeaders(res);
+      const secured = withSecurityHeaders(res, crmOrigin);
       const html = await decoratePublicHtml(secured, env.ASSETS);
       const flagged = await withHeroAbFlag(html, heroAbEnabled(env));
       return applyHostRobots(url, env.ENVIRONMENT, flagged);
