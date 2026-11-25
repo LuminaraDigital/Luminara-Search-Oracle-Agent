@@ -5,6 +5,7 @@ import {
   crmBridgeOrigin,
   decryptPassportToken,
   encryptPassportToken,
+  extractCrmErrorMessage,
   isCrmBridgeEnabled,
   mintLaunchAssertion,
   notifyCrmAccountDeletion,
@@ -385,6 +386,8 @@ describe('Luminara CRM Middle-Layer Bridge: routes, enquiry promotion, outcomes,
       const listBody = (await listRes.json()) as { result: { tools: Array<{ name: string }> } };
       const toolNames = listBody.result.tools.map((t) => t.name);
       expect(toolNames).toContain('crm_activate_workspace');
+      expect(toolNames).toContain('crm_contacts_search');
+      expect(toolNames).toContain('crm_products_search');
       expect(toolNames).toContain('crm_bridge_connections_list');
       expect(toolNames).toContain('crm_bridge_push_record');
 
@@ -482,5 +485,98 @@ describe('Luminara CRM Middle-Layer Bridge: routes, enquiry promotion, outcomes,
       .bind('usr_startup_1')
       .first();
     expect(remaining).toBeNull();
+  });
+
+  it('hydrates D1 Business DNA & verified email for cookie/OAuth sessions, rotates passport on first link, and normalizes ActionOutcome errors', async () => {
+    const env = makeEnv({
+      CRM_BRIDGE_ENABLED: 'true',
+      CRM_BASE_URL: 'https://crm.luminara.digital',
+      CRM_BRIDGE_SHARED_SECRET: 'bridge-shared-secret-32-chars-minimum',
+      CRM_BRIDGE_ENCRYPTION_KEY: 'bridge-aes-encryption-secret-32-chars',
+    });
+
+    // Seed real D1 `users` and `user_workspace` rows matching production schema (0001, 0002, 0050).
+    await env.DB!.prepare(
+      `INSERT INTO users (id, source, account_id, email, email_verified, display_name, created_at, last_seen_at)
+       VALUES (?, 'firebase', ?, ?, 1, ?, 1, 1)`,
+    )
+      .bind('fb:usr_cookie_1', 'usr_cookie_1', 'verified@acmesaas.com', 'Alex Owner')
+      .run();
+    await env.DB!.prepare(
+      `INSERT INTO user_workspace (account_id, payload, updated_at) VALUES (?, ?, 1)`,
+    )
+      .bind(
+        'usr_cookie_1',
+        JSON.stringify({
+          storage: {
+            luminara_business_dna: JSON.stringify({
+              name: 'Acme SaaS Studio',
+              industry: 'B2B SaaS',
+              domain: 'acmesaas.com',
+            }),
+          },
+        }),
+      )
+      .run();
+
+    let sentProvisionPayload: Record<string, unknown> = {};
+    const fakeFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const url = String(input);
+      if (url.endsWith('/api/suite/provision')) {
+        sentProvisionPayload = JSON.parse(String(init?.body || '{}')) as Record<string, unknown>;
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            created: false,
+            workspace_slug: 'acme-saas-studio',
+            crm_mode: 'standalone',
+            passport_token: '11|rotated-token-after-cold-timeout',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          error: { code: 'invalid_params', message: 'The raw text field is required.' },
+        }),
+        { status: 422, headers: { 'Content-Type': 'application/json' } },
+      );
+    });
+
+    // OAuth/cookie user without emailVerified on identity object, and client name "Claude".
+    const oauthUser: HostedIdentity = {
+      id: 'oauth:usr_cookie_1',
+      source: 'firebase',
+      accountId: 'usr_cookie_1',
+      name: 'Claude',
+    };
+
+    const act = await activateCrmWorkspace(env, oauthUser, { crmMode: 'standalone' }, fakeFetch as unknown as typeof fetch);
+    expect(act.ok).toBe(true);
+    expect(sentProvisionPayload.email).toBe('verified@acmesaas.com');
+    expect(sentProvisionPayload.email_verified).toBe(true);
+    expect(sentProvisionPayload.business_name).toBe('Acme SaaS Studio');
+    expect(sentProvisionPayload.rotate_passport).toBe(true);
+    expect((sentProvisionPayload.business_dna as Record<string, unknown>)?.brandName).toBe('Acme SaaS Studio');
+
+    // Structured CRM ActionOutcome::error must NEVER coerce to "[object Object]".
+    expect(
+      extractCrmErrorMessage(
+        { ok: false, error: { code: 'invalid_params', message: 'The raw text field is required.' } },
+        'fallback',
+      ),
+    ).toBe('The raw text field is required.');
+    expect(extractCrmErrorMessage({ ok: false, code: 'workspace_not_found' }, 'fallback')).toBe('workspace_not_found');
+
+    const briefingErr = await handleCrmBridgeRoute(
+      new Request('https://www.luminarasuite.com/api/crm/briefing', { method: 'GET' }),
+      env,
+      oauthUser,
+      '/crm/briefing',
+      fakeFetch as unknown as typeof fetch,
+    );
+    expect(briefingErr?.status).toBe(422);
+    expect(((await briefingErr?.json()) as { error?: unknown }).error).toBe('The raw text field is required.');
   });
 });

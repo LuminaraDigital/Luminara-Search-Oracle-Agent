@@ -13,6 +13,7 @@ import {
   activateCrmWorkspace,
   callCrmAction,
   crmBaseUrl,
+  extractCrmErrorMessage,
   isCrmBridgeEnabled,
   type CrmMode,
 } from './crmBridgeClient';
@@ -70,7 +71,7 @@ async function proxyCrm(
   }
 
   if (!res.ok) {
-    const rawErr = String(redactedBody.message || redactedBody.error || `CRM action ${crmAction} failed (HTTP ${res.status}).`);
+    const rawErr = extractCrmErrorMessage(redactedBody, `CRM action ${crmAction} failed (HTTP ${res.status}).`);
     const safeErr = rawErr.slice(0, MAX_ERROR_TEXT_LEN);
     return toResult(safeErr, { ok: false, status: res.status, error: safeErr }, true);
   }
@@ -236,6 +237,52 @@ export const CRM_BRIDGE_MCP_TOOLS: McpToolDef[] = [
         },
         Boolean(args.dry_run),
       );
+    },
+  },
+  {
+    name: 'crm_contacts_search',
+    title: 'Search CRM contacts',
+    description:
+      'Uses no credits. Searches contacts (persons) in the user\'s Luminara CRM workspace by name, email, or phone so agents can resolve person_id before drafting quotes or updating deals.',
+    creditClass: 'free',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string' },
+        limit: { type: 'integer', minimum: 1, maximum: 50 },
+      },
+      additionalProperties: false,
+    },
+    handler: async (args, ctx) => {
+      const query = boundedString(args.query, 100);
+      const limit = args.limit !== undefined ? positiveInt(args.limit, 50) : undefined;
+      return proxyCrm(ctx, 'contacts_search', {
+        ...(query ? { query } : {}),
+        ...(limit ? { limit } : {}),
+      });
+    },
+  },
+  {
+    name: 'crm_products_search',
+    title: 'Search CRM products',
+    description:
+      'Uses no credits. Searches catalog products in the user\'s Luminara CRM workspace by name or SKU so agents can resolve product_id before drafting quotes.',
+    creditClass: 'free',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string' },
+        limit: { type: 'integer', minimum: 1, maximum: 50 },
+      },
+      additionalProperties: false,
+    },
+    handler: async (args, ctx) => {
+      const query = boundedString(args.query, 100);
+      const limit = args.limit !== undefined ? positiveInt(args.limit, 50) : undefined;
+      return proxyCrm(ctx, 'products_search', {
+        ...(query ? { query } : {}),
+        ...(limit ? { limit } : {}),
+      });
     },
   },
   {

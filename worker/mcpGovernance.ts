@@ -93,6 +93,8 @@ export const CRM_BRIDGE_TOOL_GOVERNANCE: Record<string, ToolGovernanceEntry> = {
   crm_briefing_today: { risk: 'read', status: 'active' },
   crm_intake_capture: { risk: 'write', status: 'active' },
   crm_leads_search: { risk: 'read', status: 'active' },
+  crm_contacts_search: { risk: 'read', status: 'active' },
+  crm_products_search: { risk: 'read', status: 'active' },
   crm_quotes_draft: { risk: 'write', status: 'active' },
   crm_bridge_connections_list: { risk: 'read', status: 'active' },
   crm_bridge_pull_context: { risk: 'read', status: 'active' },
