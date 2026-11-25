@@ -19,6 +19,7 @@ import { hostedAuthRecoveryHint } from '../audit/hostedScoutRail';
 import { contentDistiller, DistilledContentResult } from './contentDistiller';
 import { githubCitabilityService } from './githubCitabilityService';
 import { exaService } from '../search/exaService';
+import { responseBlocked } from '../audit/llmCrawlerReadiness';
 
 export type ScraperProviderType = 'auto' | 'patchright' | 'firecrawl' | 'jina' | 'direct';
 
@@ -26,6 +27,8 @@ export interface ScrapedPageEvidence {
   success: boolean;
   providerUsed: 'patchright' | 'firecrawl' | 'jina' | 'direct' | 'exa';
   url: string;
+  /** URL after redirects. Empty when the fetch did not report one. */
+  finalUrl?: string;
   statusCode?: number;
   title: string;
   description: string;
@@ -114,6 +117,7 @@ export class UnifiedScraperService {
             success: true,
             providerUsed: 'patchright',
             url,
+            finalUrl: url,
             statusCode: prRes.statusCode || 200,
             title: prRes.title || distilled.title,
             description: prRes.description || distilled.description,
@@ -157,6 +161,7 @@ export class UnifiedScraperService {
             success: true,
             providerUsed: 'firecrawl',
             url,
+            finalUrl: fcRes.metadata?.sourceURL || url,
             statusCode: fcRes.metadata?.statusCode || 200,
             title: fcRes.metadata?.title || distilled.title,
             description: fcRes.metadata?.description || distilled.description,
@@ -200,13 +205,14 @@ export class UnifiedScraperService {
 
         if (jinaRes.ok) {
           const mdText = await jinaRes.text();
-          if (mdText && mdText.trim().length > 100) {
+          if (mdText && mdText.trim().length > 100 && !responseBlocked(jinaRes.status, mdText)) {
             const distilled = contentDistiller.distill('', mdText, { maxChars: options.maxChars });
 
             return {
               success: true,
               providerUsed: 'jina',
               url,
+              finalUrl: this.settledUrl(url, jinaRes.url),
               statusCode: jinaRes.status,
               title: distilled.title || url,
               description: distilled.description,
@@ -217,8 +223,9 @@ export class UnifiedScraperService {
               ...(firecrawlSkipNote ? { fallbackNote: firecrawlSkipNote } : {}),
             };
           }
+          if (responseBlocked(jinaRes.status, mdText || '')) lastError = 'Jina Reader returned a bot check';
         }
-        lastError = `Jina Reader HTTP ${jinaRes.status}`;
+        if (!lastError) lastError = `Jina Reader HTTP ${jinaRes.status}`;
       } catch (err: any) {
         lastError = `Jina fallback error: ${err.message}`;
       }
@@ -226,8 +233,8 @@ export class UnifiedScraperService {
 
     // Strategy 4: Direct Fetch Fallback (Zero-dependency resilient crawl)
     if (providerPref === 'auto' || providerPref === 'direct') {
+      const directUrl = url.startsWith('http') ? url : `https://${url}`;
       try {
-        const directUrl = url.startsWith('http') ? url : `https://${url}`;
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), 8000);
         const directRes = await fetch(directUrl, {
@@ -241,12 +248,13 @@ export class UnifiedScraperService {
         clearTimeout(timer);
         if (directRes.ok) {
           const html = await directRes.text();
-          if (html && html.trim().length > 50) {
+          if (html && html.trim().length > 50 && !responseBlocked(directRes.status, html)) {
             const distilled = contentDistiller.distill(html, '', { maxChars: options.maxChars });
             return {
               success: true,
               providerUsed: 'direct',
               url,
+              finalUrl: this.settledUrl(directUrl, directRes.url),
               statusCode: directRes.status,
               title: distilled.title || url,
               description: distilled.description,
@@ -258,17 +266,29 @@ export class UnifiedScraperService {
               ...(firecrawlSkipNote ? { fallbackNote: firecrawlSkipNote } : {}),
             };
           }
-        } else if (directRes.status === 403 || directRes.status === 429) {
-          const fromExa = await this.pageFromExa(directUrl, directRes.status, options.maxChars, startTime, firecrawlSkipNote);
-          if (fromExa) return fromExa;
+          lastError = responseBlocked(directRes.status, html) ? 'Direct fetch returned a bot check' : 'Direct fetch returned an empty page';
+        } else {
           lastError = `Direct fetch HTTP ${directRes.status}`;
         }
       } catch (err: any) {
         lastError = `Direct fetch error: ${err.message}`;
       }
+      const fromExa = await this.pageFromExa(directUrl, 0, options.maxChars, startTime, firecrawlSkipNote);
+      if (fromExa && !responseBlocked(fromExa.statusCode, fromExa.markdown)) return fromExa;
     }
 
     return this.buildFailureResult(url, 'auto', lastError || 'All scraping strategies exhausted', startTime, firecrawlSkipNote);
+  }
+
+  /** response.url is empty on some test doubles. Keep the URL we asked for. */
+  private settledUrl(requested: string, responseUrl: string): string {
+    try {
+      const settled = new URL(responseUrl);
+      if (settled.protocol === 'http:' || settled.protocol === 'https:') return settled.toString();
+    } catch {
+      /* empty or relative */
+    }
+    return requested;
   }
 
   private async pageFromExa(
@@ -286,6 +306,7 @@ export class UnifiedScraperService {
       success: true,
       providerUsed: 'exa',
       url,
+      finalUrl: url,
       statusCode,
       title: rows[0]?.title || distilled.title || url,
       description: distilled.description,

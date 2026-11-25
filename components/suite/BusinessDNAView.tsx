@@ -12,6 +12,7 @@ import { optionalPortalUrl } from '../../services/audit/agencyProfile';
 import { IndustrySelect } from '../industries/IndustrySelect';
 import { DEFAULT_INDUSTRY_ID, industryProfile } from '../../services/industries/industryProfiles';
 import { saveAccountIndustry } from '../../services/industries/industryClient';
+import { NEED_DOMAIN_MESSAGE, REVIEW_NOTE, reviewedProfile } from '../../services/suite/businessProfileScan';
 
 interface BusinessDNAViewProps {
   currentDNA: BusinessDNA | null;
@@ -54,6 +55,7 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
   const [formData, setFormData] = useState<BusinessDNA>(() => profileOrBlank(currentDNA));
   const [vfsSyncSuccess, setVfsSyncSuccess] = useState<string | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
+  const [reviewNote, setReviewNote] = useState<string | null>(null);
 
   // If the DNA is changed elsewhere (dashboard clear, another tab), reflect it here.
   useEffect(() => {
@@ -95,20 +97,22 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
   const handleExtractDNA = async () => {
     if (loading) return;
     if (!input.trim()) {
-      setInlineValidationError('Please enter your website URL or a short description of your business.');
+      setInlineValidationError(NEED_DOMAIN_MESSAGE);
       return;
     }
     setInlineValidationError(null);
     setLoading(true);
     setError(null);
+    setReviewNote(null);
     try {
       const extracted = await geminiService.extractBusinessDNA(input);
-      setFormData(extracted);
-      onDNAGenerated(extracted);
-      syncToVfs(extracted);
-      draftPersistenceService.clearDraft(DRAFT_KEYS.BUSINESS_DNA_INPUT);
-      productTelemetry.recordOnboardingStep('business_dna');
-      setEditing(!extracted.mission && !extracted.usp);
+      if (extracted.status !== 'review') {
+        setInlineValidationError(extracted.message);
+        return;
+      }
+      setFormData(reviewedProfile(currentDNA, extracted.dna));
+      setEditing(true);
+      setReviewNote(REVIEW_NOTE);
     } catch (err: any) {
       const msg = err?.message || 'Could not build your business profile. Check your AI key in Settings.';
       setError(msg);
@@ -128,6 +132,7 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
       const next = saved.dna;
       setProfileError(null);
       setFormData(next);
+      setReviewNote(null);
       onDNAGenerated(next);
       if (next.industryId) void saveAccountIndustry(next.industryId);
       syncToVfs(next);
@@ -152,6 +157,7 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
         setFormData(profileOrBlank(null));
         setEditing(true);
         setInput('');
+        setReviewNote(null);
         draftPersistenceService.clearDraft(DRAFT_KEYS.BUSINESS_DNA_INPUT);
       },
     );
@@ -177,7 +183,7 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
       <div className="glass-morphism rounded-2xl border border-gold/30 p-6 sm:p-8 mb-8 shadow-2xl">
         <div className="space-y-4">
           <label htmlFor="business-dna-input" className="block text-xs font-bold uppercase tracking-widest text-gray-300">
-            Scan Brand URL or Describe Business
+            Your website
           </label>
           <div className="flex flex-col sm:flex-row gap-3">
             <input
@@ -185,7 +191,7 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
               type="text"
               value={input}
               onChange={(e) => handleInputChange(e.target.value)}
-              placeholder="Your website, or a sentence about your business (e.g. 'independent real estate agency in [suburb]')"
+              placeholder="https://your-agency.com.au"
               onKeyDown={(e) => e.key === 'Enter' && handleExtractDNA()}
               className={`flex-1 bg-black/60 border rounded-xl px-4 py-3 text-sm text-white font-mono placeholder:text-gray-500 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none transition-all shadow-inner ${
                 inlineValidationError ? 'border-danger-500/70 focus:border-danger-400' : 'border-white/15 focus:border-gold'
@@ -231,8 +237,9 @@ export const BusinessDNAView: React.FC<BusinessDNAViewProps> = ({ currentDNA, on
             <div className="flex items-center gap-3">
               <div className="w-3 h-3 rounded-full bg-success-400 shadow-sm shadow-success-500/30 animate-pulse"></div>
               <div>
-                <span className="text-[10px] font-mono text-success-400 uppercase tracking-widest">{currentDNA ? 'Profile active' : 'No profile yet'}</span>
+                <span className="text-[10px] font-mono text-success-400 uppercase tracking-widest">{reviewNote ? 'Not applied yet' : currentDNA ? 'Profile active' : 'No profile yet'}</span>
                 <h2 className="text-2xl font-bold text-white tracking-tight">{formData.name || 'Your agency'}</h2>
+                {reviewNote && <p className="text-xs text-gold-light mt-1" role="status">{reviewNote}</p>}
                 {vfsSyncSuccess && (
                   <span className="text-[10px] font-mono text-success-400 block mt-0.5">
                     ✓ {vfsSyncSuccess}

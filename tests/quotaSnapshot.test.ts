@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getCurrentQuotaSync, hostedAllowanceSpent, setAccountSignedIn, updateQuotaFromHeaders } from '../services/apiClient';
+import { quotaResponseHeaders } from '../worker/quotaMiddleware';
 import { resetAccountBoot } from '../services/auth/accountBoot';
 import { writeCachedFirebaseIdToken } from '../services/auth/firebaseIdToken';
 import { canMintMcpKeys } from '../services/audit/instantAuditHelpers';
@@ -42,6 +43,27 @@ describe('quota snapshot after an audit call', () => {
     expect(getCurrentQuotaSync()).toMatchObject({ plan: 'free', expiresAt: undefined, isUnlimited: false, remaining: 3 });
     // Free still shares, under the Worker's daily cap.
     expect(canCreateShareLinks()).toBe(true);
+  });
+});
+
+describe('audit and ask meters stay apart', () => {
+  it('keeps the audit cap when an Ask response reports a different limit', () => {
+    updateQuotaFromHeaders(new Headers({ 'x-quota-limit': '3', 'x-quota-remaining': '3', 'x-quota-reset': '600', 'x-quota-bucket': 'audit' }));
+    updateQuotaFromHeaders(new Headers({ 'x-quota-limit': '10', 'x-quota-remaining': '9', 'x-quota-reset': '600', 'x-quota-bucket': 'ask' }));
+    expect(getCurrentQuotaSync()).toMatchObject({ limit: 3, remaining: 3 });
+    updateQuotaFromHeaders(new Headers({ 'x-quota-limit': '10', 'x-quota-remaining': '8', 'x-quota-reset': '600' }));
+    expect(getCurrentQuotaSync()).toMatchObject({ limit: 3, remaining: 3 });
+    updateQuotaFromHeaders(new Headers({ 'x-quota-limit': '3', 'x-quota-remaining': '2', 'x-quota-reset': '600', 'x-quota-bucket': 'audit' }));
+    expect(getCurrentQuotaSync()).toMatchObject({ limit: 3, remaining: 2 });
+  });
+
+  it('tags Ask headers so the badge can ignore them', () => {
+    expect(quotaResponseHeaders({
+      ok: true, limit: 10, used: 1, remaining: 9, resetSec: 60, isUnlimited: false, bucket: 'ask',
+    })['X-Quota-Bucket']).toBe('ask');
+    expect(quotaResponseHeaders({
+      ok: true, limit: 3, used: 0, remaining: 3, resetSec: 60, isUnlimited: false, bucket: 'audit',
+    })['X-Quota-Limit']).toBe('3');
   });
 });
 

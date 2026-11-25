@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { unifiedScraperService } from '../services/scraping/unifiedScraper';
+import { exaService } from '../services/search/exaService';
 import { patchrightClient } from '../services/scraping/patchrightClient';
 import { firecrawlService } from '../services/scraping/firecrawlService';
 import { configService } from '../services/configService';
@@ -183,5 +184,26 @@ describe('UnifiedScraperService', () => {
     expect(first.fallbackNote).toBe('Page fetch did not run (status not ready)');
     expect(second.success).toBe(true);
     expect(second.fallbackNote).toBeUndefined();
+  });
+
+  it('tries Exa when Jina and the direct fetch both return a bot wall', async () => {
+    vi.spyOn(configService, 'getCrawlerProvider').mockReturnValue('auto');
+    vi.spyOn(configService, 'isLocalSidecarAllowed').mockReturnValue(false);
+    vi.spyOn(configService, 'getFirecrawlKey').mockReturnValue('');
+    const wall = `<html><title>Just a moment...</title><div id="cf-challenge">checking your browser</div>${'x'.repeat(180)}</html>`;
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(wall, { status: 200 })));
+    const page = 'Luminara Digital helps independent Melbourne agencies with qualified appraisals and a flat fee.';
+    vi.spyOn(exaService, 'contents').mockResolvedValue([{
+      id: '1',
+      url: 'https://luminara.digital/',
+      title: 'Luminara Digital',
+      text: page,
+    }]);
+
+    const result = await unifiedScraperService.scrapeAndDistill('https://luminara.digital');
+
+    expect(result.success).toBe(true);
+    expect(result.providerUsed).toBe('exa');
+    expect(result.markdown).toContain('Luminara Digital');
   });
 });

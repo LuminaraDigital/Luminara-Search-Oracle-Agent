@@ -771,15 +771,29 @@ export function updateQuotaFromHeaders(headers: Headers, since = quotaEpoch()): 
   const lim = headers.get('x-quota-limit');
   const rst = headers.get('x-quota-reset');
   if (rem !== null || lim !== null) {
+    const bucket = (headers.get('x-quota-bucket') || '').toLowerCase();
+    // Ask and audit are different daily meters. The badge shows the audit meter from boot.
+    if (bucket === 'ask' || bucket === 'ask-search') return;
     const isUnlimited = rem === 'unlimited' || lim === 'unlimited';
     const limitNum = isUnlimited ? -1 : (Number(lim) || 0);
+    const known = getCurrentQuotaSync();
+    if (
+      !isUnlimited &&
+      known &&
+      !known.isUnlimited &&
+      known.limit > 0 &&
+      limitNum > 0 &&
+      limitNum !== known.limit &&
+      bucket !== 'audit'
+    ) {
+      return;
+    }
     const remNum = isUnlimited ? -1 : (Number(rem) || 0);
     const resetSec = Number(rst) || 0;
     const used = isUnlimited ? 0 : Math.max(0, limitNum - remNum);
     const bonusHeader = headers.get('x-quota-bonus');
     const bonusRemaining = bonusHeader == null || bonusHeader === '' ? undefined : Number(bonusHeader);
     // The headers name no plan: unlimited keeps the paid plan the boot or quota read named.
-    const known = getCurrentQuotaSync();
     const paid = isUnlimited && normalizePlanId(known?.plan) !== 'free' ? known : null;
     writeQuotaSnapshot({
       limit: limitNum,

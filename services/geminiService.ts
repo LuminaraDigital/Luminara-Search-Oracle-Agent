@@ -12,6 +12,19 @@ import { tavilyService } from "./search/tavilyService";
 import { localSerpService } from "./search/localSerpService";
 import { unifiedScraperService } from "./scraping/unifiedScraper";
 import { siteEvidencePackService } from "./scraping/siteEvidencePack";
+import {
+  confirmedName,
+  groundedContext,
+  measuredBrand,
+  mentionedOnPage,
+  modelProfile,
+  nameAgreesWithPage,
+  NEED_DOMAIN_MESSAGE,
+  parseBusinessScanTarget,
+  readConfirmedPage,
+  UNCONFIRMED_MESSAGE,
+  type ModelProfile,
+} from "./suite/businessProfileScan";
 import { geminiProxyHttpOptions } from "./apiClient";
 import { formatAuDate } from "../utils/formatAuDate";
 import { wrapUntrustedContent, UNTRUSTED_CONTENT_RULE } from "../utils/untrustedContent";
@@ -24,7 +37,8 @@ export const BUSINESS_DNA_SYSTEM_PROMPT =
   `You are an expert Strategic Business DNA extractor. Always output valid JSON matching the requested schema.\n${UNTRUSTED_CONTENT_RULE}`;
 
 export function buildBusinessDnaPrompt(input: string, scrapedInfo: string): string {
-  return `Perform a deep strategic scan of the following business/URL: "${input}".
+  return `Read only the scraped page for this website: "${input}".
+Do not use a different business that shares part of the name. If the page does not state a field, leave it empty.
 ${wrapUntrustedContent('SCRAPED_SITE', scrapedInfo)}
 Extract the brand's 'Strategic DNA'. Return strictly a valid JSON object matching this exact schema:
 {
@@ -37,11 +51,17 @@ Extract the brand's 'Strategic DNA'. Return strictly a valid JSON object matchin
   "rawContext": "A condensed 2-3 paragraph summary of the entire strategic profile."
 }
 Competitor rules:
+- Only list a competitor when the scraped page names them.
 - Competitors must be direct commercial business rivals in the brand's industry and geographic market.
 - Exclude review directories, aggregators, and platforms (e.g. Trustpilot, Yelp, ProductReview, Yellow Pages).
 - Exclude general medical websites, encyclopedias, and directories (e.g. WebMD, Healthline, Mayo Clinic, Wikipedia).
 - Exclude general search engines and social platforms (e.g. Google, Amazon, Reddit, Quora).`;
 }
+
+export type BusinessDnaExtraction =
+  | { status: 'need_domain'; message: string }
+  | { status: 'unconfirmed'; message: string }
+  | { status: 'review'; dna: BusinessDNA };
 
 export interface StreamQueryOptions {
   history?: ChatTurn[];
@@ -1143,116 +1163,83 @@ Strict Formatting Guidelines:
   }
 
   /**
-   * Scans a business URL or brand name and extracts Strategic Business DNA
-   * With Firecrawl scraping and Multi-LLM JSON extraction
+   * Reads the named website, then drafts a profile from that page only.
+   * A bare word is refused. A page that is not that host is not applied.
    */
-  async extractBusinessDNA(input: string): Promise<BusinessDNA> {
-    let scrapedInfo = '';
-    if (input.includes('.')) {
-      try {
-        const targetUrl = input.includes('://') ? input : `https://${input}`;
-        const timeoutPromise = new Promise<{ success: false }>((resolve) =>
-          setTimeout(() => resolve({ success: false }), 5000),
-        );
-        const packPromise = siteEvidencePackService.buildPack(targetUrl, {
-          maxPages: 1,
-          focusHint: 'about company product services',
-        });
-        const pack = await Promise.race([packPromise, timeoutPromise]);
-        if (pack && 'success' in pack && pack.success && pack.formattedEvidence) {
-          scrapedInfo = `\n${pack.formattedEvidence}\n`;
-        } else {
-          const scrapeRes = await Promise.race([
-            unifiedScraperService.scrapeAndDistill(targetUrl, { maxChars: 5000 }),
-            timeoutPromise,
-          ]);
-          if (scrapeRes && 'success' in scrapeRes && scrapeRes.success && scrapeRes.formattedEvidence) {
-            scrapedInfo = `\n${scrapeRes.formattedEvidence}\n`;
-          }
-        }
-      } catch (e) {
-        console.warn('[DNA] Scrape skipped or timed out', e);
-      }
-    }
+  async extractBusinessDNA(input: string): Promise<BusinessDnaExtraction> {
+    const target = parseBusinessScanTarget(input);
+    if (!target.ok) return { status: 'need_domain', message: target.message || NEED_DOMAIN_MESSAGE };
 
-    const prompt = buildBusinessDnaPrompt(input, scrapedInfo);
+    const page = await readConfirmedPage(target.url, target.host);
+    if (!page) return { status: 'unconfirmed', message: UNCONFIRMED_MESSAGE };
 
-    // 1. Primary Native LLM Focus: Groq / NVIDIA NIM / Ollama with auto-failover
+    const model = await this.profileFromPage(target.url, page.text);
+    const modelName = model?.name || '';
+    const name = confirmedName(target.host, modelName, measuredBrand(page), page.text);
+    if (!name) return { status: 'unconfirmed', message: UNCONFIRMED_MESSAGE };
+
+    const agrees = Boolean(model && nameAgreesWithPage(target.host, modelName, page.text));
+    return {
+      status: 'review',
+      dna: {
+        name,
+        mission: agrees && model ? model.mission : '',
+        usp: agrees && model ? model.usp : '',
+        targetAudience: agrees && model ? model.targetAudience : '',
+        competitors: agrees && model ? mentionedOnPage(model.competitors, page.text) : [],
+        perceivedGaps: agrees && model ? mentionedOnPage(model.perceivedGaps, page.text) : [],
+        rawContext: groundedContext(target.host, page, agrees && model ? model.rawContext : ''),
+      },
+    };
+  }
+
+  /** The model may only see the page we already matched to the host. No web search. */
+  private async profileFromPage(url: string, pageText: string): Promise<ModelProfile | null> {
+    const prompt = buildBusinessDnaPrompt(url, pageText);
     try {
       const best = await aiProviderService.getBestAvailableProvider();
       if (best) {
         const result = await aiProviderService.generateWithFailover(prompt, {
           jsonMode: true,
           temperature: 0.2,
-          systemPrompt: BUSINESS_DNA_SYSTEM_PROMPT
+          systemPrompt: BUSINESS_DNA_SYSTEM_PROMPT,
         });
-
-        const parsed = safeJsonParse<any>(result.text, {});
-        return {
-          name: parsed.name || input,
-          mission: typeof parsed.mission === 'string' ? parsed.mission : '',
-          usp: typeof parsed.usp === 'string' ? parsed.usp : '',
-          targetAudience: typeof parsed.targetAudience === 'string' ? parsed.targetAudience : '',
-          competitors: Array.isArray(parsed.competitors) ? parsed.competitors : [],
-          perceivedGaps: Array.isArray(parsed.perceivedGaps) ? parsed.perceivedGaps : [],
-          rawContext: parsed.rawContext || result.text
-        };
+        return modelProfile(safeJsonParse<Record<string, unknown>>(result.text, {}));
       }
     } catch (e) {
       console.warn('Native Trinity extractBusinessDNA failed, falling back to secondary...', e);
     }
 
-    // 2. Secondary Gemini fallback
     const geminiKey = getApiKey();
-    if (geminiKey) {
-      try {
-        const ai = this.getAI();
-        const schema = {
-          type: Type.OBJECT,
-          properties: {
-            name: { type: Type.STRING },
-            mission: { type: Type.STRING },
-            usp: { type: Type.STRING },
-            targetAudience: { type: Type.STRING },
-            competitors: { type: Type.ARRAY, items: { type: Type.STRING } },
-            perceivedGaps: { type: Type.ARRAY, items: { type: Type.STRING } },
-            rawContext: { type: Type.STRING, description: "A condensed summary of the strategic profile." }
-          },
-          required: ["name", "mission", "usp", "targetAudience", "competitors", "perceivedGaps", "rawContext"]
-        };
-
-        const response = await ai.models.generateContent({
-          model: "gemini-3-pro-preview",
-          contents: prompt,
-          config: {
-            tools: [{ googleSearch: {} }],
-            responseMimeType: "application/json",
-            responseSchema: schema
-          }
-        });
-
-        return JSON.parse(response.text || "{}") as BusinessDNA;
-      } catch (e) {
-        console.warn('Gemini extractBusinessDNA error:', e);
-      }
+    if (!geminiKey) return null;
+    try {
+      const ai = this.getAI();
+      const schema = {
+        type: Type.OBJECT,
+        properties: {
+          name: { type: Type.STRING },
+          mission: { type: Type.STRING },
+          usp: { type: Type.STRING },
+          targetAudience: { type: Type.STRING },
+          competitors: { type: Type.ARRAY, items: { type: Type.STRING } },
+          perceivedGaps: { type: Type.ARRAY, items: { type: Type.STRING } },
+          rawContext: { type: Type.STRING, description: "A condensed summary of the strategic profile." }
+        },
+        required: ["name", "mission", "usp", "targetAudience", "competitors", "perceivedGaps", "rawContext"]
+      };
+      const response = await ai.models.generateContent({
+        model: "gemini-3-pro-preview",
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: schema
+        }
+      });
+      return modelProfile(safeJsonParse<Record<string, unknown>>(response.text || '{}', {}));
+    } catch (e) {
+      console.warn('Gemini extractBusinessDNA error:', e);
+      return null;
     }
-
-    // 3. No model answered: return the name only so the founder can fill in the rest (never invent claims).
-    const cleanBrand = input
-      .replace(/^https?:\/\//i, '')
-      .replace(/^www\./i, '')
-      .split(/[/?#]/)[0]
-      .split('.')[0] || 'My Business';
-    const capitalized = cleanBrand.charAt(0).toUpperCase() + cleanBrand.slice(1);
-    return {
-      name: capitalized,
-      mission: '',
-      usp: '',
-      targetAudience: '',
-      competitors: [],
-      perceivedGaps: [],
-      rawContext: `Profile for ${capitalized} could not be extracted automatically. Add your mission, USP, audience and competitors.`
-    };
   }
 
   /**

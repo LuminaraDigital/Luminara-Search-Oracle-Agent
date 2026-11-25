@@ -14,7 +14,7 @@ if (typeof (globalThis as any).window === 'undefined') {
 (globalThis as any).localStorage = mockLocalStorage;
 
 import { aiProviderService } from '../services/aiProviderService';
-import { siteEvidencePackService } from '../services/scraping/siteEvidencePack';
+import { unifiedScraperService } from '../services/scraping/unifiedScraper';
 import {
   geminiService,
   buildBusinessDnaPrompt,
@@ -63,7 +63,7 @@ describe('Business DNA prompt fencing', () => {
     expect(prompt.match(/<<<UNTRUSTED_SCRAPED_SITE_END>>>/g)).toHaveLength(1);
     const schemaIdx = prompt.indexOf('"rawContext"');
     expect(schemaIdx).toBeGreaterThan(prompt.indexOf('<<<UNTRUSTED_SCRAPED_SITE_END>>>'));
-    expect(prompt.startsWith('Perform a deep strategic scan of the following business/URL: "acme.com".')).toBe(true);
+    expect(prompt.startsWith('Read only the scraped page for this website: "acme.com".')).toBe(true);
   });
 
   it('omits the fence when nothing was scraped', () => {
@@ -77,10 +77,29 @@ describe('Business DNA prompt fencing', () => {
     });
 
     it('sends scraped evidence to the LLM only inside the fence', async () => {
-      vi.spyOn(siteEvidencePackService, 'buildPack').mockResolvedValue({
+      vi.spyOn(unifiedScraperService, 'scrapeAndDistill').mockResolvedValue({
         success: true,
-        formattedEvidence: `[SITE EVIDENCE]\nHome page says: ${PAYLOAD}`,
-      } as any);
+        providerUsed: 'direct',
+        url: 'https://acme.com/',
+        finalUrl: 'https://acme.com/',
+        statusCode: 200,
+        title: 'Acme',
+        description: 'Acme ships software for teams.',
+        markdown: `Acme ships software for teams. ${PAYLOAD}`,
+        formattedEvidence: `Acme ships software for teams. ${PAYLOAD}`,
+        latencyMs: 1,
+        distilled: {
+          title: 'Acme',
+          description: 'Acme ships software for teams.',
+          openGraph: {},
+          schemas: [],
+          schemaTypes: [],
+          headings: [],
+          distilledText: `Acme ships software for teams. ${PAYLOAD}`,
+          formattedEvidence: `Acme ships software for teams. ${PAYLOAD}`,
+          stats: { rawChars: 80, distilledChars: 80, compressionRatio: 1 },
+        },
+      });
       vi.spyOn(aiProviderService, 'getBestAvailableProvider').mockResolvedValue({ id: 'groq' } as any);
       const gen = vi.spyOn(aiProviderService, 'generateWithFailover').mockResolvedValue({
         text: '{"name":"Acme","mission":"m","usp":"u","targetAudience":"t","competitors":["C"],"perceivedGaps":["G"],"rawContext":"r"}',
@@ -88,7 +107,8 @@ describe('Business DNA prompt fencing', () => {
 
       const dna = await geminiService.extractBusinessDNA('acme.com');
 
-      expect(dna.name).toBe('Acme');
+      expect(dna.status).toBe('review');
+      if (dna.status === 'review') expect(dna.dna.name).toBe('Acme');
       const [sentPrompt, opts] = gen.mock.calls[0];
       expectOnlyInsideFence(sentPrompt, 'SCRAPED_SITE');
       expect(opts?.systemPrompt).toBe(BUSINESS_DNA_SYSTEM_PROMPT);

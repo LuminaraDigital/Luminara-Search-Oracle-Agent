@@ -2,7 +2,7 @@ import type { Env } from './env';
 import { billingId, fetchWithTimeout, identify, json } from './workerUtils';
 import { mintScoutReceipt } from './referrals';
 import { scoutEvidenceDomain } from '../services/referrals/rules';
-import { isUserSubscribed, checkHostedQuota, QUOTA_CAPACITY_ERROR, refundMeteredQuota, type QuotaStatus } from './quotaMiddleware';
+import { isUserSubscribed, checkHostedQuota, QUOTA_CAPACITY_ERROR, quotaResponseHeaders, refundMeteredQuota, type QuotaStatus } from './quotaMiddleware';
 import { sameSiteHost } from '../services/audit/sameSiteHost';
 import { noteAuditRunSuccess, requestTargetHost, takeAuditRunCall } from './auditScoutRun';
 import { requireApiAccess } from './apiAccess';
@@ -263,19 +263,7 @@ function makeFallbackResponse(
     'X-Provider-Fallback-Model': outcome.model,
     'X-Provider-Fallback-Reason': outcome.reason,
   };
-  if (quotaGate) {
-    if (quotaGate.isUnlimited) {
-      fallbackHeaders['X-Quota-Limit'] = 'unlimited';
-      fallbackHeaders['X-Quota-Remaining'] = 'unlimited';
-    } else if (quotaGate.limit > 0) {
-      fallbackHeaders['X-Quota-Limit'] = String(quotaGate.limit);
-      fallbackHeaders['X-Quota-Remaining'] = String(quotaGate.remaining);
-      fallbackHeaders['X-Quota-Reset'] = String(quotaGate.resetSec);
-      if (typeof quotaGate.bonusRemaining === 'number') {
-        fallbackHeaders['X-Quota-Bonus'] = String(quotaGate.bonusRemaining);
-      }
-    }
-  }
+  Object.assign(fallbackHeaders, quotaResponseHeaders(quotaGate));
   if (outcome.streaming) {
     const streamHeaders = new Headers({
       'Content-Type': 'text/event-stream; charset=utf-8',
@@ -523,11 +511,7 @@ export async function proxyProvider(
           upgrade: !capacity,
         },
         capacity ? 503 : 402,
-        {
-          'X-Quota-Limit': String(quotaGate.limit),
-          'X-Quota-Remaining': '0',
-          'X-Quota-Reset': String(quotaGate.resetSec),
-        }
+        quotaResponseHeaders({ ...quotaGate, remaining: 0 })
       );
     }
   }
@@ -726,19 +710,7 @@ export async function proxyProvider(
   // Vendor CORS headers and cookies are dropped: our own CORS policy is applied by handleApi.
   const out = new Headers(res.headers);
   stripUpstreamHeaders(out);
-  if (quotaGate) {
-    if (quotaGate.isUnlimited) {
-      out.set('X-Quota-Limit', 'unlimited');
-      out.set('X-Quota-Remaining', 'unlimited');
-    } else if (quotaGate.limit > 0) {
-      out.set('X-Quota-Limit', String(quotaGate.limit));
-      out.set('X-Quota-Remaining', String(quotaGate.remaining));
-      out.set('X-Quota-Reset', String(quotaGate.resetSec));
-      if (typeof quotaGate.bonusRemaining === 'number') {
-        out.set('X-Quota-Bonus', String(quotaGate.bonusRemaining));
-      }
-    }
-  }
+  for (const [key, value] of Object.entries(quotaResponseHeaders(quotaGate))) out.set(key, value);
   if (res.ok && scoutAccountId && !jevCall) {
     try {
       const domain = scoutEvidenceDomain({ providerId, subPath, body, hostname: safePublicHostname });

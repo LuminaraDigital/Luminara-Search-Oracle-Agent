@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { BusinessDNAView, savedProfile } from '../components/suite/BusinessDNAView';
+import { reviewedProfile } from '../services/suite/businessProfileScan';
 
 describe('business profile with no saved DNA', () => {
   it('shows suburb, state, agency type and portal fields, and saving them creates the profile', () => {
@@ -32,6 +33,32 @@ describe('business profile with no saved DNA', () => {
     });
     expect(saved.ok).toBe(true);
     if (saved.ok) expect(saved.dna).toMatchObject({ suburb: 'Hawthorn', state: 'VIC', agencyType: 'agency' });
+  });
+
+  it('keeps the saved industry when a reviewed scan replaces the narrative', () => {
+    const next = reviewedProfile({
+      name: 'Old Agency',
+      mission: '',
+      usp: '',
+      targetAudience: '',
+      competitors: [],
+      perceivedGaps: [],
+      rawContext: '',
+      industryId: 'real_estate_agency',
+      industry: 'Real estate agency',
+      suburb: 'Richmond',
+    }, {
+      name: 'Luminara Digital',
+      mission: '',
+      usp: '',
+      targetAudience: '',
+      competitors: [],
+      perceivedGaps: [],
+      rawContext: 'Read luminara.digital.',
+    });
+    expect(next.industryId).toBe('real_estate_agency');
+    expect(next.suburb).toBe('Richmond');
+    expect(next.name).toBe('Luminara Digital');
   });
 });
 

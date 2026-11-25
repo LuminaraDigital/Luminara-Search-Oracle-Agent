@@ -97,7 +97,7 @@ describe('suite copy', () => {
   it('uses real estate placeholders in the profile and idea forms', () => {
     const dna = readFileSync('components/suite/BusinessDNAView.tsx', 'utf8');
     const ideas = readFileSync('components/suite/IdeaScoutView.tsx', 'utf8');
-    expect(dna).toContain("independent real estate agency in [suburb]");
+    expect(dna).toContain('https://your-agency.com.au');
     expect(ideas).toContain('who sells homes in [suburb]');
     expect(ideas).toContain('real estate agencies');
     expect(dna).not.toMatch(/dental/i);

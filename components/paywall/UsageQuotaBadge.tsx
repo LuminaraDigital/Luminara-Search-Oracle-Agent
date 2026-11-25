@@ -77,7 +77,7 @@ export const UsageQuotaBadge: React.FC<Props> = ({ className = '', showIcon = tr
           ? 'bg-warning-500/10 text-warning-300 border-warning-500/30'
           : 'bg-white/5 text-gray-300 border-white/10 hover:border-gold/40 hover:text-white'
       } ${className}`}
-      title={`${quota.remaining} of ${quota.limit} free daily queries remaining today.${bonus > 0 ? ` Invite credits left: ${bonus}.` : ''} Click to upgrade.`}
+      title={`${quota.remaining} of ${quota.limit} free Instant Audit checks left today.${bonus > 0 ? ` Invite credits left: ${bonus}.` : ''} Click to upgrade.`}
     >
       {showIcon && (
         <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isOut ? 'bg-danger-400' : isLow ? 'bg-warning-400' : 'bg-gold'}`} />

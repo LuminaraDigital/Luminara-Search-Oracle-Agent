@@ -7,6 +7,24 @@ import { entitlementsFor, normalizePlanId, type PlanId } from '../services/plans
 
 export { QUOTA_CAPACITY_ERROR };
 
+/** Headers the badge reads. The bucket stops an Ask cap from replacing the audit cap. */
+export function quotaResponseHeaders(quota: QuotaStatus | null | undefined): Record<string, string> {
+  if (!quota) return {};
+  const headers: Record<string, string> = {};
+  if (quota.bucket) headers['X-Quota-Bucket'] = quota.bucket;
+  if (quota.isUnlimited) {
+    headers['X-Quota-Limit'] = 'unlimited';
+    headers['X-Quota-Remaining'] = 'unlimited';
+    return headers;
+  }
+  if (!(quota.limit > 0)) return headers;
+  headers['X-Quota-Limit'] = String(quota.limit);
+  headers['X-Quota-Remaining'] = String(quota.remaining);
+  headers['X-Quota-Reset'] = String(quota.resetSec);
+  if (typeof quota.bonusRemaining === 'number') headers['X-Quota-Bonus'] = String(quota.bonusRemaining);
+  return headers;
+}
+
 export type QuotaBucket = 'audit' | 'ask' | 'ask-search';
 
 export interface QuotaStatus {

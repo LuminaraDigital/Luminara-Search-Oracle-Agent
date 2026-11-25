@@ -9,7 +9,7 @@
  * A call NVIDIA does not answer gives the slot back. Paid plans are not counted.
  */
 import type { Env } from './env';
-import type { QuotaStatus } from './quotaMiddleware';
+import { quotaResponseHeaders, type QuotaStatus } from './quotaMiddleware';
 import type { WorkersAiFallbackReason } from './workersAiFallback';
 import { json } from './workerUtils';
 
@@ -44,23 +44,6 @@ function messageText(body: Record<string, unknown>): string {
   const first = recordOf(choices[0]);
   const message = first ? recordOf(first.message) : null;
   return typeof message?.content === 'string' ? message.content.trim() : '';
-}
-
-function quotaHeaders(quotaGate: QuotaStatus | null): Record<string, string> {
-  if (!quotaGate) return {};
-  if (quotaGate.isUnlimited) {
-    return { 'X-Quota-Limit': 'unlimited', 'X-Quota-Remaining': 'unlimited' };
-  }
-  if (quotaGate.limit <= 0) return {};
-  const headers: Record<string, string> = {
-    'X-Quota-Limit': String(quotaGate.limit),
-    'X-Quota-Remaining': String(quotaGate.remaining),
-    'X-Quota-Reset': String(quotaGate.resetSec),
-  };
-  if (typeof quotaGate.bonusRemaining === 'number') {
-    headers['X-Quota-Bonus'] = String(quotaGate.bonusRemaining);
-  }
-  return headers;
 }
 
 const SLOT_TTL = { expirationTtl: 2 * 86400 };
@@ -175,7 +158,7 @@ export async function tryNvidiaChatFallback(input: {
     'X-Provider-Fallback': NVIDIA_FALLBACK_PROVIDER,
     'X-Provider-Fallback-Model': NVIDIA_FALLBACK_MODEL,
     'X-Provider-Fallback-Reason': input.reason,
-    ...quotaHeaders(input.quotaGate),
+    ...quotaResponseHeaders(input.quotaGate),
   };
   const streaming = source.stream === true || (res.headers.get('content-type') || '').includes('text/event-stream');
   if (streaming) {

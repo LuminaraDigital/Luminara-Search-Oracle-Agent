@@ -2,6 +2,7 @@ import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { aiProviderService, safeJsonParse } from '../services/aiProviderService';
 import { configService } from '../services/configService';
 import { geminiService } from '../services/geminiService';
+import { unifiedScraperService } from '../services/scraping/unifiedScraper';
 
 const storage: Record<string, string> = {};
 const mockLocalStorage = {
@@ -209,20 +210,46 @@ We should construct a valid JSON payload with score and recommendations.
       mockLocalStorage.setItem('luminara_groq_key', 'gsk_mock');
       mockLocalStorage.removeItem('luminara_api_key');
 
+      const page = 'Acme Corp builds great things. Fastest delivery for Enterprises. Rival: CompX. Gap: AEO visibility.';
+      vi.spyOn(unifiedScraperService, 'scrapeAndDistill').mockResolvedValue({
+        success: true,
+        providerUsed: 'direct',
+        url: 'https://acme.com/',
+        finalUrl: 'https://acme.com/',
+        statusCode: 200,
+        title: 'Acme Corp',
+        description: page,
+        markdown: page,
+        formattedEvidence: page,
+        latencyMs: 1,
+        distilled: {
+          title: 'Acme Corp',
+          description: page,
+          openGraph: {},
+          schemas: [],
+          schemaTypes: [],
+          headings: [],
+          distilledText: page,
+          formattedEvidence: page,
+          stats: { rawChars: page.length, distilledChars: page.length, compressionRatio: 1 },
+        },
+      });
       const groq = aiProviderService.getProvider('groq');
       vi.spyOn(groq!, 'isAvailable').mockResolvedValue(true);
       vi.spyOn(groq!, 'generateText').mockResolvedValue({
-        text: '```json\n{"name": "Acme Corp", "mission": "Build great things", "usp": "Fastest delivery", "targetAudience": "Enterprises", "competitors": ["CompX"], "perceivedGaps": ["AEO visibility"], "rawContext": "Acme profile"}\n```',
+        text: '```json\n{"name": "Acme Corp", "mission": "Build great things", "usp": "Fastest delivery", "targetAudience": "Enterprises", "competitors": ["CompX"], "perceivedGaps": ["AEO visibility"], "rawContext": "Acme Corp profile"}\n```',
         finishReason: 'stop',
         latencyMs: 120,
         tokenUsage: { prompt: 20, completion: 20, total: 40 },
       });
 
-      const dna = await geminiService.extractBusinessDNA('AcmeCorp');
-      expect(dna.name).toBe('Acme Corp');
-      expect(dna.mission).toBe('Build great things');
-      expect(dna.usp).toBe('Fastest delivery');
-      expect(dna.competitors).toContain('CompX');
+      const dna = await geminiService.extractBusinessDNA('https://acme.com');
+      expect(dna.status).toBe('review');
+      if (dna.status !== 'review') return;
+      expect(dna.dna.name).toBe('Acme Corp');
+      expect(dna.dna.mission).toBe('Build great things');
+      expect(dna.dna.usp).toBe('Fastest delivery');
+      expect(dna.dna.competitors).toContain('CompX');
     });
 
     it('throws informative ProviderUnavailableError citing Native Trinity when all native engines are unconfigured', async () => {
