@@ -181,7 +181,10 @@
     "STRIPE_CHECKOUT_LIVE": "false",
     "BUDGET_ENFORCEMENT": "hard",
     // Homepage hero experiment. Off until the owner turns it on. Staging is the exception.
-    "HERO_AB_ENABLED": "false"
+    "HERO_AB_ENABLED": "false",
+    // Luminara CRM Agentic Middle Layer (Mode A free startup CRM + Mode B Do-No-Harm copilot).
+    "CRM_BASE_URL": "https://crm.luminara.digital",
+    "CRM_BRIDGE_ENABLED": "true"
     // Optional secrets (wrangler secret put): SENTRY_DSN, AZURE_AI_SEARCH_KEY, GCP_VERTEX_ACCESS_TOKEN
     // Optional Vectorize: add vectorize binding MEMORY_VECTORS after `wrangler vectorize create luminara-memory`
   },
@@ -329,7 +332,10 @@
         "STRIPE_CHECKOUT_LIVE": "true",
         "BUDGET_ENFORCEMENT": "soft",
         // Homepage hero experiment. On here so staging can measure it. Production stays off.
-        "HERO_AB_ENABLED": "true"
+        "HERO_AB_ENABLED": "true",
+        // Luminara CRM Agentic Middle Layer.
+        "CRM_BASE_URL": "https://crm.luminara.digital",
+        "CRM_BRIDGE_ENABLED": "true"
       }
     },
     "production": {
@@ -449,7 +455,10 @@
         "STRIPE_CHECKOUT_LIVE": "true",
         "BUDGET_ENFORCEMENT": "hard",
         // Homepage hero experiment. Off until the owner turns it on.
-        "HERO_AB_ENABLED": "false"
+        "HERO_AB_ENABLED": "false",
+        // Luminara CRM Agentic Middle Layer.
+        "CRM_BASE_URL": "https://crm.luminara.digital",
+        "CRM_BRIDGE_ENABLED": "true"
       }
     }
   }

@@ -40,6 +40,7 @@ const REQUIRED_D1_MIGRATIONS = [
   'migrations/0046_scoped_review_rules.sql',
   'migrations/0047_weekly_visibility_email.sql',
   'migrations/0059_agentic_memory_and_vault.sql',
+  'migrations/0060_crm_middle_layer_links.sql',
 ];
 
 const REQUIRED_D1_TABLES = [
@@ -80,6 +81,8 @@ const REQUIRED_D1_TABLES = [
   'memory_edges',
   'memory_vault_snapshots',
   'agent_trace_spans',
+  'suite_crm_links',
+  'enquiry_crm_promotions',
 ];
 
 // 1. Verify build bundle integrity

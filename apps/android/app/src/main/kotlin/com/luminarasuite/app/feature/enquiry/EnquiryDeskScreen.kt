@@ -32,6 +32,7 @@ import com.luminarasuite.app.core.designsystem.ReportAiOutput
 import com.luminarasuite.app.core.designsystem.ScreenGutter
 import com.luminarasuite.app.core.designsystem.WorkbenchCard
 import com.luminarasuite.app.core.model.AppointmentRecord
+import com.luminarasuite.app.core.model.CrmBridgeStatus
 import com.luminarasuite.app.core.model.EnquiryCreateRequest
 import com.luminarasuite.app.core.model.EnquiryRecord
 import com.luminarasuite.app.core.network.LuminaraRepository
@@ -53,6 +54,8 @@ data class EnquiryUiState(
     val isBusy: Boolean = false,
     val errorMessage: String? = null,
     val reportedIds: Set<String> = emptySet(),
+    val crmStatus: CrmBridgeStatus = CrmBridgeStatus(enabled = false),
+    val crmNotice: String? = null,
 )
 
 class EnquiryDeskViewModel(
@@ -70,9 +73,15 @@ class EnquiryDeskViewModel(
 
     fun updateReply(value: String) = _uiState.update { it.copy(reply = value) }
 
-    fun select(id: String?) = _uiState.update { it.copy(selectedId = id, reply = "") }
+    fun select(id: String?) = _uiState.update { it.copy(selectedId = id, reply = "", crmNotice = null) }
 
-    fun load() = act { Result.success(Unit) }
+    fun load() {
+        act { Result.success(Unit) }
+        viewModelScope.launch {
+            val crm = workspace.loadCrmBridgeStatus().getOrDefault(CrmBridgeStatus(enabled = false))
+            _uiState.update { it.copy(crmStatus = crm) }
+        }
+    }
 
     private fun act(call: suspend () -> Result<Unit>) {
         _uiState.update { it.copy(isBusy = true, errorMessage = null) }
@@ -85,6 +94,49 @@ class EnquiryDeskViewModel(
                     enquiries = desk.getOrNull()?.enquiries ?: state.enquiries,
                     appointments = desk.getOrNull()?.appointments ?: state.appointments,
                     errorMessage = (done.exceptionOrNull() ?: desk.exceptionOrNull())?.message,
+                )
+            }
+        }
+    }
+
+    fun promoteToCrm(enquiryId: String) {
+        if (_uiState.value.isBusy) return
+        _uiState.update { it.copy(isBusy = true, errorMessage = null, crmNotice = null) }
+        viewModelScope.launch {
+            val res = workspace.promoteEnquiryToCrm(enquiryId)
+            _uiState.update { state ->
+                res.fold(
+                    onSuccess = { promoted ->
+                        if (!promoted.ok || promoted.crmLeadId.isBlank()) {
+                            state.copy(
+                                isBusy = false,
+                                errorMessage = "Could not promote enquiry to Luminara CRM.",
+                            )
+                        } else if (promoted.status == "pending_approval") {
+                            state.copy(
+                                isBusy = false,
+                                crmNotice = "Staged for approval in Luminara CRM.",
+                            )
+                        } else {
+                            val receipt = promoted.crmReceiptCode?.let { " ($it)" }.orEmpty()
+                            val prefix =
+                                if (promoted.duplicate) {
+                                    "Already in Luminara CRM as"
+                                } else {
+                                    "Staged in Luminara CRM as"
+                                }
+                            state.copy(
+                                isBusy = false,
+                                crmNotice = "$prefix Lead #${promoted.crmLeadId}$receipt.",
+                            )
+                        }
+                    },
+                    onFailure = { err ->
+                        state.copy(
+                            isBusy = false,
+                            errorMessage = err.message ?: "Could not promote enquiry to Luminara CRM.",
+                        )
+                    },
                 )
             }
         }
@@ -211,6 +263,17 @@ private fun EnquiryDetail(
             onClick = { viewModel.togglePause(enquiry) },
             testTag = "enquiry_takeover_button",
         )
+        if (state.crmStatus.enabled) {
+            GhostPillButton(
+                text = "Promote to Luminara CRM",
+                onClick = { viewModel.promoteToCrm(enquiry.id) },
+                enabled = !state.isBusy,
+                testTag = "enquiry_promote_crm_button",
+            )
+            state.crmNotice?.let {
+                Text(text = it, style = LuminaraTextStyles.Body, color = LuminaraColors.GoldLight)
+            }
+        }
     }
     state.appointments
         .filter { it.enquiryId == enquiry.id && it.approvalStatus == "pending_agent_signoff" }

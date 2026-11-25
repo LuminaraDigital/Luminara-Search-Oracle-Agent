@@ -83,12 +83,33 @@ export const TOOL_GOVERNANCE: Record<string, ToolGovernanceEntry> = {
   memory_vault_verify_leaf: { risk: 'read', status: 'active' },
 };
 
+/**
+ * Governance entries for dark-launched CRM middle-layer tools (0060).
+ * Kept separate from TOOL_GOVERNANCE while CRM_BRIDGE_ENABLED defaults off so the public
+ * 53-tool directory catalogue remains unchanged until launch.
+ */
+export const CRM_BRIDGE_TOOL_GOVERNANCE: Record<string, ToolGovernanceEntry> = {
+  crm_activate_workspace: { risk: 'write', status: 'active' },
+  crm_briefing_today: { risk: 'read', status: 'active' },
+  crm_intake_capture: { risk: 'write', status: 'active' },
+  crm_leads_search: { risk: 'read', status: 'active' },
+  crm_quotes_draft: { risk: 'write', status: 'active' },
+  crm_bridge_connections_list: { risk: 'read', status: 'active' },
+  crm_bridge_pull_context: { risk: 'read', status: 'active' },
+  crm_bridge_sync_preview: { risk: 'read', status: 'active' },
+  // CRM ActionExecutor enforces APPROVAL_ALWAYS + Ledger + Passkey as the single canonical gate
+  // (avoids a double-approval deadlock across Suite and CRM).
+  crm_bridge_push_record: { risk: 'write', status: 'active' },
+  crm_bridge_handoff_packet: { risk: 'read', status: 'active' },
+};
+
 /** What approving does, shown to the owner. Fixed text: never built from a caller's arguments. */
 const APPROVAL_CONSEQUENCES: Record<string, string> = {
   browse_goal: "Luminara's hosted browser will carry out a multi-step goal on the site named below.",
   browse_close: 'The hosted browser session named below will be closed.',
   decide_booking_signoff: 'The proposed appointment named below will be approved or declined.',
   prepare_cms_mcp_call: "A change to your website's CMS will be prepared from the details below.",
+  crm_bridge_push_record: 'An approved CRM record and verified receipt note will be pushed to your connected external CRM.',
 };
 
 export function approvalConsequence(toolName: string): string {
@@ -97,7 +118,7 @@ export function approvalConsequence(toolName: string): string {
 
 /** Unknown tools default to write/active and are still logged. */
 export function governanceFor(toolName: string): ToolGovernanceEntry {
-  return TOOL_GOVERNANCE[toolName] ?? { risk: 'write', status: 'active' };
+  return TOOL_GOVERNANCE[toolName] ?? CRM_BRIDGE_TOOL_GOVERNANCE[toolName] ?? { risk: 'write', status: 'active' };
 }
 
 export type PolicyDecision =
