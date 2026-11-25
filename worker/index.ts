@@ -2366,7 +2366,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
         ok: true,
         mcpAccess: caps.mcpAccess,
         keys: await listApiKeys(env, who.user),
-        tools: listMcpToolCatalogue(),
+        tools: listMcpToolCatalogue({ includeCrmBridge: isCrmBridgeEnabled(env) }),
       }));
     }
     if (path === '/api-keys' && request.method === 'POST') {
