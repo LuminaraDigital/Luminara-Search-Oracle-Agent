@@ -108,7 +108,11 @@ export class PlaybookAuditorAgent {
     if (livePages.length > 0) {
       const typesOn = (page: ScrapedPageEvidence): string[] =>
         [...new Set(page.schemasFound.map((schema) => schema.type.trim().toLowerCase()).filter(Boolean))];
-      const measured = livePages.map((page) => ({ url: page.url, types: typesOn(page) }));
+      const measured = livePages.map((page) => ({
+        url: page.url,
+        types: typesOn(page),
+        broken: page.schemaParseFailures ?? 0,
+      }));
       const schemaTypes = new Set(measured.flatMap((page) => page.types));
       const hasOrgType = (types: readonly string[]) => types.some((type) => isOrganizationEntityType(type));
       const covered = measured.some((page) => hasOrgType(page.types));
@@ -117,14 +121,18 @@ export class PlaybookAuditorAgent {
         const urlList = joinList(measured.map((page) => page.url).slice(0, 3));
         const seen = [...schemaTypes];
         const seenLabel = seen.length ? joinList(seen) : 'none';
+        const brokenUrls = measured.filter((page) => page.broken > 0).map((page) => page.url);
+        const unreadable = brokenUrls.length > 0
+          ? ` A schema block is present on ${joinList(brokenUrls.slice(0, 3))} but cannot be read.`
+          : '';
         findings.push({
           id: 'finding-schema-org',
           category: 'schema',
           severity: 'critical',
           title: `Add a business identity tag on ${urlList}`,
-          description: tidySentence(`Tags on the page: ${seenLabel}. A business identity tag was not among them.`),
+          description: tidySentence(`Tags on the page: ${seenLabel}. A business identity tag was not among them.${unreadable}`),
           evidenceSource: 'Tags read from the pages in this run',
-          howWeKnowItFailed: tidySentence(`Read ${countPhrase(measured.length, 'page')} at ${urlList}. Tags on the page: ${seenLabel}.`),
+          howWeKnowItFailed: tidySentence(`Read ${countPhrase(measured.length, 'page')} at ${urlList}. Tags on the page: ${seenLabel}.${unreadable}`),
           leadingIndicator: 'Not measured. This run does not say how answer tools will use the tag.',
           criticVerified: false,
           criticConfidence: 0.9,
@@ -133,8 +141,11 @@ export class PlaybookAuditorAgent {
         const missing = measured.filter((page) => !hasOrgType(page.types));
         if (missing.length > 0) {
           const quoted = missing.slice(0, 3).map((page) => {
-            const seen = page.types.length ? page.types.join(', ') : 'no tags';
-            return `${page.url}: ${seen}`;
+            const unreadable = 'a schema block is present but cannot be read';
+            const seen = page.types.length
+              ? page.types.join(', ')
+              : page.broken > 0 ? unreadable : 'no tags';
+            return `${page.url}: ${seen}${page.types.length && page.broken > 0 ? `; ${unreadable}` : ''}`;
           }).join('; ');
           findings.push({
             id: 'finding-schema-org-partial',
@@ -149,6 +160,24 @@ export class PlaybookAuditorAgent {
             criticConfidence: 0.7,
           });
         }
+      }
+
+      // Informational only: the site has the tag, but one block on a page cannot be read.
+      const brokenWithOrg = measured.filter((page) => page.broken > 0 && hasOrgType(page.types));
+      if (brokenWithOrg.length > 0) {
+        const brokenList = pageList(brokenWithOrg.map((page) => page.url));
+        findings.push({
+          id: 'finding-schema-org-broken',
+          category: 'schema',
+          severity: 'low',
+          title: `A schema block cannot be read on ${brokenList}`,
+          description: tidySentence(`A schema block on ${brokenList} cannot be read. The business identity tag on that page reads fine.`),
+          evidenceSource: 'Tags read from the pages in this run',
+          howWeKnowItFailed: tidySentence(`A schema block on ${brokenList} did not parse as JSON.`),
+          leadingIndicator: 'Not measured. This run does not say how answer tools will treat the block.',
+          criticVerified: false,
+          criticConfidence: 0.9,
+        });
       }
 
       if (schemaTypes.has('howto')) {
