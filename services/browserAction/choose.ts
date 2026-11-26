@@ -2,6 +2,7 @@
  * One LLM decision: operation + selected operation's target (indexes only).
  */
 import { buildActionSpace, OPERATION_LABELS } from './actionSpace';
+import { UNTRUSTED_CONTENT_RULE, wrapUntrustedContent } from '../../utils/untrustedContent';
 import {
   OPERATION_TARGET_KEY,
   type ChoiceAnswer,
@@ -228,8 +229,19 @@ export function parseChooseResult(
 }
 
 function buildChoosePrompt(promptState: ChoosePromptState): string {
+  const untrustedObservation = wrapUntrustedContent(
+    'BROWSER_PAGE_OBSERVATION',
+    JSON.stringify({
+      page: promptState.page,
+      elements: promptState.elements,
+      target_heads: promptState.target_heads,
+      recent_actions: promptState.recent_actions,
+    }),
+    { nonce: true },
+  );
   return [
     'You choose the next browser action from an indexed DOM action space.',
+    UNTRUSTED_CONTENT_RULE,
     ...promptState.rules,
     '',
     'Respond with a single JSON object only, shaped as:',
@@ -237,7 +249,9 @@ function buildChoosePrompt(promptState: ChoosePromptState): string {
     'Include only the *_target field for the operation you selected (or all three speculative heads; only the selected op target is consumed).',
     'operation_probabilities must include every offered operation, sum to 1, and peak on your chosen operation.',
     '',
-    JSON.stringify(promptState),
+    `Goal: ${JSON.stringify(promptState.goal)}`,
+    `Offered operations: ${JSON.stringify(promptState.operations)}`,
+    untrustedObservation,
   ].join('\n');
 }
 

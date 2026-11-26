@@ -15,8 +15,27 @@ export type DesktopDownloadEnv = {
 };
 
 const DEFAULT_REPO = 'LuminaraDigital/Luminara-Search-Oracle-Agent';
+const DEFAULT_FILE_NAME = 'Luminara-Suite-Setup.exe';
+const SAFE_RELEASE_FILENAME_RE = /^[A-Za-z0-9._-]{1,128}$/;
+const SAFE_VERSION_RE = /^[A-Za-z0-9._+-]{1,64}$/;
+const SAFE_REPO_SLUG_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const R2_LATEST_EXE = 'windows/latest.exe';
 const R2_MANIFEST = 'windows/manifest.json';
+
+export function sanitizeReleaseFileName(raw: unknown): string {
+  if (typeof raw !== 'string') return DEFAULT_FILE_NAME;
+  const trimmed = raw.trim();
+  if (!SAFE_RELEASE_FILENAME_RE.test(trimmed) || trimmed.includes('..') || trimmed.startsWith('.')) {
+    return DEFAULT_FILE_NAME;
+  }
+  return trimmed;
+}
+
+function sanitizeVersionHeader(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  return SAFE_VERSION_RE.test(trimmed) ? trimmed : null;
+}
 
 type Manifest = {
   version?: string;
@@ -27,7 +46,11 @@ type Manifest = {
 };
 
 function repoSlug(env: DesktopDownloadEnv): string {
-  return (env.DESKTOP_GITHUB_REPO || DEFAULT_REPO).replace(/^\/+|\/+$/g, '');
+  const candidate = (env.DESKTOP_GITHUB_REPO || DEFAULT_REPO).replace(/^\/+|\/+$/g, '');
+  if (!SAFE_REPO_SLUG_RE.test(candidate) || candidate.includes('..')) {
+    return DEFAULT_REPO;
+  }
+  return candidate;
 }
 
 function githubLatestReleaseUrl(env: DesktopDownloadEnv): string {
@@ -56,8 +79,8 @@ export async function desktopLatestJson(env: DesktopDownloadEnv): Promise<Respon
       channel: 'stable',
       downloadPath: '/desktop/windows',
       mirroredOnR2: hasR2,
-      version: manifest?.version || null,
-      fileName: manifest?.fileName || 'Luminara-Suite-Setup.exe',
+      version: sanitizeVersionHeader(manifest?.version),
+      fileName: sanitizeReleaseFileName(manifest?.fileName),
       githubLatest: githubLatestReleaseUrl(env),
       note: hasR2
         ? 'Official download is ready at /desktop/windows'
@@ -91,14 +114,15 @@ export async function desktopWindowsDownload(
     const object = await env.DESKTOP_RELEASES.get(R2_LATEST_EXE);
     if (object) {
       const manifest = await readManifest(env);
-      const fileName = manifest?.fileName || 'Luminara-Suite-Setup.exe';
+      const fileName = sanitizeReleaseFileName(manifest?.fileName);
+      const version = sanitizeVersionHeader(manifest?.version);
       const headers = new Headers();
       object.writeHttpMetadata(headers);
       headers.set('Content-Type', 'application/octet-stream');
       headers.set('Content-Disposition', `attachment; filename="${fileName}"`);
       headers.set('Cache-Control', 'public, max-age=300');
       headers.set('X-Luminara-Desktop-Source', 'r2');
-      if (manifest?.version) headers.set('X-Luminara-Desktop-Version', manifest.version);
+      if (version) headers.set('X-Luminara-Desktop-Version', version);
       if (object.httpEtag) headers.set('ETag', object.httpEtag);
 
       if (request.method === 'HEAD') {

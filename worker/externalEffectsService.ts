@@ -9,6 +9,8 @@ import type { Env } from './env';
 import { computeExternalEffectKey } from '../services/enquiries/playbookQualificationService';
 import { safeJsonParse } from '../services/llm/safeJsonParse';
 
+export const DEFAULT_EXTERNAL_EFFECT_LEASE_MS = 5 * 60 * 1000;
+
 export async function checkOrRecordExternalEffect<T>(
   env: Env,
   args: {
@@ -18,9 +20,10 @@ export async function checkOrRecordExternalEffect<T>(
     actionKind: string;
     payload: unknown;
     now?: number;
+    staleLeaseMs?: number;
   },
 ): Promise<
-  | { duplicate: true; effectKey: string; cachedResult: T | null }
+  | { duplicate: true; effectKey: string; cachedResult: T | null; inProgress?: boolean }
   | { duplicate: false; effectKey: string; payloadHash: string }
 > {
   const { effectKey, payloadHash } = await computeExternalEffectKey(args);
@@ -28,25 +31,14 @@ export async function checkOrRecordExternalEffect<T>(
     return { duplicate: false, effectKey, payloadHash };
   }
 
-  const existing = await env.DB.prepare(
-    `SELECT status, result_json FROM external_effects WHERE effect_key = ? AND account_id = ?`,
-  )
-    .bind(effectKey, args.accountId)
-    .first<{ status: string; result_json: string | null }>();
-
-  if (existing && existing.status === 'completed') {
-    const cachedResult = existing.result_json
-      ? safeJsonParse<T | null>(existing.result_json, null)
-      : null;
-    return { duplicate: true, effectKey, cachedResult };
-  }
-
   const now = args.now ?? Date.now();
-  await env.DB.prepare(
+  const staleLeaseMs = args.staleLeaseMs ?? DEFAULT_EXTERNAL_EFFECT_LEASE_MS;
+
+  const inserted = await env.DB.prepare(
     `INSERT INTO external_effects (
       effect_key, account_id, project_id, target_system, action_kind, payload_hash, status, created_at, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)
-    ON CONFLICT(effect_key) DO UPDATE SET updated_at = excluded.updated_at`,
+    ON CONFLICT(effect_key) DO NOTHING`,
   )
     .bind(
       effectKey,
@@ -60,7 +52,41 @@ export async function checkOrRecordExternalEffect<T>(
     )
     .run();
 
-  return { duplicate: false, effectKey, payloadHash };
+  if (Number(inserted.meta?.changes ?? 0) === 1) {
+    return { duplicate: false, effectKey, payloadHash };
+  }
+
+  const existing = await env.DB.prepare(
+    `SELECT status, result_json, updated_at FROM external_effects WHERE effect_key = ? AND account_id = ?`,
+  )
+    .bind(effectKey, args.accountId)
+    .first<{ status: string; result_json: string | null; updated_at: number }>();
+
+  if (!existing) {
+    return { duplicate: true, effectKey, cachedResult: null, inProgress: true };
+  }
+
+  if (existing.status === 'completed' || existing.status === 'succeeded') {
+    const cachedResult = existing.result_json
+      ? safeJsonParse<T | null>(existing.result_json, null)
+      : null;
+    return { duplicate: true, effectKey, cachedResult };
+  }
+
+  if (existing.status === 'pending' && Number(existing.updated_at) < now - staleLeaseMs) {
+    const takeover = await env.DB.prepare(
+      `UPDATE external_effects
+       SET updated_at = ?, payload_hash = ?
+       WHERE effect_key = ? AND account_id = ? AND status = 'pending' AND updated_at = ?`,
+    )
+      .bind(now, payloadHash, effectKey, args.accountId, existing.updated_at)
+      .run();
+    if (Number(takeover.meta?.changes ?? 0) === 1) {
+      return { duplicate: false, effectKey, payloadHash };
+    }
+  }
+
+  return { duplicate: true, effectKey, cachedResult: null, inProgress: true };
 }
 
 export async function finalizeExternalEffect(

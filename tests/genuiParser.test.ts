@@ -145,4 +145,53 @@ describe('Luminara GenUI Parser & Lexer', () => {
     expect(prompt).toContain('ShipActionCard');
     expect(prompt).toContain('Cite-or-silence rule');
   });
+
+  it('rejects __proto__, constructor, and prototype keys in parser and materializer', () => {
+    const dsl = `
+      root = Card(__proto__: { polluted: true }, constructor: "bad", prototype: "bad", label: "Safe")
+      meta = { "__proto__": { "injected": true }, "constructor": 1, "prototype": 2, "ok": "yes" }
+    `;
+    const result = parseGenUI(dsl);
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+    expect(({} as Record<string, unknown>).injected).toBeUndefined();
+    expect(result.errors.length).toBeGreaterThanOrEqual(4);
+
+    const rootNode = result.nodes.get('root');
+    expect(rootNode?.namedArgs).toEqual({ label: 'Safe' });
+    expect(Object.hasOwn(rootNode?.namedArgs || {}, '__proto__')).toBe(false);
+    expect(Object.hasOwn(rootNode?.namedArgs || {}, 'constructor')).toBe(false);
+    expect(Object.hasOwn(rootNode?.namedArgs || {}, 'prototype')).toBe(false);
+
+    const metaVal = result.stateVars.get('meta') as Record<string, unknown>;
+    expect(metaVal).toEqual({ ok: 'yes' });
+    expect(Object.hasOwn(metaVal, '__proto__')).toBe(false);
+    expect(Object.hasOwn(metaVal, 'constructor')).toBe(false);
+    expect(Object.hasOwn(metaVal, 'prototype')).toBe(false);
+
+    // Direct AST tampering: prototype properties on registry must never resolve as components.
+    const Card: React.FC<{ label?: string }> = ({ label }) => React.createElement('div', null, label);
+    const registry = { Card };
+    for (const dangerousComp of ['constructor', 'toString', 'valueOf', '__proto__', 'prototype']) {
+      const crafted = {
+        nodes: new Map([
+          [
+            'root',
+            {
+              id: 'root',
+              component: dangerousComp,
+              args: [],
+              isComplete: true,
+            },
+          ],
+        ]),
+        rootId: 'root',
+        stateVars: new Map(),
+        errors: [],
+        incomplete: false,
+      };
+      const el = materializeNode('root', crafted, registry) as React.ReactElement<{ children?: string }>;
+      expect(el.type).toBe('div');
+      expect(el.props.children).toContain('Unregistered GenUI Component');
+    }
+  });
 });

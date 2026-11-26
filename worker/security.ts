@@ -26,7 +26,7 @@ export const HTML_CSP = [
   "img-src 'self' data: blob: https:",
   "connect-src 'self' https: wss: http://localhost:* http://127.0.0.1:* data: blob:",
   "worker-src 'self' blob:",
-  "frame-src 'self' https: https://*.firebaseapp.com https://accounts.google.com https://www.google.com https://www.gstatic.com https://www.recaptcha.net https://recaptcha.google.com",
+  "frame-src 'self' https://*.firebaseapp.com https://accounts.google.com https://www.google.com https://www.gstatic.com https://www.recaptcha.net https://recaptcha.google.com https://checkout.stripe.com https://js.stripe.com",
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",
@@ -177,31 +177,61 @@ export function clampHostedFirecrawlCrawlBody(body: unknown): { ok: true; body: 
 }
 
 /**
- * Clamps Gemini generateContent bodies on hosted keys (generationConfig.maxOutputTokens).
+ * Clamps Gemini generateContent bodies on hosted keys (camelCase and snake_case token and candidate caps).
+ * Fails closed on non-object bodies so malformed payloads cannot bypass clamps.
  */
 export function clampHostedGeminiBody(body: unknown): { ok: true; body: unknown } | { ok: false; error: string } {
   if (body === undefined || body === null || typeof body !== 'object' || Array.isArray(body)) {
-    return { ok: true, body: body ?? {} };
+    return { ok: false, error: 'Request body must be a JSON object' };
   }
   const b = { ...(body as Record<string, unknown>) };
-  const gen =
-    b.generationConfig && typeof b.generationConfig === 'object' && !Array.isArray(b.generationConfig)
-      ? { ...(b.generationConfig as Record<string, unknown>) }
-      : {};
-  const raw = gen.maxOutputTokens;
-  if (raw === undefined || raw === null) {
-    gen.maxOutputTokens = HOSTED_MAX_TOKENS;
-  } else {
+  const clampTokens = (raw: unknown): number => {
+    if (raw === undefined || raw === null) return HOSTED_MAX_TOKENS;
     const n = Number(raw);
-    gen.maxOutputTokens = Number.isFinite(n) && n > 0 ? Math.min(Math.floor(n), HOSTED_MAX_TOKENS) : HOSTED_MAX_TOKENS;
+    return Number.isFinite(n) && n > 0 ? Math.min(Math.floor(n), HOSTED_MAX_TOKENS) : HOSTED_MAX_TOKENS;
+  };
+  const clampCandidates = (raw: unknown): number => {
+    const n = Number(raw);
+    return Number.isFinite(n) && n > 0
+      ? Math.min(Math.floor(n), HOSTED_MAX_COMPLETION_CHOICES)
+      : HOSTED_MAX_COMPLETION_CHOICES;
+  };
+  const clampConfig = (
+    rawCfg: unknown,
+    tokenKey: 'maxOutputTokens' | 'max_output_tokens',
+    candKey: 'candidateCount' | 'candidate_count',
+    altTokenKey: 'maxOutputTokens' | 'max_output_tokens',
+    altCandKey: 'candidateCount' | 'candidate_count',
+  ): { ok: true; cfg: Record<string, unknown> } | { ok: false; error: string } => {
+    if (rawCfg !== undefined && (rawCfg === null || typeof rawCfg !== 'object' || Array.isArray(rawCfg))) {
+      return { ok: false, error: 'generationConfig must be a JSON object' };
+    }
+    const cfg = rawCfg ? { ...(rawCfg as Record<string, unknown>) } : {};
+    cfg[tokenKey] = clampTokens(cfg[tokenKey]);
+    if (cfg[altTokenKey] !== undefined) cfg[altTokenKey] = clampTokens(cfg[altTokenKey]);
+    if (cfg[candKey] !== undefined) cfg[candKey] = clampCandidates(cfg[candKey]);
+    if (cfg[altCandKey] !== undefined) cfg[altCandKey] = clampCandidates(cfg[altCandKey]);
+    return { ok: true, cfg };
+  };
+
+  const hasCamel = b.generationConfig !== undefined;
+  const hasSnake = b.generation_config !== undefined;
+  if (hasCamel || !hasSnake) {
+    const res = clampConfig(b.generationConfig, 'maxOutputTokens', 'candidateCount', 'max_output_tokens', 'candidate_count');
+    if (!res.ok) return res;
+    b.generationConfig = res.cfg;
   }
-  b.generationConfig = gen;
+  if (hasSnake) {
+    const res = clampConfig(b.generation_config, 'max_output_tokens', 'candidate_count', 'maxOutputTokens', 'candidateCount');
+    if (!res.ok) return res;
+    b.generation_config = res.cfg;
+  }
   return { ok: true, body: b };
 }
 
 /** Gemini model actions allowed through the Worker proxy. */
 export function isGeminiModelActionAllowed(subPath: string): boolean {
-  return /^\/v1beta\/models\/[A-Za-z0-9._%-]+:(generateContent|streamGenerateContent|countTokens)$/.test(subPath);
+  return !subPath.includes('..') && /^\/v1beta\/models\/[A-Za-z0-9._-]+:(generateContent|streamGenerateContent|countTokens)$/.test(subPath);
 }
 
 /**

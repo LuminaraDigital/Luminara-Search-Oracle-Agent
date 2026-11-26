@@ -41,8 +41,12 @@ function resolveBase(rt: BrowserActionRuntime): string | null {
 }
 
 function authHeaders(rt: BrowserActionRuntime): Record<string, string> {
+  const headers: Record<string, string> = {};
   const token = (rt.crawlerToken || '').trim();
-  return token ? { 'x-crawler-token': token } : {};
+  if (token) headers['x-crawler-token'] = token;
+  const accountId = (rt.accountId || '').trim();
+  if (accountId) headers['x-luminara-account-id'] = accountId;
+  return headers;
 }
 
 function asObserve(raw: unknown): ObservePayload | null {
@@ -370,10 +374,13 @@ async function browseGoal(
   }
 
   const sid = sessionId;
+  const writeApproved = args.writeApproved === true;
   const loop = new BrowserActionLoop({
     goal,
     initialPage: observe,
     maxSteps,
+    enforceTwoTierPolicy: true,
+    writeApproved,
     observe: async () => {
       const res = await crawlerFetch(rt, `/session/${encodeURIComponent(sid)}/observe`, {
         method: 'POST',

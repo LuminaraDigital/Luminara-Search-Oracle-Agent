@@ -131,12 +131,25 @@ function createShellPolicy({ webappUrl, isDev, firebaseAuthDomain, shellPageUrls
     return EXTERNAL_PROTOCOLS.has(parseUrl(rawUrl)?.protocol) ? 'external' : 'deny';
   }
 
+  const ALLOWED_ELECTRON_PERMISSIONS = new Set([
+    'notifications',
+    'clipboard-read',
+    'clipboard-sanitized-write',
+    'media',
+    'fullscreen',
+    'pointerLock',
+    'window-management',
+  ]);
+
   /**
-   * Electron grants every permission by default. Only launching another app is narrowed: a link
-   * in a frame or popup to search-ms:, ms-msdt: or file: asks this before Windows opens it.
+   * Fail-closed Electron permission handler: allow only explicit safe capabilities and
+   * validate openExternal URLs against the shell protocol allowlist.
    */
   function isPermissionGranted(permission, details) {
-    return permission !== 'openExternal' || windowOpenAction(details?.externalURL) === 'external';
+    if (permission === 'openExternal') {
+      return windowOpenAction(details?.externalURL) === 'external';
+    }
+    return ALLOWED_ELECTRON_PERMISSIONS.has(permission);
   }
 
   function isTrustedSender(frameUrl) {

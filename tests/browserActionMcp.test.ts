@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { listMcpToolCatalogue } from '../worker/mcpServer';
 import { BROWSER_ACTION_CATALOGUE, executeBrowserActionTool } from '../services/browserAction';
 import type { BrowserActionRuntime } from '../services/browserAction';
@@ -51,5 +51,56 @@ describe('browse MCP catalogue (B3)', () => {
     expect(result.structuredContent?.code).toBe('BROWSER_UNAVAILABLE');
     expect(result.structuredContent?.measurementStatus).toBe('not_measured');
     expect(result.text.toLowerCase()).toContain('not_measured');
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('sends x-luminara-account-id header on create, observe, act, and close calls', async () => {
+    const seenHeaders: Array<{ url: string; method: string; accountHeader: string | null }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method || 'GET';
+        const headers = new Headers(init?.headers);
+        seenHeaders.push({ url, method, accountHeader: headers.get('x-luminara-account-id') });
+        if (url.endsWith('/health')) {
+          return new Response(JSON.stringify({ ok: true }), { status: 200 });
+        }
+        return new Response(
+          JSON.stringify({
+            success: true,
+            sessionId: 'sess_1',
+            observe: { url: 'https://example.com', title: 'Ex', text: 'Hi', actions: [], fingerprint: 'fp1' },
+          }),
+          { status: 200 },
+        );
+      }),
+    );
+
+    const rt = stubRuntime({
+      accountId: 'acct_owner_99',
+      canUsePaid: true,
+      patchrightUrl: 'http://127.0.0.1:3001',
+      crawlerToken: 'tok_1',
+    });
+
+    await executeBrowserActionTool('browse_observe', { url: 'https://example.com' }, rt);
+    await executeBrowserActionTool('browse_observe', { sessionId: 'sess_1' }, rt);
+    await executeBrowserActionTool('browse_act', { sessionId: 'sess_1', fingerprint: 'fp1', actionId: 'e1' }, rt);
+    await executeBrowserActionTool('browse_close', { sessionId: 'sess_1' }, rt);
+
+    const sessionCalls = seenHeaders.filter((c) => !c.url.endsWith('/health'));
+    expect(sessionCalls.map((c) => `${c.method} ${new URL(c.url).pathname}`)).toEqual([
+      'POST /session',
+      'POST /session/sess_1/observe',
+      'POST /session/sess_1/act',
+      'DELETE /session/sess_1',
+    ]);
+    for (const call of sessionCalls) {
+      expect(call.accountHeader).toBe('acct_owner_99');
+    }
   });
 });

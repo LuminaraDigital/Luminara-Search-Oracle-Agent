@@ -60,11 +60,39 @@ function bufferToHex(buffer: ArrayBuffer): string {
     .join('');
 }
 
-async function hashPinWithSalt(pin: string, salt: string): Promise<string> {
+const PIN_PBKDF2_PREFIX = 'pbkdf2_v1:';
+const PIN_PBKDF2_ITERATIONS = 100_000;
+
+function timingSafeHexEquals(a: string, b: string): boolean {
+  const len = Math.max(a.length, b.length);
+  let diff = a.length ^ b.length;
+  for (let i = 0; i < len; i++) {
+    diff |= (i < a.length ? a.charCodeAt(i) : 0) ^ (i < b.length ? b.charCodeAt(i) : 0);
+  }
+  return diff === 0;
+}
+
+async function legacyHashPinWithSalt(pin: string, salt: string): Promise<string> {
   const encoder = new TextEncoder();
   const data = encoder.encode(`${salt}:${pin}`);
   const hashBuffer = await crypto.subtle.digest('SHA-256', data);
   return bufferToHex(hashBuffer);
+}
+
+async function hashPinWithSalt(pin: string, salt: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey('raw', encoder.encode(pin), { name: 'PBKDF2' }, false, ['deriveBits']);
+  const derived = await crypto.subtle.deriveBits(
+    {
+      name: 'PBKDF2',
+      salt: encoder.encode(`luminara-pin-v1:${salt}`),
+      iterations: PIN_PBKDF2_ITERATIONS,
+      hash: 'SHA-256',
+    },
+    keyMaterial,
+    256,
+  );
+  return `${PIN_PBKDF2_PREFIX}${bufferToHex(derived)}`;
 }
 
 export class AutoLockService {
@@ -202,8 +230,16 @@ export class AutoLockService {
     const expectedHash = getStorage(PIN_HASH_STORAGE_KEY);
     if (!salt || !expectedHash) return true;
 
-    const actualHash = await hashPinWithSalt(pin.trim(), salt);
-    return actualHash === expectedHash;
+    const trimmed = pin.trim();
+    if (expectedHash.startsWith(PIN_PBKDF2_PREFIX)) {
+      const actualHash = await hashPinWithSalt(trimmed, salt);
+      return timingSafeHexEquals(actualHash, expectedHash);
+    }
+    const legacyHash = await legacyHashPinWithSalt(trimmed, salt);
+    if (!timingSafeHexEquals(legacyHash, expectedHash)) return false;
+    // Upgrade legacy SHA-256 PIN verifier seamlessly to PBKDF2-HMAC-SHA256 on successful unlock.
+    setStorage(PIN_HASH_STORAGE_KEY, await hashPinWithSalt(trimmed, salt));
+    return true;
   }
 
   public getTimeout(): AutoLockTimeout {

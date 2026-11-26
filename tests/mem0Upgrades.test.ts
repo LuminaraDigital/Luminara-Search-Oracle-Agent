@@ -162,16 +162,19 @@ describe('Mem0 Memory Engine Upgrades (Graph Triplets & Recency Decay)', () => {
       const gapRels = mem0MemoryEngine.getRelations({ source: 'loom.com', predicate: 'lacks_schema' });
       expect(gapRels.length).toBe(1);
 
-      // Verify prompt context includes both facts and relations
+      // Verify prompt context includes both facts and relations, fenced with nonce + UNTRUSTED_CONTENT_RULE
       const formatted = mem0MemoryEngine.formatContextForAgent('loom.com');
+      expect(formatted).toContain('<<<UNTRUSTED_*_BEGIN>>>');
+      expect(formatted).toMatch(/<<<UNTRUSTED_MEM0_BRAND_MEMORY_[0-9a-f]{16}_BEGIN>>>/);
       expect(formatted).toContain('AUTONOMOUS BRAND MEMORY GRAPH');
       expect(formatted).toContain('Graph Relationships:');
       expect(formatted).toContain('loom.com --[competes_with]--> vidyard');
     });
 
-    it('exposes canonical Mem0 extraction prompt schema', () => {
+    it('exposes canonical Mem0 extraction prompt schema with UNTRUSTED_CONTENT_RULE', () => {
       expect(MEM0_EXTRACTION_PROMPT_SCHEMA).toContain('Mem0 architecture');
       expect(MEM0_EXTRACTION_PROMPT_SCHEMA).toContain('"relations"');
+      expect(MEM0_EXTRACTION_PROMPT_SCHEMA).toContain('<<<UNTRUSTED_*_BEGIN>>>');
     });
   });
 });

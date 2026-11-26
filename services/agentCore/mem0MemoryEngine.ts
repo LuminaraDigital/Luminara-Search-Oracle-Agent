@@ -22,6 +22,7 @@ import {
   MemoryRelationDelta,
   AuditStateGraphContext,
 } from './types';
+import { UNTRUSTED_CONTENT_RULE, wrapUntrustedContent } from '../../utils/untrustedContent';
 
 const STORAGE_KEY = 'luminara_mem0_facts_v1';
 const RELATIONS_STORAGE_KEY = 'luminara_mem0_relations_v1';
@@ -58,6 +59,7 @@ export function computeDecayScore(
  */
 export const MEM0_EXTRACTION_PROMPT_SCHEMA = `
 You are an autonomous Memory & Relationship Extraction Engine following the Mem0 architecture.
+${UNTRUSTED_CONTENT_RULE}
 Given an audit report or interaction transcript, extract:
 1. "facts": Key-value attributes categorized by tier (user, session, agent_working, domain_entity).
 2. "relations": Graph entity triplets (source, predicate, target) capturing competition, missing schemas, audience, or technical traits.
@@ -547,7 +549,8 @@ class Mem0MemoryEngine {
     }
 
     lines.push('--------------------------------------------------');
-    return lines.join('\n');
+    const fenced = wrapUntrustedContent('MEM0_BRAND_MEMORY', lines.join('\n'), { nonce: true });
+    return fenced ? `${UNTRUSTED_CONTENT_RULE}\n${fenced}` : '';
   }
 
   public clear(): void {

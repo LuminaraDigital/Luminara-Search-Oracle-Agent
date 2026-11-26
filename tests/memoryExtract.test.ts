@@ -5,6 +5,7 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import { createSqliteD1 } from './helpers/sqliteD1';
+import { memoryDailyQuotaNamespace } from './helpers/memoryDailyQuota';
 import {
   extractChatFacts,
   handleMemoryExtractRoute,
@@ -240,5 +241,50 @@ describe('POST /api/memory/extract', () => {
     const res = await handleMemoryExtractRoute(post({ message: 'We always reply within one day to every customer', autoStore: true }), env, user);
     expect(await res.json()).toMatchObject({ ok: true, extractor: 'regex', stored: 1 });
     expect(db.sqlite.prepare(`SELECT account_id FROM memory_facts`).get()).toEqual({ account_id: 'acc_a' });
+  });
+
+  it('fences extraction messages with nonce + UNTRUSTED_CONTENT_RULE and gates hosted LLM extraction behind checkHostedQuota (M-23)', async () => {
+    const kv = new Map<string, string>();
+    const db = createSqliteD1();
+    const env = envWith(db, {
+      MEMORY_LLM_EXTRACT: 'true',
+      GROQ_API_KEY: 'test-key',
+      ASK_DAILY_LIMIT: '1',
+      DAILY_QUOTA: memoryDailyQuotaNamespace(),
+      LUMINARA_KV: {
+        get: async (k: string, type?: string) => (kv.has(k) ? (type === 'json' ? JSON.parse(kv.get(k)!) : kv.get(k)) : null),
+        put: async (k: string, v: string) => { kv.set(k, v); },
+      } as unknown as KVNamespace,
+    });
+
+    let sentSystem = '';
+    let sentUser = '';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: { body: string }) => {
+        const parsed = JSON.parse(init.body) as { messages: Array<{ content: string }> };
+        sentSystem = parsed.messages[0].content;
+        sentUser = parsed.messages[1].content;
+        return new Response(
+          JSON.stringify({
+            choices: [{ message: { content: JSON.stringify({ facts: [{ kind: 'profile', text: 'Runs a dog grooming salon in Leeds', confidence: 0.9 }] }) } }],
+          }),
+          { status: 200 },
+        );
+      }),
+    );
+
+    try {
+      const first = await handleMemoryExtractRoute(post({ message: SOURCE, autoStore: true }), env, user);
+      expect(first.status).toBe(200);
+      expect(sentSystem).toContain('<<<UNTRUSTED_*_BEGIN>>>');
+      expect(sentUser).toMatch(/<<<UNTRUSTED_USER_MESSAGE_[0-9a-f]{16}_BEGIN>>>/);
+
+      const second = await handleMemoryExtractRoute(post({ message: SOURCE, autoStore: true }), env, user);
+      expect(second.status).toBe(429);
+      expect(await second.json()).toMatchObject({ ok: false, code: 'QUOTA_EXHAUSTED' });
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

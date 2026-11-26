@@ -1,8 +1,9 @@
 import { createHmac } from 'node:crypto';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import worker from '../worker/index';
 import type { Env } from '../worker/env';
 import { createSqliteD1 } from './helpers/sqliteD1';
+import { memoryDailyQuotaNamespace } from './helpers/memoryDailyQuota';
 
 const botToken = '123456:APS_TEST_TOKEN';
 
@@ -171,5 +172,53 @@ describe('Luminara Dreaming MCP Tool Surface', () => {
       result?: { structuredContent?: { domain: string } };
     };
     expect(memBody.result?.structuredContent?.domain).toBe('hermes-seo.com');
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('enforces checkHostedQuota on dream_consolidate when hosted dream model keys are configured (H-12)', async () => {
+    const store = new Map<string, string>();
+    const env: Env = {
+      ...makeEnv(store),
+      GROQ_API_KEY: 'gsk_test',
+      FREE_DAILY_LIMIT: '1',
+      DAILY_QUOTA: memoryDailyQuotaNamespace(),
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({ choices: [{ message: { content: JSON.stringify({ summary: 'Done', proposals: [] }) } }] }),
+          { status: 200 },
+        ),
+      ),
+    );
+
+    const callConsolidate = (id: number) =>
+      worker.fetch(
+        new Request('https://luminarasuite.com/api/mcp', {
+          method: 'POST',
+          headers: tgHeaders(309, '10.30.0.9'),
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id,
+            method: 'tools/call',
+            params: { name: 'dream_consolidate', arguments: { domain: 'free-dream.example', force: true } },
+          }),
+        }),
+        env,
+        ctx,
+      );
+
+    const first = (await (await callConsolidate(10)).json()) as { result?: { isError?: boolean } };
+    expect(first.result?.isError).toBe(false);
+
+    const second = (await (await callConsolidate(11)).json()) as {
+      result?: { isError?: boolean; structuredContent?: { code?: string } };
+    };
+    expect(second.result?.isError).toBe(true);
+    expect(second.result?.structuredContent?.code).toBe('QUOTA_EXHAUSTED');
   });
 });

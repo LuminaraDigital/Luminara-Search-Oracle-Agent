@@ -199,6 +199,26 @@ describe('W4 visibility router', () => {
     expect(await ssrfRes.json()).toMatchObject({ ok: true, measured: false, passed: null });
     expect(await readFreeUsed(env, 'acct_1', 3)).toBe(0);
 
+    // Non-default port targetUrl (e.g. :8443) is rejected without fetching and quota is refunded
+    let portFetchCalled = false;
+    const nonDefaultPortRes = await recheckOneFix(
+      env,
+      user,
+      {
+        domain: 'autotrader.co.uk',
+        checkId: 'brand_mention',
+        expect: 'AutoTrader',
+        targetUrl: 'https://ukfuels.co.uk:8443/study',
+      },
+      async () => {
+        portFetchCalled = true;
+        return new Response('<html><body>AutoTrader</body></html>', { status: 200 });
+      },
+    );
+    expect(portFetchCalled).toBe(false);
+    expect(await nonDefaultPortRes.json()).toMatchObject({ ok: true, measured: false, passed: null });
+    expect(await readFreeUsed(env, 'acct_1', 3)).toBe(0);
+
     // Valid third-party public URL with DNS resolving to public IP passes and keeps spent check
     const validRes = await recheckOneFix(
       env,

@@ -5,6 +5,84 @@ import { renderMarkdown } from '../../../utils/markdown';
 import { subscribeQuota, openPaywallModal, getCurrentQuotaSync, hostedAllowanceSpent, type QuotaInfo } from '../../../services/apiClient';
 import { dailyCapPaywallLine, dailyCapStudioNote } from '../../paywall/planCopy';
 
+const CITATION_PILL_CLASS =
+  'inline-citation-pill inline-flex items-center justify-center w-4 h-4 mx-0.5 rounded-full bg-gold/20 hover:bg-gold hover:text-black text-gold-light border border-gold/40 text-[9px] font-mono font-bold transition-all align-baseline cursor-pointer';
+const CITATION_TOKEN_RE = /\[(\d+)\]/g;
+const SKIP_CITATION_ANCESTORS = new Set(['A', 'BUTTON', 'CODE', 'PRE', 'SCRIPT', 'STYLE', 'TEXTAREA']);
+
+function hasSkippedAncestor(node: Node, stopAt: Node): boolean {
+  let parent = node.parentNode;
+  while (parent && parent !== stopAt) {
+    if (parent.nodeType === 1 && SKIP_CITATION_ANCESTORS.has((parent as Element).tagName.toUpperCase())) {
+      return true;
+    }
+    parent = parent.parentNode;
+  }
+  return false;
+}
+
+/**
+ * Replaces [n] citation tokens strictly inside text nodes of an already-sanitized HTML string.
+ * Uses a detached <template> and TreeWalker so element tags and attribute values are never mutated.
+ */
+export function injectCitationPills(
+  sanitizedHtml: string,
+  doc: Document | undefined = typeof document !== 'undefined' ? document : undefined,
+): string {
+  if (!sanitizedHtml || !doc || typeof doc.createElement !== 'function' || typeof doc.createTreeWalker !== 'function') {
+    return sanitizedHtml;
+  }
+  const template = doc.createElement('template');
+  template.innerHTML = sanitizedHtml;
+  const root = template.content;
+  if (!root) return sanitizedHtml;
+
+  const showText = typeof NodeFilter !== 'undefined' ? NodeFilter.SHOW_TEXT : 4;
+  const walker = doc.createTreeWalker(root, showText);
+  const textNodes: Text[] = [];
+  let current = walker.nextNode();
+  while (current) {
+    if (current.nodeType === 3 && !hasSkippedAncestor(current, root)) {
+      textNodes.push(current as Text);
+    }
+    current = walker.nextNode();
+  }
+
+  for (const textNode of textNodes) {
+    const text = textNode.nodeValue || '';
+    CITATION_TOKEN_RE.lastIndex = 0;
+    if (!CITATION_TOKEN_RE.test(text)) continue;
+    CITATION_TOKEN_RE.lastIndex = 0;
+
+    const fragment = doc.createDocumentFragment();
+    let lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = CITATION_TOKEN_RE.exec(text)) !== null) {
+      if (match.index > lastIndex) {
+        fragment.appendChild(doc.createTextNode(text.slice(lastIndex, match.index)));
+      }
+      const num = Number.parseInt(match[1], 10);
+      if (Number.isSafeInteger(num) && num > 0) {
+        const button = doc.createElement('button');
+        button.setAttribute('type', 'button');
+        button.setAttribute('data-citation-num', String(num));
+        button.setAttribute('class', CITATION_PILL_CLASS);
+        button.textContent = String(num);
+        fragment.appendChild(button);
+      } else {
+        fragment.appendChild(doc.createTextNode(match[0]));
+      }
+      lastIndex = match.index + match[0].length;
+    }
+    if (lastIndex < text.length) {
+      fragment.appendChild(doc.createTextNode(text.slice(lastIndex)));
+    }
+    textNode.parentNode?.replaceChild(fragment, textNode);
+  }
+
+  return template.innerHTML;
+}
+
 interface NotebookChatPanelProps {
   activeNotebook: Notebook;
   mobileTab: 'sources' | 'chat' | 'studio';
@@ -37,18 +115,13 @@ export const NotebookChatPanel: React.FC<NotebookChatPanelProps> = ({
 
   // Helper to render message with interactive clickable citation badges [1], [2]
   const renderMessageContent = (msg: NotebookMessage) => {
-    const rawHtml = renderMarkdown(msg.content);
-    // Replace [1], [2] with clickable buttons
-    const replaced = rawHtml.replace(/\[(\d+)\]/g, (_match, p1) => {
-      const num = parseInt(p1, 10);
-      return `<button data-citation-num="${num}" class="inline-citation-pill inline-flex items-center justify-center w-4 h-4 mx-0.5 rounded-full bg-gold/20 hover:bg-gold hover:text-black text-gold-light border border-gold/40 text-[9px] font-mono font-bold transition-all align-baseline cursor-pointer">${num}</button>`;
-    });
+    const replaced = injectCitationPills(renderMarkdown(msg.content));
 
     return (
       <div
         dangerouslySetInnerHTML={{ __html: replaced }}
         onClick={(e) => {
-          const target = (e.target as HTMLElement).closest('.inline-citation-pill');
+          const target = (e.target as HTMLElement | null)?.closest?.('.inline-citation-pill');
           if (target) {
             const numAttr = target.getAttribute('data-citation-num');
             if (numAttr) {

@@ -6,7 +6,12 @@ import type { Env } from './env';
 import type { HostedIdentity, McpCredential } from './userTypes';
 import { SESSION_MCP_CREDENTIAL, credentialAllowsResearch } from './userTypes';
 import { billingId, json } from './workerUtils';
-import { getActiveSubscription } from './quotaMiddleware';
+import {
+  checkHostedQuota,
+  getActiveSubscription,
+  QUOTA_CAPACITY_ERROR,
+  refundMeteredQuota,
+} from './quotaMiddleware';
 import { planCapsFor } from './telegramBot';
 import type { McpCreditClass } from '../services/projects/types';
 import { TYPED_CONTEXT_KEYS } from '../services/projects/types';
@@ -40,11 +45,12 @@ import { gateMcpTenant } from './tenantGate';
 import {
   BYOK_PAID_CALL_COST_CENTS,
   HOSTED_PAID_CALL_COST_CENTS,
-  evaluateSoftAlerts,
+  finalizePaidToolBudget,
   getBudgetStatus,
   isBudgetHalted,
   recordBudgetIncident,
-  recordCostEvent,
+  reserveBudgetForCall,
+  settleBudgetReservation,
 } from './budgets';
 import { auditOrgIdFor, recordAuditLogBestEffort } from './auditLog';
 import { redactSensitive } from './logRedaction';
@@ -53,6 +59,7 @@ import {
   executeDreamRun,
   reviewDreamProposal,
 } from './dreamingService';
+import { hasHostedDreamModel } from './dreamAgent';
 import { getPendingDreamEvents } from './dreamingQueue';
 import { evaluateWakeGate } from './dreamingWakeGate';
 import { ACCOUNT_MCP_TOOLS } from './mcpAccountTools';
@@ -384,7 +391,20 @@ const TOOLS: McpToolDef[] = [
       const domain = requireString(args, 'domain');
       if (!domain) return textResult('domain required', { code: 'BAD_INPUT' }, true);
       const force = args.force === true;
-      const res = await executeDreamRun(ctx.env, ctx.accountId, domain, 'mcp_trigger', { force });
+      const quota = hasHostedDreamModel(ctx.env) ? await checkHostedQuota(ctx.env, ctx.user) : null;
+      if (quota && !quota.ok) {
+        const capacity = quota.error === QUOTA_CAPACITY_ERROR;
+        return textResult(
+          quota.error || 'Hosted quota exceeded.',
+          { code: capacity ? 'HOSTED_CAPACITY' : 'QUOTA_EXHAUSTED', limit: quota.limit, remaining: quota.remaining },
+          true,
+        );
+      }
+      const res = await executeDreamRun(ctx.env, ctx.accountId, domain, 'mcp_trigger', { force }).catch(async (err: unknown) => {
+        await refundMeteredQuota(ctx.env, quota);
+        throw err;
+      });
+      if (!res.ok || !res.woke) await refundMeteredQuota(ctx.env, quota);
       if (!res.ok) return textResult(res.error, undefined, true);
       if (!res.woke) {
         return textResult(
@@ -548,6 +568,29 @@ function mcpToolAuditDetails(tool: string, decision: string, reason?: string): R
   return redactSensitive(details) as Record<string, unknown>;
 }
 
+async function budgetExhaustedBlock(ctx: McpToolContext, name: string, now: number): Promise<McpToolResult> {
+  await recordAuditLogBestEffort(ctx.env, {
+    org_id: auditOrgIdFor(ctx.accountId),
+    actor_id: ctx.user.id,
+    action: 'mcp_tool_block',
+    target_id: name,
+    details: mcpToolAuditDetails(name, 'block', 'budget_exhausted'),
+  });
+  const budgetStatus = await getBudgetStatus(ctx.env, ctx.accountId, now);
+  if (budgetStatus.policy) {
+    await recordBudgetIncident(ctx.env, ctx.accountId, 100, budgetStatus.spentCents, {
+      kind: 'hard',
+      policyId: budgetStatus.policy.id,
+      now,
+    }).catch(() => undefined);
+  }
+  return textResult(
+    'Tool blocked by governance policy: budget_exhausted',
+    { code: 'BUDGET_EXHAUSTED', reason: 'budget_exhausted', budgetHalted: true },
+    true,
+  );
+}
+
 async function callTool(
   name: string,
   args: Record<string, unknown>,
@@ -584,28 +627,7 @@ async function callTool(
 
   // Budget gate runs BEFORE the governance decideToolCall; when the account is
   // budget-halted the budget block wins over every governance outcome.
-  if (await isBudgetHalted(ctx.env, ctx.accountId, now)) {
-    await recordAuditLogBestEffort(ctx.env, {
-      org_id: auditOrgIdFor(ctx.accountId),
-      actor_id: ctx.user.id,
-      action: 'mcp_tool_block',
-      target_id: name,
-      details: mcpToolAuditDetails(name, 'block', 'budget_exhausted'),
-    });
-    const budgetStatus = await getBudgetStatus(ctx.env, ctx.accountId, now);
-    if (budgetStatus.policy) {
-      await recordBudgetIncident(ctx.env, ctx.accountId, 100, budgetStatus.spentCents, {
-        kind: 'hard',
-        policyId: budgetStatus.policy.id,
-        now,
-      }).catch(() => undefined);
-    }
-    return textResult(
-      'Tool blocked by governance policy: budget_exhausted',
-      { code: 'BUDGET_EXHAUSTED', reason: 'budget_exhausted', budgetHalted: true },
-      true,
-    );
-  }
+  if (await isBudgetHalted(ctx.env, ctx.accountId, now)) return budgetExhaustedBlock(ctx, name, now);
 
   // Free and Starter get MCP with a daily call cap; Growth+ is unmetered.
   // The key is the account id, so a new token does not reset the count.
@@ -671,7 +693,7 @@ async function callTool(
   }
   if (decision.action === 'require_approval') {
     const req = await createActionRequest(ctx.env, {
-      userId: ctx.accountId,
+      userId: tenant.dataAccountId,
       toolName: name,
       projectId,
       args,
@@ -706,57 +728,51 @@ async function callTool(
     const paid = await spendMcpDailyCall(ctx.env, ctx.accountId, MCP_HOSTED_PAID_DAILY, 'mcp_paid', 'hosted paid MCP call');
     if (!paid.ok) return dailySpendRefusal(ctx, paid, 'MCP_PAID_DAILY_LIMIT', MCP_HOSTED_PAID_DAILY);
   }
+  const billedCents =
+    tool.creditClass === 'paid' && !ctx.dataForSeoCredential ? HOSTED_PAID_CALL_COST_CENTS : BYOK_PAID_CALL_COST_CENTS;
+  const cost = {
+    accountId: ctx.accountId,
+    toolName: name,
+    billedCents,
+    projectId,
+    creditClass: 'paid' as const,
+    source: 'credit_class',
+    credentialKind: ctx.credential.kind,
+    credentialId: ctx.credential.id,
+    now,
+  };
+  const reservation =
+    billedCents > 0
+      ? await reserveBudgetForCall(ctx.env, { ...cost, estimatedCents: billedCents })
+      : { ok: true as const, reservationId: null };
+  if (!reservation.ok) return budgetExhaustedBlock(ctx, name, now);
+
   const billingAccountId = ctx.accountId;
   ctx.accountId = tenant.dataAccountId;
-  const result = capToolResult(await tool.handler(args || {}, ctx));
+  let result: McpToolResult;
+  try {
+    result = capToolResult(await tool.handler(args || {}, ctx));
+  } catch (err) {
+    ctx.accountId = billingAccountId;
+    await settleBudgetReservation(ctx.env, reservation.reservationId, 0).catch(() => undefined);
+    throw err;
+  }
   ctx.accountId = billingAccountId;
 
-  // Cost ingestion: cost events land only after a successful PAID tool
-  // execution; free tools and error results record nothing. Interim rule per
-  // the design record: real provider cost is unavailable at this seam, so the
-  // tool bills its declared credit class as cents (source 'credit_class');
-  // BYOK calls bill zero (Luminara owes nothing, design decision 9).
-  if (tool.creditClass === 'paid' && !result.isError) {
-    const billedCents = ctx.dataForSeoCredential
-      ? BYOK_PAID_CALL_COST_CENTS
-      : HOSTED_PAID_CALL_COST_CENTS;
-    if (billedCents > 0) {
-      try {
-        await recordCostEvent(ctx.env, {
-          accountId: ctx.accountId,
-          toolName: name,
-          billedCents,
-          projectId,
-          creditClass: 'paid',
-          source: 'credit_class',
-          credentialKind: ctx.credential.kind,
-          credentialId: ctx.credential.id,
-          now,
-        });
-      } catch (err) {
-        // Metering must never turn a completed tool call into an error.
-        console.error('[budgets] recordCostEvent failed after paid tool execution:', err);
-      }
-      // Soft alerts: post-call, on first crossing of 50/80/95 in the window,
-      // record a deduped incident and audit-log budget_soft_alert. Never blocks.
-      const status = await getBudgetStatus(ctx.env, ctx.accountId, now);
-      if (status.policy && status.state !== 'ok' && status.state !== 'hard_stop') {
-        const alert = await evaluateSoftAlerts(ctx.env, ctx.accountId, status, now);
-        if (alert?.recorded) {
-          await recordAuditLogBestEffort(ctx.env, {
-            org_id: auditOrgIdFor(ctx.accountId),
-            actor_id: ctx.user.id,
-            action: 'budget_soft_alert',
-            target_id: name,
-            details: redactSensitive({
-              threshold: alert.threshold,
-              percent: Math.round(status.percent * 100) / 100,
-              spentCents: status.spentCents,
-              limitCents: status.policy.amount_cents,
-            }) as Record<string, unknown>,
-          });
-        }
-      }
+  if (tool.creditClass === 'paid') {
+    const alert = await finalizePaidToolBudget(ctx.env, {
+      reservationId: reservation.reservationId,
+      isError: Boolean(result.isError),
+      cost,
+    });
+    if (alert) {
+      await recordAuditLogBestEffort(ctx.env, {
+        org_id: auditOrgIdFor(ctx.accountId),
+        actor_id: ctx.user.id,
+        action: 'budget_soft_alert',
+        target_id: name,
+        details: redactSensitive(alert) as Record<string, unknown>,
+      });
     }
   }
   return result;

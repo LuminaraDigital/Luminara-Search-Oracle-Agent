@@ -2,8 +2,20 @@
  * Reads a logo URL once at save time. https only, public host, raster bytes, size cap.
  * SVG is refused. Rendering uses an img tag, never inline markup.
  */
-import { fetchPublicUrl } from './security';
+import { defaultPortFetcher, fetchPublicUrl } from './security';
 import { LOGO_MAX_BYTES, logoPayloadOk, parseLogoUrl } from '../services/reports/reportBrand';
+
+const LOGO_FETCH_TIMEOUT_MS = 5_000;
+
+function httpsDefaultPortFetcher(
+  baseFetch: typeof fetch = fetch,
+): (input: string, init?: RequestInit) => Promise<Response> {
+  const portChecked = defaultPortFetcher(baseFetch);
+  return async (input, init) => {
+    if (new URL(input).protocol !== 'https:') throw new Error('https required');
+    return portChecked(input, init);
+  };
+}
 
 async function readCapped(response: Response): Promise<Uint8Array | 'too-big' | 'empty'> {
   const declared = Number(response.headers.get('content-length') || 0);
@@ -39,8 +51,22 @@ async function readCapped(response: Response): Promise<Uint8Array | 'too-big' | 
 export async function inspectLogoUrl(raw: string): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
   const parsed = parseLogoUrl(raw);
   if (!parsed.ok) return parsed;
-  const fetched = await fetchPublicUrl(parsed.url, { method: 'GET' });
+  if (new URL(parsed.url).port) {
+    return { ok: false, error: 'That logo could not be read. Use a public https image.' };
+  }
+  const fetched = await fetchPublicUrl(
+    parsed.url,
+    { method: 'GET', signal: AbortSignal.timeout(LOGO_FETCH_TIMEOUT_MS) },
+    {
+      fetcher: httpsDefaultPortFetcher((input, init) => fetch(input, init)),
+      dohFetcher: (url, init) => fetch(url, init),
+    },
+  );
   if (!fetched.ok || !fetched.finalUrl.startsWith('https://')) {
+    return { ok: false, error: 'That logo could not be read. Use a public https image.' };
+  }
+  if (!fetched.response.ok) {
+    await fetched.response.body?.cancel().catch(() => {});
     return { ok: false, error: 'That logo could not be read. Use a public https image.' };
   }
   const bytes = await readCapped(fetched.response);

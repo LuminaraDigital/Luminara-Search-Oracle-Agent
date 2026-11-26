@@ -7,7 +7,8 @@ import {
   evaluateInboundEnquiryTurn,
 } from '../services/enquiries/playbookQualificationService';
 import { recordOutcomeStageEvent, validateOutcomeStageInput } from '../worker/outcomesLedgerService';
-import { createBookingProposal } from '../worker/bookingApprovalService';
+import { createBookingProposal, decideBookingAppointment } from '../worker/bookingApprovalService';
+import { checkOrRecordExternalEffect, finalizeExternalEffect } from '../worker/externalEffectsService';
 import {
   composeCompliantRecoveryMessage,
   evaluateRecoveryComplianceGate,
@@ -535,23 +536,97 @@ describe('Stage 5: Clean-Room Twenty CRM GraphQL Adapter & SSRF Guard', () => {
     );
     expect(evalRes?.status).toBe(200);
 
-    const stageRes = await recordOutcomeStageEvent(env, {
+    // M-14: Direct spoofing of agent_approved_booking without a server-approved appointment is blocked (403)
+    const spoofedStageRes = await recordOutcomeStageEvent(env, {
       accountId: 'usr_test_1',
       projectId: 'proj_au_1',
       enquiryId: ingested.enquiry.id,
       stage: 'agent_approved_booking',
       evidenceType: 'agent_signoff_receipt',
-      evidenceRef: 'appt_verified_1',
+      evidenceRef: 'appt_forged_1',
       recordedBy: 'usr_test_1',
     });
-    expect(stageRes.ok).toBe(true);
-    const updatedRow = await db
-      .prepare(`SELECT status FROM enquiries WHERE id = ?`)
-      .bind(ingested.enquiry.id)
-      .first<{ status: string }>();
-    expect(updatedRow?.status).toBe('booked');
+    expect(spoofedStageRes.ok).toBe(false);
+    if (!spoofedStageRes.ok) expect(spoofedStageRes.status).toBe(403);
 
-    // Pass 4 regression: booking proposal + /decide route + decline reverting status to 'qualified' + selectedSlotIso approval
+    const spoofedHttpRes = await handleEnquiryDeskRoute(
+      new Request('https://luminarasuite.com/api/outcomes/record', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId: 'proj_au_1',
+          enquiryId: ingested.enquiry.id,
+          stage: 'agent_approved_booking',
+          evidenceType: 'agent_signoff_receipt',
+          evidenceRef: 'appt_forged_http',
+        }),
+      }),
+      env,
+      TEST_USER,
+      '/outcomes/record',
+    );
+    expect(spoofedHttpRes?.status).toBe(403);
+
+    // Pass 4 + M-14 regression: decline reverts status to 'qualified', blocks re-deciding (409),
+    // unmatched selectedSlotIso returns 400, and valid approval records agent_approved_booking + 'booked'.
+    const propDecline = await createBookingProposal(env, {
+      accountId: 'usr_test_1',
+      projectId: 'proj_au_1',
+      enquiryId: ingested.enquiry.id,
+      contactId: '',
+      assignedAgentId: 'agent_1',
+      proposedSlots: [
+        {
+          slotId: 'slot_decline_1',
+          startAt: monday1pmSydney + 24 * 3600_000,
+          endAt: monday1pmSydney + 24 * 3600_000 + 1800_000,
+          label: '2026-10-27T02:00:00.000Z',
+        },
+      ],
+      now: monday1pmSydney,
+    });
+    expect(propDecline.ok).toBe(true);
+    if (propDecline.ok) {
+      const declineRes = await handleEnquiryDeskRoute(
+        new Request(
+          `https://luminarasuite.com/api/enquiries/appointments/${propDecline.appointment.id}/decide`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ decision: 'decline' }),
+          },
+        ),
+        env,
+        TEST_USER,
+        `/enquiries/appointments/${propDecline.appointment.id}/decide`,
+      );
+      expect(declineRes?.status).toBe(200);
+      const afterDecline = await db
+        .prepare(`SELECT status FROM enquiries WHERE id = ?`)
+        .bind(ingested.enquiry.id)
+        .first<{ status: string }>();
+      expect(afterDecline?.status).toBe('qualified');
+
+      // Cannot approve an already-declined appointment (409 Conflict)
+      const approveAfterDecline = await handleEnquiryDeskRoute(
+        new Request(
+          `https://luminarasuite.com/api/enquiries/appointments/${propDecline.appointment.id}/decide`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              decision: 'approve',
+              selectedSlotIso: '2026-10-27T02:00:00.000Z',
+            }),
+          },
+        ),
+        env,
+        TEST_USER,
+        `/enquiries/appointments/${propDecline.appointment.id}/decide`,
+      );
+      expect(approveAfterDecline?.status).toBe(409);
+    }
+
     const propRes = await createBookingProposal(env, {
       accountId: 'usr_test_1',
       projectId: 'proj_au_1',
@@ -566,47 +641,68 @@ describe('Stage 5: Clean-Room Twenty CRM GraphQL Adapter & SSRF Guard', () => {
           label: '2026-10-28T02:00:00.000Z',
         },
       ],
-      now: monday1pmSydney,
+      now: monday1pmSydney + 500,
     });
     expect(propRes.ok).toBe(true);
     if (propRes.ok) {
-      const declineRes = await handleEnquiryDeskRoute(
+      // M-14: Unmatched selectedSlotId / selectedSlotIso returns 400 instead of silent fallback
+      const badSlotIdRes = await handleEnquiryDeskRoute(
         new Request(
           `https://luminarasuite.com/api/enquiries/appointments/${propRes.appointment.id}/decide`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ decision: 'decline' }),
+            body: JSON.stringify({ decision: 'approve', selectedSlotId: 'slot_nonexistent' }),
           },
         ),
         env,
         TEST_USER,
         `/enquiries/appointments/${propRes.appointment.id}/decide`,
       );
-      expect(declineRes?.status).toBe(200);
-      const afterDecline = await db
+      expect(badSlotIdRes?.status).toBe(400);
+
+      const badSlotIsoRes = await handleEnquiryDeskRoute(
+        new Request(
+          `https://luminarasuite.com/api/enquiries/appointments/${propRes.appointment.id}/decide`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ decision: 'approve', selectedSlotIso: '2099-01-01T00:00:00.000Z' }),
+          },
+        ),
+        env,
+        TEST_USER,
+        `/enquiries/appointments/${propRes.appointment.id}/decide`,
+      );
+      expect(badSlotIsoRes?.status).toBe(400);
+
+      // Concurrent approval race: exactly one wins (200), the second gets 409 Conflict
+      const [approveA, approveB] = await Promise.all([
+        decideBookingAppointment(env, {
+          accountId: 'usr_test_1',
+          appointmentId: propRes.appointment.id,
+          decision: 'approve',
+          selectedSlotIso: '2026-10-28T02:00:00.000Z',
+          actorUserId: 'usr_test_1',
+        }),
+        decideBookingAppointment(env, {
+          accountId: 'usr_test_1',
+          appointmentId: propRes.appointment.id,
+          decision: 'approve',
+          selectedSlotIso: '2026-10-28T02:00:00.000Z',
+          actorUserId: 'usr_test_1',
+        }),
+      ]);
+      expect([approveA.ok, approveB.ok].filter(Boolean)).toHaveLength(1);
+      const loser = approveA.ok ? approveB : approveA;
+      expect(loser.ok).toBe(false);
+      if (!loser.ok) expect(loser.status).toBe(409);
+
+      const updatedRow = await db
         .prepare(`SELECT status FROM enquiries WHERE id = ?`)
         .bind(ingested.enquiry.id)
         .first<{ status: string }>();
-      expect(afterDecline?.status).toBe('qualified');
-
-      const approveIsoRes = await handleEnquiryDeskRoute(
-        new Request(
-          `https://luminarasuite.com/api/enquiries/appointments/${propRes.appointment.id}/decide`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              decision: 'approve',
-              selectedSlotIso: '2026-10-28T02:00:00.000Z',
-            }),
-          },
-        ),
-        env,
-        TEST_USER,
-        `/enquiries/appointments/${propRes.appointment.id}/decide`,
-      );
-      expect(approveIsoRes?.status).toBe(200);
+      expect(updatedRow?.status).toBe('booked');
 
       const listRes = await handleEnquiryDeskRoute(
         new Request('https://luminarasuite.com/api/enquiries?projectId=proj_au_1', {
@@ -637,5 +733,124 @@ describe('Stage 5: Clean-Room Twenty CRM GraphQL Adapter & SSRF Guard', () => {
         expect(stringSlotProp.appointment.proposedSlots[0]?.slotId).toBe('slot_1');
       }
     }
+  });
+
+  it('H-07 + M-12: enforces atomic external effect locking, stale lease takeover, and strict stepIndex 0..2 validation', async () => {
+    const db = createSqliteD1();
+    const env = { DB: db } as Env;
+    const t0 = 1_760_000_000_000;
+
+    // Concurrent checkOrRecordExternalEffect: never returns duplicate: false to two callers
+    const [claimA, claimB] = await Promise.all([
+      checkOrRecordExternalEffect<{ done: boolean }>(env, {
+        accountId: 'acct_race',
+        projectId: 'proj_1',
+        targetSystem: 'recovery_campaign',
+        actionKind: 'send_step_0',
+        payload: { enquiryId: 'enq_race_1' },
+        now: t0,
+      }),
+      checkOrRecordExternalEffect<{ done: boolean }>(env, {
+        accountId: 'acct_race',
+        projectId: 'proj_1',
+        targetSystem: 'recovery_campaign',
+        actionKind: 'send_step_0',
+        payload: { enquiryId: 'enq_race_1' },
+        now: t0,
+      }),
+    ]);
+    const winners = [claimA, claimB].filter((c) => !c.duplicate);
+    const losers = [claimA, claimB].filter((c) => c.duplicate);
+    expect(winners).toHaveLength(1);
+    expect(losers).toHaveLength(1);
+    expect(losers[0]?.duplicate && losers[0].inProgress).toBe(true);
+
+    // Active lease is not stolen before staleLeaseMs elapses
+    const midLease = await checkOrRecordExternalEffect<{ done: boolean }>(env, {
+      accountId: 'acct_race',
+      projectId: 'proj_1',
+      targetSystem: 'recovery_campaign',
+      actionKind: 'send_step_0',
+      payload: { enquiryId: 'enq_race_1' },
+      now: t0 + 10_000,
+      staleLeaseMs: 60_000,
+    });
+    expect(midLease.duplicate).toBe(true);
+    if (midLease.duplicate) expect(midLease.inProgress).toBe(true);
+
+    // Concurrent stale lease takeover: exactly one worker wins
+    const [takeA, takeB] = await Promise.all([
+      checkOrRecordExternalEffect<{ done: boolean }>(env, {
+        accountId: 'acct_race',
+        projectId: 'proj_1',
+        targetSystem: 'recovery_campaign',
+        actionKind: 'send_step_0',
+        payload: { enquiryId: 'enq_race_1' },
+        now: t0 + 120_000,
+        staleLeaseMs: 60_000,
+      }),
+      checkOrRecordExternalEffect<{ done: boolean }>(env, {
+        accountId: 'acct_race',
+        projectId: 'proj_1',
+        targetSystem: 'recovery_campaign',
+        actionKind: 'send_step_0',
+        payload: { enquiryId: 'enq_race_1' },
+        now: t0 + 120_000,
+        staleLeaseMs: 60_000,
+      }),
+    ]);
+    expect([takeA, takeB].filter((c) => !c.duplicate)).toHaveLength(1);
+
+    // Finalized effect returns cachedResult on subsequent calls
+    await finalizeExternalEffect(env, claimA.effectKey, 'acct_race', { done: true }, t0 + 125_000);
+    const afterFinal = await checkOrRecordExternalEffect<{ done: boolean }>(env, {
+      accountId: 'acct_race',
+      projectId: 'proj_1',
+      targetSystem: 'recovery_campaign',
+      actionKind: 'send_step_0',
+      payload: { enquiryId: 'enq_race_1' },
+      now: t0 + 500_000,
+      staleLeaseMs: 60_000,
+    });
+    expect(afterFinal.duplicate).toBe(true);
+    if (afterFinal.duplicate) expect(afterFinal.cachedResult).toEqual({ done: true });
+
+    // M-12: Invalid stepIndex values are rejected with 400 BEFORE writing external_effects
+    for (const badStep of [-1, 3, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const badRes = await executeRecoveryStep(env, {
+        accountId: 'acct_race',
+        projectId: 'proj_1',
+        enquiryId: 'enq_any',
+        playbookId: 'seller_reengagement',
+        stepIndex: badStep,
+        channel: 'sms',
+        messageBody: 'Hi',
+        agencyLegalName: 'Agency',
+        agencyContactDetails: '02 9000 0000',
+      });
+      expect(badRes.ok).toBe(false);
+      if (!badRes.ok) {
+        expect(badRes.status).toBe(400);
+        expect(badRes.code).toBe('INVALID_STEP_INDEX');
+      }
+    }
+
+    for (const rawStep of [-1, 3, 1.2, '1', null]) {
+      const httpBad = await handleRecoveryRoute(
+        new Request('https://luminarasuite.com/api/recovery/send-step', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ channel: 'sms', enquiryId: 'enq_any', stepIndex: rawStep }),
+        }),
+        env,
+        TEST_USER,
+        '/recovery/send-step',
+      );
+      expect(httpBad?.status).toBe(400);
+    }
+
+    // Only the 1 legitimate test effect row was ever recorded
+    const count = await db.prepare(`SELECT COUNT(*) AS n FROM external_effects`).first<{ n: number }>();
+    expect(count?.n).toBe(1);
   });
 });

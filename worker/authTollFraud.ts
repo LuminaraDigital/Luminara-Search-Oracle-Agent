@@ -10,7 +10,8 @@
  * No Admin SDK / service-account private key required.
  */
 import type { Env } from './env';
-import { json } from './workerUtils';
+import { json, sha256Hex } from './workerUtils';
+import { MAX_SMALL_BODY_BYTES, readBody } from './security';
 import { enforceAppCheckIfRequired, extractAppCheckToken } from './appCheck';
 import { identityToolkitHeaders } from './identityToolkit';
 import {
@@ -20,6 +21,7 @@ import {
   enforceEdgeBindingLimit,
   incrementOutboundDaily,
   otpIpLimiter,
+  passwordResetEmailLimiter,
   passwordResetIpLimiter,
   withRateLimitHeaders,
   type DualRateLimitResult,
@@ -193,18 +195,21 @@ export async function handlePasswordResetRequest(
   const gate = await gateAuthMessaging(env, ip);
   if (!gate.ok) return gate.response;
 
-  let emailRaw: unknown;
-  let appCheckToken: string | undefined;
-  try {
-    const body = (await request.json()) as { email?: unknown; appCheckToken?: unknown };
-    emailRaw = body?.email;
-    if (typeof body?.appCheckToken === 'string' && body.appCheckToken.trim()) {
-      appCheckToken = body.appCheckToken.trim();
-    }
-  } catch {
+  const bodyRead = await readBody(request, MAX_SMALL_BODY_BYTES);
+  if (!bodyRead.ok) {
     await padMinLatency(started, minLatency);
-    return json({ ok: false, error: 'Request body must be JSON with an email field.', code: 'INVALID_BODY' }, 400);
+    return json(
+      { ok: false, error: 'Request body must be JSON with an email field.', code: 'INVALID_BODY' },
+      bodyRead.status === 413 ? 413 : 400,
+    );
   }
+  const body = (bodyRead.value && typeof bodyRead.value === 'object' ? bodyRead.value : {}) as {
+    email?: unknown;
+    appCheckToken?: unknown;
+  };
+  const emailRaw = body.email;
+  const appCheckToken =
+    typeof body.appCheckToken === 'string' && body.appCheckToken.trim() ? body.appCheckToken.trim() : undefined;
 
   const email = normalizeResetEmail(emailRaw);
   if (!email) {
@@ -216,6 +221,14 @@ export async function handlePasswordResetRequest(
   if (!appCheckGate.ok) {
     await padMinLatency(started, minLatency);
     return appCheckGate.response;
+  }
+
+  const emailHash = await sha256Hex(`reset_email:${email}`);
+  const emailLimit = await passwordResetEmailLimiter(env, `email:${emailHash}`);
+  if (!emailLimit.ok) {
+    // Return neutral success copy so per-email throttling cannot be abused to enumerate accounts.
+    await padMinLatency(started, minLatency);
+    return withRateLimitHeaders(json(PASSWORD_RESET_SUCCESS_BODY, 200), gate.headers);
   }
 
   const budget = await checkOutboundDailyBudget(env);

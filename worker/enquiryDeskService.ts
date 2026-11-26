@@ -213,14 +213,17 @@ export async function ingestInboundEnquiry(
     now,
   });
 
-  if (effectCheck.duplicate && effectCheck.cachedResult) {
-    return {
-      ok: true,
-      duplicate: true,
-      effectKey: effectCheck.effectKey,
-      enquiry: effectCheck.cachedResult.enquiry,
-      evaluation: effectCheck.cachedResult.evaluation,
-    };
+  if (effectCheck.duplicate) {
+    if (effectCheck.cachedResult) {
+      return {
+        ok: true,
+        duplicate: true,
+        effectKey: effectCheck.effectKey,
+        enquiry: effectCheck.cachedResult.enquiry,
+        evaluation: effectCheck.cachedResult.evaluation,
+      };
+    }
+    return { ok: false, error: 'Enquiry ingestion is already in progress.', status: 409 };
   }
 
   const contactId = `cnt_${effectCheck.effectKey.slice(4, 20)}`;
@@ -745,8 +748,11 @@ export async function handleEnquiryDeskRoute(
       actionKind: 'sync_enquiry',
       payload: { enquiryId: existing.id, baseUrl },
     });
-    if (effectCheck.duplicate && effectCheck.cachedResult) {
-      return json({ ok: true, duplicate: true, effectKey: effectCheck.effectKey, ...effectCheck.cachedResult });
+    if (effectCheck.duplicate) {
+      if (effectCheck.cachedResult) {
+        return json({ ok: true, duplicate: true, effectKey: effectCheck.effectKey, ...effectCheck.cachedResult });
+      }
+      return json({ ok: false, code: 'EFFECT_IN_PROGRESS', error: 'CRM sync is already in progress.' }, 409);
     }
 
     const { firstName, lastName } = splitFullName(existing.contactName);
@@ -889,6 +895,7 @@ export async function handleEnquiryDeskRoute(
       stage: String(body.stage || '') as OutcomeStage,
       evidenceType: String(body.evidenceType || '') as OutcomeEvidenceType,
       evidenceRef: String(body.evidenceRef || ''),
+      appointmentId: typeof body.appointmentId === 'string' ? body.appointmentId.trim() : undefined,
       notes: typeof body.notes === 'string' ? body.notes : undefined,
       recordedBy: user.id,
     });

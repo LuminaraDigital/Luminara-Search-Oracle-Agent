@@ -1,5 +1,5 @@
 import React from 'react';
-import { ASTNode, ActionHandler, ActionInvocation, BinaryExpression, ComponentRegistry, GenUIComponentDef, ParseResult } from './types';
+import { ASTNode, ActionHandler, ActionInvocation, BinaryExpression, ComponentRegistry, GenUIComponentDef, ParseResult, isForbiddenPropertyKey } from './types';
 
 /**
  * Materializes an AST node tree into live React elements.
@@ -23,7 +23,10 @@ export function materializeNode(
     return null;
   }
 
-  const def = registry[node.component];
+  const def =
+    !isForbiddenPropertyKey(node.component) && Object.hasOwn(registry, node.component)
+      ? registry[node.component]
+      : undefined;
   if (!def) {
     return React.createElement(
       'div',
@@ -36,7 +39,7 @@ export function materializeNode(
   }
 
   const Component = typeof def === 'function' ? def : (def as GenUIComponentDef).component;
-  const adapter = typeof def === 'object' && def !== null && 'adapter' in def ? def.adapter : undefined;
+  const adapter = typeof def === 'object' && def !== null && Object.hasOwn(def, 'adapter') ? def.adapter : undefined;
 
   // Resolve positional and named arguments
   const resolvedArgs = node.args.map((arg) => resolveValue(arg, result, registry, actionHandler, new Set(visited)));
@@ -57,6 +60,7 @@ export function materializeNode(
   // If named args were provided, resolve and merge them
   if (node.namedArgs && Object.keys(node.namedArgs).length > 0) {
     for (const [k, v] of Object.entries(node.namedArgs)) {
+      if (isForbiddenPropertyKey(k)) continue;
       props[k] = resolveValue(v, result, registry, actionHandler, new Set(visited));
     }
   }
@@ -67,8 +71,10 @@ export function materializeNode(
     if (Array.isArray(resolvedArgs[0]) && resolvedArgs[0].every(React.isValidElement)) {
       props.children = resolvedArgs[0];
     } else if (typeof resolvedArgs[0] === 'object' && resolvedArgs[0] !== null && !React.isValidElement(resolvedArgs[0]) && !Array.isArray(resolvedArgs[0])) {
-      // First arg is an object payload, spread it
-      Object.assign(props, resolvedArgs[0]);
+      // First arg is an object payload, spread own safe keys only
+      for (const [k, v] of Object.entries(resolvedArgs[0])) {
+        if (!isForbiddenPropertyKey(k)) props[k] = v;
+      }
     } else {
       // Pass raw args array for components that inspect positional args
       props.args = resolvedArgs;
@@ -92,7 +98,7 @@ function resolveValue(
   if (value === null || value === undefined) return value;
 
   // Binary expression: left + right
-  if (typeof value === 'object' && value.__isBinary && value.op === '+') {
+  if (typeof value === 'object' && Object.hasOwn(value, '__isBinary') && value.__isBinary && value.op === '+') {
     const bin = value as BinaryExpression;
     const left = resolveValue(bin.left, result, registry, actionHandler, visited);
     const right = resolveValue(bin.right, result, registry, actionHandler, visited);
@@ -100,13 +106,13 @@ function resolveValue(
   }
 
   // State reference: $var
-  if (typeof value === 'object' && value.__isStateRef) {
+  if (typeof value === 'object' && Object.hasOwn(value, '__isStateRef') && value.__isStateRef) {
     const varName = value.name;
     return result.stateVars.has(varName) ? result.stateVars.get(varName) : null;
   }
 
   // Action Invocation: @Action("name", payload)
-  if (typeof value === 'object' && value.__isAction) {
+  if (typeof value === 'object' && Object.hasOwn(value, '__isAction') && value.__isAction) {
     const action = value as ActionInvocation;
     return () => {
       if (actionHandler) {
@@ -135,6 +141,7 @@ function resolveValue(
   if (typeof value === 'object' && !React.isValidElement(value)) {
     const resolvedObj: Record<string, any> = {};
     for (const [k, v] of Object.entries(value)) {
+      if (isForbiddenPropertyKey(k)) continue;
       resolvedObj[k] = resolveValue(v, result, registry, actionHandler, visited);
     }
     return resolvedObj;

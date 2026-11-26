@@ -154,7 +154,6 @@ export async function refundAuditRun(
   env: Env,
   user: HostedIdentity,
   token: string,
-  unmeasured = false,
 ): Promise<Response> {
   const record = await readRun(env, token);
   if (!record || record.exp <= Date.now()) {
@@ -163,8 +162,17 @@ export async function refundAuditRun(
   if (record.userId !== billingId(user)) {
     return json({ ok: false, error: 'This audit run belongs to another account.', code: 'AUDIT_RUN_REJECTED' }, 401);
   }
-  // A 200 page can still leave both scores null. That run is unmeasured and gets its check back.
-  if (record.refunded || !record.meterKey || (record.sawSuccess && !unmeasured)) {
+  // Only server-recorded state decides refund eligibility: never refund after any successful call,
+  // never refund twice, and only refund when a metered spend was recorded by the server.
+  if (record.refunded || record.sawSuccess || !record.meterKey || !(record.limit > 0)) {
+    return json({ ok: true, refunded: false });
+  }
+  // Invalidate the run record and isolate cache before releasing quota so the token can never be
+  // refunded twice or reused for additional covered provider calls.
+  record.refunded = true;
+  record.left = 0;
+  callsLeft.delete(token);
+  if (!(await writeRun(env, token, record))) {
     return json({ ok: true, refunded: false });
   }
   const status: QuotaStatus = {
@@ -177,8 +185,6 @@ export async function refundAuditRun(
     meterKey: record.meterKey,
   };
   const released = await refundMeteredQuota(env, status);
-  record.refunded = released.refunded;
-  await writeRun(env, token, record);
   return json({ ok: true, refunded: released.refunded });
 }
 
@@ -195,15 +201,19 @@ export async function takeAuditRunCall(env: Env, user: HostedIdentity, request: 
   if (!token) return { kind: 'meter' };
   const domain = auditHostname(request.headers.get(AUDIT_RUN_DOMAIN_HEADER) || '');
   const record = await readRun(env, token);
-  if (!record || record.exp <= Date.now()) {
+  if (!record || record.exp <= Date.now() || record.refunded) {
     callsLeft.delete(token);
-    return { kind: 'reject', error: 'This audit run expired.' };
+    return { kind: 'reject', error: record?.refunded ? 'This audit run was already refunded.' : 'This audit run expired.' };
   }
   if (record.userId !== billingId(user)) {
     return { kind: 'reject', error: 'This audit run belongs to another account.' };
   }
   if (!domain || !sameSiteHost(domain, record.domain)) {
     return { kind: 'wrong-site', error: 'This audit run is for a different site.' };
+  }
+  if (record.left <= 0) {
+    callsLeft.delete(token);
+    return { kind: 'meter' };
   }
   const known = callsLeft.get(token);
   let left = known && known.exp === record.exp ? known.left : record.left;
@@ -247,8 +257,7 @@ export async function handleAuditScoutRun(request: Request, env: Env): Promise<R
   if (body.refund === true) {
     const token = typeof body.token === 'string' ? body.token.trim() : '';
     if (!token) return json({ ok: false, error: 'token required', code: 'BAD_REQUEST' }, 400);
-    const unmeasured = body.healthScore === null && body.citationRate === null;
-    return refundAuditRun(env, who.user, token, unmeasured);
+    return refundAuditRun(env, who.user, token);
   }
   const domain = typeof body.domain === 'string' ? body.domain : '';
   const hero = heroAbEnabled(env)

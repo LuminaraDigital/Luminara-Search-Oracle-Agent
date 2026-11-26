@@ -81,8 +81,8 @@ export class BrowserActionLoop {
     this.fieldLlm = opts.fieldLlm;
     this.chooseFn = opts.chooseFn;
     this.visionFallback = opts.visionFallback;
-    this.enforceTwoTierPolicy = opts.enforceTwoTierPolicy ?? false;
-    this.writeApproved = opts.writeApproved ?? true;
+    this.enforceTwoTierPolicy = opts.enforceTwoTierPolicy ?? true;
+    this.writeApproved = opts.writeApproved ?? false;
     this.allowSensitiveFill = opts.allowSensitiveFill ?? false;
     this.state = {
       goal: opts.goal,
@@ -317,6 +317,7 @@ export class BrowserActionLoop {
     page: ObservePayload,
   ): Promise<{ nextPage: ObservePayload; point: readonly [number, number] } | null> {
     if (!this.visionFallback) return null;
+    if (this.enforceTwoTierPolicy && !this.writeApproved) return null;
     const check = shouldTriggerVisionFallback(page, this.state.history);
     if (!check.trigger) return null;
     const fbRes = await this.visionFallback({

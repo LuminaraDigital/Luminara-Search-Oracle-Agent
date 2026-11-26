@@ -105,6 +105,7 @@ async function runIndexedLoop(): Promise<{
     goal: 'Fill query, select Agency, click Go, expand FAQ',
     initialPage: current,
     maxSteps: 15,
+    writeApproved: true,
     observe: async () => {
       protocolCalls += INDEXED_OBSERVE_CDP;
       current = page(text, `idx-${++fp}`);

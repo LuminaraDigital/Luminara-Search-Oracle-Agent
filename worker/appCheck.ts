@@ -208,7 +208,14 @@ function appCheckResponse(status: number, code: string, error: string): Response
   });
 }
 
-/** Health, crawl files, agent markdown, and any path containing /webhook. */
+const APPCHECK_EXEMPT_WEBHOOKS = new Set([
+  '/api/telegram/webhook',
+  '/api/stripe/webhook',
+  '/api/webhooks/auth',
+  '/api/crm/webhooks/outcome',
+]);
+
+/** Health, crawl files, agent markdown, and explicit server-to-server webhook endpoints only. */
 export function isAppCheckExempt(url: URL): boolean {
   const path = url.pathname.replace(/\/+$/, '') || '/';
   if (
@@ -222,7 +229,7 @@ export function isAppCheckExempt(url: URL): boolean {
     path === '/api/health' ||
     path === '/health'
   ) return true;
-  return path.includes('/webhook');
+  return APPCHECK_EXEMPT_WEBHOOKS.has(path);
 }
 
 function logReason(reason: string): AppCheckLogReason {

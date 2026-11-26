@@ -209,6 +209,20 @@ export async function executeRecoveryStep(
       status: number;
     }
 > {
+  if (
+    typeof args.stepIndex !== 'number' ||
+    !Number.isInteger(args.stepIndex) ||
+    args.stepIndex < 0 ||
+    args.stepIndex > 2
+  ) {
+    return {
+      ok: false,
+      code: 'INVALID_STEP_INDEX',
+      error: 'stepIndex must be an integer between 0 and 2.',
+      status: 400,
+    };
+  }
+
   if (!env.DB) {
     return { ok: false, code: 'DB_UNAVAILABLE', error: 'Database unavailable', status: 503 };
   }
@@ -281,13 +295,21 @@ export async function executeRecoveryStep(
     now: nowMs,
   });
 
-  if (effectCheck.duplicate && effectCheck.cachedResult) {
+  if (effectCheck.duplicate) {
+    if (effectCheck.cachedResult) {
+      return {
+        ok: true,
+        duplicate: true,
+        effectKey: effectCheck.effectKey,
+        formattedMessage: effectCheck.cachedResult.formattedMessage,
+        runId: effectCheck.cachedResult.runId,
+      };
+    }
     return {
-      ok: true,
-      duplicate: true,
-      effectKey: effectCheck.effectKey,
-      formattedMessage: effectCheck.cachedResult.formattedMessage,
-      runId: effectCheck.cachedResult.runId,
+      ok: false,
+      code: 'EFFECT_IN_PROGRESS',
+      error: 'Recovery step is already in progress.',
+      status: 409,
     };
   }
 
@@ -300,9 +322,8 @@ export async function executeRecoveryStep(
   const priorHistory = existingRun?.run_history_json
     ? safeJsonParse<Array<Record<string, unknown>>>(existingRun.run_history_json, [])
     : [];
-  const clampedStepIndex = Math.min(Math.max(0, Math.trunc(args.stepIndex)), 2);
   const historyEntry = {
-    stepIndex: clampedStepIndex,
+    stepIndex: args.stepIndex,
     channel: args.channel,
     agencyLegalName: args.agencyLegalName.trim(),
     agencyContactDetails: args.agencyContactDetails.trim(),
@@ -332,7 +353,7 @@ export async function executeRecoveryStep(
       args.enquiryId,
       row.contact_id,
       args.playbookId,
-      clampedStepIndex,
+      args.stepIndex,
       effectCheck.effectKey,
       nowMs + 24 * 3600_000,
       updatedHistoryJson,
@@ -575,12 +596,25 @@ export async function handleRecoveryRoute(
       );
     }
 
+    const rawStepIndex = body.stepIndex === undefined ? 0 : body.stepIndex;
+    if (
+      typeof rawStepIndex !== 'number' ||
+      !Number.isInteger(rawStepIndex) ||
+      rawStepIndex < 0 ||
+      rawStepIndex > 2
+    ) {
+      return json(
+        { ok: false, code: 'INVALID_STEP_INDEX', error: 'stepIndex must be an integer between 0 and 2.' },
+        400,
+      );
+    }
+
     const res = await executeRecoveryStep(env, {
       accountId,
       projectId: String(body.projectId || 'default'),
       enquiryId: String(body.enquiryId || ''),
       playbookId: String(body.playbookId || 'seller_reengagement'),
-      stepIndex: Number(body.stepIndex ?? 0),
+      stepIndex: rawStepIndex,
       channel: rawChannel,
       messageBody: String(body.messageBody || ''),
       agencyLegalName: String(body.agencyLegalName || ''),
