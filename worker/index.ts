@@ -154,6 +154,7 @@ import { createMemoryFact, listMemoryFacts } from './memoryService';
 import { handleUnifiedMemoryRoute } from './unifiedMemoryRouter';
 import { handleMemoryVaultRoute } from './memoryVaultService';
 import { compileFeedbackIntoSkillRule, handleAgentHabitatRoute } from './selfDrivingHabitat';
+import { deepHealth, handleCspReport, handleSecurityTxt } from './trustEndpoints';
 import { handlePrivacyRoute, purgeExpiredPrivacyDeletes, purgeExpiredPrivacyExports } from './privacyService';
 import { isCronMapped, jobsForCron, shouldRunScheduledJob } from './scheduledJobs';
 import { ingestProductAnalytics } from './productAnalytics';
@@ -433,6 +434,13 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
   }
   const wifSmoke = await handleWifSmokeRoute(request, env, path);
   if (wifSmoke) return withCors(wifSmoke);
+
+  if (path === '/health/deep') {
+    if (request.method !== 'GET') return withCors(json({ error: 'Method not allowed' }, 405));
+    return withCors(await deepHealth(env));
+  }
+
+  if (path === '/csp-report') return handleCspReport(request);
 
   if (path === '/health') {
     if (request.method !== 'GET') return withCors(json({ error: 'Method not allowed' }, 405));
@@ -2575,6 +2583,9 @@ const handler = {
 
     const assetLinks = handleAssetLinks(request, env);
     if (assetLinks) return guard(assetLinks);
+
+    const securityTxt = handleSecurityTxt(request);
+    if (securityTxt) return guard(securityTxt);
 
     // Canonical redirect: redirect naked domain to www.luminarasuite.com for web/marketing traffic in production
     if (env.ENVIRONMENT === 'production' && url.hostname === 'luminarasuite.com' && !url.pathname.startsWith('/api/')) {
