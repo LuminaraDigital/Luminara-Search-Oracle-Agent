@@ -4,6 +4,9 @@ import {
   applyMatrix,
   centerPose,
   dotLevel,
+  dragIntent,
+  dragToLon,
+  flingDistance,
   fromLatLon,
   horizonPose,
   lerpPose,
@@ -92,6 +95,29 @@ describe('globe math', () => {
     const halfway = lerpPose(hero, center, 0.5);
     expect(halfway.r).toBeLessThan(hero.r);
     expect(halfway.r).toBeGreaterThan(center.r);
+  });
+
+  it('keeps the point at the centre of the globe under a horizontal drag', () => {
+    const r = 200;
+    const dx = 20;
+    const v = applyMatrix(viewMatrix(0, 40 + dragToLon(dx, r, 0)), fromLatLon(0, 40));
+    expect(v[0] * r).toBeCloseTo(dx, 0);
+    expect(Math.abs(dragToLon(dx, r, -68))).toBeGreaterThan(Math.abs(dragToLon(dx, r, 0)));
+    expect(Number.isFinite(dragToLon(dx, r, -90))).toBe(true);
+  });
+
+  it('leaves vertical swipes to the page and waits out small jitter', () => {
+    expect(dragIntent(3, 2)).toBe('wait');
+    expect(dragIntent(12, 3)).toBe('drag');
+    expect(dragIntent(-12, 3)).toBe('drag');
+    expect(dragIntent(3, 12)).toBe('none');
+    expect(dragIntent(9, 9)).toBe('none');
+  });
+
+  it('coasts a fling at its release speed, capped, and not at all with no time to coast', () => {
+    expect(flingDistance(800, 1.2)).toBeCloseTo(240);
+    expect(flingDistance(-90000, 1)).toBe(-600);
+    expect(flingDistance(800, 0)).toBe(0);
   });
 });
 
