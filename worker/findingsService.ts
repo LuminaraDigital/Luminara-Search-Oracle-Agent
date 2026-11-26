@@ -18,6 +18,8 @@ const CATEGORIES = new Set([
   'competitor_gap',
 ]);
 const SEVERITIES = new Set(['critical', 'high', 'medium', 'low']);
+/** Crew rule ids such as finding-schema-org. Server ids (fnd_...) and stable keys (fk_...) never match. */
+const RULE_ID = /^[a-z0-9-]{1,64}$/;
 
 export type FindingRow = {
   id: string;
@@ -51,6 +53,26 @@ function normalizeDomain(raw: string): string {
     .split('/')[0]
     .toLowerCase()
     .trim();
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+/**
+ * Keeps the client's rule id as evidence.provenance.ruleId, never as the row id.
+ * Any other value in that slot is dropped.
+ */
+function withRuleId(evidence: unknown, itemId: unknown): unknown {
+  if (!isPlainObject(evidence)) return evidence;
+  const next = { ...evidence };
+  const provenance = isPlainObject(next.provenance) ? { ...next.provenance } : {};
+  const ruleId = [provenance.ruleId, itemId].find((v) => typeof v === 'string' && RULE_ID.test(v));
+  if (ruleId) provenance.ruleId = ruleId;
+  else delete provenance.ruleId;
+  if (Object.keys(provenance).length) next.provenance = provenance;
+  else delete next.provenance;
+  return next;
 }
 
 function rowToPublic(row: FindingRow) {
@@ -164,7 +186,7 @@ export async function handleFindingsRoute(
       let evidenceJson: string | null = null;
       if (item.evidence !== undefined) {
         try {
-          evidenceJson = JSON.stringify(item.evidence).slice(0, 20_000);
+          evidenceJson = JSON.stringify(withRuleId(item.evidence, item.id)).slice(0, 20_000);
         } catch {
           evidenceJson = null;
         }
@@ -242,13 +264,27 @@ export async function handleFindingsRoute(
     const findingId = decodeURIComponent(patchMatch[1]);
     const raw = await readBody(request, MAX_SMALL_BODY_BYTES);
     if (!raw.ok) return json({ ok: false, error: raw.error }, raw.status);
-    const body = (raw.value || {}) as { status?: string; owner?: string | null; dueAt?: number | null };
+    const body = (raw.value || {}) as {
+      status?: string;
+      owner?: string | null;
+      dueAt?: number | null;
+      domain?: string;
+    };
 
-    const existing = await env.DB.prepare(
+    let existing = await env.DB.prepare(
       `SELECT * FROM audit_findings WHERE id = ? AND account_id = ?`,
     )
       .bind(findingId, accountId)
       .first<FindingRow>();
+    // A client whose row has not synced yet only knows the stable key, which is unique per domain.
+    const patchDomain = normalizeDomain(typeof body.domain === 'string' ? body.domain : '');
+    if (!existing && patchDomain) {
+      existing = await env.DB.prepare(
+        `SELECT * FROM audit_findings WHERE account_id = ? AND domain = ? AND stable_key = ?`,
+      )
+        .bind(accountId, patchDomain, findingId)
+        .first<FindingRow>();
+    }
     if (!existing) return json({ ok: false, error: 'Not found' }, 404);
 
     const nextStatus =
@@ -270,11 +306,11 @@ export async function handleFindingsRoute(
     await env.DB.prepare(
       `UPDATE audit_findings SET status = ?, owner = ?, due_at = ?, updated_at = ? WHERE id = ? AND account_id = ?`,
     )
-      .bind(nextStatus, nextOwner, nextDue, now, findingId, accountId)
+      .bind(nextStatus, nextOwner, nextDue, now, existing.id, accountId)
       .run();
 
     const row = await env.DB.prepare(`SELECT * FROM audit_findings WHERE id = ? AND account_id = ?`)
-      .bind(findingId, accountId)
+      .bind(existing.id, accountId)
       .first<FindingRow>();
     if (row) {
       try {
