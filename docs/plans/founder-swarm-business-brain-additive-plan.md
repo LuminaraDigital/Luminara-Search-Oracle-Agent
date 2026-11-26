@@ -1237,6 +1237,10 @@ ON CONFLICT(account_id, dedupe_key) DO NOTHING;
 
 - A new row's `next_attempt_at` is its `created_at`, so it is due at once. The sender reads `WHERE status = 'queued' AND next_attempt_at <= ? ORDER BY next_attempt_at LIMIT 25`.
 - `dedupe_key` is `<category>:<subject id>`, so one run, approval or job produces at most one notice however often its event is replayed. A skipped row keeps its key, so a notice skipped at 09:00 is not sent at 09:05 when the event replays.
+- **Amendment proposed by Track ND (`nod-patterns-additive-plan.md` section 4), owner said yes on 2026-11-14.** `drift` and `watch` have no single subject that ends, and the unique rule has no expiry, so a plain `<category>:<subject id>` key would tell a founder once and never again, even after the problem went away and came back. Their keys are built per episode:
+  - `drift`: `drift:<domain>:not_cited:<driftSince>`. `driftSince` is the scan time at which Sentinel first saw the lasting condition, stored on the Sentinel target by Track ND's ND0-2. A lasting problem is told once. One that recovers and returns has a new `driftSince` and is told again.
+  - `watch`: `watch:<watch id>:<id of the run where the verdict or measurement status last changed>`. Each change is told once, including a change back.
+  - Consent, the cap and `/stop` are unchanged. This text was checked in Track ND's review rounds 2 and 3 and has not been through this plan's own reviewers; SW1-12 confirms it against the Sentinel code when it is built.
 - A root run's notice is enqueued when the run and its children have all ended, so the founder is told once, when the draft and the proposal are there too.
 - A queued row with a later `next_attempt_at` is the durable delay for a 429. The Ops 15-minute cron sends what is due; three failures mark the row `failed`.
 - No message text is stored. A notice is rebuilt from its subject at send time.
