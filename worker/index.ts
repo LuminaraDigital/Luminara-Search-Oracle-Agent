@@ -171,6 +171,7 @@ import { runRsiSkillCurator } from './rsiCurator';
 import { runPostingReflection } from './rsiPosting';
 import { handleLaunchpadRoute } from './launchpadService';
 import { handleTrustReceiptsRoute, isTrustReceiptsEnabled, revokeGatewayIssuedReceipts, TrustReceiptsTableMissing } from './trustReceipts';
+import { decisionChecksHealth } from './decisionCheckFlags';
 import { handleCitationWatchRoute, runCitationWatchTick } from './citationWatch';
 import { handleAuditReceiptRoute, revokeSignedAuditReceipt } from './auditReceipts';
 import { own } from '../services/own';
@@ -435,6 +436,8 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
 
   if (path === '/health') {
     if (request.method !== 'GET') return withCors(json({ error: 'Method not allowed' }, 405));
+    // Allora fix retest: vars, effective state and last run, from KV only.
+    const decisionChecks = await decisionChecksHealth(env);
     const adminCheck = isAdminAuthorized(env, request);
     if (!adminCheck.ok) {
       return withCors(json({
@@ -450,6 +453,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
         plans: publicPlanCatalogue(),
         stripeCheckout: isStripeCheckoutLive(env), lumens: env.LUMENS_ENABLED === 'true',
         trust: { receiptsEnabled: isTrustReceiptsEnabled(env), domainVerifyEnabled: isDomainVerifyEnabled(env) },
+        decisionChecks,
       }));
     }
 
@@ -497,6 +501,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
         receiptSigningConfigured: isReceiptSigningConfigured(env),
         domainVerifyEnabled: isDomainVerifyEnabled(env),
       },
+      decisionChecks,
       requireAuth: env.REQUIRE_TG_AUTH === 'true',
       requireSubscription: env.REQUIRE_SUBSCRIPTION === 'true',
       freeDailyLimit: Number(env.FREE_DAILY_LIMIT || 3),

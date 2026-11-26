@@ -158,6 +158,9 @@
     "COMMUNITY_FEED_ENABLED": "false",
     // Off: the daily check-in answers 404 and the referral summary leaves points out. Rows stay.
     "LUMENS_ENABLED": "false",
+    // Allora fix retest (docs/plans/allora-concepts-implementation-plan.md 2.1). KV key decision_checks:off can pause either at runtime.
+    "DECISION_CHECKS_ENABLED": "false",
+    "DECISION_RETEST_ENABLED": "false",
     // Self-hosted helpers (README "Writing check and results tracking"). URLs are public config;
     // leave empty to disable. Credentials go in via `wrangler secret put`, never here.
     "LANGUAGETOOL_URL": "",
@@ -312,6 +315,9 @@
         "COMMUNITY_FEED_ENABLED": "false",
         // Off: the daily check-in answers 404 and the referral summary leaves points out. Rows stay.
         "LUMENS_ENABLED": "false",
+        // Allora fix retest (docs/plans/allora-concepts-implementation-plan.md 2.1). KV key decision_checks:off can pause either at runtime.
+        "DECISION_CHECKS_ENABLED": "false",
+        "DECISION_RETEST_ENABLED": "false",
         "OLLAMA_BASE_URL": "",
         "LANGUAGETOOL_URL": "",
         "UMAMI_URL": "",
@@ -435,6 +441,9 @@
         "COMMUNITY_FEED_ENABLED": "false",
         // Off: the daily check-in answers 404 and the referral summary leaves points out. Rows stay.
         "LUMENS_ENABLED": "false",
+        // Allora fix retest (docs/plans/allora-concepts-implementation-plan.md 2.1). KV key decision_checks:off can pause either at runtime.
+        "DECISION_CHECKS_ENABLED": "false",
+        "DECISION_RETEST_ENABLED": "false",
         "OLLAMA_BASE_URL": "",
         "LANGUAGETOOL_URL": "",
         "UMAMI_URL": "",
