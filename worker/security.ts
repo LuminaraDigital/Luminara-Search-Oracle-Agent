@@ -325,23 +325,50 @@ export function isPrivateIp(ip: string): boolean {
     return false;
   }
   if (raw.includes(':')) {
-    // IPv6. Normalise a few forms without pulling in a full parser.
-    if (raw === '::' || raw === '::1') return true;
-    if (raw.startsWith('::ffff:')) {
-      const tail = raw.slice(7);
-      return parseIpv4(tail) ? isPrivateIp(tail) : true;
+    const h = parseIpv6(raw);
+    if (!h) return true; // unparseable: fail closed
+    // IPv4-mapped ::ffff:0:0/96, in any spelling: judge the embedded IPv4 address.
+    if (h.slice(0, 5).every((x) => x === 0) && h[5] === 0xffff) {
+      return isPrivateIp(`${h[6] >> 8}.${h[6] & 0xff}.${h[7] >> 8}.${h[7] & 0xff}`);
     }
-    // A zero first hextet (":..." or "0:...") is refused. That range is reserved and holds the
-    // deprecated IPv4-compatible form, where ::7f00:1 is 127.0.0.1.
-    if (/^(:|0{1,4}:)/.test(raw)) return true;
-    if (/^fe[89ab]/.test(raw)) return true; // link-local fe80::/10
-    if (/^f[cd]/.test(raw)) return true; // unique local fc00::/7
-    if (/^ff/.test(raw)) return true; // multicast
-    if (/^64:ff9b:/.test(raw)) return true; // NAT64 (could map to private v4)
-    if (/^2002:/.test(raw)) return true; // 6to4 (embeds v4)
+    // A zero first hextet covers ::, ::1 and the IPv4-compatible ::/96, where ::7f00:1 is 127.0.0.1.
+    if (h[0] === 0) return true;
+    if ((h[0] & 0xffc0) === 0xfe80) return true; // link-local fe80::/10
+    if ((h[0] & 0xffc0) === 0xfec0) return true; // deprecated site-local fec0::/10
+    if ((h[0] & 0xfe00) === 0xfc00) return true; // unique local fc00::/7
+    if (h[0] >> 8 === 0xff) return true; // multicast ff00::/8
+    if (h[0] === 0x64 && h[1] === 0xff9b) return true; // NAT64 64:ff9b::/96 and 64:ff9b:1::/48
+    if (h[0] === 0x2002) return true; // 6to4 2002::/16 (embeds v4)
+    if (h[0] === 0x2001 && h[1] === 0) return true; // Teredo 2001::/32 (embeds v4)
+    if (h[0] === 0x100 && h[1] === 0 && h[2] === 0 && h[3] === 0) return true; // discard 100::/64
     return false;
   }
   return true; // not an IP literal at all: caller should only pass IPs here
+}
+
+/** Parses an IPv6 literal into eight 16-bit groups, or null. Accepts `::` and a dotted IPv4 tail. */
+function parseIpv6(raw: string): number[] | null {
+  let s = raw;
+  const lastColon = s.lastIndexOf(':');
+  const tail = s.slice(lastColon + 1);
+  if (tail.includes('.')) {
+    const v4 = parseIpv4(tail);
+    if (!v4) return null;
+    s = `${s.slice(0, lastColon + 1)}${((v4[0] << 8) | v4[1]).toString(16)}:${((v4[2] << 8) | v4[3]).toString(16)}`;
+  }
+  const halves = s.split('::');
+  if (halves.length > 2) return null;
+  const toGroups = (part: string) => (part === '' ? [] : part.split(':'));
+  const head = toGroups(halves[0]);
+  const rest = halves.length === 2 ? toGroups(halves[1]) : [];
+  const groups = [...head, ...rest];
+  if (!groups.every((g) => /^[0-9a-f]{1,4}$/.test(g))) return null;
+  const missing = 8 - groups.length;
+  if (halves.length === 2 ? missing < 1 : missing !== 0) return null;
+  const nums = groups.map((g) => parseInt(g, 16));
+  return halves.length === 2
+    ? [...nums.slice(0, head.length), ...new Array<number>(missing).fill(0), ...nums.slice(head.length)]
+    : nums;
 }
 
 /** Validates a full URL for outbound fetching: http(s) only, safe hostname, no credentials. */
@@ -364,12 +391,18 @@ const DOH_TIMEOUT_MS = 3_000;
  * private or reserved address. Resolution failures and timeouts are treated as unsafe.
  * Cloudflare's own resolver is used so no extra binding is needed.
  */
-export async function resolvesToPublicAddress(host: string, fetcher: DohFetch = fetch): Promise<boolean> {
+export async function resolvesToPublicAddress(
+  host: string,
+  fetcher: DohFetch = fetch,
+  signal?: AbortSignal,
+): Promise<boolean> {
+  const timeout = AbortSignal.timeout(DOH_TIMEOUT_MS);
+  const lookupSignal = signal ? AbortSignal.any([signal, timeout]) : timeout;
   const lookup = async (type: 'A' | 'AAAA'): Promise<string[] | null> => {
     try {
       const res = await fetcher(`https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(host)}&type=${type}`, {
         headers: { accept: 'application/dns-json' },
-        signal: AbortSignal.timeout(DOH_TIMEOUT_MS),
+        signal: lookupSignal,
       });
       if (!res.ok) return null;
       const data = (await res.json()) as { Status?: number; Answer?: Array<{ type: number; data: string }> };
@@ -418,23 +451,28 @@ export async function fetchPublicUrl(
     fetcher?: (input: string, init?: RequestInit) => Promise<Response>;
     dohFetcher?: DohFetch;
     maxRedirects?: number;
+    /** Aborts the DNS lookups and every hop. */
+    signal?: AbortSignal;
+    /** Called for each redirect target after it passes the public-URL check; false refuses the hop. */
+    allowRedirect?: (next: URL) => boolean;
   },
 ): Promise<FetchPublicUrlResult> {
   const fetcher = opts?.fetcher ?? fetch;
   const dohFetcher = opts?.dohFetcher ?? (fetcher as DohFetch);
   const maxRedirects = opts?.maxRedirects ?? DEFAULT_PUBLIC_FETCH_MAX_REDIRECTS;
+  const signal = opts?.signal;
 
   let current = safePublicUrl(input);
   if (!current) return { ok: false, error: 'URL is not a public http(s) target' };
 
   for (let hop = 0; hop <= maxRedirects; hop++) {
-    if (!(await resolvesToPublicAddress(current.hostname, dohFetcher))) {
+    if (!(await resolvesToPublicAddress(current.hostname, dohFetcher, signal))) {
       return { ok: false, error: 'hostname does not resolve to a public address' };
     }
 
     let res: Response;
     try {
-      res = await fetcher(current.toString(), { ...init, redirect: 'manual' });
+      res = await fetcher(current.toString(), { ...init, redirect: 'manual', ...(signal ? { signal } : {}) });
     } catch {
       return { ok: false, error: 'fetch failed' };
     }
@@ -450,6 +488,7 @@ export async function fetchPublicUrl(
       }
       const next = safePublicUrl(nextAbs.toString());
       if (!next) return { ok: false, error: 'redirect target is not a public http(s) URL' };
+      if (opts?.allowRedirect && !opts.allowRedirect(next)) return { ok: false, error: 'redirect refused' };
       current = next;
       continue;
     }
