@@ -344,7 +344,7 @@ export async function collectExportPayload(env: Env, accountId: string): Promise
   for (const { key, table, columns = '*', where = 'account_id = ?' } of TABLE_EXPORTS) {
     const sql = `SELECT ${columns} FROM ${table} WHERE ${where} LIMIT 500`;
     tableRows[key] = await q<Record<string, unknown>>(sql, ...accountBinds(sql, accountId)).catch((err) => {
-      if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+      if (!/no such (?:table|column)/i.test(err instanceof Error ? err.message : String(err))) throw err;
       return [] as Record<string, unknown>[];
     });
   }
@@ -610,6 +610,9 @@ async function softDeleteAccount(env: Env, accountId: string, deps?: DataPlaneDe
   await drop('project_monitor_alerts', `DELETE FROM project_monitor_alerts WHERE account_id = ?`);
   await drop('project_monitors', `DELETE FROM project_monitors WHERE account_id = ?`);
   await drop('agent_reports', `DELETE FROM agent_reports WHERE account_id = ?`);
+  // Revoke MCP OAuth KV access tokens and connection indexes before dropping refresh-family D1 rows.
+  const { revokeAccountOAuthKvTokens, revokeSessionsForDeletedUser } = await import('./opaqueSession');
+  counts.oauth_tokens_revoked = await revokeAccountOAuthKvTokens(env, accountId);
   // Connected assistants: approval requests hold tool inputs, and refresh families keep a connection alive.
   await drop(
     'mcp_oauth_refresh_access',
@@ -637,6 +640,7 @@ async function softDeleteAccount(env: Env, accountId: string, deps?: DataPlaneDe
   await drop('win_shares', `DELETE FROM win_shares WHERE owner_id = ?`);
   await drop('shared_reports', `DELETE FROM shared_reports WHERE owner_account_id = ?`);
   await drop('mcp_action_requests', `DELETE FROM mcp_action_requests WHERE ${OWN_USER_IDS}`);
+  await drop('sentinel_target_slots', `DELETE FROM sentinel_target_slots WHERE owner_id = ? OR owner_id IN (SELECT id FROM users WHERE account_id = ?)`);
   await releaseOrganizations(db, accountId, counts).catch((err) => {
     if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
   });
@@ -648,10 +652,10 @@ async function softDeleteAccount(env: Env, accountId: string, deps?: DataPlaneDe
     `UPDATE launchpad_vouchers SET customer_ref = NULL, status = CASE status WHEN 'issued' THEN 'cancelled' ELSE status END
       WHERE campaign_id IN (SELECT id FROM launchpad_campaigns WHERE account_id = ?)`,
   );
-  await drop(
-    'launchpad_subscriptions',
-    `DELETE FROM launchpad_subscriptions WHERE campaign_id IN (SELECT id FROM launchpad_campaigns WHERE account_id = ?)`,
-  );
+  await drop('launchpad_subscriptions', `DELETE FROM launchpad_subscriptions WHERE campaign_id IN (SELECT id FROM launchpad_campaigns WHERE account_id = ?) OR account_id = ?`).catch(async (err) => {
+    if (!/no such column/i.test(err instanceof Error ? err.message : String(err))) throw err;
+    await drop('launchpad_subscriptions', `DELETE FROM launchpad_subscriptions WHERE campaign_id IN (SELECT id FROM launchpad_campaigns WHERE account_id = ?)`);
+  });
   await drop(
     'launchpad_campaigns_minimized',
     `UPDATE launchpad_campaigns SET abn_nzbn = NULL, compliance_details = NULL, listed_at = NULL WHERE account_id = ?`,
@@ -661,14 +665,26 @@ async function softDeleteAccount(env: Env, accountId: string, deps?: DataPlaneDe
     'run_provenance_unlinked',
     `UPDATE run_provenance SET parent_run_id = NULL WHERE parent_run_id IN (SELECT run_id FROM run_provenance WHERE account_id = ?)`,
   );
+  const { revokeAllApiKeys } = await import('./apiKeyService');
+  counts.api_keys_revoked = await revokeAllApiKeys(env, accountId);
   for (const table of ERASED_TABLES) await drop(table, `DELETE FROM ${table} WHERE account_id = ?`);
   for (const [table, sql] of Object.entries(ERASE_PSEUDONYMIZED)) {
     await run(`${table}_pseudonymized`, sql, ERASED_ACCOUNT_PLACEHOLDER, accountId).catch((err) => {
       if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
     });
   }
-  // Workspaces saved to KV on a deployment without D1.
-  if (env.LUMINARA_KV) await env.LUMINARA_KV.delete(`workspace:${accountId}`);
+  const sessionIds = new Set<string>([accountId, ...userIds]);
+  for (const rawId of sessionIds) {
+    const cleaned = rawId.startsWith('fb:') ? rawId.slice(3) : rawId;
+    if (cleaned) await revokeSessionsForDeletedUser(env, cleaned).catch(() => undefined);
+    if (/^\d+$/.test(rawId)) await revokeSessionsForDeletedUser(env, `tg:${rawId}`).catch(() => undefined);
+  }
+  // Workspaces and entitlement caches saved to KV.
+  if (env.LUMINARA_KV) {
+    for (const k of [`workspace:${accountId}`, `sub:${accountId}`, `user:${accountId}`]) {
+      await env.LUMINARA_KV.delete(k).catch(() => undefined);
+    }
+  }
   // Anonymize login rows; keep account_id for ledger FK honesty (anonymize path when legal holds exist).
   await run(
     'users_anon',

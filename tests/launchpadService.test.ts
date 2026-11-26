@@ -246,37 +246,54 @@ describe('launchpad Worker routes (real SQLite + migration 0018)', () => {
     };
   }
 
-  it('handles backer subscriptions and unsubscriptions with channel format validation', async () => {
+  it('handles authenticated backer subscriptions and unsubscriptions with ownership, Telegram self-targeting, and SSRF guards', async () => {
+    const tgBacker: HostedIdentity = { id: '123456789', source: 'telegram', accountId: 'acct-tg-backer' };
     const draft = await call(env, as(merchant), 'POST', '/launchpad/campaigns', loyaltyBody);
-    expect((await call(env, anon, 'POST', `/launchpad/campaigns/${draft.data.campaignId}/subscribe`, { subscriberRef: 'backer@example.com', channel: 'email' })).status).toBe(404);
+    // Unauthenticated subscribe and unsubscribe are rejected with 401
+    expect((await call(env, anon, 'POST', `/launchpad/campaigns/${draft.data.campaignId}/subscribe`, { subscriberRef: 'backer@example.com', channel: 'email' })).status).toBe(401);
+    expect((await call(env, anon, 'POST', `/launchpad/campaigns/${draft.data.campaignId}/unsubscribe`, { subscriberRef: 'backer@example.com' })).status).toBe(401);
+    // Authenticated subscribe on draft returns 404
+    expect((await call(env, as(merchant), 'POST', `/launchpad/campaigns/${draft.data.campaignId}/subscribe`, { subscriberRef: 'backer@example.com', channel: 'email' })).status).toBe(404);
 
     const id = await createListed();
 
-    // Valid subscriptions across channels
-    const emailSub = await call(env, anon, 'POST', `/launchpad/campaigns/${id}/subscribe`, { subscriberRef: 'backer@example.com.au', channel: 'email' });
+    // Valid authenticated subscriptions across channels
+    const emailSub = await call(env, as(merchant), 'POST', `/launchpad/campaigns/${id}/subscribe`, { subscriberRef: 'backer@example.com.au', channel: 'email' });
     expect(emailSub.status).toBe(200);
     expect(emailSub.data).toMatchObject({ ok: true, campaignId: id, subscriberRef: 'backer@example.com.au', channel: 'email' });
 
-    const tgSub = await call(env, anon, 'POST', `/launchpad/campaigns/${id}/subscribe`, { subscriberRef: '@community_rep', channel: 'telegram' });
+    // Telegram alerts require Telegram sign-in and only allow the caller's own Telegram ID
+    expect((await call(env, as(merchant), 'POST', `/launchpad/campaigns/${id}/subscribe`, { subscriberRef: '123456789', channel: 'telegram' })).status).toBe(403);
+    expect((await call(env, as(tgBacker), 'POST', `/launchpad/campaigns/${id}/subscribe`, { subscriberRef: '@community_rep', channel: 'telegram' })).status).toBe(400);
+    expect((await call(env, as(tgBacker), 'POST', `/launchpad/campaigns/${id}/subscribe`, { subscriberRef: '999999999', channel: 'telegram' })).status).toBe(403);
+    const tgSub = await call(env, as(tgBacker), 'POST', `/launchpad/campaigns/${id}/subscribe`, { subscriberRef: '123456789', channel: 'telegram' });
     expect(tgSub.status).toBe(200);
 
-    const hookSub = await call(env, anon, 'POST', `/launchpad/campaigns/${id}/subscribe`, { subscriberRef: 'https://audit.example.com/hook', channel: 'webhook' });
+    const hookSub = await call(env, as(merchant), 'POST', `/launchpad/campaigns/${id}/subscribe`, { subscriberRef: 'https://audit.example.com/hook', channel: 'webhook' });
     expect(hookSub.status).toBe(200);
 
-    // Channel and format validation
-    expect((await call(env, anon, 'POST', `/launchpad/campaigns/${id}/subscribe`, { subscriberRef: 'invalid', channel: 'sms' })).status).toBe(400);
-    expect((await call(env, anon, 'POST', `/launchpad/campaigns/${id}/subscribe`, { subscriberRef: 'not-an-email', channel: 'email' })).status).toBe(400);
-    expect((await call(env, anon, 'POST', `/launchpad/campaigns/${id}/subscribe`, { subscriberRef: 'bad handle!', channel: 'telegram' })).status).toBe(400);
-    expect((await call(env, anon, 'POST', `/launchpad/campaigns/${id}/subscribe`, { subscriberRef: 'http://insecure.test', channel: 'webhook' })).status).toBe(400);
+    // Channel, format, and SSRF URL validation
+    expect((await call(env, as(merchant), 'POST', `/launchpad/campaigns/${id}/subscribe`, { subscriberRef: 'invalid', channel: 'sms' })).status).toBe(400);
+    expect((await call(env, as(merchant), 'POST', `/launchpad/campaigns/${id}/subscribe`, { subscriberRef: 'not-an-email', channel: 'email' })).status).toBe(400);
+    expect((await call(env, as(tgBacker), 'POST', `/launchpad/campaigns/${id}/subscribe`, { subscriberRef: 'bad handle!', channel: 'telegram' })).status).toBe(400);
+    expect((await call(env, as(merchant), 'POST', `/launchpad/campaigns/${id}/subscribe`, { subscriberRef: 'http://insecure.test', channel: 'webhook' })).status).toBe(400);
+    expect((await call(env, as(merchant), 'POST', `/launchpad/campaigns/${id}/subscribe`, { subscriberRef: 'https://127.0.0.1/hook', channel: 'webhook' })).status).toBe(400);
+    expect((await call(env, as(merchant), 'POST', `/launchpad/campaigns/${id}/subscribe`, { subscriberRef: 'https://169.254.169.254/latest', channel: 'webhook' })).status).toBe(400);
+    expect((await call(env, as(merchant), 'POST', `/launchpad/campaigns/${id}/subscribe`, { subscriberRef: 'https://audit.example.com:8443/hook', channel: 'webhook' })).status).toBe(400);
 
-    // Duplicate subscription upserts without duplicating
-    await call(env, anon, 'POST', `/launchpad/campaigns/${id}/subscribe`, { subscriberRef: 'backer@example.com.au', channel: 'email', walletAddress: '0x1234567890123456789012345678901234567890' });
+    // Duplicate subscription by same owner upserts without duplicating; another account cannot hijack it
+    const ownerUpsert = await call(env, as(merchant), 'POST', `/launchpad/campaigns/${id}/subscribe`, { subscriberRef: 'backer@example.com.au', channel: 'email', walletAddress: '0x1234567890123456789012345678901234567890' });
+    expect(ownerUpsert.status).toBe(200);
+    const hijack = await call(env, as(other), 'POST', `/launchpad/campaigns/${id}/subscribe`, { subscriberRef: 'backer@example.com.au', channel: 'email' });
+    expect(hijack.status).toBe(409);
+
     const countRow = db.sqlite.prepare('SELECT COUNT(*) n FROM launchpad_subscriptions WHERE campaign_id = ?').get(id) as { n: number };
     expect(countRow.n).toBe(3);
 
-    // Unsubscribe
-    expect((await call(env, anon, 'POST', `/launchpad/campaigns/${id}/unsubscribe`, {})).status).toBe(400);
-    const unsub = await call(env, anon, 'POST', `/launchpad/campaigns/${id}/unsubscribe`, { subscriberRef: 'backer@example.com.au' });
+    // Ownership enforced on unsubscribe: another user cannot remove merchant's subscription
+    expect((await call(env, as(merchant), 'POST', `/launchpad/campaigns/${id}/unsubscribe`, {})).status).toBe(400);
+    expect((await call(env, as(other), 'POST', `/launchpad/campaigns/${id}/unsubscribe`, { subscriberRef: 'backer@example.com.au' })).status).toBe(404);
+    const unsub = await call(env, as(merchant), 'POST', `/launchpad/campaigns/${id}/unsubscribe`, { subscriberRef: 'backer@example.com.au' });
     expect(unsub.status).toBe(200);
     expect(unsub.data.removed).toBe(true);
 
@@ -331,7 +348,7 @@ describe('launchpad Worker routes (real SQLite + migration 0018)', () => {
 
   it('dispatches backer alerts when milestone proof is submitted and tracks last_notified_milestone', async () => {
     const id = await createListedPreorder();
-    await call(env, anon, 'POST', `/launchpad/campaigns/${id}/subscribe`, { subscriberRef: 'subscriber@test.com', channel: 'email' });
+    await call(env, as(merchant), 'POST', `/launchpad/campaigns/${id}/subscribe`, { subscriberRef: 'subscriber@test.com', channel: 'email' });
 
     // Call onchain when milestone proof has been submitted
     const submittedDeps: LaunchpadDeps = { rpcFor: mockEscrowRpc({ submitted: true }) };
@@ -343,11 +360,12 @@ describe('launchpad Worker routes (real SQLite + migration 0018)', () => {
     expect(snap.last_notified_milestone).toBe(0);
   });
 
-  it('dispatchMilestoneAlerts handles telegram, webhook, and email channels resiliently', async () => {
+  it('dispatchMilestoneAlerts handles telegram, webhook (via fetchPublicUrl SSRF guard), and email channels resiliently', async () => {
+    const tgBacker: HostedIdentity = { id: '555666777', source: 'telegram', accountId: 'acct-tg-2' };
     const id = await createListedPreorder();
-    await call(env, anon, 'POST', `/launchpad/campaigns/${id}/subscribe`, { subscriberRef: 'backer@example.com', channel: 'email' });
-    await call(env, anon, 'POST', `/launchpad/campaigns/${id}/subscribe`, { subscriberRef: 'https://webhook.site/test', channel: 'webhook' });
-    await call(env, anon, 'POST', `/launchpad/campaigns/${id}/subscribe`, { subscriberRef: '@tester', channel: 'telegram' });
+    expect((await call(env, as(merchant), 'POST', `/launchpad/campaigns/${id}/subscribe`, { subscriberRef: 'backer@example.com', channel: 'email' })).status).toBe(200);
+    expect((await call(env, as(merchant), 'POST', `/launchpad/campaigns/${id}/subscribe`, { subscriberRef: 'https://webhook.site/test', channel: 'webhook' })).status).toBe(200);
+    expect((await call(env, as(tgBacker), 'POST', `/launchpad/campaigns/${id}/subscribe`, { subscriberRef: '555666777', channel: 'telegram' })).status).toBe(200);
 
     const payload = {
       campaignId: id,
@@ -358,14 +376,43 @@ describe('launchpad Worker routes (real SQLite + migration 0018)', () => {
       proofUri: 'https://ipfs.io/ipfs/QmExample',
     };
 
-    // With TELEGRAM_BOT_TOKEN set and mock fetch
-    const fetchSpy = vi.fn().mockResolvedValue(new Response(JSON.stringify({ ok: true })));
+    // With TELEGRAM_BOT_TOKEN set and public DoH + 200 responses
+    const fetchSpy = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('cloudflare-dns.com')) {
+        const answer = url.includes('type=AAAA') ? [] : [{ type: 1, data: '93.184.216.34' }];
+        return new Response(JSON.stringify({ Status: 0, Answer: answer }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    });
     vi.stubGlobal('fetch', fetchSpy);
     try {
       const res = await dispatchMilestoneAlerts({ ...env, TELEGRAM_BOT_TOKEN: 'fake-token' } as Env, id, payload);
       expect(res.dispatched).toBe(3);
       expect(res.errors).toBe(0);
-      expect(fetchSpy).toHaveBeenCalled();
+      expect(fetchSpy.mock.calls.some(([u]) => String(u).includes('cloudflare-dns.com'))).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+
+    // Webhook resolving to private IP (DNS rebinding SSRF) is blocked by fetchPublicUrl
+    const privateDnsFetch = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('cloudflare-dns.com')) {
+        const answer = url.includes('type=AAAA') ? [] : [{ type: 1, data: '127.0.0.1' }];
+        return new Response(JSON.stringify({ Status: 0, Answer: answer }), { status: 200 });
+      }
+      if (url.includes('api.telegram.org')) {
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      }
+      throw new Error('SSRF webhook fetch should never be invoked');
+    });
+    vi.stubGlobal('fetch', privateDnsFetch);
+    try {
+      const res = await dispatchMilestoneAlerts({ ...env, TELEGRAM_BOT_TOKEN: 'fake-token' } as Env, id, payload);
+      expect(res.dispatched).toBe(2); // email + telegram succeed; webhook blocked
+      expect(res.errors).toBe(1);
+      expect(privateDnsFetch.mock.calls.some(([u]) => String(u).startsWith('https://webhook.site'))).toBe(false);
     } finally {
       vi.unstubAllGlobals();
     }

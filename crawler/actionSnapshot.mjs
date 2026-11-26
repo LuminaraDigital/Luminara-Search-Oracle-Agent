@@ -184,7 +184,6 @@ export function sanitizeProfileSlug(raw) {
 export function isHardBannedAutonomousField(action) {
   if (!action || action.kind !== 'fill') return false;
   const label = `${action.label || ''} ${action.role || ''}`.toLowerCase();
-  if (/\bapplication\s+password\b/.test(label)) return false;
   return (
     /\b(password|passcode)\b/.test(label) ||
     /\b(credit[-_\s]?card|card\s*number|cvv|cvc|expiry|iban|bank\s*account)\b/.test(label) ||

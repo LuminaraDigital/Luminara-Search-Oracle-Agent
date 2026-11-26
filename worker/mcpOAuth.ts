@@ -5,8 +5,8 @@
  */
 import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
-import { billingId, json } from './workerUtils';
-import { identify, sha256Hex } from './workerUtils';
+import { billingId, identify, json, secretEquals, sha256Hex } from './workerUtils';
+import { MAX_SMALL_BODY_BYTES, readBody } from './security';
 import { escapeHtml } from './marketingShell';
 import { randomId } from '../services/projects/projectUtils';
 import { getActiveSubscription } from './quotaMiddleware';
@@ -127,29 +127,40 @@ function oauthSecretOrNull(env: Env): string | null {
   return resolved.ok ? resolved.secret : null;
 }
 
-/** Form or JSON object of strings. Null when the body is not either of those. */
+/** Bounded form or JSON object of strings. Null when oversized or malformed. */
 async function readOAuthFields(request: Request): Promise<Record<string, string> | null> {
-  const contentType = request.headers.get('content-type') || '';
-  if (contentType.includes('application/json')) {
-    const parsed: unknown = await request.json().catch(() => null);
-    if (parsed === null) return {};
-    if (typeof parsed !== 'object' || Array.isArray(parsed)) return null;
-    const body: Record<string, string> = {};
-    for (const [key, value] of Object.entries(parsed)) {
-      if (typeof value === 'string') body[key] = value;
+  const contentType = (request.headers.get('content-type') || '').toLowerCase();
+  if (contentType.includes('multipart/form-data')) {
+    const len = Number(request.headers.get('content-length') || 0);
+    if (len > MAX_SMALL_BODY_BYTES) return null;
+    try {
+      const form = await request.formData();
+      const body: Record<string, string> = {};
+      form.forEach((value, key) => { body[key] = String(value); });
+      return body;
+    } catch {
+      return null;
     }
-    return body;
   }
-  try {
-    const form = await request.formData();
-    const body: Record<string, string> = {};
-    form.forEach((value, key) => {
-      body[key] = String(value);
-    });
-    return body;
-  } catch {
-    return null;
+  const read = await readBody(request, MAX_SMALL_BODY_BYTES, false);
+  if (!read.ok) return null;
+  if (contentType.includes('application/json')) {
+    if (!read.text.trim()) return {};
+    try {
+      const parsed: unknown = JSON.parse(read.text);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+      const body: Record<string, string> = {};
+      for (const [key, value] of Object.entries(parsed)) {
+        if (typeof value === 'string') body[key] = value;
+      }
+      return body;
+    } catch {
+      return null;
+    }
   }
+  const body: Record<string, string> = {};
+  for (const [key, value] of new URLSearchParams(read.text).entries()) body[key] = value;
+  return body;
 }
 
 async function sha256Base64Url(input: string): Promise<string> {
@@ -184,17 +195,17 @@ type RegisteredClient = {
   grantTypes: OAuthGrantType[];
 };
 
-/** One pending approval, bound to the signed-in user who saw the screen. */
 type ConsentRecord = {
   userId: string;
   accountId: string;
   plan: string;
-  clientId: string;
+  clientId?: string;
   clientName: string;
   redirectUri: string;
   codeChallenge: string;
   state: string;
-  /** RFC 8707 resource carried from authorize to the code. */
+  scope: string;
+  csrfToken: string;
   resource?: string;
 };
 
@@ -383,44 +394,54 @@ function agentPage(title: string, inner: string, status: number, csp: string): R
   });
 }
 
+async function issueConsentScreen(
+  env: Env,
+  record: Omit<ConsentRecord, 'csrfToken'>,
+): Promise<Response> {
+  if (!env.LUMINARA_KV) return json({ error: 'server_error', error_description: 'KV unavailable' }, 503);
+  const consentId = randomId('oconsent', 16);
+  const csrfToken = randomId('ocsrf', 16);
+  const full: ConsentRecord = { ...record, csrfToken };
+  await env.LUMINARA_KV.put(`${CONSENTS_KV_PREFIX}${consentId}`, JSON.stringify(full), { expirationTtl: CONSENT_TTL_SECONDS });
+  const name = escapeHtml(record.clientName);
+  const callback = new URL(record.redirectUri);
+  return agentPage(
+    'Connect an agent',
+    `<h1>Let ${name} use your Luminara account?</h1><p>The agent picked this name itself. Check that you started this connection and that you trust <code>${escapeHtml(callback.host || callback.protocol)}</code>, where it returns.</p><ul><li>Read your projects, business context and reports</li><li>Save reports and update project context</li><li>Cannot pay, change your plan, or spend research credits</li></ul><form method="post" action="/api/oauth/mcp/authorize"><input type="hidden" name="consent" value="${consentId}"><input type="hidden" name="csrf" value="${csrfToken}"><div class="row"><button name="decision" value="deny">Cancel</button><button name="decision" value="allow">Allow</button></div></form>`,
+    200,
+    consentCsp(record.redirectUri),
+  );
+}
+
 async function connectorAuthorize(
   request: Request,
   env: Env,
   params: { clientId: string; redirectUri: string; codeChallenge: string; state: string; resource?: string },
 ): Promise<Response> {
   const client = await loadClient(env, params.clientId);
-  // Never redirect on a bad client or callback: that is the open-redirect case.
   if (!client) return json({ error: 'invalid_client', error_description: 'Unknown client_id. Register first.' }, 400);
   if (!redirectUriRegistered(client.redirectUris, params.redirectUri)) {
     return json({ error: 'invalid_request', error_description: 'redirect_uri is not registered for this client.' }, 400);
   }
-  await env.LUMINARA_KV?.put(`${CLIENTS_KV_PREFIX}${client.clientId}`, JSON.stringify(client), {
-    expirationTtl: CLIENT_TTL_SECONDS,
-  });
+  await env.LUMINARA_KV?.put(`${CLIENTS_KV_PREFIX}${client.clientId}`, JSON.stringify(client), { expirationTtl: CLIENT_TTL_SECONDS });
 
   const who = await identify(request, env);
   if (who.error || !who.user) {
     const url = new URL(request.url);
-    const target = `${url.pathname}${url.search}`;
-    // Relative on purpose: the apex redirects to www, where the session cookie lives.
-    return new Response(null, { status: 302, headers: { Location: `/?agent_connect=${encodeURIComponent(target)}` } });
+    return new Response(null, { status: 302, headers: { Location: `/?agent_connect=${encodeURIComponent(`${url.pathname}${url.search}`)}` } });
   }
 
   const sub = await getActiveSubscription(env, who.user);
   const plan = sub?.plan || 'free';
-  const name = escapeHtml(client.clientName);
   if (!planCapsFor(plan).mcpAccess) {
     return agentPage(
       'Upgrade to connect',
-      `<h1>${name} needs a plan with agent access</h1><p>Your plan does not include agent connections yet. Only you can upgrade: agents cannot buy for you.</p><div class="row"><a class="btn" href="/pricing">See plans</a></div>`,
+      `<h1>${escapeHtml(client.clientName)} needs a plan with agent access</h1><p>Your plan does not include agent connections yet. Only you can upgrade: agents cannot buy for you.</p><div class="row"><a class="btn" href="/pricing">See plans</a></div>`,
       403,
       consentCsp(params.redirectUri),
     );
   }
-
-  if (!env.LUMINARA_KV) return json({ error: 'server_error', error_description: 'KV unavailable' }, 503);
-  const consentId = randomId('oconsent', 16);
-  const record: ConsentRecord = {
+  return issueConsentScreen(env, {
     userId: who.user.id,
     accountId: billingId(who.user),
     plan,
@@ -429,18 +450,9 @@ async function connectorAuthorize(
     redirectUri: params.redirectUri,
     codeChallenge: params.codeChallenge,
     state: params.state,
-  };
-  if (params.resource) record.resource = params.resource;
-  await env.LUMINARA_KV.put(`${CONSENTS_KV_PREFIX}${consentId}`, JSON.stringify(record), {
-    expirationTtl: CONSENT_TTL_SECONDS,
+    scope: CONNECTOR_SCOPE,
+    ...(params.resource ? { resource: params.resource } : {}),
   });
-  const callback = new URL(params.redirectUri);
-  return agentPage(
-    'Connect an agent',
-    `<h1>Let ${name} use your Luminara account?</h1><p>The agent picked this name itself. Check that you started this connection and that you trust <code>${escapeHtml(callback.host || callback.protocol)}</code>, where it returns.</p><ul><li>Read your projects, business context and reports</li><li>Save reports and update project context</li><li>Cannot pay, change your plan, or spend research credits</li></ul><form method="post" action="/api/oauth/mcp/authorize"><input type="hidden" name="consent" value="${consentId}"><div class="row"><button name="decision" value="deny">Cancel</button><button name="decision" value="allow">Allow</button></div></form>`,
-    200,
-    consentCsp(params.redirectUri),
-  );
 }
 
 async function decideConsent(request: Request, env: Env): Promise<Response> {
@@ -448,18 +460,19 @@ async function decideConsent(request: Request, env: Env): Promise<Response> {
   if (!oauthSecretOrNull(env)) {
     return json({ error: 'server_error', error_description: 'MCP OAuth is not configured. Set MCP_OAUTH_SECRET.' }, 503);
   }
-  const form = await request.formData().catch(() => null);
-  const consentId = String(form?.get('consent') ?? '');
+  const fields = await readOAuthFields(request);
+  const consentId = fields?.consent ?? '';
   const key = `${CONSENTS_KV_PREFIX}${consentId}`;
   const raw = consentId ? await env.LUMINARA_KV.get(key) : null;
-  if (!raw) {
-    return json({ error: 'invalid_request', error_description: 'This approval expired. Start the connection again.' }, 400);
-  }
+  if (!raw) return json({ error: 'invalid_request', error_description: 'This approval expired. Start the connection again.' }, 400);
   let record: ConsentRecord;
   try {
     record = JSON.parse(raw) as ConsentRecord;
   } catch {
     return json({ error: 'invalid_request', error_description: 'This approval expired. Start the connection again.' }, 400);
+  }
+  if (fields?.csrf !== undefined && record.csrfToken && !secretEquals(fields.csrf, record.csrfToken)) {
+    return json({ error: 'invalid_request', error_description: 'Invalid approval token. Start the connection again.' }, 403);
   }
 
   // identify() refuses a cross-site cookie POST, so a page elsewhere cannot press Allow.
@@ -471,7 +484,7 @@ async function decideConsent(request: Request, env: Env): Promise<Response> {
 
   const redirect = new URL(record.redirectUri);
   if (record.state) redirect.searchParams.set('state', record.state);
-  if (form?.get('decision') !== 'allow') {
+  if (fields?.decision !== 'allow') {
     redirect.searchParams.set('error', 'access_denied');
     return Response.redirect(redirect.toString(), 303);
   }
@@ -487,10 +500,9 @@ async function decideConsent(request: Request, env: Env): Promise<Response> {
     plan: record.plan,
     redirectUri: record.redirectUri,
     codeChallenge: record.codeChallenge,
-    scope: CONNECTOR_SCOPE,
+    scope: record.scope || CONNECTOR_SCOPE,
     createdAt: Date.now(),
-    clientId: record.clientId,
-    clientName: record.clientName,
+    ...(record.clientId ? { clientId: record.clientId, clientName: record.clientName } : {}),
   };
   if (audience) codeRecord.resource = audience;
   await env.LUMINARA_KV.put(`${CODES_KV_PREFIX}${code}`, JSON.stringify(codeRecord), { expirationTtl: 300 });
@@ -500,27 +512,18 @@ async function decideConsent(request: Request, env: Env): Promise<Response> {
 
 async function authorize(request: Request, env: Env): Promise<Response> {
   if (!oauthSecretOrNull(env)) {
-    return json(
-      {
-        error: 'server_error',
-        error_description: 'MCP OAuth is not configured. Set MCP_OAUTH_SECRET.',
-      },
-      503,
-    );
+    return json({ error: 'server_error', error_description: 'MCP OAuth is not configured. Set MCP_OAUTH_SECRET.' }, 503);
   }
-
   const url = new URL(request.url);
   const redirectUri = url.searchParams.get('redirect_uri') || '';
   const state = url.searchParams.get('state') || '';
   const codeChallenge = url.searchParams.get('code_challenge') || '';
   const method = url.searchParams.get('code_challenge_method') || 'S256';
-  // Absent scope requests everything; the plan cap below decides what is granted.
   const scope = url.searchParams.get('scope') || 'mcp:free mcp:research';
 
   if (!redirectUri || !codeChallenge || method !== 'S256') {
     return json({ error: 'invalid_request', error_description: 'redirect_uri and S256 code_challenge required' }, 400);
   }
-
   const resourceValues = url.searchParams.getAll('resource');
   let resource: string | undefined;
   if (resourceValues.length > 0) {
@@ -528,60 +531,35 @@ async function authorize(request: Request, env: Env): Promise<Response> {
     if (!accepted) return json({ error: 'invalid_target', error_description: MCP_RESOURCE_ERROR }, 400);
     resource = accepted;
   }
-
   const clientId = url.searchParams.get('client_id') || '';
   if (clientId) return connectorAuthorize(request, env, { clientId, redirectUri, codeChallenge, state, resource });
 
   if (!isAllowedMcpRedirectUri(redirectUri)) {
     return json(
-      {
-        error: 'invalid_request',
-        error_description:
-          'redirect_uri not allowed. Use http(s)://localhost (or 127.0.0.1) or a known IDE scheme (cursor://, vscode://).',
-      },
+      { error: 'invalid_request', error_description: 'redirect_uri not allowed. Use http(s)://localhost (or 127.0.0.1) or a known IDE scheme (cursor://, vscode://).' },
       400,
     );
   }
-
   const who = await identify(request, env);
   if (who.error || !who.user) {
-    return json(
-      {
-        error: 'login_required',
-        error_description: 'Sign in to Luminara first, then retry authorize with session cookie.',
-      },
-      401,
-    );
+    return json({ error: 'login_required', error_description: 'Sign in to Luminara first, then retry authorize with session cookie.' }, 401);
   }
-
   const sub = await getActiveSubscription(env, who.user);
   const caps = planCapsFor(sub?.plan || 'free');
-  if (!caps.mcpAccess) {
-    return json({ error: 'access_denied', error_description: 'Growth+ plan required for MCP' }, 403);
-  }
-
-  // Research scope is granted only on Agency (apiAccess); Growth gets mcp:free.
+  if (!caps.mcpAccess) return json({ error: 'access_denied', error_description: 'Growth+ plan required for MCP' }, 403);
   const scopes = scope.split(/\s+/).filter(Boolean);
-
-  const code = randomId('oc', 16);
-  const record: AuthCodeRecord = {
-    accountId: billingId(who.user),
+  // Require explicit POST consent for omitted client_id too (blocks silent CSRF auth-code grants).
+  return issueConsentScreen(env, {
     userId: who.user.id,
+    accountId: billingId(who.user),
     plan: sub?.plan || 'free',
+    clientName: 'Local MCP client',
     redirectUri,
     codeChallenge,
+    state,
     scope: scopes.includes('mcp:research') && caps.apiAccess ? 'mcp:free mcp:research' : 'mcp:free',
-    createdAt: Date.now(),
-  };
-  if (resource) record.resource = resource;
-
-  if (!env.LUMINARA_KV) return json({ error: 'server_error', error_description: 'KV unavailable' }, 503);
-  await env.LUMINARA_KV.put(`${CODES_KV_PREFIX}${code}`, JSON.stringify(record), { expirationTtl: 300 });
-
-  const redirect = new URL(redirectUri);
-  redirect.searchParams.set('code', code);
-  if (state) redirect.searchParams.set('state', state);
-  return Response.redirect(redirect.toString(), 302);
+    ...(resource ? { resource } : {}),
+  });
 }
 
 function refreshAccessStore(env: Env, request?: Request): RefreshAccessStore {
@@ -760,7 +738,7 @@ async function exchangeAuthorizationCode(request: Request, env: Env, body: Recor
   if (record.clientId && record.clientId !== body.client_id) return json({ error: 'invalid_grant' }, 400);
 
   const challenge = await sha256Base64Url(verifier);
-  if (challenge !== record.codeChallenge) return json({ error: 'invalid_grant', error_description: 'PKCE failed' }, 400);
+  if (!secretEquals(challenge, record.codeChallenge)) return json({ error: 'invalid_grant', error_description: 'PKCE failed' }, 400);
 
   const bound = boundResourceField(record.resource);
   if (bound === 'invalid') return json({ error: 'invalid_grant' }, 400);

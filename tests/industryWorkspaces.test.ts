@@ -268,4 +268,28 @@ describe('industry and client workspaces', () => {
     const listBody = (await mcpList.json()) as { result?: { structuredContent?: { industries?: unknown[] } } };
     expect(listBody.result?.structuredContent?.industries).toHaveLength(15);
   });
+
+  it('M-17: enforces workspace client cap atomically under concurrent requests', async () => {
+    const env = makeEnv();
+    const created = await call(env, 709, '/workspaces/current', {
+      method: 'POST',
+      body: JSON.stringify({ name: 'Concurrent Agency' }),
+    });
+    expect(created.status).toBe(200);
+
+    // Free plan allows workspaceClientLimit = 1: firing 3 concurrent adds must allow exactly 1.
+    const responses = await Promise.all(
+      ['alpha', 'beta', 'gamma'].map((slug) =>
+        call(env, 709, '/workspaces/current/clients', {
+          method: 'POST',
+          body: JSON.stringify({ name: slug, domain: `${slug}.example` }),
+        }),
+      ),
+    );
+    expect(responses.map((r) => r.status).sort()).toEqual([200, 403, 403]);
+    const row = await env.DB!.prepare(
+      `SELECT COUNT(DISTINCT client_id) AS n FROM projects WHERE account_id = '709' AND client_id != ''`,
+    ).first<{ n: number }>();
+    expect(row?.n).toBe(1);
+  });
 });

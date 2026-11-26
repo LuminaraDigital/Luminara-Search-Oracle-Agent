@@ -22,6 +22,7 @@ import { handleMcpRequest } from '../worker/mcpServer';
 import { SESSION_MCP_CREDENTIAL } from '../worker/userTypes';
 import { createProject } from '../worker/projectService';
 import { saveAgentReport } from '../worker/agentReportService';
+import { inspectLogoUrl } from '../worker/logoInspect';
 import { createSqliteD1 } from './helpers/sqliteD1';
 
 const botToken = '123456:BRAND_TEST_TOKEN';
@@ -364,5 +365,88 @@ describe('report brand', () => {
     );
     const viewerBody = (await viewerRead.json()) as { result?: { isError?: boolean } };
     expect(viewerBody.result?.isError).toBe(true);
+  });
+
+  it('M-27 inspectLogoUrl enforces default port, timeout, per-hop https, and response.ok, and share branding runs it', async () => {
+    // Non-default port is rejected before fetching.
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    const nonDefaultPort = await inspectLogoUrl('https://cdn.harbour.co:8443/logo.png');
+    expect(nonDefaultPort.ok).toBe(false);
+    expect(fetchSpy).not.toHaveBeenCalled();
+
+    // Redirect downgrade https -> http -> https is blocked before any cleartext HTTP call.
+    const seenUrls: string[] = [];
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('cloudflare-dns.com')) {
+        return new Response(JSON.stringify({ Status: 0, Answer: [{ type: 1, data: '1.1.1.1' }] }), {
+          status: 200,
+          headers: { 'content-type': 'application/dns-json' },
+        });
+      }
+      seenUrls.push(url);
+      expect(init?.signal).toBeDefined();
+      if (url === 'https://cdn.harbour.co/start.png') {
+        return new Response(null, { status: 302, headers: { location: 'http://cdn.harbour.co/downgrade.png' } });
+      }
+      return new Response(png, { status: 200, headers: { 'content-type': 'image/png' } });
+    });
+    const downgrade = await inspectLogoUrl('https://cdn.harbour.co/start.png');
+    expect(downgrade.ok).toBe(false);
+    expect(seenUrls).toEqual(['https://cdn.harbour.co/start.png']);
+
+    // Redirect to non-default port is blocked per-hop.
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('cloudflare-dns.com')) {
+        return new Response(JSON.stringify({ Status: 0, Answer: [{ type: 1, data: '1.1.1.1' }] }), {
+          status: 200,
+          headers: { 'content-type': 'application/dns-json' },
+        });
+      }
+      if (url === 'https://cdn.harbour.co/redirect-port.png') {
+        return new Response(null, { status: 302, headers: { location: 'https://cdn.harbour.co:8443/logo.png' } });
+      }
+      return new Response(png, { status: 200, headers: { 'content-type': 'image/png' } });
+    });
+    expect((await inspectLogoUrl('https://cdn.harbour.co/redirect-port.png')).ok).toBe(false);
+
+    // Non-2xx status is rejected even if payload looks like PNG.
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('cloudflare-dns.com')) {
+        return new Response(JSON.stringify({ Status: 0, Answer: [{ type: 1, data: '1.1.1.1' }] }), {
+          status: 200,
+          headers: { 'content-type': 'application/dns-json' },
+        });
+      }
+      return new Response(png, { status: 404, headers: { 'content-type': 'image/png' } });
+    });
+    expect((await inspectLogoUrl('https://cdn.harbour.co/missing.png')).ok).toBe(false);
+
+    // Share-report branding without workspace runs inspectLogoUrl: SVG-disguised-as-PNG fails with 400; real PNG succeeds.
+    const env = makeEnv({
+      'sub:901': JSON.stringify({ plan: 'agency', expiresAt: Date.now() + 86_400_000 }),
+    });
+    stubLogoFetch(new TextEncoder().encode('<svg><script>alert(1)</script></svg>'), 'image/svg+xml');
+    const badShare = await call(env, 901, '/share/reports', {
+      method: 'POST',
+      body: JSON.stringify({
+        markdownText: '# Branded share',
+        branding: { agencyName: 'Harbour', logoUrl: 'https://cdn.harbour.co/logo.png' },
+      }),
+    });
+    expect(badShare.status).toBe(400);
+
+    stubLogoFetch(png, 'image/png');
+    const goodShare = await call(env, 901, '/share/reports', {
+      method: 'POST',
+      body: JSON.stringify({
+        markdownText: '# Branded share',
+        branding: { agencyName: 'Harbour', logoUrl: 'https://cdn.harbour.co/logo.png' },
+      }),
+    });
+    expect(goodShare.status).toBe(200);
   });
 });

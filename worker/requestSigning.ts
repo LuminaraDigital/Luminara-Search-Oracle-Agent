@@ -12,13 +12,14 @@
  * Canonical string: keyId, timestamp, nonce, METHOD, path, SHA-256(body), joined by newlines.
  */
 import type { Env } from './env';
-import { json } from './workerUtils';
+import { json, secretEquals } from './workerUtils';
 
 export const REQUEST_SIGNING_PATHS = ['/webhooks/auth'] as const;
 export const REQUEST_SIGNING_WINDOW_SEC = 300;
 
 const KEY_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const NONCE_RE = /^[A-Za-z0-9_-]{16,128}$/;
+const MAX_AUTH_NONCE_LEN = 128;
 
 export type RequestSigningFailure = 'unknown_key' | 'expired' | 'tampered' | 'replayed';
 
@@ -134,9 +135,10 @@ export async function verifySignedRequest(input: {
   return { ok: true };
 }
 
-async function consumeD1Nonce(db: D1Database, keyId: string, nonce: string, nowMs: number): Promise<boolean | null> {
+export async function consumeD1Nonce(db: D1Database, keyId: string, nonce: string, nowMs: number): Promise<boolean | null> {
   try {
-    await db.prepare(`DELETE FROM signed_request_nonces WHERE seen_at < ?`).bind(nowMs - REQUEST_SIGNING_WINDOW_SEC * 1000).run();
+    // Retain nonces for 2x the clock-skew window (600s) so future-stamped requests cannot replay after 301s.
+    await db.prepare(`DELETE FROM signed_request_nonces WHERE seen_at < ?`).bind(nowMs - REQUEST_SIGNING_WINDOW_SEC * 2 * 1000).run();
     const inserted = await db.prepare(
       `INSERT INTO signed_request_nonces (key_id, nonce, seen_at) VALUES (?, ?, ?) ON CONFLICT(key_id, nonce) DO NOTHING`,
     )
@@ -148,6 +150,153 @@ async function consumeD1Nonce(db: D1Database, keyId: string, nonce: string, nowM
     if (/no such table: signed_request_nonces/i.test(msg)) return null;
     throw err;
   }
+}
+
+function decodeBase64Bytes(input: string): Uint8Array | null {
+  const cleaned = input.trim();
+  if (!cleaned) return null;
+  try {
+    const bin = atob(cleaned);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let bin = '';
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]!);
+  return btoa(bin);
+}
+
+function parseTimestampSec(
+  raw: string | null,
+  nowSec: number,
+): { ok: true; raw: string } | { ok: false; code: 'missing_timestamp' | 'expired' } {
+  const trimmed = (raw || '').trim();
+  if (!trimmed || !/^\d+$/.test(trimmed)) return { ok: false, code: 'missing_timestamp' };
+  const ts = Number(trimmed);
+  if (!Number.isSafeInteger(ts) || Math.abs(nowSec - ts) > REQUEST_SIGNING_WINDOW_SEC) {
+    return { ok: false, code: 'expired' };
+  }
+  return { ok: true, raw: trimmed };
+}
+
+async function verifySvixWebhookSignature(
+  secret: string,
+  svixId: string,
+  svixTimestamp: string,
+  rawBody: string,
+  svixSignature: string,
+): Promise<boolean> {
+  const keyBytes = secret.startsWith('whsec_')
+    ? decodeBase64Bytes(secret.slice('whsec_'.length))
+    : new TextEncoder().encode(secret);
+  if (!keyBytes || keyBytes.byteLength === 0) return false;
+
+  const key = await crypto.subtle.importKey(
+    'raw',
+    keyBytes,
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const mac = new Uint8Array(
+    await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`${svixId}.${svixTimestamp}.${rawBody}`)),
+  );
+  const expectedB64 = bytesToBase64(mac);
+
+  for (const token of svixSignature.trim().split(/\s+/)) {
+    if (!token.startsWith('v1,')) continue;
+    if (secretEquals(expectedB64, token.slice(3))) return true;
+  }
+  return false;
+}
+
+async function verifyTimestampedHexWebhook(
+  secret: string,
+  timestamp: string,
+  rawBody: string,
+  signature: string,
+): Promise<boolean> {
+  const mac = hexToBytes(signature.trim());
+  if (!mac) return false;
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['verify'],
+  );
+  return crypto.subtle.verify('HMAC', key, mac, new TextEncoder().encode(`${timestamp}.${rawBody}`));
+}
+
+/**
+ * Fallback verifier for POST /webhooks/auth when REQUEST_SIGNING_REQUIRED !== 'true'.
+ * Requires a fresh timestamp within +/-REQUEST_SIGNING_WINDOW_SEC (300s), verifies either
+ * Svix (`svix-id`, `svix-timestamp`, `svix-signature: v1,<base64>`) or canonical hex HMAC
+ * over `${timestamp}.${rawBody}` (`x-auth-timestamp`, `x-auth-signature`), and deduplicates
+ * replays in `signed_request_nonces` whenever D1 is bound.
+ * Returns null when valid, or an error Response when rejected.
+ */
+export async function verifyAuthWebhookFallback(
+  env: Pick<Env, 'AUTH_WEBHOOK_SECRET' | 'DB'>,
+  request: Request,
+  rawBody: string,
+  nowSec = Math.floor(Date.now() / 1000),
+): Promise<Response | null> {
+  const secret = env.AUTH_WEBHOOK_SECRET;
+  if (!secret) {
+    return json({ ok: false, error: 'AUTH_WEBHOOK_SECRET is not configured on the server' }, 503);
+  }
+
+  const svixSig = (request.headers.get('svix-signature') || '').trim();
+  const svixId = (request.headers.get('svix-id') || '').trim();
+  const svixTs = (request.headers.get('svix-timestamp') || '').trim();
+  const authSig = (request.headers.get('x-auth-signature') || '').trim();
+  const authTs = (request.headers.get('x-auth-timestamp') || '').trim();
+
+  let nonce: string;
+  if (svixSig && svixId && svixTs) {
+    if (svixId.length > MAX_AUTH_NONCE_LEN) {
+      return json({ ok: false, error: 'Invalid webhook signature', code: 'tampered' }, 401);
+    }
+    const ts = parseTimestampSec(svixTs, nowSec);
+    if (!ts.ok) {
+      return json({ ok: false, error: 'Missing or expired webhook timestamp', code: ts.code }, 401);
+    }
+    const valid = await verifySvixWebhookSignature(secret, svixId, ts.raw, rawBody, svixSig);
+    if (!valid) {
+      return json({ ok: false, error: 'Invalid webhook signature', code: 'tampered' }, 401);
+    }
+    nonce = svixId;
+  } else if (authSig && authTs) {
+    const ts = parseTimestampSec(authTs, nowSec);
+    if (!ts.ok) {
+      return json({ ok: false, error: 'Missing or expired webhook timestamp', code: ts.code }, 401);
+    }
+    const valid = await verifyTimestampedHexWebhook(secret, ts.raw, rawBody, authSig);
+    if (!valid) {
+      return json({ ok: false, error: 'Invalid webhook signature', code: 'tampered' }, 401);
+    }
+    // Always bind the replay key to the HMAC-covered timestamp and signature (never an unsigned header).
+    nonce = await sha256Hex(`${ts.raw}.${authSig.toLowerCase()}`);
+  } else {
+    return json({ ok: false, error: 'Invalid webhook signature or missing timestamp', code: 'missing_timestamp' }, 401);
+  }
+
+  if (env.DB) {
+    const fresh = await consumeD1Nonce(env.DB, 'webhook:auth', nonce, nowSec * 1000);
+    if (fresh === null) {
+      return json({ ok: false, error: 'Request signing needs migration 0040.', code: 'REQUEST_SIGNING_TABLE_MISSING' }, 503);
+    }
+    if (!fresh) {
+      return json({ ok: false, error: 'Replayed webhook request', code: 'replayed' }, 401);
+    }
+  }
+  return null;
 }
 
 /** Null when the request may continue. A Response when signing refuses it. */

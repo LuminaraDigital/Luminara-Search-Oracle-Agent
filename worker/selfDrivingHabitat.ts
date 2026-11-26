@@ -403,14 +403,31 @@ export function enforceHabitatScope(
   if (!takesProject && !takesDomain && !HABITAT_ACCOUNT_SAFE_TOOLS.has(name)) {
     return scopeViolation(`${name} cannot be limited to one project.`, { tool: name });
   }
+  if (takesProject && !boundProjectId) {
+    return scopeViolation('Habitat token has no bound project.', { tool: name });
+  }
+
+  if (name === 'memory_remember') {
+    const kind = optionalString(args.kind)?.toLowerCase();
+    const pred = optionalString(args.predicate)?.toLowerCase().replace(/[\s-]+/g, '_');
+    if (kind === 'constraint' || pred === 'never_bring_up') {
+      return {
+        blocked: {
+          text: 'Tool blocked by Agent Habitat policy: Habitat tokens cannot write owner constraint or never_bring_up rules.',
+          structuredContent: { code: 'OWNER_RULE_WRITE_FORBIDDEN', tool: name },
+          isError: true,
+        },
+      };
+    }
+  }
 
   const requestedProjectId = optionalString(args.projectId);
   if (requestedProjectId && requestedProjectId !== boundProjectId) {
     return scopeViolation(`token is bound to project "${boundProjectId}".`, { boundProjectId, requestedProjectId });
   }
   const requestedDomain = normalizeMemoryDomain(optionalString(args.domain));
-  if (boundDomain && requestedDomain && requestedDomain !== boundDomain) {
-    return scopeViolation(`token is bound to domain "${boundDomain}".`, { boundDomain, requestedDomain });
+  if (requestedDomain && (!boundDomain || requestedDomain !== boundDomain)) {
+    return scopeViolation(`token is bound to domain "${boundDomain || 'none'}".`, { boundDomain, requestedDomain });
   }
 
   const url = optionalString(args.url);
@@ -425,7 +442,7 @@ export function enforceHabitatScope(
     args: {
       ...args,
       ...(takesProject && boundProjectId ? { projectId: boundProjectId } : {}),
-      ...(takesDomain && boundDomain && !requestedDomain ? { domain: boundDomain } : {}),
+      ...(takesDomain && boundDomain ? { domain: boundDomain } : {}),
     },
   };
 }

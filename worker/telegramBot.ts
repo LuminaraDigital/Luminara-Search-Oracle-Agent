@@ -18,8 +18,9 @@ import { formatWeeklyMissionNudge } from '../services/referrals/rules';
 import { activateLicenseKey } from './licenseService';
 import { PROVIDERS } from './providerRelay';
 import { claimStarsCharge, isStarsLedgerReady, releaseStarsCharge } from './paymentLedger';
-import { PlanDowngradeRefusedError, downgradeRefusalText, wouldDowngrade } from './planRank';
+import { PlanDowngradeRefusedError, computeSubscriptionExpiry, downgradeRefusalText, proratedRefundDurationMs, wouldDowngrade } from './planRank';
 import { recordAuditLogBestEffort } from './auditLog';
+import { enforceKvSlidingWindow } from './securityHardening';
 import {
   SUPPORT_MESSAGE_MAX,
   clipSupportMessage,
@@ -575,7 +576,22 @@ export async function handleTelegramUpdate(update: any, env: Env): Promise<void>
         return;
       }
       const loginId = String(msg.from?.id || chatId);
-      const res = await activateLicenseKey(env, loginId, rawKey);
+      const limited = await enforceKvSlidingWindow(env, {
+        key: `rl:tg_license:tg:${loginId}`,
+        maxRequests: 5,
+        windowSeconds: 15 * 60,
+        failClosedWithoutKv: true,
+        failClosedOnWriteError: true,
+      });
+      if (!limited.ok) {
+        await api(env, 'sendMessage', {
+          chat_id: chatId,
+          text: 'Too many license activation attempts. Please wait 15 minutes before trying again.',
+          reply_markup: openAppKeyboard(env),
+        });
+        return;
+      }
+      const res = await activateLicenseKey(env, loginId, rawKey, { identity: { source: 'telegram' } });
       if (res.ok) {
         await api(env, 'sendMessage', {
           chat_id: chatId,
@@ -1510,9 +1526,10 @@ export async function planDowngradeRefusal(env: Env, loginId: string, planId: st
 }
 
 async function answerPreCheckout(q: any, env: Env): Promise<void> {
-  // Telegram requires an answer within 10 seconds; we verify plan existence, currency, and exact Star amount.
+  // Telegram requires an answer within 10 seconds; fail closed unless plan, currency (XTR), exact Star amount, and grantee binding match.
   const parsed = parseStarsPayload(q.invoice_payload);
   const plan = parsed.purpose === 'plan' ? PLANS[parsed.planId] : null;
+  const hasGranteeField = typeof q.invoice_payload === 'string' && q.invoice_payload.includes(':');
 
   let ok = true;
   let errorMessage = '';
@@ -1520,17 +1537,17 @@ async function answerPreCheckout(q: any, env: Env): Promise<void> {
   if (!plan) {
     ok = false;
     errorMessage = 'Unknown plan. Please reopen the app and try again.';
-  } else if (q.currency && q.currency !== 'XTR') {
+  } else if (q.currency !== 'XTR') {
     ok = false;
     errorMessage = 'Invalid currency. Telegram Stars (XTR) required.';
-  } else if (typeof q.total_amount === 'number' && q.total_amount !== plan.stars) {
+  } else if (!Number.isSafeInteger(q.total_amount) || q.total_amount !== plan.stars) {
     ok = false;
     errorMessage = `Price mismatch. Expected ${plan.stars} Stars.`;
   } else {
     const payerId = Number(q.from?.id) || 0;
     const granteeId = parsed.purpose === 'plan' ? parsed.granteeId : null;
     const planId = parsed.purpose === 'plan' ? parsed.planId : '';
-    if (granteeId !== null && payerId && granteeId !== payerId) {
+    if ((granteeId !== null && payerId && granteeId !== payerId) || (hasGranteeField && granteeId === null)) {
       // An invoice link can be passed on. The plan would go to one account and any refund to another.
       ok = false;
       errorMessage = 'This invoice was made for another Telegram account. Open the app from your own account to buy a plan.';
@@ -1673,7 +1690,7 @@ async function grantPlanForCharge(env: Env, input: PlanChargeInput): Promise<{ e
     throw new Error('the charge was claimed earlier and no grant is in place');
   } else {
     const active = typeof existing?.expiresAt === 'number' && existing.expiresAt > input.now;
-    expiresAt = (active ? Number(existing?.expiresAt) : input.now) + plan.days * DAY_MS;
+    expiresAt = computeSubscriptionExpiry(existing, input.planId, plan.days, input.now);
     const earlier = active ? appliedChargesOf(existing).filter((c) => c !== input.chargeId) : [];
     const applied = [...earlier, input.chargeId].slice(-MAX_APPLIED_CHARGES);
     const lastCharge = active && typeof existing?.chargeId === 'string' ? existing.chargeId : undefined;
@@ -1860,8 +1877,21 @@ async function handleSuccessfulPayment(msg: any, env: Env): Promise<PaymentUpdat
   }
 
   const parsed = parseStarsPayload(sp.invoice_payload);
-  // The plan goes to the user named in the invoice. A refund only ever goes to the payer.
-  const loginId = String(parsed.purpose === 'plan' ? (parsed.granteeId ?? payerTgId) : payerTgId);
+  const plan = parsed.purpose === 'plan' ? PLANS[parsed.planId] : null;
+  const currency = sp.currency;
+  const hasGranteeField = typeof sp.invoice_payload === 'string' && sp.invoice_payload.includes(':');
+  const mismatchReason =
+    parsed.purpose !== 'plan' || !plan
+      ? null
+      : currency !== 'XTR'
+        ? 'currency_mismatch'
+        : stars !== plan.stars
+          ? 'amount_mismatch'
+          : (parsed.granteeId !== null && parsed.granteeId !== payerTgId) || (hasGranteeField && parsed.granteeId === null)
+            ? 'grantee_mismatch'
+            : null;
+  // The plan goes to the verified grantee; on any mismatch, bind the refund record to the payer only.
+  const loginId = String(parsed.purpose === 'plan' && !mismatchReason ? (parsed.granteeId ?? payerTgId) : payerTgId);
   let accountId: string | null = null;
   try {
     accountId = env.LUMINARA_KV ? await resolveAccountId(env, loginId) : loginId;
@@ -1869,12 +1899,43 @@ async function handleSuccessfulPayment(msg: any, env: Env): Promise<PaymentUpdat
     console.error(`[Stars] Could not resolve the account for charge ${chargeId}; recording it without one.`, err);
   }
 
+  if (mismatchReason) {
+    console.error(
+      JSON.stringify({
+        event: 'stars_payment_mismatch',
+        reason: mismatchReason,
+        chargeId,
+        payerTgId,
+        granteeId: parsed.purpose === 'plan' ? parsed.granteeId : null,
+        planId: parsed.purpose === 'plan' ? parsed.planId : null,
+        currency: currency ?? null,
+        amount: stars,
+        expectedAmount: plan?.stars ?? null,
+      }),
+    );
+    await recordAuditLogBestEffort(env, {
+      org_id: `org_${String(accountId || payerTgId).replace(/[^a-zA-Z0-9_-]/g, '_')}`,
+      actor_id: `tg:${payerTgId}`,
+      action: 'stars.payment_mismatch',
+      details: {
+        reason: mismatchReason,
+        chargeId,
+        planId: parsed.purpose === 'plan' ? parsed.planId : null,
+        currency: currency ?? null,
+        amount: stars,
+        expectedAmount: plan?.stars ?? null,
+      },
+    });
+  }
+
   // Step 1: the charge row is the first write.
   const recorded = await recordStarsCharge(
     env,
-    parsed.purpose === 'plan'
-      ? { chargeId, payerTgId, accountId, purpose: 'plan', refId: parsed.planId, stars }
-      : { chargeId, payerTgId, accountId, purpose: 'unknown', refId: parsed.ref, stars, status: 'refund_due', refundReason: 'unknown_payload' },
+    mismatchReason && parsed.purpose === 'plan'
+      ? { chargeId, payerTgId, accountId, purpose: 'plan', refId: parsed.planId, stars, status: 'refund_due', refundReason: mismatchReason }
+      : parsed.purpose === 'plan'
+        ? { chargeId, payerTgId, accountId, purpose: 'plan', refId: parsed.planId, stars }
+        : { chargeId, payerTgId, accountId, purpose: 'unknown', refId: parsed.ref, stars, status: 'refund_due', refundReason: 'unknown_payload' },
   );
   if (!recorded.ok) {
     // The one case that asks Telegram to send the update again.
@@ -1893,14 +1954,16 @@ async function handleSuccessfulPayment(msg: any, env: Env): Promise<PaymentUpdat
     const { row } = recorded;
     if (row.status === 'refund_due' && recorded.created) {
       const outcome = await settleStarsRefund(env, starsChargeHooks(env), chargeId);
+      const refundNote = mismatchReason ?? 'unknown_payload';
+      const msgText = mismatchReason
+        ? `We could not verify this payment (${mismatchReason}), so your ${stars.toLocaleString()} Stars have been refunded. Please open the app from your own account and try again.`
+        : `We received a payment we could not match to a plan, so your ${stars.toLocaleString()} Stars have been refunded.`;
       await tellPayer(
         env,
         chatId,
-        starsWentBack(outcome)
-          ? `We received a payment we could not match to a plan, so your ${stars.toLocaleString()} Stars have been refunded.`
-          : refundPendingText(stars, chargeId),
+        starsWentBack(outcome) ? msgText : refundPendingText(stars, chargeId),
       );
-      return { status: 200, note: 'unknown_payload' };
+      return { status: 200, note: refundNote };
     }
     // Step 2: any status but `received` was decided by an earlier delivery, or belongs to the sweep.
     if (row.status !== 'received' || row.purpose !== 'plan') return { status: 200, note: `already_${row.status}` };
@@ -2020,7 +2083,8 @@ async function revokeStarsGrant(env: Env, userId: number, chargeId: string): Pro
       const sub = (await kv.get(`sub:${key}`, 'json')) as SubscriptionRecord | null;
       if (!sub || !subscriptionListsCharge(sub, chargeId)) continue;
       const remaining = appliedChargesOf(sub).filter((c) => c !== chargeId);
-      const shortened = days > 0 ? Number(sub.expiresAt) - aheadMs : 0;
+      const removeMs = proratedRefundDurationMs(aheadMs, planId, sub.plan);
+      const shortened = days > 0 ? Number(sub.expiresAt) - removeMs : 0;
       if (shortened <= now) {
         await kv.delete(`sub:${key}`);
         continue;

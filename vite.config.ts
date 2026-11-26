@@ -31,16 +31,27 @@ function vendorChunk(id: string): string | undefined {
   if (id.includes('/node_modules/@telegram-apps/')) return 'telegram';
   return undefined;
 }
-// Firebase web config (VITE_FIREBASE_API_KEY etc.) is public by design and must reach the browser.
-const PUBLIC_NAME_RE = /^VITE_FIREBASE_/;
-// Apps Center catalog token. Public in the Mini App bundle, like a measurement id. Blank when unset.
-const PUBLIC_CLIENT_IDS = new Set(['VITE_TG_ANALYTICS_TOKEN']);
+// Explicit allowlist of public client config identifiers that may enter the browser bundle.
+// VITE_FIREBASE_APPCHECK_DEBUG_TOKEN and any secret/token vars are deliberately excluded.
+const PUBLIC_CLIENT_IDS = new Set([
+  'VITE_TG_ANALYTICS_TOKEN',
+  'VITE_FIREBASE_API_KEY',
+  'VITE_FIREBASE_AUTH_DOMAIN',
+  'VITE_FIREBASE_PROJECT_ID',
+  'VITE_FIREBASE_STORAGE_BUCKET',
+  'VITE_FIREBASE_MESSAGING_SENDER_ID',
+  'VITE_FIREBASE_APP_ID',
+  'VITE_FIREBASE_MEASUREMENT_ID',
+  'VITE_FIREBASE_APPCHECK_SITE_KEY',
+]);
 // Gemini keys are blanked by name above; an AIza-shaped value left in the bundle is Firebase's public key.
 const SECRET_VALUE_PATTERNS: Array<{ label: string; re: RegExp }> = [
   { label: 'GitHub token', re: /\b(gho_|ghp_|ghu_|ghs_|ghr_|github_pat_)[A-Za-z0-9_]{20,}/ },
   { label: 'Groq key', re: /gsk_[A-Za-z0-9]{20,}/ },
   { label: 'NVIDIA key', re: /nvapi-[A-Za-z0-9_-]{20,}/ },
   { label: 'OpenAI-style key', re: /\bsk-[A-Za-z0-9_-]{20,}/ },
+  { label: 'Stripe live or restricted key', re: /\b[sr]k_live_[A-Za-z0-9]{20,}/ },
+  { label: 'Stripe webhook secret', re: /\bwhsec_[A-Za-z0-9]{24,}/ },
   { label: 'Tavily key', re: /tvly-[A-Za-z0-9-]{20,}/ },
   { label: 'Firecrawl key', re: /\bfc-[a-f0-9]{30,}/ },
   { label: 'Browserbase key', re: /bb_live_[A-Za-z0-9_-]{20,}/ },
@@ -70,23 +81,24 @@ function secretLeakGuard(): Plugin {
   };
 }
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ mode, command }) => {
   const env = { ...process.env, ...loadEnv(mode, process.cwd(), '') };
   const languageToolUrl = env.LANGUAGETOOL_URL || 'http://localhost:8010';
   const umamiUrl = env.UMAMI_URL || 'http://localhost:3002';
   const apiProxyTarget = env.VITE_API_BASE || 'https://luminarasuite.com';
   const umamiApiKey = env.UMAMI_API_KEY || '';
-  const isProduction = mode === 'production' || mode === 'staging';
+  const shouldBlankSecrets = command === 'build' || mode === 'production' || mode === 'staging';
 
-  // Production/Staging: blank every credential-looking VITE_ variable so the inlined import.meta.env
-  // object never carries a developer's local keys. Non-secret VITE_ config (URLs, API base) is kept.
+  // Production/Staging/Build: blank every credential-looking VITE_ variable not in the explicit public allowlist
+  // so the inlined import.meta.env object never carries local keys or App Check debug tokens.
   const define: Record<string, string> = {};
-  if (isProduction) {
+  if (shouldBlankSecrets) {
     for (const name of Object.keys(env)) {
-      if (name.startsWith('VITE_') && !PUBLIC_NAME_RE.test(name) && !PUBLIC_CLIENT_IDS.has(name) && SECRET_NAME_RE.test(name) && env[name]) {
+      if (name.startsWith('VITE_') && !PUBLIC_CLIENT_IDS.has(name) && SECRET_NAME_RE.test(name) && env[name]) {
         define[`import.meta.env.${name}`] = '""';
       }
     }
+    define['import.meta.env.VITE_FIREBASE_APPCHECK_DEBUG_TOKEN'] = '""';
   }
 
   return {

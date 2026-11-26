@@ -17,6 +17,7 @@ import {
 import { ESCROW_ABI, FACTORY_ABI, TOKEN_ABI } from './abi';
 import {
   LAUNCHPAD_CHAINS,
+  buildContractRegistrationMessage,
   normaliseEvmAddress,
   type LaunchpadChain,
   type LaunchpadNetwork,
@@ -344,6 +345,33 @@ export async function redeemTokenVoucher(
   const receipt = await pub.waitForTransactionReceipt({ hash, timeout: 180_000 });
   if (receipt.status !== 'success') throw new Error('The transaction failed on-chain.');
   return hash;
+}
+
+/** Signs the EIP-191 contract registration challenge from the connected merchant wallet. */
+export async function signContractRegistration(input: {
+  chain: LaunchpadChain;
+  network: LaunchpadNetwork;
+  campaignId: string;
+  contractAddress: string;
+  accountId: string;
+}): Promise<{ signature: Hex; timestamp: number; nonce: string }> {
+  await ensureChain(input.chain, input.network);
+  const { wallet } = clients(input.chain, input.network);
+  const [account] = await wallet.getAddresses();
+  if (!account) throw new Error('Connect your wallet first.');
+  const timestamp = Date.now();
+  const nonceBytes = new Uint8Array(16);
+  crypto.getRandomValues(nonceBytes);
+  const nonce = Array.from(nonceBytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  const message = buildContractRegistrationMessage({
+    campaignId: input.campaignId,
+    contractAddress: input.contractAddress,
+    accountId: input.accountId,
+    timestamp,
+    nonce,
+  });
+  const signature = await wallet.signMessage({ account, message });
+  return { signature, timestamp, nonce };
 }
 
 /** Hash of the proof document text/URI list so backers can verify what the merchant submitted. */

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ICONS } from '../../../constants';
 import { TimesFmPoint } from '../../../types';
 import { timesfmService } from '../../../services/timesfm/timesfmService';
+import { validateClientUploadFile } from '../../../utils/fileUploadGuard';
 
 export interface TimesFMUploadModalProps {
   isOpen: boolean;
@@ -44,6 +45,11 @@ export const TimesFMUploadModal: React.FC<TimesFMUploadModalProps> = ({
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    const checked = validateClientUploadFile(file, { allowedExtensions: ['.csv', '.tsv', '.txt'] });
+    if (!checked.ok) {
+      onError(checked.error);
+      return;
+    }
     const reader = new FileReader();
     reader.onload = (event) => {
       const text = event.target?.result as string;

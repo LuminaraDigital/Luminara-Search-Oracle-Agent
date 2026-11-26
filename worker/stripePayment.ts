@@ -14,7 +14,7 @@ import {
   releaseStripeReversal,
   releaseStripeSession,
 } from './paymentLedger';
-import { planRank } from './planRank';
+import { computeSubscriptionExpiry, planRank, proratedRefundDurationMs } from './planRank';
 import { resolveAccountId, writeSubscriptionRecord } from './userStore';
 import { normalizePlanId } from '../services/plans/planEntitlements';
 
@@ -509,7 +509,9 @@ async function creditCheckoutSession(env: Env, session: any, deps: StripeDeps): 
   const refused = !alreadyApplied && Boolean(existing && planRank(existing.plan) > planRank(planId));
 
   const basePlan = (existing && (inCardRun ? String(existing.record.stripeBasePlan || '') : existing.plan)) || null;
-  const expiresAt = existing && alreadyApplied ? existing.expiresAt : (existing ? existing.expiresAt : now) + plan.days * DAY_MS;
+  const expiresAt = existing && alreadyApplied
+    ? existing.expiresAt
+    : computeSubscriptionExpiry(existing, planId, plan.days, now);
 
   const claim = await claimStripeSession(env, {
     sessionId,
@@ -650,7 +652,8 @@ async function reverseStripeCharge(env: Env, paymentIntentRaw: unknown, reason: 
       // A retry after a half-finished write finds this reversal already on the record: the same
       // record is written again so both keys carry it, without taking the days a second time.
       if (!reversed.includes(sessionId)) {
-        const unusedMs = Math.min(grantedDays * DAY_MS, Math.max(0, (grantedUntil ?? Number.MAX_SAFE_INTEGER) - now));
+        const rawUnusedMs = Math.min(grantedDays * DAY_MS, Math.max(0, (grantedUntil ?? Number.MAX_SAFE_INTEGER) - now));
+        const unusedMs = proratedRefundDurationMs(rawUnusedMs, claim.session.planId, existing.plan);
         next = {
           ...existing.record,
           plan: await planAfterReversal(env, existing, { sessionId, userId, accountId, basePlan: prevPlan }, now),

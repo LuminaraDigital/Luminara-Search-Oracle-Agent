@@ -147,11 +147,12 @@ export async function decryptKeyBag(
 }
 
 const LOCAL_SALT_STORAGE_KEY = 'luminara_envelope_device_salt_v1';
+let ephemeralDeviceSalt = '';
 
 /**
  * Derive a consistent zero-knowledge client-side encryption passphrase for the current account.
  * Combines account ID with a persistent local device secret so keys can be unlocked seamlessly
- * on this device, with an optional user master password.
+ * on this device, with an optional user master password. Never falls back to a static salt.
  */
 export function getOrCreateAccountEncryptionPassphrase(accountId: string, userMasterKey?: string): string {
   if (userMasterKey && userMasterKey.length >= 8) {
@@ -167,7 +168,13 @@ export function getOrCreateAccountEncryptionPassphrase(accountId: string, userMa
       localStorage.setItem(LOCAL_SALT_STORAGE_KEY, deviceSalt);
     }
   } catch {
-    deviceSalt = 'fallback-device-salt-mem';
+    if (!ephemeralDeviceSalt) {
+      if (typeof crypto === 'undefined' || typeof crypto.getRandomValues !== 'function') {
+        throw new Error('Secure random source unavailable for encryption passphrase derivation.');
+      }
+      ephemeralDeviceSalt = bytesToBase64(crypto.getRandomValues(new Uint8Array(32)));
+    }
+    deviceSalt = ephemeralDeviceSalt;
   }
 
   return `luminara-zk:${accountId}:${deviceSalt}`;

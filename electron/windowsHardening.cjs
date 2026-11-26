@@ -24,7 +24,9 @@ function applyWindowsHardening(app) {
     marker = { state: 'ok' };
   }
 
-  if (marker.state === 'fallback' || process.env.ELECTRON_DISABLE_SANDBOX === '1') {
+  const currentVersion = typeof app.getVersion === 'function' ? String(app.getVersion() || '') : '';
+  const markerMatchesVersion = !marker.appVersion || !currentVersion || marker.appVersion === currentVersion;
+  if ((marker.state === 'fallback' && markerMatchesVersion) || process.env.ELECTRON_DISABLE_SANDBOX === '1') {
     app.commandLine.appendSwitch('no-sandbox');
     process.env.ELECTRON_DISABLE_SANDBOX = '1';
   }
@@ -32,7 +34,7 @@ function applyWindowsHardening(app) {
   let relaunchAttempted = false;
   app.on('child-process-gone', (_event, details) => {
     if (relaunchAttempted) return;
-    if (details?.type !== 'GPU' && details?.reason !== 'crashed') return;
+    if (details?.type !== 'GPU' || details?.reason !== 'crashed') return;
     if (process.env.ELECTRON_DISABLE_SANDBOX === '1') return;
 
     relaunchAttempted = true;
@@ -40,7 +42,11 @@ function applyWindowsHardening(app) {
       fs.mkdirSync(path.dirname(markerPath), { recursive: true });
       fs.writeFileSync(
         markerPath,
-        JSON.stringify({ state: 'fallback', reason: 'gpu-crash', at: new Date().toISOString() }, null, 2),
+        JSON.stringify(
+          { state: 'fallback', reason: 'gpu-crash', appVersion: currentVersion, at: new Date().toISOString() },
+          null,
+          2,
+        ),
       );
     } catch {
       // ignore marker write failures

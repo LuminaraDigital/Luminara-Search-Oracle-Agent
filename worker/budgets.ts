@@ -547,6 +547,184 @@ export async function approveBudgetResume(
   return { id, windowStart: window.startMs };
 }
 
+export type BudgetReservationInput = {
+  accountId: string;
+  estimatedCents: number;
+  toolName?: string;
+  projectId?: string | null;
+  provider?: string;
+  creditClass?: 'free' | 'paid';
+  source?: string;
+  runId?: string | null;
+  credentialKind?: string | null;
+  credentialId?: string | null;
+  now?: number;
+};
+
+export type BudgetReservationResult =
+  | { ok: true; reservationId: string | null }
+  | { ok: false; halted: true };
+
+/**
+ * Atomically reserves `estimatedCents` against the account's active monthly hard-stop cap
+ * using a single conditional INSERT INTO cost_events ... SELECT ... WHERE (SUM + estimated <= cap).
+ * Eliminates TOCTOU overspend races under concurrent calls when BUDGET_ENFORCEMENT === 'hard'.
+ */
+export async function reserveBudgetForCall(
+  env: UserStoreEnv,
+  params: BudgetReservationInput,
+): Promise<BudgetReservationResult> {
+  const at = params.now ?? Date.now();
+  const mode = budgetEnforcementMode(env);
+  if (mode === 'off' || mode === 'soft') return { ok: true, reservationId: null };
+  if (!env.DB) {
+    reportBudgetFault('reserveBudgetForCall');
+    return { ok: false, halted: true };
+  }
+  const estimated = Math.max(0, Math.floor(Number(params.estimatedCents)) || 0);
+  let policy: BudgetPolicyRow | null;
+  try {
+    policy = await getBudgetPolicy(env, params.accountId, at);
+  } catch (err) {
+    reportBudgetFault('reserveBudgetForCall', err);
+    if (isBudgetSchemaMissingError(err)) return { ok: true, reservationId: null };
+    return { ok: false, halted: true };
+  }
+  if (!policy || policy.hard_stop_enabled !== 1) return { ok: true, reservationId: null };
+
+  const window = budgetWindowFor(at);
+  const windowEnd = window.endMs ?? Number.MAX_SAFE_INTEGER;
+
+  if (estimated <= 0) {
+    try {
+      const spent = await countWindowSpend(env, params.accountId, window);
+      if (spent < policy.amount_cents) return { ok: true, reservationId: null };
+    } catch (err) {
+      reportBudgetFault('reserveBudgetForCall', err);
+      if (isBudgetSchemaMissingError(err)) return { ok: true, reservationId: null };
+      return { ok: false, halted: true };
+    }
+    if (await hasBudgetOverride(env, params.accountId, at)) return { ok: true, reservationId: null };
+    return { ok: false, halted: true };
+  }
+
+  const id = crypto.randomUUID();
+  try {
+    const inserted = await env.DB.prepare(
+      `INSERT INTO cost_events
+         (id, account_id, project_id, tool_name, provider, billed_cents, credit_class, source, run_id,
+          credential_kind, credential_id, created_at)
+       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+       WHERE (
+         SELECT COALESCE(SUM(billed_cents), 0)
+         FROM cost_events
+         WHERE account_id = ? AND created_at >= ? AND created_at < ?
+       ) + ? <= ?`,
+    )
+      .bind(
+        id,
+        params.accountId,
+        params.projectId ?? null,
+        params.toolName ?? 'unknown',
+        params.provider ?? 'dataforseo',
+        estimated,
+        params.creditClass ?? 'paid',
+        params.source ?? 'rate_card',
+        params.runId ?? null,
+        params.credentialKind ?? null,
+        params.credentialId ?? null,
+        at,
+        params.accountId,
+        window.startMs,
+        windowEnd,
+        estimated,
+        policy.amount_cents,
+      )
+      .run();
+    if (inserted.meta?.changes === 1) {
+      return { ok: true, reservationId: id };
+    }
+  } catch (err) {
+    reportBudgetFault('reserveBudgetForCall', err);
+    if (isBudgetSchemaMissingError(err)) return { ok: true, reservationId: null };
+    return { ok: false, halted: true };
+  }
+
+  if (await hasBudgetOverride(env, params.accountId, at)) {
+    return { ok: true, reservationId: null };
+  }
+  return { ok: false, halted: true };
+}
+
+/**
+ * Reconciles an atomic budget reservation after tool execution.
+ * Updates `billed_cents` to the actual cost when > 0, or deletes the reservation row on error / 0 cost.
+ */
+export async function settleBudgetReservation(
+  env: UserStoreEnv,
+  reservationId: string | null,
+  actualCents: number,
+): Promise<void> {
+  if (!reservationId || !env.DB) return;
+  const actual = Math.max(0, Math.floor(Number(actualCents)) || 0);
+  if (actual <= 0) {
+    await env.DB.prepare(`DELETE FROM cost_events WHERE id = ?`).bind(reservationId).run();
+    return;
+  }
+  await env.DB.prepare(`UPDATE cost_events SET billed_cents = ? WHERE id = ?`).bind(actual, reservationId).run();
+}
+
+export type BudgetSoftAlertSummary = {
+  threshold: number;
+  percent: number;
+  spentCents: number;
+  limitCents: number;
+};
+
+/**
+ * Post-execution settlement and soft-alert evaluation for paid MCP tool calls.
+ * Never turns a completed tool call into an error.
+ */
+export async function finalizePaidToolBudget(
+  env: UserStoreEnv,
+  opts: { reservationId: string | null; isError: boolean; cost: CostEventInput & { now: number } },
+): Promise<BudgetSoftAlertSummary | null> {
+  if (opts.isError) {
+    await settleBudgetReservation(env, opts.reservationId, 0).catch((err) => {
+      console.error('[budgets] settleBudgetReservation release failed:', errorText(err));
+    });
+    return null;
+  }
+  const billed = Math.max(0, Math.floor(Number(opts.cost.billedCents)) || 0);
+  try {
+    if (opts.reservationId) {
+      await settleBudgetReservation(env, opts.reservationId, billed);
+    } else if (billed > 0) {
+      await recordCostEvent(env, opts.cost);
+    }
+  } catch (err) {
+    console.error('[budgets] cost settlement failed after paid tool execution:', errorText(err));
+  }
+  if (billed <= 0) return null;
+  try {
+    const status = await getBudgetStatus(env, opts.cost.accountId, opts.cost.now);
+    if (status.policy && status.state !== 'ok' && status.state !== 'hard_stop') {
+      const alert = await evaluateSoftAlerts(env, opts.cost.accountId, status, opts.cost.now);
+      if (alert?.recorded) {
+        return {
+          threshold: alert.threshold,
+          percent: Math.round(status.percent * 100) / 100,
+          spentCents: status.spentCents,
+          limitCents: status.policy.amount_cents,
+        };
+      }
+    }
+  } catch (err) {
+    console.error('[budgets] soft-alert evaluation failed (alert only, not blocking):', errorText(err));
+  }
+  return null;
+}
+
 /**
  * Post-paid-call soft threshold evaluation (alerting path: fail open). Given
  * the status recomputed after a cost event landed, record a deduped incident

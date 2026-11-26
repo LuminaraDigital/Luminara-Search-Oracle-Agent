@@ -3,9 +3,17 @@
  * the merchant-registered contract address, and voucher redemption records only.
  * Invariants are documented in worker/README.md and specs/0015-smb-launchpad.md.
  */
+import { verifyMessage, type Address, type Hex } from 'viem';
 import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
 import { billingId, json } from './workerUtils';
+import {
+  MAX_SMALL_BODY_BYTES,
+  defaultPortFetcher,
+  fetchPublicUrl,
+  readBody,
+  safePublicUrl,
+} from './security';
 import { enforceDualRateLimit } from './securityHardening';
 import {
   LAUNCHPAD_LIMITS,
@@ -15,6 +23,7 @@ import {
 } from '../services/launchpad/compliance';
 import {
   VOUCHER_CODE_RE,
+  buildContractRegistrationMessage,
   generateVoucherCode,
   isLaunchpadChain,
   isLaunchpadNetwork,
@@ -43,8 +52,18 @@ const DOMAIN_RE = /^(?=.{4,253}$)([a-z0-9-]{1,63}\.)+[a-z]{2,63}$/;
 const ABN_NZBN_RE = /^[0-9 ]{11,17}$/;
 const MIN_EXPIRY_MONTHS = 36;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const TELEGRAM_CHAT_RE = /^(-?[0-9]{5,16}|@[a-zA-Z0-9_]{4,32})$/;
-const WEBHOOK_RE = /^https:\/\/[^\s/$.?#].[^\s]*$/i;
+const TELEGRAM_USER_ID_RE = /^[0-9]{5,16}$/;
+const SIGNATURE_HEX_RE = /^0x[0-9a-fA-F]{130,}$/;
+const SIGNATURE_NONCE_RE = /^[A-Za-z0-9._-]{1,128}$/;
+export const CONTRACT_SIGNATURE_MAX_AGE_MS = 10 * 60 * 1000;
+
+export { buildContractRegistrationMessage };
+
+function isSafeHttpsWebhookUrl(raw: string): URL | null {
+  const parsed = safePublicUrl(raw);
+  if (!parsed || parsed.protocol !== 'https:' || parsed.port) return null;
+  return parsed;
+}
 
 export interface MilestoneAlertPayload {
   campaignId: string;
@@ -71,21 +90,40 @@ export async function dispatchMilestoneAlerts(
     try {
       const botToken = env.TELEGRAM_BOT_TOKEN || env.BOT_TOKEN;
       if (sub.channel === 'telegram' && botToken) {
+        if (!TELEGRAM_USER_ID_RE.test(sub.subscriber_ref)) {
+          errors++;
+          continue;
+        }
         const text = `Milestone Alert: ${payload.businessName} submitted proof for milestone #${payload.milestoneIndex + 1} (${payload.campaignTitle}).\n\nProof: ${payload.proofUri}\n\nChallenge window ends: ${new Date(payload.challengeEndsAt * 1000).toUTCString()}. Review proof or lodge objections in the app before it closes.`;
-        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        const resp = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ chat_id: sub.subscriber_ref, text }),
         });
-        dispatched++;
+        if (resp.ok) dispatched++;
+        else errors++;
       } else if (sub.channel === 'webhook') {
-        await fetch(sub.subscriber_ref, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ event: 'milestone_submitted', ...payload }),
-          signal: AbortSignal.timeout(5000),
-        });
-        dispatched++;
+        const parsedHook = isSafeHttpsWebhookUrl(sub.subscriber_ref);
+        if (!parsedHook) {
+          errors++;
+          continue;
+        }
+        const res = await fetchPublicUrl(
+          parsedHook.toString(),
+          {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ event: 'milestone_submitted', ...payload }),
+            signal: AbortSignal.timeout(5000),
+          },
+          {
+            fetcher: defaultPortFetcher(fetch),
+            dohFetcher: fetch,
+            maxRedirects: 0,
+          },
+        );
+        if (res.ok && res.response.ok) dispatched++;
+        else errors++;
       } else {
         // Email channel or logged notification
         dispatched++;
@@ -124,11 +162,11 @@ function str(v: unknown, max: number): string | null {
   return s && s.length <= max ? s : null;
 }
 
-function requireUser(who: Who): { accountId: string } | Response {
+function requireUser(who: Who): { user: HostedIdentity; accountId: string } | Response {
   if (!who.user) {
     return json({ ok: false, error: who.error || 'Sign in to manage campaigns.', code: 'AUTH_REQUIRED' }, 401);
   }
-  return { accountId: billingId(who.user) };
+  return { user: who.user, accountId: billingId(who.user) };
 }
 
 async function rateLimit(env: Env, request: Request, action: string, accountId: string | null, limit: number, windowSec: number) {
@@ -138,7 +176,9 @@ async function rateLimit(env: Env, request: Request, action: string, accountId: 
 }
 
 async function readJson(request: Request): Promise<Record<string, unknown> | null> {
-  const body = await request.json().catch(() => null);
+  const read = await readBody(request, MAX_SMALL_BODY_BYTES);
+  if (!read.ok) return null;
+  const body = read.value;
   return body && typeof body === 'object' && !Array.isArray(body) ? (body as Record<string, unknown>) : null;
 }
 
@@ -293,7 +333,7 @@ export async function handleLaunchpadRoute(request: Request, env: Env, who: Who,
       const auth = requireUser(who);
       if (auth instanceof Response) return auth;
       const rows = await db.prepare(
-        `SELECT ${PUBLIC_CAMPAIGN_COLUMNS}, compliance_status, updated_at FROM launchpad_campaigns
+        `SELECT ${PUBLIC_CAMPAIGN_COLUMNS}, account_id, compliance_status, updated_at FROM launchpad_campaigns
          WHERE account_id = ? ORDER BY created_at DESC LIMIT 50`,
       ).bind(auth.accountId).all();
       return json({ ok: true, campaigns: rows.results || [] });
@@ -376,7 +416,10 @@ export async function handleLaunchpadRoute(request: Request, env: Env, who: Who,
     const network = String(campaign.network);
     if (!isLaunchpadChain(chain) || !isLaunchpadNetwork(network)) return json({ ok: false, error: 'Campaign chain is invalid' }, 409);
     const envVars = env as unknown as Record<string, string | undefined>;
-    const skipVerify = network === 'testnet' && envVars.LAUNCHPAD_SKIP_CHAIN_VERIFY === 'true';
+    const skipVerify =
+      network === 'testnet' &&
+      envVars.LAUNCHPAD_SKIP_CHAIN_VERIFY === 'true' &&
+      envVars.ENVIRONMENT !== 'production';
     let merchantWallet: string | null = null;
     if (!skipVerify) {
       const factory = resolveFactoryAddress(chain, network, envVars);
@@ -394,6 +437,48 @@ export async function handleLaunchpadRoute(request: Request, env: Env, who: Who,
       });
       if (typeof verified === 'string') return json({ ok: false, error: verified }, 422);
       merchantWallet = verified.merchantWallet;
+
+      // M-15: Require an EIP-191 wallet signature proving the caller controls verified.merchantWallet.
+      const signature = typeof body?.signature === 'string' ? body.signature.trim() : '';
+      const rawTimestamp = body?.timestamp ?? body?.signatureTimestamp;
+      const timestamp = typeof rawTimestamp === 'number' ? rawTimestamp : NaN;
+      const rawNonce = body?.nonce;
+      if (rawNonce !== undefined && rawNonce !== '') {
+        if (typeof rawNonce !== 'string' || !SIGNATURE_NONCE_RE.test(rawNonce.trim())) {
+          return json({ ok: false, error: 'nonce must be 1 to 128 safe characters.' }, 400);
+        }
+      }
+      const nonce = typeof rawNonce === 'string' && rawNonce.trim() ? rawNonce.trim() : undefined;
+      if (!SIGNATURE_HEX_RE.test(signature) || !Number.isSafeInteger(timestamp)) {
+        return json(
+          { ok: false, error: 'A valid EIP-191 wallet signature and timestamp are required to register a contract.' },
+          401,
+        );
+      }
+      if (Math.abs(Date.now() - timestamp) > CONTRACT_SIGNATURE_MAX_AGE_MS) {
+        return json(
+          { ok: false, error: 'Wallet signature timestamp is expired or outside the allowed window.' },
+          401,
+        );
+      }
+      const message = buildContractRegistrationMessage({
+        campaignId,
+        contractAddress: address,
+        accountId: auth.accountId,
+        timestamp,
+        nonce,
+      });
+      const sigValid = await verifyMessage({
+        address: merchantWallet as Address,
+        message,
+        signature: signature as Hex,
+      }).catch(() => false);
+      if (!sigValid) {
+        return json(
+          { ok: false, error: 'Wallet signature does not match the merchant wallet that deployed this contract.' },
+          403,
+        );
+      }
     }
 
     const now = new Date().toISOString();
@@ -487,12 +572,14 @@ export async function handleLaunchpadRoute(request: Request, env: Env, who: Who,
     }
   }
 
-  // Backer opt-in to challenge window and milestone notifications.
+  // Backer opt-in to challenge window and milestone notifications (authenticated + ownership-bound).
   const subscribeMatch = /^\/launchpad\/campaigns\/([^/]+)\/subscribe$/.exec(path);
   if (subscribeMatch && method === 'POST') {
+    const auth = requireUser(who);
+    if (auth instanceof Response) return auth;
     const campaignId = subscribeMatch[1];
     if (!ID_RE.test(campaignId)) return json({ ok: false, error: 'Invalid campaign id' }, 400);
-    const limited = await rateLimit(env, request, 'launchpad_subscribe', who.user ? billingId(who.user) : null, 15, 60);
+    const limited = await rateLimit(env, request, 'launchpad_subscribe', auth.accountId, 15, 60);
     if (limited) return limited;
     const body = await readJson(request);
     const channel = String(body?.channel || 'email').trim().toLowerCase();
@@ -503,11 +590,25 @@ export async function handleLaunchpadRoute(request: Request, env: Env, who: Who,
     if (channel === 'email' && !EMAIL_RE.test(subscriberRef)) {
       return json({ ok: false, error: 'Please enter a valid email address.' }, 400);
     }
-    if (channel === 'telegram' && !TELEGRAM_CHAT_RE.test(subscriberRef)) {
-      return json({ ok: false, error: 'Please enter a valid Telegram chat ID or @username.' }, 400);
+    if (channel === 'telegram') {
+      if (auth.user.source !== 'telegram' || !TELEGRAM_USER_ID_RE.test(auth.user.id)) {
+        return json(
+          { ok: false, error: 'Telegram alerts require a Telegram sign-in and can only target your own account.' },
+          403,
+        );
+      }
+      if (!TELEGRAM_USER_ID_RE.test(subscriberRef)) {
+        return json({ ok: false, error: 'Please enter your numeric Telegram chat ID.' }, 400);
+      }
+      if (subscriberRef !== auth.user.id) {
+        return json(
+          { ok: false, error: 'Telegram alerts can only be registered for your own Telegram account ID.' },
+          403,
+        );
+      }
     }
-    if (channel === 'webhook' && !WEBHOOK_RE.test(subscriberRef)) {
-      return json({ ok: false, error: 'Webhook URL must be a valid https:// endpoint.' }, 400);
+    if (channel === 'webhook' && !isSafeHttpsWebhookUrl(subscriberRef)) {
+      return json({ ok: false, error: 'Webhook URL must be a public https:// endpoint on the default port.' }, 400);
     }
     const wallet = body?.walletAddress ? normaliseEvmAddress(body.walletAddress) : null;
     const exists = await db.prepare(`SELECT id FROM launchpad_campaigns WHERE id = ? AND listed_at IS NOT NULL`).bind(campaignId).first();
@@ -515,26 +616,37 @@ export async function handleLaunchpadRoute(request: Request, env: Env, who: Who,
 
     const subId = newId('sub');
     const nowIso = new Date().toISOString();
-    await db.prepare(
-      `INSERT INTO launchpad_subscriptions (id, campaign_id, subscriber_ref, channel, wallet_address, created_at)
-       VALUES (?, ?, ?, ?, ?, ?)
+    const res = await db.prepare(
+      `INSERT INTO launchpad_subscriptions (id, campaign_id, account_id, subscriber_ref, channel, wallet_address, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(campaign_id, subscriber_ref) DO UPDATE SET
          channel = excluded.channel,
-         wallet_address = excluded.wallet_address`,
-    ).bind(subId, campaignId, subscriberRef, channel, wallet, nowIso).run();
+         wallet_address = excluded.wallet_address
+       WHERE launchpad_subscriptions.account_id = excluded.account_id`,
+    ).bind(subId, campaignId, auth.accountId, subscriberRef, channel, wallet, nowIso).run();
+    if (Number(res.meta?.changes ?? 0) !== 1) {
+      return json({ ok: false, error: 'That subscription target is already registered by another account.' }, 409);
+    }
 
     return json({ ok: true, campaignId, subscriberRef, channel });
   }
 
-  // Backer unsubscribe
+  // Backer unsubscribe (authenticated + ownership-enforced).
   const unsubscribeMatch = /^\/launchpad\/campaigns\/([^/]+)\/unsubscribe$/.exec(path);
   if (unsubscribeMatch && method === 'POST') {
+    const auth = requireUser(who);
+    if (auth instanceof Response) return auth;
     const campaignId = unsubscribeMatch[1];
     if (!ID_RE.test(campaignId)) return json({ ok: false, error: 'Invalid campaign id' }, 400);
     const body = await readJson(request);
     const subscriberRef = String(body?.subscriberRef || '').trim();
     if (!subscriberRef) return json({ ok: false, error: 'subscriberRef is required.' }, 400);
-    await db.prepare(`DELETE FROM launchpad_subscriptions WHERE campaign_id = ? AND subscriber_ref = ?`).bind(campaignId, subscriberRef).run();
+    const res = await db.prepare(
+      `DELETE FROM launchpad_subscriptions WHERE campaign_id = ? AND subscriber_ref = ? AND account_id = ?`,
+    ).bind(campaignId, subscriberRef, auth.accountId).run();
+    if (Number(res.meta?.changes ?? 0) !== 1) {
+      return json({ ok: false, error: 'Subscription not found' }, 404);
+    }
     return json({ ok: true, removed: true });
   }
 

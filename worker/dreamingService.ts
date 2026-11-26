@@ -28,6 +28,13 @@ import { checkHostedQuota, QUOTA_CAPACITY_ERROR, refundMeteredQuota } from './qu
 const DREAM_RUN_LIMIT_ERROR =
   "Run now uses one of your free daily requests on free plans, and today's are used up. A paid plan lifts that daily cap, or try again after 00:00 UTC.";
 
+/** Behavioral and steering memory mutations must always be reviewed by a human operator. */
+const APPROVAL_REQUIRED_MEMORY_TYPES = new Set<string>([
+  'preference_memory',
+  'action_memory',
+  'business_dna',
+]);
+
 export async function getActiveBusinessMemories(
   env: Env,
   accountId: string,
@@ -154,7 +161,10 @@ export async function executeDreamRun(
       }
     }
 
-    const requiresApproval = Boolean(p.requiresApproval);
+    const requiresApproval =
+      Boolean(p.requiresApproval) ||
+      p.action === 'deprecate' ||
+      APPROVAL_REQUIRED_MEMORY_TYPES.has(p.memoryType);
     const initialStatus = requiresApproval ? 'pending' : 'auto_applied';
 
     if (requiresApproval) {

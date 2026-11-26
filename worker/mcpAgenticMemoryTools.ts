@@ -5,7 +5,7 @@
  * Extracted from `worker/mcpServer.ts` to keep `mcpServer.ts` below the 1,000-line ceiling.
  * No em dashes in copy.
  */
-import type { McpToolDef, McpToolResult } from './mcpServer';
+import type { McpToolContext, McpToolDef, McpToolResult } from './mcpServer';
 import {
   forgetScopedFact,
   queryTemporalTimeline,
@@ -18,6 +18,65 @@ import {
   createMemoryVaultSnapshot,
   verifySnapshotLeaf,
 } from './memoryVaultService';
+import { normalizeMemoryDomain } from './scopedMemory';
+
+function isDelegatedAgentCredential(ctx: McpToolContext): boolean {
+  const kind = ctx.credential?.kind;
+  return kind === 'oauth' || kind === 'habitat' || Boolean(ctx.user?.id?.startsWith('hab:'));
+}
+
+function normalizePredicateKey(raw: string): string {
+  return raw.trim().toLowerCase().replace(/[\s-]+/g, '_');
+}
+
+function resolveRememberScope(
+  args: Record<string, unknown>,
+  ctx: McpToolContext,
+): { ok: true; projectId: string | null; domain: string | null } | { ok: false; error: McpToolResult } {
+  const reqProjectId = typeof args.projectId === 'string' && args.projectId.trim() ? args.projectId.trim() : null;
+  const reqDomain = typeof args.domain === 'string' && args.domain.trim() ? args.domain.trim() : null;
+  const isHabitat = ctx.credential?.kind === 'habitat' || Boolean(ctx.user?.id?.startsWith('hab:'));
+  if (!isHabitat) {
+    return { ok: true, projectId: reqProjectId, domain: reqDomain };
+  }
+  const boundProjectId =
+    typeof ctx.credential?.projectId === 'string' && ctx.credential.projectId.trim()
+      ? ctx.credential.projectId.trim()
+      : null;
+  const boundDomain = normalizeMemoryDomain(ctx.credential?.domain);
+  if (!boundProjectId) {
+    return {
+      ok: false,
+      error: toTextResult(
+        'Habitat memory_remember writes require a project-bound Habitat token.',
+        { code: 'HABITAT_PROJECT_SCOPE_VIOLATION' },
+        true,
+      ),
+    };
+  }
+  if (reqProjectId && reqProjectId !== boundProjectId) {
+    return {
+      ok: false,
+      error: toTextResult(
+        `Habitat token is bound to project "${boundProjectId}" and cannot write to "${reqProjectId}".`,
+        { code: 'HABITAT_PROJECT_SCOPE_VIOLATION', boundProjectId, requestedProjectId: reqProjectId },
+        true,
+      ),
+    };
+  }
+  const normReqDomain = normalizeMemoryDomain(reqDomain);
+  if (normReqDomain && (!boundDomain || normReqDomain !== boundDomain)) {
+    return {
+      ok: false,
+      error: toTextResult(
+        `Habitat token is bound to domain "${boundDomain || 'none'}" and cannot write to "${normReqDomain}".`,
+        { code: 'HABITAT_PROJECT_SCOPE_VIOLATION', boundDomain, requestedDomain: normReqDomain },
+        true,
+      ),
+    };
+  }
+  return { ok: true, projectId: boundProjectId, domain: boundDomain };
+}
 
 function toTextResult(
   text: string,
@@ -56,15 +115,25 @@ export const AGENTIC_MEMORY_MCP_TOOLS: McpToolDef[] = [
       additionalProperties: false,
     },
     handler: async (args, ctx) => {
+      const scope = resolveRememberScope(args, ctx);
+      if (!scope.ok) return scope.error;
+
       const subjectEntity = typeof args.subjectEntity === 'string' ? args.subjectEntity.trim() : '';
       const predicate = typeof args.predicate === 'string' ? args.predicate.trim() : '';
       const objectEntity = typeof args.objectEntity === 'string' ? args.objectEntity.trim() : '';
 
       if (subjectEntity && predicate && objectEntity) {
+        if (normalizePredicateKey(predicate) === 'never_bring_up' && isDelegatedAgentCredential(ctx)) {
+          return toTextResult(
+            'never_bring_up rules cannot be written by an OAuth or Habitat agent credential.',
+            { code: 'OWNER_RULE_WRITE_FORBIDDEN' },
+            true,
+          );
+        }
         const edgeRes = await upsertTemporalEdge(ctx.env, {
           accountId: ctx.accountId,
-          projectId: typeof args.projectId === 'string' ? args.projectId : null,
-          domain: typeof args.domain === 'string' ? args.domain : null,
+          projectId: scope.projectId,
+          domain: scope.domain,
           subjectEntity,
           predicate,
           objectEntity,
@@ -93,16 +162,27 @@ export const AGENTIC_MEMORY_MCP_TOOLS: McpToolDef[] = [
           true,
         );
       }
+      const normalizedKind = typeof args.kind === 'string' ? args.kind.trim().toLowerCase() : 'fact';
+      if (normalizedKind === 'constraint' && isDelegatedAgentCredential(ctx)) {
+        return toTextResult(
+          'Constraint rules cannot be written by an OAuth or Habitat agent credential.',
+          { code: 'OWNER_RULE_WRITE_FORBIDDEN' },
+          true,
+        );
+      }
+      const isHabitat = ctx.credential?.kind === 'habitat' || Boolean(ctx.user?.id?.startsWith('hab:'));
       const res = await rememberScopedFact(ctx.env, {
         accountId: ctx.accountId,
         text,
-        projectId: typeof args.projectId === 'string' ? args.projectId : null,
-        domain: typeof args.domain === 'string' ? args.domain : null,
-        kind: typeof args.kind === 'string' ? (args.kind as MemoryFactKind) : 'fact',
+        projectId: scope.projectId,
+        domain: scope.domain,
+        kind: normalizedKind as MemoryFactKind,
         importance: typeof args.importance === 'number' ? args.importance : undefined,
         confidence: typeof args.confidence === 'number' ? args.confidence : undefined,
         supersedesFactId: typeof args.supersedesFactId === 'string' ? args.supersedesFactId : null,
         source: 'mcp',
+        allowConstraintMutation: !isDelegatedAgentCredential(ctx),
+        restrictSupersedeProjectId: isHabitat ? scope.projectId : undefined,
       });
       if (!res.ok) return toTextResult(res.error, { code: res.code }, true);
       return toTextResult(
@@ -173,9 +253,34 @@ export const AGENTIC_MEMORY_MCP_TOOLS: McpToolDef[] = [
     handler: async (args, ctx) => {
       const factId = typeof args.factId === 'string' ? args.factId.trim() : '';
       if (!factId) return toTextResult('factId required', undefined, true);
+      const isHabitat = ctx.credential?.kind === 'habitat' || Boolean(ctx.user?.id?.startsWith('hab:'));
+      const boundProjectId =
+        typeof ctx.credential?.projectId === 'string' && ctx.credential.projectId.trim()
+          ? ctx.credential.projectId.trim()
+          : null;
+      if (isHabitat && !boundProjectId) {
+        return toTextResult(
+          'Habitat memory_forget requires a project-bound Habitat token.',
+          { code: 'HABITAT_PROJECT_SCOPE_VIOLATION' },
+          true,
+        );
+      }
       const reason = typeof args.reason === 'string' ? args.reason.trim() : 'mcp_forget';
-      const res = await forgetScopedFact(ctx.env, ctx.accountId, factId, reason);
-      if (!res.ok) return toTextResult(res.error || 'Memory fact not found', undefined, true);
+      const res = await forgetScopedFact(
+        ctx.env,
+        ctx.accountId,
+        factId,
+        reason,
+        !isDelegatedAgentCredential(ctx),
+        isHabitat ? boundProjectId : undefined,
+      );
+      if (!res.ok) {
+        return toTextResult(
+          res.error || 'Memory fact not found',
+          res.code ? { code: res.code } : undefined,
+          true,
+        );
+      }
       return toTextResult(`Deleted memory fact ${factId}.`, { factId, deleted: true });
     },
   },

@@ -230,6 +230,10 @@ export async function decideBookingAppointment(
     return { ok: false, error: 'Appointment not found', status: 404 };
   }
 
+  if (row.approval_status !== 'pending_agent_signoff') {
+    return { ok: false, error: 'Appointment has already been decided.', status: 409 };
+  }
+
   const now = args.now ?? Date.now();
   const rawSlots = safeJsonParse<unknown[]>(row.proposed_slots_json || '[]', []);
   const proposedSlots = rawSlots
@@ -237,13 +241,16 @@ export async function decideBookingAppointment(
     .filter((s): s is ProposedBookingSlot => s !== null);
 
   if (args.decision === 'decline') {
-    await env.DB.prepare(
+    const declined = await env.DB.prepare(
       `UPDATE appraisal_appointments
        SET approval_status = 'declined', approved_by_user_id = ?, approved_at = ?, updated_at = ?
-       WHERE id = ? AND account_id = ?`,
+       WHERE id = ? AND account_id = ? AND approval_status = 'pending_agent_signoff'`,
     )
       .bind(args.actorUserId, now, now, row.id, args.accountId)
       .run();
+    if (Number(declined.meta?.changes ?? 0) !== 1) {
+      return { ok: false, error: 'Appointment has already been decided.', status: 409 };
+    }
     await env.DB.prepare(
       `UPDATE enquiries SET status = 'qualified', updated_at = ?
        WHERE id = ? AND account_id = ? AND status = 'booking_proposed'`,
@@ -274,19 +281,29 @@ export async function decideBookingAppointment(
     };
   }
 
-  const matchKey = (args.selectedSlotId || args.selectedSlotIso || '').trim();
-  const matchedSlot = matchKey
-    ? proposedSlots.find(
-        (s) =>
-          s.slotId === matchKey ||
-          s.label === matchKey ||
-          new Date(s.startAt).toISOString() === matchKey,
-      )
-    : undefined;
+  const hasSlotId = args.selectedSlotId !== undefined;
+  const hasSlotIso = args.selectedSlotIso !== undefined;
+  const slotIdKey = hasSlotId ? args.selectedSlotId!.trim() : '';
+  const slotIsoKey = hasSlotIso ? args.selectedSlotIso!.trim() : '';
+  if ((hasSlotId && !slotIdKey) || (hasSlotIso && !slotIsoKey)) {
+    return {
+      ok: false,
+      error: 'Selected booking slot not found in proposedSlots.',
+      status: 400,
+    };
+  }
+
   const selectedSlot =
-    matchedSlot ??
-    proposedSlots[0] ??
-    (args.selectedSlotIso ? normalizeProposedSlot(args.selectedSlotIso, 0, now) : null);
+    hasSlotId || hasSlotIso
+      ? proposedSlots.find((s) => {
+          const idMatches = !hasSlotId || s.slotId === slotIdKey;
+          const isoMatches =
+            !hasSlotIso ||
+            s.label === slotIsoKey ||
+            new Date(s.startAt).toISOString() === slotIsoKey;
+          return idMatches && isoMatches;
+        })
+      : proposedSlots[0];
 
   if (!selectedSlot) {
     return {
@@ -298,7 +315,7 @@ export async function decideBookingAppointment(
 
   const signoffReceiptId = `signoff_${row.id}_${now}`;
 
-  await env.DB.prepare(
+  const approved = await env.DB.prepare(
     `UPDATE appraisal_appointments
      SET approval_status = 'approved',
          confirmed_start_at = ?,
@@ -307,7 +324,7 @@ export async function decideBookingAppointment(
          approved_at = ?,
          calendar_external_id = ?,
          updated_at = ?
-     WHERE id = ? AND account_id = ?`,
+     WHERE id = ? AND account_id = ? AND approval_status = 'pending_agent_signoff'`,
   )
     .bind(
       selectedSlot.startAt,
@@ -321,6 +338,10 @@ export async function decideBookingAppointment(
     )
     .run();
 
+  if (Number(approved.meta?.changes ?? 0) !== 1) {
+    return { ok: false, error: 'Appointment has already been decided.', status: 409 };
+  }
+
   await recordOutcomeStageEvent(env, {
     accountId: args.accountId,
     projectId: row.project_id,
@@ -328,6 +349,7 @@ export async function decideBookingAppointment(
     stage: 'agent_approved_booking',
     evidenceType: 'agent_signoff_receipt',
     evidenceRef: signoffReceiptId,
+    appointmentId: row.id,
     notes: `Approved slot ${selectedSlot.label} by ${args.actorUserId}`,
     recordedBy: args.actorUserId,
     now,

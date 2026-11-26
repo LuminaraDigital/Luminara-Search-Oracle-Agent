@@ -60,6 +60,17 @@ export const TABLE_EXPORTS: ReadonlyArray<{ key: string; table: string; columns?
   { key: 'organizationMemberships', table: 'organization_memberships', columns: 'org_id, role, status, joined_at', where: OWN_USER_IDS },
   { key: 'launchpadCampaigns', table: 'launchpad_campaigns' },
   {
+    key: 'launchpadSubscriptions',
+    table: 'launchpad_subscriptions',
+    columns: 'campaign_id, channel, wallet_address, created_at',
+  },
+  {
+    key: 'sentinelTargetSlots',
+    table: 'sentinel_target_slots',
+    columns: 'domain, created_at',
+    where: 'owner_id = ? OR owner_id IN (SELECT id FROM users WHERE account_id = ?)',
+  },
+  {
     key: 'stripeCredits',
     table: 'stripe_credited_sessions',
     columns: 'plan_id, amount_total, currency, credited_at, granted_days, granted_until, reversed_at, reversal_reason',

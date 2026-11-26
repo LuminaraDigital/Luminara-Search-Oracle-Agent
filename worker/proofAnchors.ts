@@ -23,7 +23,10 @@ export type ProofAnchorInput = {
 };
 
 function newId(prefix: string): string {
-  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+  const bytes = new Uint8Array(8);
+  crypto.getRandomValues(bytes);
+  const rand = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  return `${prefix}_${Date.now().toString(36)}_${rand}`;
 }
 
 function stablePaymentAnchorId(txHash: string): string {

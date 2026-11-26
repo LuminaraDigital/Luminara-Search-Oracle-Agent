@@ -77,6 +77,8 @@ export interface RememberFactInput {
   supersedesFactId?: string | null;
   expiresAt?: number | null;
   source?: string;
+  allowConstraintMutation?: boolean;
+  restrictSupersedeProjectId?: string | null;
 }
 
 export interface UpsertEdgeInput {
@@ -235,17 +237,22 @@ export async function rememberScopedFact(
       .bind(input.accountId, contentSha256)
       .first<Record<string, unknown>>();
 
+    const allowConstraintMutation = input.allowConstraintMutation !== false;
+
     if (existing && typeof existing.id === 'string') {
+      const effectiveKind: MemoryFactKind = existing.kind === 'constraint' ? 'constraint' : kind;
       const mergedImportance = Math.max(Number(existing.importance ?? 0.5), importance);
       const mergedConfidence = Math.max(Number(existing.confidence ?? 0.8), confidence);
-      const nextExpiresAt = expiresAt ?? (typeof existing.expires_at === 'number' && existing.expires_at > now ? existing.expires_at : null);
+      const keepExpiry = typeof existing.expires_at === 'number' && existing.expires_at > now ? existing.expires_at : null;
+      const nextExpiresAt = existing.kind === 'constraint' && !allowConstraintMutation ? keepExpiry : (expiresAt ?? keepExpiry);
       await env.DB.prepare(
         `UPDATE memory_facts
-         SET kind = ?, importance = ?, confidence = ?, status = 'active', expires_at = ?, updated_at = ?,
+         SET kind = CASE WHEN kind = 'constraint' THEN 'constraint' ELSE ? END,
+             importance = ?, confidence = ?, status = 'active', expires_at = ?, updated_at = ?,
              project_id = COALESCE(project_id, ?), domain = COALESCE(domain, ?)
          WHERE id = ? AND account_id = ?`,
       )
-        .bind(kind, mergedImportance, mergedConfidence, nextExpiresAt, now, projectId, domain, existing.id, input.accountId)
+        .bind(effectiveKind, mergedImportance, mergedConfidence, nextExpiresAt, now, projectId, domain, existing.id, input.accountId)
         .run();
 
       return {
@@ -255,16 +262,34 @@ export async function rememberScopedFact(
         fact: rowToScopedFact(
           {
             ...existing,
-            kind,
+            kind: effectiveKind,
             status: 'active',
             importance: mergedImportance,
             confidence: mergedConfidence,
             expires_at: nextExpiresAt,
             updated_at: now,
           },
-          { accountId: input.accountId, projectId, domain, kind, text, now, expiresAt: nextExpiresAt },
+          { accountId: input.accountId, projectId, domain, kind: effectiveKind, text, now, expiresAt: nextExpiresAt },
         ),
       };
+    }
+
+    let supersededFactId: string | null = null;
+    if (input.supersedesFactId) {
+      const oldRow = await env.DB.prepare(
+        `SELECT id, kind, project_id FROM memory_facts WHERE id = ? AND account_id = ? AND (status IS NULL OR status = 'active')`,
+      )
+        .bind(input.supersedesFactId, input.accountId)
+        .first<{ id: string; kind: string | null; project_id: string | null }>();
+      if (oldRow?.id) {
+        if (!allowConstraintMutation && oldRow.kind === 'constraint') {
+          return { ok: false, error: 'Constraint rules cannot be superseded by a delegated agent credential.', code: 'OWNER_RULE_WRITE_FORBIDDEN' };
+        }
+        if (input.restrictSupersedeProjectId && oldRow.project_id !== input.restrictSupersedeProjectId) {
+          return { ok: false, error: 'Habitat token cannot supersede a memory fact outside its bound project.', code: 'HABITAT_PROJECT_SCOPE_VIOLATION' };
+        }
+        supersededFactId = oldRow.id;
+      }
     }
 
     const newId = `mem_${now.toString(36)}_${crypto.randomUUID().slice(0, 8)}`;
@@ -276,23 +301,13 @@ export async function rememberScopedFact(
     });
 
     const statements: D1PreparedStatement[] = [];
-    let supersededFactId: string | null = null;
-
-    if (input.supersedesFactId) {
-      const oldRow = await env.DB.prepare(
-        `SELECT id FROM memory_facts WHERE id = ? AND account_id = ? AND (status IS NULL OR status = 'active')`,
-      )
-        .bind(input.supersedesFactId, input.accountId)
-        .first<{ id: string }>();
-      if (oldRow?.id) {
-        supersededFactId = oldRow.id;
-        statements.push(
-          env.DB.prepare(
-            `UPDATE memory_facts SET status = 'superseded', superseded_by = ?, updated_at = ?
-             WHERE id = ? AND account_id = ?`,
-          ).bind(newId, now, oldRow.id, input.accountId),
-        );
-      }
+    if (supersededFactId) {
+      statements.push(
+        env.DB.prepare(
+          `UPDATE memory_facts SET status = 'superseded', superseded_by = ?, updated_at = ?
+           WHERE id = ? AND account_id = ?`,
+        ).bind(newId, now, supersededFactId, input.accountId),
+      );
     }
 
     statements.push(
@@ -361,16 +376,24 @@ export async function forgetScopedFact(
   accountId: string,
   factId: string,
   reason = 'user_or_agent_forget',
-): Promise<{ ok: boolean; deleted: boolean; error?: string }> {
+  allowConstraintDelete = true,
+  restrictProjectId?: string | null,
+): Promise<{ ok: boolean; deleted: boolean; error?: string; code?: string }> {
   if (!env.DB) return { ok: false, deleted: false, error: 'Database unavailable' };
   try {
     const row = await env.DB.prepare(
-      `SELECT id, text, vector_id FROM memory_facts WHERE id = ? AND account_id = ?`,
+      `SELECT id, kind, project_id, text, vector_id FROM memory_facts WHERE id = ? AND account_id = ?`,
     )
       .bind(factId, accountId)
-      .first<{ id: string; text: string; vector_id: string | null }>();
+      .first<{ id: string; kind: string | null; project_id: string | null; text: string; vector_id: string | null }>();
 
     if (!row) return { ok: false, deleted: false, error: 'Memory fact not found' };
+    if (!allowConstraintDelete && row.kind === 'constraint') {
+      return { ok: false, deleted: false, error: 'Constraint rules cannot be deleted by a delegated agent credential.', code: 'OWNER_RULE_WRITE_FORBIDDEN' };
+    }
+    if (restrictProjectId && row.project_id !== restrictProjectId) {
+      return { ok: false, deleted: false, error: 'Habitat token cannot delete a memory fact outside its bound project.', code: 'HABITAT_PROJECT_SCOPE_VIOLATION' };
+    }
 
     const now = Date.now();
     await env.DB.prepare(

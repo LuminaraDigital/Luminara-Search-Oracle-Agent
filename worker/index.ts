@@ -105,7 +105,6 @@ import {
   identifiedForRequest,
   buildSessionCookie,
   buildLogoutCookie,
-  verifyWebhookSignature,
   refuseCrossSiteSessionWrite,
   mintOpaqueSession,
   revokeOpaqueSession,
@@ -175,7 +174,7 @@ import { handleTrustReceiptsRoute, isTrustReceiptsEnabled, revokeGatewayIssuedRe
 import { handleCitationWatchRoute, runCitationWatchTick } from './citationWatch';
 import { handleAuditReceiptRoute, revokeSignedAuditReceipt } from './auditReceipts';
 import { own } from '../services/own';
-import { enforceRequestSigning, isRequestSigningRequired } from './requestSigning';
+import { enforceRequestSigning, isRequestSigningRequired, verifyAuthWebhookFallback } from './requestSigning';
 import { handleDomainVerificationRoute, isDomainVerifyEnabled, recheckVerifiedDomains } from './domainVerification';
 import { isReceiptSigningConfigured } from './receiptSigning';
 import { handleMemoryRagRoute } from './memoryRag';
@@ -731,14 +730,8 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       const refused = await enforceRequestSigning(env, request, path, read.text);
       if (refused) return withCors(refused);
     } else {
-      if (!env.AUTH_WEBHOOK_SECRET) {
-        return withCors(json({ ok: false, error: 'AUTH_WEBHOOK_SECRET is not configured on the server' }, 503));
-      }
-      const signature = request.headers.get('x-auth-signature') || request.headers.get('svix-signature') || '';
-      const isValid = await verifyWebhookSignature(read.text, signature, env.AUTH_WEBHOOK_SECRET);
-      if (!isValid) {
-        return withCors(json({ ok: false, error: 'Invalid webhook signature' }, 401));
-      }
+      const refused = await verifyAuthWebhookFallback(env, request, read.text);
+      if (refused) return withCors(refused);
     }
     let payload: any = {};
     try {
@@ -752,13 +745,28 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     const data = payload.data || payload.user || {};
     if (event === 'user.deleted' && data.id) {
       const targetId = String(data.id);
+      const rawUid = targetId.replace(/^fb:/, '');
+      const accountIds = new Set<string>([targetId, `fb:${rawUid}`]);
       if (env.DB) {
-        await env.DB.prepare(`DELETE FROM users WHERE id = ? OR firebase_uid = ?`).bind(targetId, targetId.replace(/^fb:/, '')).run();
+        const existing = await env.DB.prepare(`SELECT account_id FROM users WHERE id = ? OR firebase_uid = ?`)
+          .bind(targetId, rawUid)
+          .all<{ account_id: string | null }>()
+          .catch(() => ({ results: [] as Array<{ account_id: string | null }> }));
+        for (const row of existing.results ?? []) {
+          if (row.account_id) accountIds.add(row.account_id);
+        }
+        await env.DB.prepare(`DELETE FROM users WHERE id = ? OR firebase_uid = ?`).bind(targetId, rawUid).run();
+      }
+      const { revokeAllApiKeys } = await import('./apiKeyService');
+      const { revokeAccountOAuthKvTokens } = await import('./opaqueSession');
+      for (const acctId of accountIds) {
+        await revokeAllApiKeys(env, acctId).catch(() => undefined);
+        await revokeAccountOAuthKvTokens(env, acctId).catch(() => undefined);
       }
       if (env.LUMINARA_KV) {
         await env.LUMINARA_KV.delete(`user:${targetId}`);
         // Without this the user's sessions stay valid and the next request re-creates the users row.
-        await revokeSessionsForDeletedUser(env, targetId.replace(/^fb:/, ''));
+        await revokeSessionsForDeletedUser(env, rawUid);
       }
     } else if ((event === 'user.created' || event === 'user.updated') && (data.uid || data.id)) {
       const uid = String(data.uid || data.id).replace(/^fb:/, '');
@@ -1266,8 +1274,9 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     if (!read.ok) return withCors(json({ error: read.error }, read.status));
     const { key } = (read.value || {}) as { key?: string };
     if (!key) return withCors(json({ error: 'License key is required' }, 400));
-    const result = await activateLicenseKey(env, who.user.id, key);
-    return withCors(json(result, result.ok ? 200 : 400));
+    const result = await activateLicenseKey(env, who.user.id, key, { identity: who.user });
+    const { status, ...payload } = result;
+    return withCors(json(payload, result.ok ? 200 : (status ?? 400)));
   }
 
   // Admin License Key Generation
@@ -2087,8 +2096,8 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       }
       const ok =
         decision === 'approve'
-          ? await approveActionRequest(env, requestId, who.user.id)
-          : await denyActionRequest(env, requestId, who.user.id);
+          ? await approveActionRequest(env, requestId, who.user.id, accountId)
+          : await denyActionRequest(env, requestId, who.user.id, accountId);
       if (!ok) {
         return withCors(json({ ok: false, error: 'Could not update action request', code: 'UPDATE_FAILED' }, 409));
       }
@@ -2208,6 +2217,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
         name: typeof raw.name === 'string' ? raw.name : undefined,
         clientId,
         industryId,
+        maxClients: slot.limit,
       });
       if (!created.ok) return withCors(json({ ok: false, error: created.error }, created.status));
       if (raw.dna && typeof raw.dna === 'object') {
@@ -2319,8 +2329,9 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
             headers: {
               'content-type': 'text/html; charset=utf-8',
               'content-security-policy':
-                "default-src 'none'; style-src 'unsafe-inline'; img-src https: data:; sandbox allow-popups allow-popups-to-escape-sandbox",
+                "default-src 'none'; style-src 'unsafe-inline'; img-src https: data:; sandbox allow-popups; form-action 'none'; base-uri 'none'",
               'x-content-type-options': 'nosniff',
+              'cache-control': 'private, no-store',
             },
           }),
         );

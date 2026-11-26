@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { encodeAbiParameters, encodeEventTopics, encodeFunctionResult, decodeFunctionData, type Hex } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
 import { ESCROW_ABI, FACTORY_ABI, TOKEN_ABI } from '../services/launchpad/abi';
 import {
   makeRpc,
@@ -10,14 +11,17 @@ import {
   verifyDeployment,
   type RpcCall,
 } from '../services/launchpad/chainVerify';
-import { handleLaunchpadRoute } from '../worker/launchpadService';
+import { buildContractRegistrationMessage, handleLaunchpadRoute } from '../worker/launchpadService';
 import type { Env } from '../worker/env';
 import type { HostedIdentity } from '../worker/userTypes';
 import { createSqliteD1 } from './helpers/sqliteD1';
 
 const FACTORY = '0x2222222222222222222222222222222222222222';
 const ESCROW = '0x3333333333333333333333333333333333333333';
-const MERCHANT = '0x4444444444444444444444444444444444444444';
+// Deterministic test-only keys (never used on any real network)
+const MERCHANT_ACCOUNT = privateKeyToAccount('0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef');
+const ATTACKER_ACCOUNT = privateKeyToAccount('0xfedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210');
+const MERCHANT = MERCHANT_ACCOUNT.address.toLowerCase();
 const TX = `0x${'ab'.repeat(32)}`;
 
 function escrowLog(escrow = ESCROW, factory = FACTORY) {
@@ -175,7 +179,34 @@ describe('launchpad routes with chain verification', () => {
     expect((await call('PUT', path, { contractAddress: ESCROW })).status).toBe(400); // txHash required
     const bad = await call('PUT', path, { contractAddress: ESCROW, txHash: TX }, { rpcFor: () => async () => okReceipt([escrowLog('0x5555555555555555555555555555555555555555')]) });
     expect(bad.status).toBe(422);
-    const ok = await call('PUT', path, { contractAddress: ESCROW, txHash: TX }, { rpcFor: () => async () => okReceipt() });
+
+    // M-15: Missing signature returns 401
+    const noSig = await call('PUT', path, { contractAddress: ESCROW, txHash: TX }, { rpcFor: () => async () => okReceipt() });
+    expect(noSig.status).toBe(401);
+
+    // M-15: Expired timestamp returns 401
+    const staleTs = Date.now() - 20 * 60 * 1000;
+    const staleMsg = buildContractRegistrationMessage({ campaignId: id, contractAddress: ESCROW, accountId: 'acct-m', timestamp: staleTs, nonce: 'n1' });
+    const staleSig = await MERCHANT_ACCOUNT.signMessage({ message: staleMsg });
+    const staleRes = await call('PUT', path, { contractAddress: ESCROW, txHash: TX, signature: staleSig, timestamp: staleTs, nonce: 'n1' }, { rpcFor: () => async () => okReceipt() });
+    expect(staleRes.status).toBe(401);
+
+    // M-15: Signature from another wallet returns 403
+    const ts = Date.now();
+    const msg = buildContractRegistrationMessage({ campaignId: id, contractAddress: ESCROW, accountId: 'acct-m', timestamp: ts, nonce: 'reg-nonce-1' });
+    const attackerSig = await ATTACKER_ACCOUNT.signMessage({ message: msg });
+    const wrongWallet = await call('PUT', path, { contractAddress: ESCROW, txHash: TX, signature: attackerSig, timestamp: ts, nonce: 'reg-nonce-1' }, { rpcFor: () => async () => okReceipt() });
+    expect(wrongWallet.status).toBe(403);
+
+    // M-15: Signature bound to wrong account returns 403
+    const wrongAcctMsg = buildContractRegistrationMessage({ campaignId: id, contractAddress: ESCROW, accountId: 'acct-other', timestamp: ts, nonce: 'reg-nonce-1' });
+    const wrongAcctSig = await MERCHANT_ACCOUNT.signMessage({ message: wrongAcctMsg });
+    const wrongAcct = await call('PUT', path, { contractAddress: ESCROW, txHash: TX, signature: wrongAcctSig, timestamp: ts, nonce: 'reg-nonce-1' }, { rpcFor: () => async () => okReceipt() });
+    expect(wrongAcct.status).toBe(403);
+
+    // M-15: Valid EIP-191 signature from verified.merchantWallet succeeds
+    const merchantSig = await MERCHANT_ACCOUNT.signMessage({ message: msg });
+    const ok = await call('PUT', path, { contractAddress: ESCROW, txHash: TX, signature: merchantSig, timestamp: ts, nonce: 'reg-nonce-1' }, { rpcFor: () => async () => okReceipt() });
     expect(ok.status).toBe(200);
     expect(ok.data.merchantWallet).toBe(MERCHANT);
 

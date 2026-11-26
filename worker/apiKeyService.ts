@@ -5,6 +5,7 @@ import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
 import { billingId, sha256Hex } from './workerUtils';
 import { randomId } from '../services/projects/projectUtils';
+import { isErasedSubject } from './accountMirror';
 
 const KEY_PREFIX = 'lm_live_';
 
@@ -80,6 +81,21 @@ export async function revokeApiKey(
   return Number(result.meta?.changes || 0) > 0;
 }
 
+export async function revokeAllApiKeys(env: Env, accountId: string): Promise<number> {
+  if (!env.DB || !accountId) return 0;
+  try {
+    const result = await env.DB.prepare(
+      `UPDATE api_keys SET revoked_at = ? WHERE account_id = ? AND revoked_at IS NULL`,
+    )
+      .bind(Date.now(), accountId)
+      .run();
+    return Number(result.meta?.changes || 0);
+  } catch (err) {
+    if (/no such table/i.test(err instanceof Error ? err.message : String(err))) return 0;
+    throw err;
+  }
+}
+
 /**
  * Resolve Bearer lm_live_* to a HostedIdentity scoped to the key's account.
  */
@@ -95,6 +111,7 @@ export async function identifyApiKey(
     .bind(keyHash)
     .first<{ id: string; account_id: string }>();
   if (!row) return null;
+  if (await isErasedSubject(env.DB, row.account_id, '')) return null;
   await env.DB.prepare(`UPDATE api_keys SET last_used_at = ? WHERE id = ?`)
     .bind(Date.now(), row.id)
     .run();

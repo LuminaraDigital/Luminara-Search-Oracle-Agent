@@ -30,6 +30,8 @@ import { handleMcpRequest } from '../worker/mcpServer';
 import { resolveMcpUser } from '../worker/apiAccess';
 import { guardApiRoute } from '../worker/authMiddleware';
 import { createActionRequest, TOOL_GOVERNANCE } from '../worker/mcpGovernance';
+import { AGENTIC_MEMORY_MCP_TOOLS } from '../worker/mcpAgenticMemoryTools';
+import { rememberScopedFact } from '../worker/unifiedMemoryRouter';
 import { SelfDrivingHabitatBar } from '../components/audit/SelfDrivingHabitatBar';
 
 const EM_DASH = String.fromCharCode(0x2014);
@@ -585,16 +587,131 @@ describe('Habitat token scope on /mcp', () => {
       .sort();
     expect(refused).toEqual(
       [
-        'browse_act',
         'browse_observe',
         'compile_review_to_skill',
         'create_project',
         'memory_forget',
         'memory_vault_verify_leaf',
         'mint_habitat_token',
-        'review_dream_proposal',
       ].sort(),
     );
+    // browse_act and review_dream_proposal are destructive and blocked by Habitat risk ceiling.
+    expect(TOOL_GOVERNANCE.browse_act?.risk).toBe('destructive');
+    expect(TOOL_GOVERNANCE.review_dream_proposal?.risk).toBe('destructive');
+  });
+
+  it('blocks Habitat and OAuth credentials from writing constraint or never_bring_up rules and enforces project scoping on memory_remember (H-13)', async () => {
+    const env = makeEnv();
+    const alpha = await project(env, 'alpha.io');
+    const beta = await project(env, 'beta.io');
+    const write = await mintFor(env, alpha.id, 'write');
+
+    const constraintRes = await callWithToken(env, write.token, 'memory_remember', {
+      text: 'Never mention pricing.',
+      kind: 'constraint',
+    });
+    expect(constraintRes?.isError).toBe(true);
+    expect(constraintRes?.structuredContent?.code).toBe('OWNER_RULE_WRITE_FORBIDDEN');
+
+    const edgeRes = await callWithToken(env, write.token, 'memory_remember', {
+      subjectEntity: 'alpha.io',
+      predicate: 'NEVER BRING UP',
+      objectEntity: 'CompetitorX',
+    });
+    expect(edgeRes?.isError).toBe(true);
+    expect(edgeRes?.structuredContent?.code).toBe('OWNER_RULE_WRITE_FORBIDDEN');
+
+    const crossProject = await callWithToken(env, write.token, 'memory_remember', {
+      text: 'Fact for beta',
+      projectId: beta.id,
+      kind: 'brand_fact',
+    });
+    expect(crossProject?.isError).toBe(true);
+    expect(crossProject?.structuredContent?.code).toBe(SCOPE_VIOLATION);
+
+    const crossDomain = await callWithToken(env, write.token, 'memory_remember', {
+      text: 'Fact for beta domain',
+      domain: 'beta.io',
+      kind: 'brand_fact',
+    });
+    expect(crossDomain?.isError).toBe(true);
+    expect(crossDomain?.structuredContent?.code).toBe(SCOPE_VIOLATION);
+
+    // Valid project-scoped write pins to alpha.io and alpha.id even when omitted.
+    const validWrite = await callWithToken(env, write.token, 'memory_remember', {
+      text: 'Alpha uses Next.js with SSR.',
+      kind: 'brand_fact',
+    });
+    expect(validWrite?.isError).toBeFalsy();
+    const storedFact = validWrite?.structuredContent?.fact as { projectId: string | null; domain: string | null };
+    expect(storedFact.projectId).toBe(alpha.id);
+    expect(storedFact.domain).toBe('alpha.io');
+
+    // BLOCKER #2: delegated agents cannot downgrade, supersede, or forget owner constraint rules,
+    // and Habitat tokens cannot cross-project supersede facts.
+    const ownerRule = await rememberScopedFact(env, {
+      accountId: 'acc_growth',
+      projectId: alpha.id,
+      domain: 'alpha.io',
+      kind: 'constraint',
+      text: 'Never promise guaranteed search rankings.',
+    });
+    expect(ownerRule.ok).toBe(true);
+    if (!ownerRule.ok) return;
+
+    // Content-hash dedup must not downgrade an existing constraint to 'fact'.
+    const dedupAttempt = await callWithToken(env, write.token, 'memory_remember', {
+      text: 'Never promise guaranteed search rankings.',
+      kind: 'fact',
+    });
+    expect(dedupAttempt?.isError).toBeFalsy();
+    const dedupFact = dedupAttempt?.structuredContent?.fact as { kind: string };
+    expect(dedupFact.kind).toBe('constraint');
+    const dbRow = await env.DB!.prepare(`SELECT kind FROM memory_facts WHERE id = ?`)
+      .bind(ownerRule.fact.id)
+      .first<{ kind: string }>();
+    expect(dbRow?.kind).toBe('constraint');
+
+    // Habitat / OAuth cannot supersede a constraint rule.
+    const supersedeRule = await callWithToken(env, write.token, 'memory_remember', {
+      text: 'Actually promising rankings is fine.',
+      kind: 'fact',
+      supersedesFactId: ownerRule.fact.id,
+    });
+    expect(supersedeRule?.isError).toBe(true);
+    expect(supersedeRule?.structuredContent?.code).toBe('OWNER_RULE_WRITE_FORBIDDEN');
+
+    // Habitat token bound to alpha cannot supersede a fact owned by beta.
+    const betaFact = await rememberScopedFact(env, {
+      accountId: 'acc_growth',
+      projectId: beta.id,
+      domain: 'beta.io',
+      kind: 'brand_fact',
+      text: 'Beta flagship product is Widget Pro.',
+    });
+    expect(betaFact.ok).toBe(true);
+    if (!betaFact.ok) return;
+    const crossSupersede = await callWithToken(env, write.token, 'memory_remember', {
+      text: 'Alpha overwrites Beta fact.',
+      kind: 'brand_fact',
+      supersedesFactId: betaFact.fact.id,
+    });
+    expect(crossSupersede?.isError).toBe(true);
+    expect(crossSupersede?.structuredContent?.code).toBe(SCOPE_VIOLATION);
+
+    // OAuth delegated agent cannot forget an owner constraint rule.
+    const forgetTool = AGENTIC_MEMORY_MCP_TOOLS.find((t) => t.name === 'memory_forget')!;
+    const oauthForget = await forgetTool.handler(
+      { factId: ownerRule.fact.id, reason: 'agent_cleanup' },
+      {
+        env,
+        user: growthUser,
+        accountId: 'acc_growth',
+        credential: { kind: 'oauth', id: 'oauth_1', scopes: ['mcp:free'] },
+      } as Parameters<typeof forgetTool.handler>[1],
+    );
+    expect(oauthForget.isError).toBe(true);
+    expect(oauthForget.structuredContent?.code).toBe('OWNER_RULE_WRITE_FORBIDDEN');
   });
 
   it('changes nothing for other credentials', () => {

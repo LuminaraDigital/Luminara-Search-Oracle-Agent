@@ -3,6 +3,7 @@
  */
 import type { ChatTurn, GenerateOptions, StreamChunk, ToolCall, ToolDefinition, ToolExecution } from '../../types';
 import type { BaseAIProvider } from '../llm/providers/BaseAIProvider';
+import { UNTRUSTED_CONTENT_RULE, wrapUntrustedContent } from '../../utils/untrustedContent';
 
 export type ToolExecutor = (call: ToolCall) => Promise<{
   output: string;
@@ -27,26 +28,8 @@ export type ToolLoopResult = {
   rounds: number;
 };
 
-function toolCallsToOpenAiMessages(calls: ToolCall[], results: Array<{ call: ToolCall; output: string }>) {
-  const assistant = {
-    role: 'assistant' as const,
-    content: null as string | null,
-    tool_calls: calls.map((c) => ({
-      id: c.id,
-      type: 'function' as const,
-      function: { name: c.name, arguments: JSON.stringify(c.arguments || {}) },
-    })),
-  };
-  const toolMsgs = results.map((r) => ({
-    role: 'tool' as const,
-    tool_call_id: r.call.id,
-    content: r.output,
-  }));
-  return { assistant, toolMsgs };
-}
-
 /**
- * Run generate → tool_calls → execute → continue until text finish or maxRounds.
+ * Run generate -> tool_calls -> execute -> continue until text finish or maxRounds.
  * Uses non-streaming generateText for tool rounds (simpler + reliable across providers).
  */
 export async function runToolLoop(opts: ToolLoopOptions): Promise<ToolLoopResult> {
@@ -61,13 +44,20 @@ export async function runToolLoop(opts: ToolLoopOptions): Promise<ToolLoopResult
   // Providers that only accept ChatTurn[] need an extension; we fold tool results into the next user prompt.
   let toolContext = '';
 
+  const baseSystemPrompt = opts.generateOptions?.systemPrompt || '';
+  const systemPrompt = baseSystemPrompt.includes(UNTRUSTED_CONTENT_RULE)
+    ? baseSystemPrompt
+    : baseSystemPrompt
+      ? `${baseSystemPrompt}\n\n${UNTRUSTED_CONTENT_RULE}`
+      : UNTRUSTED_CONTENT_RULE;
+
   while (rounds < maxRounds) {
     rounds += 1;
     const genOpts: GenerateOptions = {
       ...opts.generateOptions,
       history,
       tools: opts.tools,
-      systemPrompt: opts.generateOptions?.systemPrompt,
+      systemPrompt,
     };
 
     const effectivePrompt = toolContext
@@ -90,15 +80,16 @@ export async function runToolLoop(opts: ToolLoopOptions): Promise<ToolLoopResult
         });
         results.push({ call, output });
       }
-      const packed = toolCallsToOpenAiMessages(result.toolCalls, results);
-      toolContext = results.map((r) => `${r.call.name}: ${r.output}`).join('\n');
+      toolContext = results
+        .map((r) => wrapUntrustedContent(`TOOL_RESULT_${r.call.name}`, r.output, { nonce: true }))
+        .filter(Boolean)
+        .join('\n');
       history = [
         ...history,
         { role: 'user', content: prompt },
         { role: 'assistant', content: result.text || `(called ${result.toolCalls.map((c) => c.name).join(', ')})` },
       ];
       prompt = 'Continue with the tool results above and answer the user.';
-      void packed;
       continue;
     }
 

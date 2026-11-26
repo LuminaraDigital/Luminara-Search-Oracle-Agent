@@ -7,8 +7,9 @@
 
 import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
-import { billingId, json } from './workerUtils';
+import { billingId, json, sha256Hex } from './workerUtils';
 import { MAX_SMALL_BODY_BYTES, readBody } from './security';
+import { consumeD1Nonce } from './requestSigning';
 import { auditOrgIdFor, recordAuditLogBestEffort } from './auditLog';
 import { getEnquiryById } from './enquiryDeskService';
 import { recordOutcomeStageEvent } from './outcomesLedgerService';
@@ -48,18 +49,35 @@ export async function handleCrmOutcomeWebhook(request: Request, env: Env): Promi
   }
   const rawBody = typeof read.value === 'string' ? read.value : '';
 
+  const signature = (request.headers.get('X-Luminara-Suite-Signature') || '').trim();
+  const timestamp = (request.headers.get('X-Luminara-Suite-Timestamp') || '').trim();
+
   const valid = await verifySuiteHmac(
     secret,
     'POST',
     '/api/crm/webhooks/outcome',
     rawBody,
-    request.headers.get('X-Luminara-Suite-Signature'),
-    request.headers.get('X-Luminara-Suite-Timestamp'),
+    signature,
+    timestamp,
     undefined,
     env.CRM_BRIDGE_SHARED_SECRET_PREVIOUS,
   );
   if (!valid) {
     return json({ ok: false, code: 'INVALID_SIGNATURE', error: 'Invalid webhook signature.' }, 401);
+  }
+
+  if (env.DB) {
+    const nonce = await sha256Hex(`${timestamp}.${signature.toLowerCase()}`);
+    const fresh = await consumeD1Nonce(env.DB, 'webhook:crm_outcome', nonce, Date.now());
+    if (fresh === null) {
+      return json(
+        { ok: false, code: 'REQUEST_SIGNING_TABLE_MISSING', error: 'Webhook replay protection needs migration 0040.' },
+        503,
+      );
+    }
+    if (!fresh) {
+      return json({ ok: false, code: 'REPLAYED_WEBHOOK', error: 'Replayed webhook request.' }, 401);
+    }
   }
 
   let parsed: Record<string, unknown>;
@@ -239,7 +257,12 @@ export async function handleCrmBridgeRoute(
 
   const promoteMatch = path.match(/^\/crm\/enquiries\/([^/]+)\/promote$/);
   if (promoteMatch && request.method === 'POST') {
-    const enquiryId = decodeURIComponent(promoteMatch[1]!);
+    let enquiryId: string;
+    try {
+      enquiryId = decodeURIComponent(promoteMatch[1]!);
+    } catch {
+      return json({ ok: false, error: 'Malformed enquiry id encoding.' }, 400);
+    }
     const res = await promoteEnquiryToCrm(env, user, enquiryId, fetchFn);
     if (!res.ok) return json({ ok: false, error: res.error }, res.status);
     return json(res, res.duplicate ? 200 : 201);

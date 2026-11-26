@@ -1,4 +1,4 @@
-import { ASTNode, ParseResult, Token, TokenType, ActionInvocation, BinaryExpression } from './types';
+import { ASTNode, ParseResult, Token, TokenType, ActionInvocation, BinaryExpression, isForbiddenPropertyKey } from './types';
 import { tokenize } from './lexer';
 
 /**
@@ -128,7 +128,11 @@ export class GenUIParser {
         const key = String(this.advance().value);
         this.advance(); // consume ':'
         const val = this.parseExpression();
-        namedArgs[key] = val;
+        if (isForbiddenPropertyKey(key)) {
+          this.errors.push(`Forbidden property key "${key}"`);
+        } else {
+          namedArgs[key] = val;
+        }
       } else {
         const arg = this.parseExpression();
         args.push(arg);
@@ -282,7 +286,12 @@ export class GenUIParser {
         this.advance();
         const key = String(keyToken.value);
         if (this.match(TokenType.Colon)) {
-          obj[key] = this.parseExpression();
+          const val = this.parseExpression();
+          if (isForbiddenPropertyKey(key)) {
+            this.errors.push(`Forbidden property key "${key}"`);
+          } else {
+            obj[key] = val;
+          }
         }
       }
 
