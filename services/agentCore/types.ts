@@ -97,6 +97,8 @@ export interface ScrapedPageEvidence {
   httpStatus?: number;
   h1s: string[];
   schemasFound: Array<{ type: string; rawJson: string; isValid: boolean }>;
+  /** JSON-LD blocks on the page that could not be parsed. Omitted when none. */
+  schemaParseFailures?: number;
   wordCount: number;
   loadTimeMs?: number;
   rawTextSnippet: string;
