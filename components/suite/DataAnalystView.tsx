@@ -3,6 +3,7 @@ import { BusinessDNA } from '../../types';
 import { geminiService } from '../../services/geminiService';
 import { ICONS } from '../../constants';
 import { renderMarkdown } from '../../utils/markdown';
+import { validateClientUploadFile } from '../../utils/fileUploadGuard';
 import { SynthesisSkeleton } from '../ui/Skeleton';
 
 interface DataAnalystViewProps {
@@ -19,6 +20,11 @@ export const DataAnalystView: React.FC<DataAnalystViewProps> = ({ dna, onRouteTo
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    const checked = validateClientUploadFile(file, { allowedExtensions: ['.csv', '.json', '.txt', '.tsv'] });
+    if (!checked.ok) {
+      setResult(`**Upload rejected.** ${checked.error}`);
+      return;
+    }
 
     const reader = new FileReader();
     reader.onload = (event) => {

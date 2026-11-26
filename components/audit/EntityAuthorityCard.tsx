@@ -1,6 +1,7 @@
 import React from 'react';
 import { ICONS } from '../../constants';
 import { EnrichedEntityIntelligence } from '../../services/enrichment/publicApisEnrichmentService';
+import { isWebUrl } from '../../utils/webUrl';
 
 interface EntityAuthorityCardProps {
   enriched?: EnrichedEntityIntelligence | null;
@@ -71,15 +72,21 @@ export const EntityAuthorityCard: React.FC<EntityAuthorityCardProps> = ({ enrich
             </div>
             {wikidata ? (
               <div>
-                <a
-                  href={wikidata.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs font-bold text-cyan-300 hover:underline flex items-center gap-1"
-                >
-                  <span>{wikidata.id} &bull; {wikidata.label}</span>
-                  <ICONS.ExternalLink className="w-3 h-3 shrink-0" />
-                </a>
+                {typeof wikidata.url === 'string' && isWebUrl(wikidata.url) ? (
+                  <a
+                    href={wikidata.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs font-bold text-cyan-300 hover:underline flex items-center gap-1"
+                  >
+                    <span>{wikidata.id} &bull; {wikidata.label}</span>
+                    <ICONS.ExternalLink className="w-3 h-3 shrink-0" />
+                  </a>
+                ) : (
+                  <span className="text-xs font-bold text-cyan-300 flex items-center gap-1">
+                    <span>{wikidata.id} &bull; {wikidata.label}</span>
+                  </span>
+                )}
                 <p className="text-[11px] text-gray-400 mt-1 line-clamp-2 leading-snug">
                   {wikidata.description || 'Canonical entity record in Wikimedia Knowledge Base.'}
                 </p>
@@ -128,7 +135,7 @@ export const EntityAuthorityCard: React.FC<EntityAuthorityCardProps> = ({ enrich
             )}
           </div>
 
-          {wayback.snapshotUrl && (
+          {wayback.snapshotUrl && isWebUrl(wayback.snapshotUrl) && (
             <div className="mt-2.5 pt-2 border-t border-white/5">
               <a
                 href={wayback.snapshotUrl}
@@ -222,18 +229,30 @@ export const EntityAuthorityCard: React.FC<EntityAuthorityCardProps> = ({ enrich
             <span className="text-[10px] font-mono text-gold-light uppercase tracking-wider font-bold">
               Injected sameAs URIs:
             </span>
-            {sameAsUrls.map((uri, idx) => (
-              <a
-                key={idx}
-                href={uri}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="px-2 py-0.5 rounded bg-white/5 hover:bg-white/10 border border-white/10 text-[11px] font-mono text-cyan-300 flex items-center gap-1"
-              >
-                <span>{uri.includes('wikidata') ? 'Wikidata QID' : 'Wikipedia Entity'}</span>
-                <ICONS.ExternalLink className="w-2.5 h-2.5" />
-              </a>
-            ))}
+            {sameAsUrls.map((uri, idx) => {
+              if (typeof uri !== 'string' || !isWebUrl(uri)) {
+                return (
+                  <span
+                    key={idx}
+                    className="px-2 py-0.5 rounded bg-white/5 border border-white/10 text-[11px] font-mono text-gray-400 flex items-center gap-1"
+                  >
+                    <span>Entity URI</span>
+                  </span>
+                );
+              }
+              return (
+                <a
+                  key={idx}
+                  href={uri}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-2 py-0.5 rounded bg-white/5 hover:bg-white/10 border border-white/10 text-[11px] font-mono text-cyan-300 flex items-center gap-1"
+                >
+                  <span>{uri.includes('wikidata') ? 'Wikidata QID' : 'Wikipedia Entity'}</span>
+                  <ICONS.ExternalLink className="w-2.5 h-2.5" />
+                </a>
+              );
+            })}
           </div>
 
           <span className="text-[10px] text-gray-400 italic">

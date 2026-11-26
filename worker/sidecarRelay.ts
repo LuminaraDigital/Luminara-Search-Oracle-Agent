@@ -1,5 +1,7 @@
 import type { Env } from './env';
-import { stripUpstreamHeaders } from './security';
+import { isAdminAuthorized } from './adminAuth';
+import { identifiedForRequest } from './authMiddleware';
+import { readBody, stripUpstreamHeaders } from './security';
 import { identify, json, fetchWithTimeout, isAbortError } from './workerUtils';
 
 export type SidecarId = 'languagetool' | 'umami';
@@ -9,6 +11,8 @@ export const SIDECAR_LABEL: Record<SidecarId, string> = {
   umami: 'Results tracking',
 };
 export const SIDECAR_TIMEOUT_MS = 15_000;
+/** Bounded body cap for LanguageTool POST /v2/check (20k UTF-8 chars URL-encoded fits comfortably under 256 KB). */
+export const MAX_SIDECAR_BODY_BYTES = 256_000;
 export const UMAMI_TOKEN_KV_KEY = 'umami:token';
 export const UMAMI_TOKEN_TTL_SEC = 12 * 3600;
 
@@ -91,16 +95,47 @@ export async function proxySidecar(request: Request, env: Env, id: SidecarId, su
   if (!isSidecarPathAllowed(id, request.method, subPath)) {
     return json({ error: `Path not allowed for ${id}: ${request.method} ${subPath}` }, 403);
   }
-  if (!isSidecarConfigured(env, id)) return sidecarNotConfigured(id);
 
-  // Same sign-in rule as hosted provider keys, but no daily quota and no bring-your-own-key here.
-  const who = await identify(request, env);
-  if (who.error) return json({ error: who.error }, 401);
+  if (id === 'umami') {
+    // Umami uses shared server-wide analytics credentials (UMAMI_API_KEY / UMAMI_USERNAME).
+    // Always require ADMIN_SECRET; return 403 for authenticated non-admin sessions, 401 when unauthenticated,
+    // and 503 when ADMIN_SECRET is unset (fail closed).
+    const admin = isAdminAuthorized(env, request);
+    if (!admin.ok) {
+      if (admin.response.status === 401 && !request.headers.get('x-admin-secret')) {
+        const who = identifiedForRequest(request) ?? (await identify(request, env));
+        if (who.user) {
+          return json(
+            { ok: false, error: 'Admin authorization required for server results tracking.', code: 'ADMIN_REQUIRED' },
+            403,
+          );
+        }
+      }
+      return admin.response;
+    }
+  } else {
+    // LanguageTool always requires a verified user session, regardless of REQUIRE_TG_AUTH.
+    const who = identifiedForRequest(request) ?? (await identify(request, env));
+    if (who.error || !who.user) {
+      return json(
+        { ok: false, error: who.error || 'Unauthorized: Authentication required', code: 'AUTH_REQUIRED' },
+        401,
+      );
+    }
+  }
+
+  if (!isSidecarConfigured(env, id)) return sidecarNotConfigured(id);
 
   const timeoutMessage = `${SIDECAR_LABEL[id]} took too long to answer. Try again in a moment.`;
   const unreachableMessage = `${SIDECAR_LABEL[id]} could not be reached. Ask your admin to check the service.`;
 
   if (id === 'languagetool') {
+    let body: string | undefined;
+    if (request.method !== 'GET') {
+      const read = await readBody(request, MAX_SIDECAR_BODY_BYTES, false);
+      if (!read.ok) return json({ error: read.error }, read.status);
+      body = read.text;
+    }
     const upstream = env.LANGUAGETOOL_URL!.replace(/\/+$/, '') + subPath + url.search;
     const headers = new Headers();
     const ct = request.headers.get('content-type');
@@ -113,7 +148,7 @@ export async function proxySidecar(request: Request, env: Env, id: SidecarId, su
         {
           method: request.method,
           headers,
-          body: request.method === 'GET' ? undefined : await request.text(),
+          body,
         },
         SIDECAR_TIMEOUT_MS
       );

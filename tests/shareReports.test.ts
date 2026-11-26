@@ -201,4 +201,85 @@ describe('W1 shareable reports', () => {
     const pwHash = await hashSharePassword('correct-horse');
     expect(pwHash).toBe(await sha256Hex('luminara-share-pw:correct-horse'));
   });
+
+  it('drops non-http(s) source URIs before persisting and before serving stored shares', async () => {
+    const store = new Map<string, string>([
+      ['sub:79', JSON.stringify({ plan: 'growth', expiresAt: Date.now() + 86400_000 })],
+    ]);
+    const env = makeEnv(store);
+    const initData = signInitData({
+      auth_date: String(Math.floor(Date.now() / 1000)),
+      user: JSON.stringify({ id: 79, first_name: 'Growth' }),
+    });
+
+    const createRes = await handleShareRoute(
+      new Request('https://luminarasuite.com/api/share/reports', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-telegram-init-data': initData,
+        },
+        body: JSON.stringify({
+          markdownText: '# Report with sources',
+          sources: [
+            { uri: 'https://example.com/safe', title: 'Safe' },
+            { uri: 'javascript:alert(1)', title: 'Script' },
+            { uri: 'data:text/html,<script>alert(1)</script>', title: 'Data' },
+            { uri: 'https://user:pass@example.com/phish', title: 'Creds' },
+            { uri: 'http://example.com/http-ok', title: 'HTTP' },
+          ],
+        }),
+      }),
+      env,
+      '/share/reports',
+    );
+    expect(createRes.status).toBe(200);
+    const created = (await createRes.json()) as { token: string; id: string };
+
+    const getRes = await handleShareRoute(
+      new Request(`https://luminarasuite.com/api/share/reports/${created.token}`),
+      env,
+      `/share/reports/${created.token}`,
+    );
+    expect(getRes.status).toBe(200);
+    const got = (await getRes.json()) as { report: { sources?: Array<{ uri: string; title: string }> } };
+    expect(got.report.sources).toEqual([
+      { uri: 'https://example.com/safe', title: 'Safe' },
+      { uri: 'http://example.com/http-ok', title: 'HTTP' },
+    ]);
+
+    // Legacy D1 row with dangerous source URIs is also filtered at serve time.
+    const legacyToken = 'b'.repeat(64);
+    await env.DB!.prepare(
+      `INSERT INTO shared_reports (id, token_hash, owner_account_id, report_json, branding_json, password_hash, expires_at, revoked_at, created_at)
+       VALUES (?, ?, ?, ?, NULL, NULL, NULL, NULL, ?)`,
+    )
+      .bind(
+        'shr_legacy_src',
+        await sha256Hex(legacyToken),
+        '79',
+        JSON.stringify({
+          version: 1,
+          markdownText: '# Legacy',
+          sources: [
+            { uri: 'javascript:alert(2)', title: 'Bad' },
+            { uri: 'https://example.com/kept', title: 'Kept' },
+          ],
+          createdAt: Date.now(),
+          expiresAt: null,
+          passwordRequired: false,
+        }),
+        Date.now(),
+      )
+      .run();
+
+    const legacyRes = await handleShareRoute(
+      new Request(`https://luminarasuite.com/api/share/reports/${legacyToken}`),
+      env,
+      `/share/reports/${legacyToken}`,
+    );
+    expect(legacyRes.status).toBe(200);
+    const legacyGot = (await legacyRes.json()) as { report: { sources?: Array<{ uri: string; title: string }> } };
+    expect(legacyGot.report.sources).toEqual([{ uri: 'https://example.com/kept', title: 'Kept' }]);
+  });
 });

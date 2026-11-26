@@ -62,6 +62,8 @@ const PATTERNS = [
   { label: 'Groq key', re: /\bgsk_[A-Za-z0-9]{20,}\b/ },
   { label: 'NVIDIA key', re: /\bnvapi-[A-Za-z0-9_-]{20,}\b/ },
   { label: 'OpenAI-style key', re: /\bsk-[A-Za-z0-9_-]{20,}\b/ },
+  { label: 'Stripe live or restricted key', re: /\b[sr]k_live_[A-Za-z0-9]{20,}\b/ },
+  { label: 'Stripe webhook secret', re: /\bwhsec_[A-Za-z0-9]{24,}\b/ },
   { label: 'Tavily key', re: /\btvly-[A-Za-z0-9-]{20,}\b/ },
   { label: 'Firecrawl key', re: /\bfc-[a-f0-9]{30,}\b/ },
   { label: 'Browserbase key', re: /\bbb_live_[A-Za-z0-9_-]{20,}\b/ },

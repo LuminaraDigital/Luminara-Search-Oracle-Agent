@@ -22,6 +22,7 @@ export interface LaunchpadCampaign {
   voucher_expiry_months: number | null;
   listed_at: string | null;
   created_at: string;
+  account_id?: string;
   compliance_status?: string;
 }
 
@@ -93,10 +94,19 @@ export const launchpadClient = {
   listMine: () => call<{ campaigns: LaunchpadCampaign[] }>('/campaigns?mine=true'),
   create: (body: Record<string, unknown>) =>
     call<{ campaignId: string; compliance: ComplianceScanResult }>('/campaigns', { method: 'POST', body: JSON.stringify(body) }),
-  registerContract: (campaignId: string, contractAddress: string, txHash?: string) =>
+  registerContract: (
+    campaignId: string,
+    contractAddress: string,
+    txHash?: string,
+    proof?: { signature: string; timestamp: number; nonce?: string },
+  ) =>
     call<{ contractAddress: string; listedAt: string }>(`/campaigns/${encodeURIComponent(campaignId)}/contract`, {
       method: 'PUT',
-      body: JSON.stringify({ contractAddress, txHash: txHash || undefined }),
+      body: JSON.stringify({
+        contractAddress,
+        txHash: txHash || undefined,
+        ...(proof ? { signature: proof.signature, timestamp: proof.timestamp, nonce: proof.nonce } : {}),
+      }),
     }),
   issueVoucher: (campaignId: string, itemDescription: string, customerRef?: string) =>
     call<{ voucherCode: string; expiresAt: string | null }>('/vouchers', {

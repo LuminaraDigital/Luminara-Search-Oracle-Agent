@@ -15,6 +15,7 @@ import {
   safeLogoSrc,
   type ReportBrand,
 } from '../services/reports/reportBrand';
+import { inspectLogoUrl } from './logoInspect';
 
 export interface AccountReportBrand {
   brand: ReportBrand;
@@ -81,8 +82,11 @@ export async function resolveShareBranding(
   let branding = supplied;
   if (!live.whiteLabelPdf) branding = undefined;
   else if (branding?.logoUrl) {
-    const safe = safeLogoSrc(branding.logoUrl);
-    branding = { ...branding, logoUrl: safe || undefined, showPoweredBy: live.brand.showPoweredBy };
+    const inspected = await inspectLogoUrl(branding.logoUrl);
+    if (!inspected.ok) {
+      return { ok: false, status: 400, error: inspected.error };
+    }
+    branding = { ...branding, logoUrl: inspected.url, showPoweredBy: live.brand.showPoweredBy };
   } else if (branding) {
     branding = { ...branding, showPoweredBy: live.brand.showPoweredBy };
   }
@@ -111,5 +115,9 @@ export async function presentShareBranding(
     };
   }
   if (!stored) return live.brand.showPoweredBy ? undefined : { showPoweredBy: false };
-  return { ...stored, showPoweredBy: live.brand.showPoweredBy };
+  return {
+    ...stored,
+    logoUrl: stored.logoUrl ? safeLogoSrc(stored.logoUrl) || undefined : undefined,
+    showPoweredBy: live.brand.showPoweredBy,
+  };
 }

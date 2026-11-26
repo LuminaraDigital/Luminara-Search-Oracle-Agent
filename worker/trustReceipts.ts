@@ -405,7 +405,7 @@ export async function handleTrustReceiptsRoute(request: Request, env: Env, path:
     const isOwner = Boolean(who.user && billingId(who.user) === row.account_id);
     // Revoked receipts that were once shared stay readable as revoked, so a stale
     // link shows "revoked" rather than vanishing. Private receipts never leak existence.
-    const readable = isOwner || row.visibility === 'public' || (row.revoked_at !== null && (await wasEverPublic(env, row.id)));
+    const readable = isOwner || (await isReceiptPubliclyReadable(env, row));
     if (!readable) return json({ ok: false, error: 'Receipt not found' }, 404);
     return json({ ok: true, owner: isOwner, receipt: toView(row) }, 200, { 'Cache-Control': 'no-store' });
   }
@@ -451,6 +451,19 @@ export async function handleTrustReceiptsRoute(request: Request, env: Env, path:
 }
 
 /**
+ * Canonical public visibility rule for Trust Receipts, shared by /api/trust/receipts/:id
+ * and /verify/r/:id. Public receipts are readable by anyone; revoked receipts that were
+ * once public stay readable as revoked; private receipts never leak existence or metadata.
+ */
+export async function isReceiptPubliclyReadable(
+  env: Pick<Env, 'LUMINARA_KV'>,
+  row: { id: string; visibility: string; revoked_at: string | number | null },
+): Promise<boolean> {
+  if (row.visibility === 'public') return true;
+  return Boolean(row.revoked_at) && (await wasEverPublic(env, row.id));
+}
+
+/**
  * KV marker so a receipt that was ever shared publicly stays resolvable as
  * "revoked" after revocation flips it private. Without KV, revoked receipts
  * simply 404 to non-owners (safe default).
@@ -463,7 +476,7 @@ async function markEverPublic(env: Env, id: string): Promise<void> {
   }
 }
 
-async function wasEverPublic(env: Env, id: string): Promise<boolean> {
+async function wasEverPublic(env: Pick<Env, 'LUMINARA_KV'>, id: string): Promise<boolean> {
   try {
     return (await env.LUMINARA_KV?.get(`trust:ever_public:${id}`)) === '1';
   } catch {

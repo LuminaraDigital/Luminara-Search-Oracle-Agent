@@ -14,7 +14,7 @@ import type { TurnWatchdog } from './turnWatchdog';
 
 export type RequestOutcome = 'allowed-once' | 'rejected' | 'answered' | 'unavailable';
 
-export type ActionRiskTier = 'free' | 'low_risk' | 'paid_research' | 'destructive';
+export type ActionRiskTier = 'free' | 'low_risk' | 'paid_research' | 'high_risk' | 'destructive';
 
 export interface PendingActionRequest {
   id: string;
@@ -93,18 +93,28 @@ export class PermissionBroker {
       'list_reports',
       'get_report',
     ];
+    const lowRiskTools = [
+      'parse_sitemap',
+      'check_robots_txt',
+      'inspect_schema',
+    ];
 
     if (freeTools.includes(tool)) return 'free';
+    if (lowRiskTools.includes(tool)) return 'low_risk';
     if (paidTools.includes(tool)) return 'paid_research';
     if (
       tool.startsWith('delete_') ||
       tool.startsWith('purge_') ||
+      tool === 'browse_act' ||
       tool === 'browse_goal' ||
-      tool === 'browse_close'
+      tool === 'browse_close' ||
+      tool === 'review_dream_proposal' ||
+      tool === 'decide_booking_signoff' ||
+      tool === 'prepare_cms_mcp_call'
     ) {
       return 'destructive';
     }
-    return 'low_risk';
+    return 'high_risk';
   }
 
   /**
@@ -120,7 +130,7 @@ export class PermissionBroker {
 
   /**
    * Request permission before executing a tool.
-   * Free/low_risk tools or tools allow-listed via `remember: true` are automatically granted.
+   * Free/low_risk tools or non-destructive tools allow-listed via `remember: true` are automatically granted.
    * Paid or destructive actions enter 'pending' state and notify the watchdog.
    */
   requestPermission(
@@ -136,7 +146,7 @@ export class PermissionBroker {
       return { granted: true, outcome: 'allowed-once', remembered: false };
     }
 
-    if (this.policy.autoApproveTools.has(tool)) {
+    if (tier !== 'destructive' && this.policy.autoApproveTools.has(tool)) {
       return { granted: true, outcome: 'allowed-once', remembered: true };
     }
 
@@ -167,8 +177,8 @@ export class PermissionBroker {
 
   /**
    * Human user or policy engine resolves the pending approval card.
-   * When `opts.remember` is true and `outcome === 'allowed-once'`, adds the tool to
-   * `autoApproveTools` and cascades approval to other pending calls of that tool on the thread.
+   * When `opts.remember` is true and `outcome === 'allowed-once'` for a non-destructive tool,
+   * adds the tool to `autoApproveTools` and cascades approval to other pending calls on the thread.
    */
   resolveRequest(
     requestId: string,
@@ -181,7 +191,7 @@ export class PermissionBroker {
     req.status = 'resolved';
     req.outcome = outcome;
 
-    if (opts.remember && outcome === 'allowed-once') {
+    if (opts.remember && outcome === 'allowed-once' && req.riskTier !== 'destructive') {
       this.policy.autoApproveTools.add(req.tool);
       for (const sibling of this.pending.values()) {
         if (

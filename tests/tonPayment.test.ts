@@ -105,9 +105,26 @@ describe('TON Payment Settlement Engine', () => {
     expect(inv.order.tonAmount).toBe(TON_PRICING.starter.ton);
     expect(inv.order.amountNano).toBe(TON_PRICING.starter.nanoTon);
     expect(inv.order.recipientAddress).toBe(MERCHANT);
-    expect(inv.order.memo).toMatch(/^LUM:ton_\d+_[a-z0-9]+:starter$/);
+    expect(inv.order.memo).toMatch(/^LUM:ton_\d+_[0-9a-f]{12}:starter$/);
     expect(inv.order.status).toBe('pending');
     expect(await kv.get(`ton:order:${inv.order.orderId}`, 'json')).not.toBeNull();
+  });
+
+  it('prorates remaining Starter time on cross-tier upgrade to Agency instead of extending 1:1 (H-04)', async () => {
+    const { env, kv } = makeEnv();
+    const DAY = 86_400_000;
+    const now = Date.now();
+    await kv.put('sub:user_prorate', JSON.stringify({ plan: 'starter', expiresAt: now + 300 * DAY }));
+
+    const inv = await createTonInvoice(env, 'user_prorate', 'agency');
+    if (!inv.ok) throw new Error('invoice failed');
+    const fetcher = vi.fn(async () => toncenterResponse(inv.order.memo, TON_PRICING.agency.nanoTon, 'tx_prorate_1'));
+    const res = await verifyTonPayment(env, inv.order.orderId, { expectedUserId: 'user_prorate', fetcher });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    // 300 Starter days prorated by 7900/54900 (~43.17 days) + 30 Agency days (~73.17 days), never 330 days.
+    expect(res.expiresAt).toBeLessThan(now + 80 * DAY);
+    expect(res.expiresAt).toBeGreaterThan(now + 70 * DAY);
   });
 
   it('rejects an invalid plan during invoice creation', async () => {

@@ -93,5 +93,10 @@ describe('runToolLoop', () => {
     expect(result.toolExecutions[0]?.tool).toBe('live_search');
     expect(result.text).toBe('Final answer');
     expect(result.rounds).toBe(2);
+
+    // Second round must fence tool results with nonce markers and include UNTRUSTED_CONTENT_RULE.
+    const secondCall = (provider.generateText as ReturnType<typeof vi.fn>).mock.calls[1];
+    expect(secondCall[0]).toMatch(/<<<UNTRUSTED_TOOL_RESULT_live_search_[0-9a-f]{16}_BEGIN>>>/);
+    expect(secondCall[1]?.systemPrompt).toContain('<<<UNTRUSTED_*_BEGIN>>>');
   });
 });

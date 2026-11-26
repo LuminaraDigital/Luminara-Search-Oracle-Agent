@@ -40,7 +40,30 @@ export const DeployPanel: React.FC<Props> = ({ campaign, factoryAddress, onRegis
   }, [campaign.id, isPreorder]);
 
   async function register(d: { txHash: string; contractAddress: string }) {
-    const r = await launchpadClient.registerContract(campaign.id, d.contractAddress, d.txHash);
+    let accountId = campaign.account_id;
+    if (!accountId) {
+      const mine = await launchpadClient.listMine();
+      if (mine.ok) accountId = mine.campaigns.find((c) => c.id === campaign.id)?.account_id;
+    }
+    if (!accountId) {
+      setError('Deployed, but registration requires signing in as the campaign owner. Reload and click Retry registration.');
+      return;
+    }
+    const w = await import('../../services/launchpad/wallet');
+    let proof: { signature: string; timestamp: number; nonce: string };
+    try {
+      proof = await w.signContractRegistration({
+        chain: campaign.chain,
+        network: campaign.network,
+        campaignId: campaign.id,
+        contractAddress: d.contractAddress,
+        accountId,
+      });
+    } catch (err) {
+      setError(`Deployed, but wallet signature failed: ${w.describeWalletError(err)}`);
+      return;
+    }
+    const r = await launchpadClient.registerContract(campaign.id, d.contractAddress, d.txHash, proof);
     if (r.ok) onRegistered();
     else setError(`Deployed, but registration failed: ${r.error}`);
   }

@@ -22,7 +22,15 @@ const { setupAutoUpdater } = require('./updater.cjs');
 const { setupCrashReporting, installProcessErrorHandlers } = require('./crashReporting.cjs');
 const { createDesktopCoordinator } = require('./coordinator/desktopCoordinator.cjs');
 
-function configureLlmSessionSecurity() {
+function resolveAppOrigin() {
+  try {
+    return new URL(resolveWebappUrl()).origin;
+  } catch {
+    return null;
+  }
+}
+
+function configureLlmSessionSecurity(getCrawlerToken) {
   if (!session?.defaultSession?.webRequest) return;
   const allowedLlmPatterns = [
     'http://127.0.0.1:11434/*',
@@ -39,6 +47,21 @@ function configureLlmSessionSecurity() {
     '*://generativelanguage.googleapis.com/*',
   ];
 
+  session.defaultSession.webRequest.onBeforeSendHeaders(
+    { urls: ['http://127.0.0.1:3001/*', 'http://localhost:3001/*'] },
+    (details, callback) => {
+      const requestHeaders = { ...details.requestHeaders };
+      const token = typeof getCrawlerToken === 'function' ? getCrawlerToken() : null;
+      const appOrigin = resolveAppOrigin();
+      const reqOrigin = requestHeaders.Origin || requestHeaders.origin || details.initiator || '';
+      const hasToken = Object.keys(requestHeaders).some((k) => k.toLowerCase() === 'x-crawler-token');
+      if (token && appOrigin && reqOrigin === appOrigin && !hasToken) {
+        requestHeaders['x-crawler-token'] = token;
+      }
+      callback({ requestHeaders });
+    },
+  );
+
   session.defaultSession.webRequest.onHeadersReceived(
     { urls: allowedLlmPatterns },
     (details, callback) => {
@@ -48,12 +71,7 @@ function configureLlmSessionSecurity() {
       }
       // Local helpers (crawler, Ollama) accept only the app's own origin; hosted vendors still need a key.
       if (/^https?:\/\/(127\.0\.0\.1|localhost):/i.test(details.url)) {
-        let appOrigin = null;
-        try {
-          appOrigin = new URL(resolveWebappUrl()).origin;
-        } catch {
-          appOrigin = null;
-        }
+        const appOrigin = resolveAppOrigin();
         if (!appOrigin) return callback({ responseHeaders });
         responseHeaders['access-control-allow-origin'] = [appOrigin];
         responseHeaders.vary = ['Origin'];
@@ -333,7 +351,7 @@ let mainUpdaterApi = null;
 /** Bridge calls answer only the app and the shell's own splash and offline pages. */
 const handleTrusted = createTrustedIpc(ipcMain, shellPolicy);
 
-function registerIpc() {
+function registerIpc(coordinator) {
   const updaterApi = setupAutoUpdater({
     mainWindow,
     getMainWindow: () => mainWindow,
@@ -371,12 +389,6 @@ function registerIpc() {
     }
   });
 
-  const coordinator = createDesktopCoordinator({
-    userDataDir: app.getPath('userData'),
-    safeStorage,
-    persistToDisk: true,
-  });
-
   handleTrusted('desktop:coordinator:status', () => coordinator.getStatus());
   handleTrusted('desktop:coordinator:check-crawler', () => coordinator.checkCrawlerHealth());
   handleTrusted('desktop:coordinator:supervise-crawler', (_event, opts) =>
@@ -409,13 +421,19 @@ if (!gotLock) {
   app.on('second-instance', showMainWindow);
 
   app.whenReady().then(() => {
-    configureLlmSessionSecurity();
+    const coordinator = createDesktopCoordinator({
+      userDataDir: app.getPath('userData'),
+      allowedOrigin: resolveAppOrigin() || '',
+      safeStorage,
+      persistToDisk: true,
+    });
+    configureLlmSessionSecurity(() => coordinator.getCrawlerToken());
     // A link to another app from a frame or popup fires no navigation event in the main window;
     // Electron asks this permission before Windows opens it.
     session.defaultSession.setPermissionRequestHandler((_contents, permission, callback, details) => {
       callback(shellPolicy.isPermissionGranted(permission, details));
     });
-    registerIpc();
+    registerIpc(coordinator);
     buildMenu();
     createWindow();
     if (IS_WINDOWS) createTray();

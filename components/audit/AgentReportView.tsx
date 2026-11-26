@@ -88,7 +88,7 @@ export const AgentReportView: React.FC = () => {
       </div>
       <iframe
         title={title}
-        sandbox="allow-popups allow-popups-to-escape-sandbox"
+        sandbox="allow-popups"
         srcDoc={html}
         className="w-full min-h-[calc(100vh-40px)] border-0 bg-white"
       />

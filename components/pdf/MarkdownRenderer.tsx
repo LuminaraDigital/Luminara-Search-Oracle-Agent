@@ -10,6 +10,7 @@ import {
   type Style,
 } from './primitives';
 import type { ExecutivePdfTheme } from './theme';
+import { isWebUrl } from '../../utils/webUrl';
 
 interface MarkdownRendererProps {
   content: string;
@@ -58,6 +59,14 @@ function renderInlineTokens(tokens: Token[] | undefined, theme: ExecutivePdfThem
       }
       case 'link': {
         const linkTok = t as Tokens.Link;
+        const linkChildren = linkTok.tokens ? renderInlineTokens(linkTok.tokens, theme) : linkTok.text;
+        if (typeof linkTok.href !== 'string' || !isWebUrl(linkTok.href)) {
+          return (
+            <Text key={idx} style={{ color: theme.colors.foreground }}>
+              {linkChildren}
+            </Text>
+          );
+        }
         return (
           <Text
             key={idx}
@@ -67,7 +76,7 @@ function renderInlineTokens(tokens: Token[] | undefined, theme: ExecutivePdfThem
               textDecoration: 'underline',
             }}
           >
-            {linkTok.tokens ? renderInlineTokens(linkTok.tokens, theme) : linkTok.text}
+            {linkChildren}
           </Text>
         );
       }

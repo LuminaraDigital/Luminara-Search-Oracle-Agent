@@ -437,6 +437,52 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
   };
 }
 
+export async function revokeAccountOAuthKvTokens(env: Env, accountId: string): Promise<number> {
+  if (!accountId) return 0;
+  let revoked = 0;
+  if (env.DB) {
+    try {
+      const rows = await env.DB.prepare(
+        `SELECT access_hash FROM mcp_oauth_refresh_access
+         WHERE family_id IN (SELECT family_id FROM mcp_oauth_refresh_family WHERE account_id = ?)`,
+      )
+        .bind(accountId)
+        .all<{ access_hash: string }>();
+      for (const row of rows.results ?? []) {
+        if (row.access_hash && env.LUMINARA_KV) {
+          await env.LUMINARA_KV.delete(`mcp_oauth_token:${row.access_hash}`).catch(() => undefined);
+          revoked += 1;
+        }
+      }
+      await env.DB.prepare(`UPDATE mcp_oauth_refresh_family SET revoked = 1 WHERE account_id = ?`)
+        .bind(accountId)
+        .run()
+        .catch(() => undefined);
+    } catch {
+      /* table may not exist in older fixtures */
+    }
+  }
+  if (env.LUMINARA_KV && typeof env.LUMINARA_KV.list === 'function') {
+    const { sha256Hex } = await import('./workerUtils');
+    const prefix = `mcp_oauth_connection:${await sha256Hex(accountId)}:`;
+    let cursor: string | undefined;
+    for (let page = 0; page < 20; page += 1) {
+      const listed = await env.LUMINARA_KV.list({ prefix, cursor });
+      for (const item of listed.keys) {
+        const suffix = item.name.slice(prefix.length);
+        if (/^[a-f0-9]{64}$/.test(suffix)) {
+          await env.LUMINARA_KV.delete(`mcp_oauth_token:${suffix}`).catch(() => undefined);
+        }
+        await env.LUMINARA_KV.delete(item.name).catch(() => undefined);
+        revoked += 1;
+      }
+      if (listed.list_complete || !listed.cursor || listed.cursor === cursor) break;
+      cursor = listed.cursor;
+    }
+  }
+  return revoked;
+}
+
 async function softDeleteAccount(env: Env, accountId: string, deps?: DataPlaneDeps): Promise<Record<string, number>> {
   const db = env.DB!;
   const listed = await db.prepare(`SELECT id FROM users WHERE account_id = ? OR id = ?`).bind(accountId, accountId).all<{ id: string }>();
@@ -567,6 +613,8 @@ async function softDeleteAccount(env: Env, accountId: string, deps?: DataPlaneDe
   await drop('project_monitor_alerts', `DELETE FROM project_monitor_alerts WHERE account_id = ?`);
   await drop('project_monitors', `DELETE FROM project_monitors WHERE account_id = ?`);
   await drop('agent_reports', `DELETE FROM agent_reports WHERE account_id = ?`);
+  // Revoke MCP OAuth KV access tokens and connection indexes before dropping refresh-family D1 rows.
+  counts.oauth_tokens_revoked = await revokeAccountOAuthKvTokens(env, accountId);
   // Connected assistants: approval requests hold tool inputs, and refresh families keep a connection alive.
   await drop('mcp_action_requests', `DELETE FROM mcp_action_requests WHERE user_id = ?`);
   await drop(
@@ -588,6 +636,20 @@ async function softDeleteAccount(env: Env, accountId: string, deps?: DataPlaneDe
   await drop('client_workspaces', `DELETE FROM client_workspaces WHERE account_id = ?`);
   await drop('win_shares', `DELETE FROM win_shares WHERE owner_id = ?`);
   await drop('shared_reports', `DELETE FROM shared_reports WHERE owner_account_id = ?`);
+  const { revokeAllApiKeys } = await import('./apiKeyService');
+  counts.api_keys_revoked = await revokeAllApiKeys(env, accountId);
+  const { revokeSessionsForDeletedUser } = await import('./opaqueSession');
+  const sessionIds = new Set<string>([accountId, ...userIds]);
+  for (const rawId of sessionIds) {
+    const cleaned = rawId.startsWith('fb:') ? rawId.slice(3) : rawId;
+    if (cleaned) await revokeSessionsForDeletedUser(env, cleaned).catch(() => undefined);
+    if (/^\d+$/.test(rawId)) await revokeSessionsForDeletedUser(env, `tg:${rawId}`).catch(() => undefined);
+  }
+  if (env.LUMINARA_KV) {
+    for (const k of [`sub:${accountId}`, `user:${accountId}`]) {
+      await env.LUMINARA_KV.delete(k).catch(() => undefined);
+    }
+  }
   // Anonymize login rows; keep account_id for ledger FK honesty (anonymize path when legal holds exist).
   await run(
     'users_anon',

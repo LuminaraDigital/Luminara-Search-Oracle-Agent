@@ -9,6 +9,11 @@ export const METER_DDL = `CREATE TABLE IF NOT EXISTS meter (
   refunds INTEGER NOT NULL DEFAULT 0
 )`;
 
+export const WINDOW_DDL = `CREATE TABLE IF NOT EXISTS window_hits (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts INTEGER NOT NULL
+)`;
+
 const SPEND_SQL = `INSERT INTO meter (id, used, refunds) VALUES (1, 1, 0)
 ON CONFLICT(id) DO UPDATE SET used = used + 1 WHERE used < ?
 RETURNING used`;
@@ -18,6 +23,12 @@ WHERE id = 1 AND used > 0 AND refunds < ?
 RETURNING used, refunds`;
 
 const READ_SQL = `SELECT used, refunds FROM meter WHERE id = 1`;
+
+export interface SlidingWindowOutcome {
+  ok: boolean;
+  count: number;
+  oldest: number;
+}
 
 export interface MeterRow {
   used: number;
@@ -81,13 +92,35 @@ function runnerFrom(sql: SqlStorage): SqlRunner {
  * idFromName is `${accountId}:${YYYY-MM-DD}`.
  */
 export class DailyQuota {
+  private readonly rawSql: SqlStorage;
   private readonly sql: SqlRunner;
 
   constructor(state: DurableObjectState) {
+    this.rawSql = state.storage.sql;
     this.sql = runnerFrom(state.storage.sql);
     void state.blockConcurrencyWhile(async () => {
       state.storage.sql.exec(METER_DDL);
+      state.storage.sql.exec(WINDOW_DDL);
     });
+  }
+
+  private handleWindow(limit: number, windowMs: number, record: boolean): SlidingWindowOutcome {
+    const now = Date.now();
+    const cutoff = now - Math.max(1000, windowMs);
+    this.rawSql.exec('DELETE FROM window_hits WHERE ts <= ?', cutoff);
+    const stats = [...this.rawSql.exec('SELECT COUNT(*) AS cnt, COALESCE(MIN(ts), 0) AS oldest FROM window_hits')][0] as
+      | { cnt?: unknown; oldest?: unknown }
+      | undefined;
+    const count = cell(stats?.cnt ?? 0);
+    const oldest = cell(stats?.oldest ?? 0);
+    if (limit > 0 && count >= limit) {
+      return { ok: false, count, oldest: oldest || now };
+    }
+    if (record) {
+      this.rawSql.exec('INSERT INTO window_hits (ts) VALUES (?)', now);
+      return { ok: true, count: count + 1, oldest: oldest || now };
+    }
+    return { ok: true, count, oldest: oldest || now };
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -97,6 +130,16 @@ export class DailyQuota {
     if (url.pathname === '/spend') return Response.json(spendMeter(this.sql, limit));
     if (url.pathname === '/refund') return Response.json(refundMeter(this.sql, limit));
     if (url.pathname === '/read') return Response.json(readMeter(this.sql));
+    if (url.pathname === '/window') {
+      const parsedWin = Number(url.searchParams.get('windowMs') || '60000');
+      const windowMs = Number.isFinite(parsedWin) && parsedWin > 0 ? parsedWin : 60_000;
+      const record = url.searchParams.get('record') !== '0';
+      return Response.json(this.handleWindow(limit, windowMs, record));
+    }
+    if (url.pathname === '/window-clear') {
+      this.rawSql.exec('DELETE FROM window_hits');
+      return Response.json({ cleared: true });
+    }
     return new Response('not found', { status: 404 });
   }
 }
@@ -119,5 +162,36 @@ export async function invokeDailyQuota(
     return await res.json();
   } catch {
     return null;
+  }
+}
+
+export async function invokeSlidingWindow(
+  env: Env,
+  name: string,
+  opts: { limit: number; windowMs: number; record?: boolean },
+): Promise<SlidingWindowOutcome | null> {
+  const ns = env.DAILY_QUOTA;
+  if (!ns) return null;
+  try {
+    const rec = opts.record === false ? '0' : '1';
+    const url = `https://daily-quota.internal/window?limit=${Math.max(0, Math.floor(opts.limit))}&windowMs=${Math.max(1000, Math.floor(opts.windowMs))}&record=${rec}`;
+    const res = await ns.get(ns.idFromName(name)).fetch(url);
+    if (!res.ok) return null;
+    const data = (await res.json()) as Partial<SlidingWindowOutcome>;
+    if (typeof data.ok !== 'boolean' || typeof data.count !== 'number') return null;
+    return { ok: data.ok, count: data.count, oldest: typeof data.oldest === 'number' ? data.oldest : Date.now() };
+  } catch {
+    return null;
+  }
+}
+
+export async function clearSlidingWindow(env: Env, name: string): Promise<boolean> {
+  const ns = env.DAILY_QUOTA;
+  if (!ns) return false;
+  try {
+    const res = await ns.get(ns.idFromName(name)).fetch('https://daily-quota.internal/window-clear');
+    return res.ok;
+  } catch {
+    return false;
   }
 }

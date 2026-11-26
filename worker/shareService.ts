@@ -14,7 +14,30 @@ import { entitlementsFor } from '../services/plans/planEntitlements';
 import { PRODUCTION_MINI_APP_URL, resolveMiniAppUrl } from '../services/referrals/rules';
 import { handleWinRoute } from './winShare';
 import { stripUntrustedFences } from '../utils/untrustedContent';
+import { isWebUrl } from '../utils/webUrl';
 import { presentShareBranding, resolveShareBranding, type ShareBranding } from './reportBrand';
+
+function isSafeWebSourceUri(uri: string): boolean {
+  if (!isWebUrl(uri)) return false;
+  try {
+    const parsed = new URL(uri);
+    return (parsed.protocol === 'http:' || parsed.protocol === 'https:') && !parsed.username && !parsed.password;
+  } catch {
+    return false;
+  }
+}
+
+function sanitizeShareSources(raw: unknown): Array<{ uri: string; title: string }> | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  return raw.slice(0, MAX_SOURCES).flatMap((s) => {
+    if (!s || typeof s !== 'object') return [];
+    const row = s as Record<string, unknown>;
+    const uri = typeof row.uri === 'string' ? row.uri.trim().slice(0, 2000) : '';
+    if (!isSafeWebSourceUri(uri)) return [];
+    const title = typeof row.title === 'string' ? row.title.slice(0, 300) : '';
+    return [{ uri, title }];
+  });
+}
 
 const DEFAULT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const MAX_MARKDOWN_CHARS = 400_000;
@@ -324,19 +347,7 @@ function parseCreateBody(raw: unknown): {
     return { ok: false, error: 'markdownText too large', status: 413 };
   }
 
-  let sources: Array<{ uri: string; title: string }> | undefined;
-  if (Array.isArray(body.sources)) {
-    sources = body.sources
-      .slice(0, MAX_SOURCES)
-      .map((s) => {
-        const row = s as Record<string, unknown>;
-        return {
-          uri: typeof row.uri === 'string' ? row.uri.slice(0, 2000) : '',
-          title: typeof row.title === 'string' ? row.title.slice(0, 300) : '',
-        };
-      })
-      .filter((s) => s.uri);
-  }
+  const sources = sanitizeShareSources(body.sources);
 
   let branding: SharedReportBranding | undefined;
   if (body.branding && typeof body.branding === 'object') {
@@ -513,6 +524,7 @@ export async function handleShareRoute(request: Request, env: Env, path: string)
 
     const publicReport: SharedReportPublic = {
       ...report,
+      sources: sanitizeShareSources(report.sources),
       branding: await presentShareBranding(env, row.owner_account_id, row.project_id, report.branding),
       passwordRequired: Boolean(row.password_hash),
       expiresAt: row.expires_at,

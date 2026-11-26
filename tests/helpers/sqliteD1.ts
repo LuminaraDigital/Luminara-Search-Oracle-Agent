@@ -28,6 +28,8 @@ export function createSqliteD1(options: { skipMigrations?: string[] } = {}): Sql
   const files = readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith('.sql')).sort();
   for (const file of files) {
     if (options.skipMigrations?.some((prefix) => file.startsWith(prefix))) continue;
+    // 0061 attaches triggers to tables from earlier migrations; skip it when tests omit earlier migrations.
+    if (file.startsWith('0061_') && (options.skipMigrations?.length ?? 0) > 0) continue;
     sqlite.exec(readFileSync(resolve(MIGRATIONS_DIR, file), 'utf8'));
   }
 

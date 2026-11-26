@@ -20,6 +20,20 @@ import {
 import { aiProviderService } from '../aiProviderService';
 import { UnifiedScraperService } from '../scraping/unifiedScraper';
 import { noteWorkspaceDirty } from '../sync/workspaceSyncService';
+import { validateClientUploadFile } from '../../utils/fileUploadGuard';
+
+const NOTEBOOK_ALLOWED_EXTENSIONS = [
+  '.txt',
+  '.md',
+  '.markdown',
+  '.csv',
+  '.tsv',
+  '.json',
+  '.xml',
+  '.yaml',
+  '.yml',
+  '.log',
+] as const;
 
 const NOTEBOOKS_STORAGE_KEY = 'luminara_studio_dossiers';
 const LEGACY_NOTEBOOKS_KEY = 'luminara_notebooklm_dossiers';
@@ -290,6 +304,10 @@ export class NotebookService {
   }
 
   public async addFileSource(notebookId: string, file: File): Promise<NotebookSource> {
+    const checked = validateClientUploadFile(file, { allowedExtensions: NOTEBOOK_ALLOWED_EXTENSIONS });
+    if (!checked.ok) {
+      throw new Error(checked.error);
+    }
     const text = await file.text();
     const source: NotebookSource = {
       id: `src-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,

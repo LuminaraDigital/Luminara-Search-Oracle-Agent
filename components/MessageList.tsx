@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Message } from '../types';
 import { ICONS } from '../constants';
-import { renderMarkdown } from '../utils/markdown';
+import { isWebUrl } from '../utils/webUrl';
 import { ReportDisplay } from './audit/ReportDisplay';
 import { HybridMessageBody } from './genui/HybridMessageBody';
 import { fallbackAnswerLine } from '../services/llm/fallbackAnswer';
@@ -249,24 +249,43 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isThinking, activeT
                       </div>
                       
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {msg.groundingUrls.map((url, idx) => (
-                          <a
-                            key={idx}
-                            href={url.uri}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="group p-5 rounded-2xl bg-white/5 hover:bg-gold/10 border border-white/5 hover:border-gold/30 transition-all flex flex-col gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
-                          >
-                            <div className="flex items-center justify-between">
-                              <span className="text-[9px] text-gold font-bold">[{idx + 1}]</span>
-                              <div className="w-2 h-2 rounded-full bg-gold/20 group-hover:bg-gold transition-colors"></div>
-                            </div>
-                            <span className="text-[13px] font-medium text-gray-200 group-hover:text-gold-light transition-colors line-clamp-1">
-                              {url.title || url.uri}
-                            </span>
-                            <span className="text-[10px] text-gray-400 font-mono truncate">{url.uri}</span>
-                          </a>
-                        ))}
+                        {msg.groundingUrls.map((url, idx) => {
+                          const safeHref = typeof url.uri === 'string' && isWebUrl(url.uri) ? url.uri : null;
+                          if (!safeHref) {
+                            return (
+                              <div
+                                key={idx}
+                                className="p-5 rounded-2xl bg-white/5 border border-white/5 flex flex-col gap-2"
+                              >
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[9px] text-gold font-bold">[{idx + 1}]</span>
+                                  <div className="w-2 h-2 rounded-full bg-gold/20"></div>
+                                </div>
+                                <span className="text-[13px] font-medium text-gray-200 line-clamp-1">
+                                  {url.title || 'Unlinked source'}
+                                </span>
+                              </div>
+                            );
+                          }
+                          return (
+                            <a
+                              key={idx}
+                              href={safeHref}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="group p-5 rounded-2xl bg-white/5 hover:bg-gold/10 border border-white/5 hover:border-gold/30 transition-all flex flex-col gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="text-[9px] text-gold font-bold">[{idx + 1}]</span>
+                                <div className="w-2 h-2 rounded-full bg-gold/20 group-hover:bg-gold transition-colors"></div>
+                              </div>
+                              <span className="text-[13px] font-medium text-gray-200 group-hover:text-gold-light transition-colors line-clamp-1">
+                                {url.title || safeHref}
+                              </span>
+                              <span className="text-[10px] text-gray-400 font-mono truncate">{safeHref}</span>
+                            </a>
+                          );
+                        })}
                       </div>
                     </div>
                   )}

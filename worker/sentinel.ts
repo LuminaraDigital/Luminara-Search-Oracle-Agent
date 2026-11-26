@@ -7,6 +7,29 @@ import { sendTelegramAlert, planCapsFor } from './telegramBot';
 import { startRun, completeRun } from './runProvenance';
 import { enqueueAuditJob } from './auditQueue';
 import { redactSensitive } from './logRedaction';
+import { watchCadenceAllowed } from '../services/citationWatch/thresholds';
+import { isWatchCadence } from '../services/citationWatch/types';
+
+let sentinelWriteChain: Promise<void> = Promise.resolve();
+
+async function withSentinelLock<T>(work: () => Promise<T>): Promise<T> {
+  let release!: () => void;
+  const next = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const prev = sentinelWriteChain;
+  sentinelWriteChain = prev.then(() => next, () => next);
+  await prev;
+  try {
+    return await work();
+  } finally {
+    release();
+  }
+}
+
+function isMissingSlotsTable(err: unknown): boolean {
+  return /no such table:\s*sentinel_target_slots/i.test(err instanceof Error ? err.message : String(err));
+}
 
 export interface SentinelTarget {
   id: string;
@@ -302,7 +325,8 @@ export async function runSentinelScan(env: Env): Promise<{ scanned: number; aler
 export async function handleSentinelRoute(request: Request, env: Env, path: string): Promise<Response> {
   const who = await identify(request, env);
   if (!who.user) return json({ error: who.error || 'Telegram sign-in required' }, 401);
-  const ownerId = who.user.id;
+  const user = who.user;
+  const ownerId = user.id;
 
   if (path === '/sentinel/status') {
     if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405);
@@ -325,54 +349,128 @@ export async function handleSentinelRoute(request: Request, env: Env, path: stri
   const keywords = Array.isArray(body.keywords)
     ? body.keywords.filter((k): k is string => typeof k === 'string' && k.trim().length > 0).map(k => k.trim().slice(0, 200)).slice(0, 10)
     : [];
-  const raw = env.LUMINARA_KV ? ((await env.LUMINARA_KV.get('sentinel:targets', 'json')) as SentinelTarget[] | null) : null;
-  const targets = raw || [];
-  const ownedCount = targets.filter(t => t.ownerId === ownerId).length;
-  if (targets.length >= 500) return json({ error: 'Sentinel is full. Try again later.' }, 503);
 
   const sub = await getActiveSubscription(env, who.user);
   const caps = planCapsFor(sub?.plan);
-  const existingIdx = targets.findIndex(t => t.domain.toLowerCase() === cleanDomain && t.ownerId === ownerId);
-  if (existingIdx < 0 && ownedCount >= caps.sentinelLimit) {
-    const msg =
-      caps.sentinelLimit <= 0
-        ? 'Drift Sentinel requires a paid plan. Upgrade to Starter or higher.'
-        : `Your plan allows up to ${caps.sentinelLimit} watched domains. Upgrade for more.`;
-    return json({ error: msg, code: 'DOMAIN_LIMIT', limit: caps.sentinelLimit, plan: sub?.plan || 'free' }, 402);
+  const bodyExtra = body as { reauditCadence?: unknown; competitorNames?: string[] };
+  let reauditCadence: 'none' | 'monthly' | 'weekly' | 'daily' = caps.scheduledReaudit;
+  if (bodyExtra.reauditCadence !== undefined) {
+    if (
+      bodyExtra.reauditCadence !== 'none' &&
+      bodyExtra.reauditCadence !== 'monthly' &&
+      bodyExtra.reauditCadence !== 'weekly' &&
+      bodyExtra.reauditCadence !== 'daily'
+    ) {
+      return json({ error: 'reauditCadence must be none, monthly, weekly, or daily.' }, 400);
+    }
+    if (isWatchCadence(bodyExtra.reauditCadence) && !watchCadenceAllowed(caps.scheduledReaudit, bodyExtra.reauditCadence)) {
+      return json(
+        {
+          error: `This plan's schedule is ${caps.scheduledReaudit}. ${bodyExtra.reauditCadence} is faster than the plan allows.`,
+          code: 'PLAN_LIMIT',
+          allowedCadence: caps.scheduledReaudit,
+          plan: sub?.plan || 'free',
+        },
+        402,
+      );
+    }
+    reauditCadence = bodyExtra.reauditCadence;
   }
 
-  const bodyExtra = body as { reauditCadence?: string; competitorNames?: string[] };
-  const cadenceRaw = typeof bodyExtra.reauditCadence === 'string' ? bodyExtra.reauditCadence : caps.scheduledReaudit;
-  const reauditCadence =
-    cadenceRaw === 'monthly' || cadenceRaw === 'weekly' || cadenceRaw === 'daily' ? cadenceRaw : 'none';
+  return withSentinelLock(async () => {
+    const raw = env.LUMINARA_KV ? ((await env.LUMINARA_KV.get('sentinel:targets', 'json')) as SentinelTarget[] | null) : null;
+    const targets = raw || [];
+    const ownedTargets = targets.filter(t => t.ownerId === ownerId);
+    const ownedCount = ownedTargets.length;
+    if (targets.length >= 500) return json({ error: 'Sentinel is full. Try again later.' }, 503);
 
-  const newTarget: SentinelTarget = {
-    id: existingIdx >= 0 ? targets[existingIdx].id : `sentinel-${Date.now()}-${ownerId}`,
-    ownerId,
-    domain: cleanDomain,
-    brandName: typeof body.brandName === 'string' && body.brandName.trim() ? body.brandName.trim().slice(0, 100) : cleanDomain.split('.')[0],
-    // Alerts are delivered over Telegram only, and only to the registering user's own chat.
-    tgChatId: who.user.source === 'telegram' ? Number(ownerId) : undefined,
-    keywords: keywords.length > 0 ? keywords : [`what is ${cleanDomain}`, `best ${cleanDomain} alternative`],
-    lastScanAt: Date.now(),
-    lastStatus: 'healthy',
-    reauditCadence,
-    competitorNames: Array.isArray(bodyExtra.competitorNames)
-      ? bodyExtra.competitorNames
-          .filter((k): k is string => typeof k === 'string' && k.trim().length > 0)
-          .map(k => k.trim().slice(0, 100))
-          .slice(0, 20)
-      : [],
-  };
+    const existingIdx = targets.findIndex(t => t.domain.toLowerCase() === cleanDomain && t.ownerId === ownerId);
+    const limitExceededResponse = () => {
+      const msg =
+        caps.sentinelLimit <= 0
+          ? 'Drift Sentinel requires a paid plan. Upgrade to Starter or higher.'
+          : `Your plan allows up to ${caps.sentinelLimit} watched domains. Upgrade for more.`;
+      return json({ error: msg, code: 'DOMAIN_LIMIT', limit: caps.sentinelLimit, plan: sub?.plan || 'free' }, 402);
+    };
 
-  if (existingIdx >= 0) {
-    targets[existingIdx] = { ...targets[existingIdx], ...newTarget };
-  } else {
-    targets.push(newTarget);
-  }
+    let reservedInDb = false;
+    if (existingIdx < 0) {
+      if (caps.sentinelLimit <= 0 || ownedCount >= caps.sentinelLimit) {
+        return limitExceededResponse();
+      }
+      if (env.DB) {
+        try {
+          const now = Date.now();
+          for (const owned of ownedTargets) {
+            await env.DB.prepare(
+              `INSERT OR IGNORE INTO sentinel_target_slots (owner_id, domain, created_at) VALUES (?, ?, ?)`,
+            )
+              .bind(ownerId, owned.domain.toLowerCase(), owned.lastScanAt || now)
+              .run();
+          }
+          const slotRes = await env.DB.prepare(
+            `INSERT OR IGNORE INTO sentinel_target_slots (owner_id, domain, created_at)
+             SELECT ?, ?, ?
+             WHERE (SELECT COUNT(*) FROM sentinel_target_slots WHERE owner_id = ?) < ?`,
+          )
+            .bind(ownerId, cleanDomain, now, ownerId, caps.sentinelLimit)
+            .run();
+          if (Number(slotRes.meta?.changes ?? 0) === 1) {
+            reservedInDb = true;
+          } else {
+            const alreadyReserved = await env.DB.prepare(
+              `SELECT 1 AS ok FROM sentinel_target_slots WHERE owner_id = ? AND domain = ?`,
+            )
+              .bind(ownerId, cleanDomain)
+              .first<{ ok: number }>();
+            if (!alreadyReserved) {
+              return limitExceededResponse();
+            }
+          }
+        } catch (err) {
+          if (!isMissingSlotsTable(err)) throw err;
+        }
+      }
+    }
 
-  if (env.LUMINARA_KV) {
-    await env.LUMINARA_KV.put('sentinel:targets', JSON.stringify(redactSensitive(targets)));
-  }
-  return json({ ok: true, target: newTarget });
+    const newTarget: SentinelTarget = {
+      id: existingIdx >= 0 ? targets[existingIdx].id : `sentinel-${Date.now()}-${ownerId}`,
+      ownerId,
+      domain: cleanDomain,
+      brandName: typeof body.brandName === 'string' && body.brandName.trim() ? body.brandName.trim().slice(0, 100) : cleanDomain.split('.')[0],
+      // Alerts are delivered over Telegram only, and only to the registering user's own chat.
+      tgChatId: user.source === 'telegram' ? Number(ownerId) : undefined,
+      keywords: keywords.length > 0 ? keywords : [`what is ${cleanDomain}`, `best ${cleanDomain} alternative`],
+      lastScanAt: Date.now(),
+      lastStatus: 'healthy',
+      reauditCadence,
+      competitorNames: Array.isArray(bodyExtra.competitorNames)
+        ? bodyExtra.competitorNames
+            .filter((k): k is string => typeof k === 'string' && k.trim().length > 0)
+            .map(k => k.trim().slice(0, 100))
+            .slice(0, 20)
+        : [],
+    };
+
+    if (existingIdx >= 0) {
+      targets[existingIdx] = { ...targets[existingIdx], ...newTarget };
+    } else {
+      targets.push(newTarget);
+    }
+
+    try {
+      if (env.LUMINARA_KV) {
+        await env.LUMINARA_KV.put('sentinel:targets', JSON.stringify(redactSensitive(targets)));
+      }
+    } catch (err) {
+      if (reservedInDb && env.DB) {
+        await env.DB.prepare(`DELETE FROM sentinel_target_slots WHERE owner_id = ? AND domain = ?`)
+          .bind(ownerId, cleanDomain)
+          .run()
+          .catch(() => {});
+      }
+      throw err;
+    }
+    return json({ ok: true, target: newTarget });
+  });
 }

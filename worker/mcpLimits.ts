@@ -1,8 +1,11 @@
 import type { Env } from './env';
+import { invokeDailyQuota } from './dailyQuota';
 import { redactSensitive } from './logRedaction';
 import {
   enforceKvSlidingWindow,
+  isProductionLike,
   meterDailyUse,
+  utcDayResetEpoch,
   type DailyUseMeter,
   type DualRateLimitResult,
 } from './securityHardening';
@@ -41,7 +44,26 @@ function snapshot(meter: DailyUseMeter): McpDailyUsage {
   return { used: meter.used, limit: meter.limit, remaining: meter.remaining, resetAt: meter.resetAt };
 }
 
-/** Spend one MCP daily unit. `limit` 0 still counts, and never blocks, so whoami can show usage on Growth. */
+/** Upper ceiling passed to DailyQuota when a plan has no daily cap so usage is still counted atomically. */
+const UNLIMITED_METER_CEILING = 1_000_000_000;
+
+function isDoSpendBody(value: unknown): value is { ok: boolean; used: number } {
+  return (
+    Boolean(value) &&
+    typeof value === 'object' &&
+    'ok' in (value as Record<string, unknown>) &&
+    typeof (value as { ok?: unknown }).ok === 'boolean' &&
+    'used' in (value as Record<string, unknown>) &&
+    typeof (value as { used?: unknown }).used === 'number' &&
+    Number.isFinite((value as { used: number }).used)
+  );
+}
+
+/**
+ * Spend one MCP daily unit. Uses atomic SQLite Durable Object (`DAILY_QUOTA`) when bound
+ * to eliminate concurrent KV TOCTOU races; falls back to KV with fail-closed write checks
+ * when `DAILY_QUOTA` is absent (local/unit tests). `limit` 0 still counts and never blocks.
+ */
 export async function spendMcpDailyCall(
   env: Env,
   accountId: string,
@@ -49,6 +71,48 @@ export async function spendMcpDailyCall(
   prefix = 'mcp_calls',
   label = 'MCP call',
 ): Promise<{ ok: true; usage: McpDailyUsage } | { ok: false; usage: McpDailyUsage; error: string; reason: 'limit' | 'store' }> {
+  const resetAt = utcDayResetEpoch();
+  if (env.DAILY_QUOTA) {
+    const day = new Date().toISOString().slice(0, 10);
+    const effectiveLimit = limit > 0 ? limit : UNLIMITED_METER_CEILING;
+    const body = await invokeDailyQuota(env, `${prefix}:${accountId}:${day}`, 'spend', effectiveLimit);
+    if (!isDoSpendBody(body)) {
+      if (limit > 0) {
+        return {
+          ok: false,
+          reason: 'store',
+          error: `${label} quota store unavailable. Try again later.`,
+          usage: { used: 0, limit, remaining: limit, resetAt },
+        };
+      }
+      return { ok: true, usage: { used: 0, limit, remaining: null, resetAt } };
+    }
+    if (limit > 0 && !body.ok) {
+      return {
+        ok: false,
+        reason: 'limit',
+        error: `Daily ${label.toLowerCase()} limit of ${limit} reached.`,
+        usage: { used: body.used, limit, remaining: 0, resetAt },
+      };
+    }
+    return {
+      ok: true,
+      usage: {
+        used: body.used,
+        limit,
+        remaining: limit <= 0 ? null : Math.max(0, limit - body.used),
+        resetAt,
+      },
+    };
+  }
+  if (!env.LUMINARA_KV && limit > 0 && (env.REQUIRE_TG_AUTH === 'true' || isProductionLike(env))) {
+    return {
+      ok: false,
+      reason: 'store',
+      error: `${label} quota store unavailable. Try again later.`,
+      usage: { used: 0, limit, remaining: limit, resetAt },
+    };
+  }
   const meter = await meterDailyUse(env, prefix, accountId, limit, label, true, true);
   const usage = snapshot(meter);
   if (!meter.ok) return { ok: false, usage, error: meter.error, reason: meter.reason };
@@ -107,6 +171,7 @@ async function sliding(
     maxRequests: limit,
     windowSeconds: 60,
     record,
+    failClosedWithoutKv: isProductionLike(env),
     failClosedOnWriteError: true,
   });
   if (result.ok) return { ok: true };
@@ -198,6 +263,7 @@ export async function enforceMcpOauthIpLimit(
     key: `rl:${action}:ip:${hashed}`,
     maxRequests: limit,
     windowSeconds: 60,
+    failClosedWithoutKv: isProductionLike(env),
     failClosedOnWriteError: true,
   });
 }

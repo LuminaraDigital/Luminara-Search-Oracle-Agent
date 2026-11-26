@@ -73,9 +73,11 @@ describe('tool governance catalogue', () => {
     }
   });
 
-  it('classifies browse_goal and browse_close as destructive', () => {
+  it('classifies browse_act, browse_goal, browse_close, and review_dream_proposal as destructive', () => {
+    expect(TOOL_GOVERNANCE.browse_act.risk).toBe('destructive');
     expect(TOOL_GOVERNANCE.browse_goal.risk).toBe('destructive');
     expect(TOOL_GOVERNANCE.browse_close.risk).toBe('destructive');
+    expect(TOOL_GOVERNANCE.review_dream_proposal.risk).toBe('destructive');
   });
 
   it('defaults unknown tools to write/active via governanceFor', () => {
@@ -182,48 +184,51 @@ describe('action request lifecycle', () => {
     expect(second.existing).toBe(false);
     expect(second.id).not.toBe(first.id);
     expect(second.expiresAt).toBeGreaterThan(Date.now());
-    expect(await approveActionRequest(env, first.id, 'admin_1')).toBe(false);
+    expect(await approveActionRequest(env, first.id, 'u1')).toBe(false);
   });
 
-  it('approveActionRequest marks pending row approved; double approve fails', async () => {
+  it('approveActionRequest marks pending row approved; double approve and cross-account approve fail', async () => {
     const env = makeEnv();
     const { id } = await createActionRequest(env, { userId: 'u1', toolName: 'browse_goal' });
-    expect(await approveActionRequest(env, id, 'admin_1')).toBe(true);
-    expect(await approveActionRequest(env, id, 'admin_1')).toBe(false);
+    // Cross-account approval must fail closed (M-20)
+    expect(await approveActionRequest(env, id, 'attacker_acct')).toBe(false);
+    expect(await approveActionRequest(env, id, 'u1')).toBe(true);
+    expect(await approveActionRequest(env, id, 'u1')).toBe(false);
     const rows = await listActionRequests(env, 'u1');
     expect(rows[0].status).toBe('approved');
-    expect(rows[0].decided_by).toBe('admin_1');
+    expect(rows[0].decided_by).toBe('u1');
     expect(rows[0].decided_at).toBeTruthy();
   });
 
-  it('denyActionRequest marks pending row denied', async () => {
+  it('denyActionRequest marks pending row denied and rejects cross-account denial', async () => {
     const env = makeEnv();
     const { id } = await createActionRequest(env, { userId: 'u1', toolName: 'browse_goal' });
-    expect(await denyActionRequest(env, id, 'admin_2')).toBe(true);
+    expect(await denyActionRequest(env, id, 'attacker_acct')).toBe(false);
+    expect(await denyActionRequest(env, id, 'u1')).toBe(true);
     const rows = await listActionRequests(env, 'u1');
     expect(rows[0].status).toBe('denied');
-    expect(rows[0].decided_by).toBe('admin_2');
+    expect(rows[0].decided_by).toBe('u1');
   });
 
   it('consumeApprovedRequest: false for pending/denied, true once for approved, then consumed', async () => {
     const env = makeEnv();
     const pending = await createActionRequest(env, { userId: 'u1', toolName: 'browse_goal', projectId: 'p1' });
     expect(await consumeApprovedRequest(env, 'u1', 'browse_goal', 'p1')).toBe(false);
-    await approveActionRequest(env, pending.id, 'admin');
+    await approveActionRequest(env, pending.id, 'u1');
     expect(await consumeApprovedRequest(env, 'u1', 'browse_goal', 'p1')).toBe(true);
     // Single use: the same approval never authorizes a second call.
     expect(await consumeApprovedRequest(env, 'u1', 'browse_goal', 'p1')).toBe(false);
     expect((await listActionRequests(env, 'u1'))[0].status).toBe('consumed');
 
     const denied = await createActionRequest(env, { userId: 'u1', toolName: 'browse_close' });
-    await denyActionRequest(env, denied.id, 'admin');
+    await denyActionRequest(env, denied.id, 'u1');
     expect(await consumeApprovedRequest(env, 'u1', 'browse_close', null)).toBe(false);
   });
 
   it('an approval only authorizes the args it was requested with', async () => {
     const env = makeEnv();
     const { id } = await createActionRequest(env, { userId: 'u1', toolName: 'browse_goal', args: { url: 'https://a.test' } });
-    await approveActionRequest(env, id, 'admin');
+    await approveActionRequest(env, id, 'u1');
     expect(await consumeApprovedRequest(env, 'u1', 'browse_goal', null, { url: 'https://evil.test' })).toBe(false);
     expect(await consumeApprovedRequest(env, 'u1', 'browse_goal', null, { url: 'https://a.test' })).toBe(true);
   });
@@ -232,7 +237,7 @@ describe('action request lifecycle', () => {
     const env = makeEnv();
     const reviewed = { url: 'https://a.test', token: 'A', login: { username: 'alice', password: 'one' } };
     const { id } = await createActionRequest(env, { userId: 'u1', toolName: 'browse_goal', args: reviewed });
-    await approveActionRequest(env, id, 'admin');
+    await approveActionRequest(env, id, 'u1');
 
     // Each of these stores the same redacted text as the reviewed call.
     const swaps = [
@@ -260,7 +265,7 @@ describe('action request lifecycle', () => {
     expect(b.id).not.toBe(a.id);
 
     // Approving B's request leaves A's call waiting.
-    await approveActionRequest(env, b.id, 'admin');
+    await approveActionRequest(env, b.id, 'u1');
     expect(await consumeApprovedRequest(env, 'u1', 'browse_goal', null, { url: 'https://a.test', token: 'A' })).toBe(false);
     expect(await consumeApprovedRequest(env, 'u1', 'browse_goal', null, { url: 'https://a.test', token: 'B' })).toBe(true);
   });
@@ -272,7 +277,7 @@ describe('action request lifecycle', () => {
     const first = await createActionRequest(env, { userId: 'u1', toolName: 'browse_goal', args: asked });
     const second = await createActionRequest(env, { userId: 'u1', toolName: 'browse_goal', args: reordered });
     expect(second).toMatchObject({ id: first.id, existing: true });
-    await approveActionRequest(env, first.id, 'admin');
+    await approveActionRequest(env, first.id, 'u1');
     // Array order is part of the call; object key order is not.
     expect(await consumeApprovedRequest(env, 'u1', 'browse_goal', null, { ...asked, steps: [{ a: 2, b: 1 }] })).toBe(false);
     expect(await consumeApprovedRequest(env, 'u1', 'browse_goal', null, reordered)).toBe(true);
@@ -295,7 +300,7 @@ describe('action request lifecycle', () => {
     const env = makeEnv();
     const args = { url: 'https://a.test' };
     const { id } = await createActionRequest(env, { userId: 'u1', toolName: 'browse_goal', args });
-    await approveActionRequest(env, id, 'admin');
+    await approveActionRequest(env, id, 'u1');
     await env.DB.prepare('UPDATE mcp_action_requests SET args_hash = NULL WHERE id = ?').bind(id).run();
     expect(await consumeApprovedRequest(env, 'u1', 'browse_goal', null, args)).toBe(false);
     // The caller asks again and gets a fresh request, not the dead one.
@@ -311,14 +316,14 @@ describe('action request lifecycle', () => {
     const first = await createActionRequest(env, { userId: 'u1', toolName: 'browse_goal', args: nested });
     const second = await createActionRequest(env, { userId: 'u1', toolName: 'browse_goal', args: nested });
     expect(second).toMatchObject({ id: first.id, existing: true });
-    await approveActionRequest(env, first.id, 'admin');
+    await approveActionRequest(env, first.id, 'u1');
     expect(await consumeApprovedRequest(env, 'u1', 'browse_goal', null, nested)).toBe(false);
   });
 
   it('expired approvals never authorize', async () => {
     const env = makeEnv();
     const { id } = await createActionRequest(env, { userId: 'u1', toolName: 'browse_goal', projectId: 'p1' });
-    await approveActionRequest(env, id, 'admin');
+    await approveActionRequest(env, id, 'u1');
     await env.DB.prepare(`UPDATE mcp_action_requests SET expires_at = ? WHERE id = ?`)
       .bind(Date.now() - 1000, id)
       .run();
@@ -328,7 +333,7 @@ describe('action request lifecycle', () => {
   it('second call after expiry opens a new request', async () => {
     const env = makeEnv();
     const first = await createActionRequest(env, { userId: 'u1', toolName: 'browse_goal', projectId: 'p1' });
-    await approveActionRequest(env, first.id, 'admin');
+    await approveActionRequest(env, first.id, 'u1');
     await env.DB.prepare(`UPDATE mcp_action_requests SET expires_at = ? WHERE id = ?`)
       .bind(Date.now() - 1000, first.id)
       .run();
@@ -498,7 +503,8 @@ describe('mcp integration', () => {
     };
     const reqId = firstBody.result?.structuredContent?.actionRequestId;
     expect(reqId).toBeTruthy();
-    await approveActionRequest(env, reqId as string, 'admin');
+    expect(await approveActionRequest(env, reqId as string, 'acct_other')).toBe(false);
+    expect(await approveActionRequest(env, reqId as string, 'acct_gov')).toBe(true);
     const second = await handleMcpRequest(mcpCall('browse_close', { sessionId: 's1' }), env, user);
     const secondBody = (await second.json()) as {
       result?: { structuredContent?: { requiresApproval?: boolean } };
@@ -509,6 +515,49 @@ describe('mcp integration', () => {
     const third = await handleMcpRequest(mcpCall('browse_close', { sessionId: 's1' }), env, user);
     const thirdBody = (await third.json()) as { result?: { structuredContent?: { requiresApproval?: boolean } } };
     expect(thirdBody.result?.structuredContent?.requiresApproval).toBe(true);
+  });
+
+  it('creates and consumes destructive approvals under tenant.dataAccountId for workspace staff (M-20)', async () => {
+    const env = makeEnv();
+    const now = Date.now();
+    // Workspace owned by acct_owner with a project and a staff member (staff_user / acct_staff)
+    await env.DB.prepare(
+      `INSERT INTO projects (id, account_id, domain, name, created_at, updated_at) VALUES ('proj_ws_1', 'acct_owner', 'ws-agency.com', 'WS', ?, ?)`,
+    ).bind(now, now).run();
+    await env.DB.prepare(
+      `INSERT INTO client_workspaces (id, account_id, name, created_at, updated_at) VALUES ('ws_1', 'acct_owner', 'Agency WS', ?, ?)`,
+    ).bind(now, now).run();
+    await env.DB.prepare(
+      `INSERT INTO client_workspace_members
+        (id, workspace_id, email, user_id, role, client_id, status, invited_at, accepted_at)
+       VALUES ('wm_1', 'ws_1', 'staff@ws-agency.com', 'staff-user', 'staff', NULL, 'active', ?, ?)`,
+    ).bind(now, now).run();
+
+    const staffUser: HostedIdentity = { id: 'staff-user', source: 'firebase', accountId: 'acct_staff' };
+    const args = { projectId: 'proj_ws_1', connectorId: 'wordpress_com_mcp', domain: 'ws-agency.com' };
+
+    const first = await handleMcpRequest(mcpCall('prepare_cms_mcp_call', args), env, staffUser);
+    const firstBody = (await first.json()) as {
+      result?: { structuredContent?: { requiresApproval?: boolean; actionRequestId?: string } };
+    };
+    expect(firstBody.result?.structuredContent?.requiresApproval).toBe(true);
+    const reqId = firstBody.result?.structuredContent?.actionRequestId ?? '';
+    expect(reqId).toBeTruthy();
+
+    // Request belongs to the workspace owner (acct_owner), not the staff member (acct_staff).
+    expect(await getOwnedToolRequest(env, reqId, 'acct_staff')).toBeNull();
+    expect(await getOwnedToolRequest(env, reqId, 'acct_owner')).not.toBeNull();
+
+    // Staff member cannot self-approve; workspace owner approves and staff retry succeeds past approval gate.
+    expect(await approveActionRequest(env, reqId, 'acct_staff')).toBe(false);
+    expect(await approveActionRequest(env, reqId, 'acct_owner')).toBe(true);
+
+    const second = await handleMcpRequest(mcpCall('prepare_cms_mcp_call', args), env, staffUser);
+    const secondBody = (await second.json()) as {
+      result?: { structuredContent?: { requiresApproval?: boolean }; isError?: boolean };
+    };
+    expect(secondBody.result?.structuredContent?.requiresApproval).toBeUndefined();
+    expect(secondBody.result?.isError).toBe(false);
   });
 
   it('rejects a JSON-RPC batch of more than 20 messages', async () => {

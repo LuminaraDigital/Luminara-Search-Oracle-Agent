@@ -3,7 +3,47 @@ import { BusinessDNA } from '../../types';
 import { geminiService } from '../../services/geminiService';
 import { ICONS } from '../../constants';
 import { renderMarkdown } from '../../utils/markdown';
+import { isWebUrl } from '../../utils/webUrl';
 import { SynthesisSkeleton } from '../ui/Skeleton';
+
+interface ResearchChunkItem {
+  uri?: string;
+  title?: string;
+}
+
+export function GroundedCitationsList({ chunks }: { chunks: Array<{ web?: ResearchChunkItem; maps?: ResearchChunkItem }> }) {
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      {chunks.map((c, i) => {
+        const item = c.web || c.maps;
+        if (!item) return null;
+        const safeHref = typeof item.uri === 'string' && isWebUrl(item.uri) ? item.uri : null;
+        if (!safeHref) {
+          return (
+            <div
+              key={i}
+              className="p-3 rounded-xl bg-black/60 border border-white/5 flex items-center justify-between text-xs text-gray-400"
+            >
+              <span className="truncate pr-2 font-mono">{item.title || 'Unlinked source'}</span>
+            </div>
+          );
+        }
+        return (
+          <a
+            key={i}
+            href={safeHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="p-3 rounded-xl bg-black/60 border border-white/5 hover:border-gold/40 flex items-center justify-between text-xs text-gray-300 hover:text-white transition-all group"
+          >
+            <span className="truncate pr-2 font-mono">{item.title || safeHref}</span>
+            <ICONS.ExternalLink className="w-3.5 h-3.5 text-gold shrink-0" />
+          </a>
+        );
+      })}
+    </div>
+  );
+}
 
 interface ResearchViewProps {
   dna: BusinessDNA | null;
@@ -152,24 +192,7 @@ export const ResearchView: React.FC<ResearchViewProps> = ({ dna }) => {
           {result.chunks && result.chunks.length > 0 && (
             <div className="glass-morphism rounded-2xl border border-white/10 p-6">
               <h4 className="text-xs font-bold uppercase tracking-widest text-gold-light mb-4">Grounded Citations & Locations</h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {result.chunks.map((c, i) => {
-                  const item = c.web || c.maps;
-                  if (!item) return null;
-                  return (
-                    <a
-                      key={i}
-                      href={item.uri}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="p-3 rounded-xl bg-black/60 border border-white/5 hover:border-gold/40 flex items-center justify-between text-xs text-gray-300 hover:text-white transition-all group"
-                    >
-                      <span className="truncate pr-2 font-mono">{item.title || item.uri}</span>
-                      <ICONS.ExternalLink className="w-3.5 h-3.5 text-gold shrink-0" />
-                    </a>
-                  );
-                })}
-              </div>
+              <GroundedCitationsList chunks={result.chunks} />
             </div>
           )}
         </div>

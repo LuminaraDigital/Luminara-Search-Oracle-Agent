@@ -15,9 +15,14 @@ export async function handleAgentAttestation(request: Request, env: Env): Promis
     if (!digest || !/^[a-f0-9]{64}$/i.test(digest)) {
       return json({ error: 'digest query parameter required (64-char hex)' }, 400);
     }
-    const record = env.LUMINARA_KV ? await env.LUMINARA_KV.get(`poa:${digest.toLowerCase()}`, 'json') : null;
-    if (!record) return json({ ok: false, error: 'Attestation not found' }, 404);
-    return json({ ok: true, attestation: record });
+    const record = env.LUMINARA_KV
+      ? await env.LUMINARA_KV.get<Record<string, unknown>>(`poa:${digest.toLowerCase()}`, 'json')
+      : null;
+    if (!record || typeof record !== 'object' || Array.isArray(record)) {
+      return json({ ok: false, error: 'Attestation not found' }, 404);
+    }
+    const { ownerId: _ownerId, ...publicAttestation } = record;
+    return json({ ok: true, attestation: publicAttestation });
   }
 
   if (request.method === 'POST') {
@@ -89,6 +94,10 @@ export async function handleAgentAttestation(request: Request, env: Env): Promis
       ownerId: who.user.id,
     };
     if (env.LUMINARA_KV) {
+      const existing = await env.LUMINARA_KV.get<{ ownerId?: unknown }>(`poa:${digestHex}`, 'json');
+      if (existing && typeof existing === 'object' && !Array.isArray(existing) && existing.ownerId !== who.user.id) {
+        return json({ ok: false, error: 'Attestation digest is already owned by another account' }, 409);
+      }
       await env.LUMINARA_KV.put(`poa:${digestHex}`, JSON.stringify(attestation), { expirationTtl: 31536000 });
     }
     return json({ ok: true, digestHex });

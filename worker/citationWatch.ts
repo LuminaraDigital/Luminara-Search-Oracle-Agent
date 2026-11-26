@@ -332,24 +332,38 @@ export async function handleCitationWatchRoute(
           402,
         );
       }
-      const owned = await env.DB.prepare(`SELECT COUNT(*) AS n FROM citation_watches WHERE account_id = ? AND active = 1`)
-        .bind(accountId)
-        .first<{ n: number }>();
-      if (Number(owned?.n ?? 0) >= plan.sentinelLimit) {
-        return json({ ok: false, error: `This plan allows ${plan.sentinelLimit} citation watches.`, code: 'PLAN_LIMIT', limit: plan.sentinelLimit }, 402);
-      }
       const id = `cw_${crypto.randomUUID().replace(/-/g, '')}`;
       const createdAt = nowMs(deps);
       const promptsJson = JSON.stringify(prompts);
       const promptsSha = await sha256HexOf(canonicalJson(prompts));
       try {
-        await env.DB.prepare(
+        const inserted = await env.DB.prepare(
           `INSERT INTO citation_watches
             (id, account_id, client_id, domain, engine, prompts_json, prompts_sha256, cadence, active, next_run_at, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+           SELECT ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?
+           WHERE (SELECT COUNT(*) FROM citation_watches WHERE account_id = ? AND active = 1) < ?`,
         )
-          .bind(id, accountId, clientId, domain, engineRaw, promptsJson, promptsSha, cadence, createdAt, createdAt)
+          .bind(
+            id,
+            accountId,
+            clientId,
+            domain,
+            engineRaw,
+            promptsJson,
+            promptsSha,
+            cadence,
+            createdAt,
+            createdAt,
+            accountId,
+            plan.sentinelLimit,
+          )
           .run();
+        if (Number(inserted.meta?.changes ?? 0) !== 1) {
+          return json(
+            { ok: false, error: `This plan allows ${plan.sentinelLimit} citation watches.`, code: 'PLAN_LIMIT', limit: plan.sentinelLimit },
+            402,
+          );
+        }
       } catch (err) {
         if (/unique/i.test(err instanceof Error ? err.message : String(err))) {
           return json({ ok: false, error: 'A watch already exists for this client, domain, engine, and prompt set.', code: 'WATCH_EXISTS' }, 409);

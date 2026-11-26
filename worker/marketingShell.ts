@@ -16,6 +16,8 @@ import { WHITE_PAPER_PATH } from '../services/marketing/whitePaper';
 import { whitePaperCrawlerHtml } from '../services/marketing/whitePaperPublish';
 import { sha256Hex } from './workerUtils';
 import { maybeServeWinHtml } from './winShare';
+import { isReceiptPubliclyReadable, isTrustReceiptsEnabled } from './trustReceipts';
+import type { Env } from './env';
 
 /**
  * Unknown paths are served as this shell with HTTP 404. The old inline skip
@@ -435,13 +437,32 @@ export async function maybeServeShareHtml(
 
 const RECEIPT_PATH = /^\/verify\/r\/([^/?#]+)$/i;
 
+type ReceiptHtmlEnv = ShareOgEnv & Pick<Env, 'ENVIRONMENT' | 'TRUST_RECEIPTS_ENABLED' | 'LUMINARA_KV'>;
+
+type ReceiptHtmlRow = {
+  id: string;
+  subject_id: string;
+  claim: string;
+  level: string;
+  payload_json: string;
+  signature: string;
+  kid: string;
+  visibility: string;
+  expires_at: string | number | null;
+  revoked_at: string | number | null;
+  revoked_reason: string | null;
+  created_at: string;
+};
+
 /**
  * Public, unlisted verification cards (/verify/r/:receiptId):
  * SPA shell with cryptographic proof metadata and noindex for bots.
+ * Enforces both isTrustReceiptsEnabled and isReceiptPubliclyReadable so private
+ * or disabled receipts return 404 and never leak subject_id, claim, level, or kid.
  */
 export async function maybeServeReceiptHtml(
   request: Request,
-  env: ShareOgEnv,
+  env: ReceiptHtmlEnv,
 ): Promise<Response | null> {
   const url = new URL(request.url);
   const match = url.pathname.replace(/\/+$/, '').match(RECEIPT_PATH);
@@ -449,59 +470,52 @@ export async function maybeServeReceiptHtml(
   if (request.method !== 'GET' && request.method !== 'HEAD') return null;
   const accept = request.headers.get('accept') || '';
   if (accept && !accept.includes('text/html') && !accept.includes('*/*')) return null;
-  if (!env.DB || !env.ASSETS) return null;
 
   const receiptId = match[1];
-  const row = (await env.DB.prepare(
-    `SELECT id, subject_id, claim, level, payload_json, signature, kid, visibility, expires_at, revoked_at, revoked_reason, created_at FROM trust_receipts WHERE id = ? LIMIT 1`,
-  )
-    .bind(receiptId)
-    .first()) as {
-    id: string;
-    subject_id: string;
-    claim: string;
-    level: string;
-    payload_json: string;
-    signature: string;
-    kid: string;
-    visibility: string;
-    expires_at: number | null;
-    revoked_at: number | null;
-    revoked_reason: string | null;
-    created_at: string;
-  } | null;
+  const receiptsEnabled = isTrustReceiptsEnabled(env);
+  if (!env.ASSETS) return null;
+  if (receiptsEnabled && !env.DB) return null;
 
-  let title = 'Trust Receipt | Luminara Suite';
-  let description =
-    'Cryptographically signed verification receipt. Strictly measured evidence. No invented scores.';
-  let crawlerBody = `
-<section>
-  <h1>Luminara Trust Receipt</h1>
-  <p>Cryptographic proof receipt for search and AI visibility verification.</p>
-  <p><a href="/">Home</a> · <a href="/pricing">Pricing</a></p>
-</section>`;
+  let row: ReceiptHtmlRow | null = null;
+  let publiclyReadable = false;
 
-  if (!row) {
-    title = 'Receipt not found | Luminara Suite';
-    description = 'This trust receipt link was not found or is private.';
-    crawlerBody = `<section><h1>Receipt unavailable</h1><p>Not found or private.</p><p><a href="/">Home</a></p></section>`;
-  } else if (row.revoked_at) {
-    const subject = escapeHtml(row.subject_id);
-    title = `Withdrawn Receipt: ${subject} | Luminara Suite`;
-    description = `This trust receipt for ${subject} was withdrawn and no longer stands.`;
-    crawlerBody = `<section><h1>Receipt withdrawn</h1><p>This verification receipt for ${subject} no longer stands.</p><p><a href="/">Home</a></p></section>`;
-  } else {
-    const subject = escapeHtml(row.subject_id);
-    const claim = escapeHtml(row.claim);
-    const level = escapeHtml(row.level);
-    title = `Trust Receipt: ${subject} | Luminara Suite`;
-    description = `Cryptographically signed verification receipt for ${subject}. Claim: ${claim}. Level: ${level}. No invented scores.`;
-    crawlerBody = `<section>
-  <h1>Trust Receipt: ${subject}</h1>
-  <p>Verified claim: ${claim}. Level: ${level}.</p>
+  if (receiptsEnabled && env.DB) {
+    row = await env.DB.prepare(
+      `SELECT id, subject_id, claim, level, payload_json, signature, kid, visibility, expires_at, revoked_at, revoked_reason, created_at FROM trust_receipts WHERE id = ? LIMIT 1`,
+    )
+      .bind(receiptId)
+      .first<ReceiptHtmlRow>();
+    publiclyReadable = Boolean(row && (await isReceiptPubliclyReadable(env, row)));
+  }
+
+  let title = 'Receipt not found | Luminara Suite';
+  let description = 'This trust receipt link was not found or is private.';
+  let crawlerBody = `<section><h1>Receipt unavailable</h1><p>Not found or private.</p><p><a href="/">Home</a></p></section>`;
+  const status = row && publiclyReadable ? 200 : 404;
+
+  if (row && publiclyReadable) {
+    if (row.revoked_at) {
+      const subject = row.subject_id;
+      const safeSubject = escapeHtml(subject);
+      title = `Withdrawn Receipt: ${subject} | Luminara Suite`;
+      description = `This trust receipt for ${subject} was withdrawn and no longer stands.`;
+      crawlerBody = `<section><h1>Receipt withdrawn</h1><p>This verification receipt for ${safeSubject} no longer stands.</p><p><a href="/">Home</a></p></section>`;
+    } else {
+      const subject = row.subject_id;
+      const claim = row.claim;
+      const level = row.level;
+      const safeSubject = escapeHtml(subject);
+      const safeClaim = escapeHtml(claim);
+      const safeLevel = escapeHtml(level);
+      title = `Trust Receipt: ${subject} | Luminara Suite`;
+      description = `Cryptographically signed verification receipt for ${subject}. Claim: ${claim}. Level: ${level}. No invented scores.`;
+      crawlerBody = `<section>
+  <h1>Trust Receipt: ${safeSubject}</h1>
+  <p>Verified claim: ${safeClaim}. Level: ${safeLevel}.</p>
   <p>Issued by Luminara Suite. Key ID: ${escapeHtml(row.kid)}.</p>
   <p><a href="/">Home</a> · <a href="/how-it-works">How it works</a></p>
 </section>`;
+    }
   }
 
   const page: MarketingShellMeta = {
@@ -527,29 +541,21 @@ export async function maybeServeReceiptHtml(
   const contentType = assetRes.headers.get('content-type') || '';
   if (!contentType.includes('text/html')) return null;
 
+  const responseHeaders = {
+    'Content-Type': 'text/html; charset=utf-8',
+    'Cache-Control': status === 404 ? 'no-store' : 'no-cache',
+    'X-Robots-Tag': 'noindex, nofollow',
+  };
+
   if (request.method === 'HEAD') {
-    return new Response(null, {
-      status: 200,
-      headers: {
-        'Content-Type': 'text/html; charset=utf-8',
-        'Cache-Control': 'no-cache',
-        'X-Robots-Tag': 'noindex, nofollow',
-      },
-    });
+    return new Response(null, { status, headers: responseHeaders });
   }
 
   let html = injectMarketingMeta(await assetRes.text(), page);
   if (!/<meta\s+name="robots"/i.test(html)) {
     html = html.replace(/<\/head>/i, '  <meta name="robots" content="noindex, nofollow">\n</head>');
   }
-  return new Response(html, {
-    status: 200,
-    headers: {
-      'Content-Type': 'text/html; charset=utf-8',
-      'Cache-Control': 'no-cache',
-      'X-Robots-Tag': 'noindex, nofollow',
-    },
-  });
+  return new Response(html, { status, headers: responseHeaders });
 }
 
 
