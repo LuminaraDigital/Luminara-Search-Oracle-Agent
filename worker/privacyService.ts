@@ -10,6 +10,15 @@ import { billingId, json } from './workerUtils';
 import { auditOrgIdFor, recordAuditLogBestEffort } from './auditLog';
 import { deleteHostedAccount } from './accountDeletion';
 import { notifyCrmAccountDeletion } from './crmBridgeClient';
+import {
+  ERASED_ACCOUNT_PLACEHOLDER,
+  ERASE_PSEUDONYMIZED,
+  ERASED_TABLES,
+  EXPORTED_TABLES,
+  OWN_USER_IDS,
+  TABLE_EXPORTS,
+  accountBinds,
+} from './privacyTables';
 
 const EXPORT_TTL_MS = 48 * 60 * 60 * 1000;
 const DELETE_CANCEL_MS = 24 * 60 * 60 * 1000;
@@ -47,7 +56,7 @@ async function countRecentJobs(env: Env, accountId: string, kind: PrivacyJobKind
 }
 
 /** Collect account-linked JSON for Article 15/20 style export (Luminara processors). */
-async function collectExportPayload(env: Env, accountId: string): Promise<Record<string, unknown>> {
+export async function collectExportPayload(env: Env, accountId: string): Promise<Record<string, unknown>> {
   const db = env.DB!;
   const q = async <T>(sql: string, ...binds: unknown[]) => {
     const res = await db.prepare(sql).bind(...binds).all<T>();
@@ -331,6 +340,14 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
     if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
     return [] as Record<string, unknown>[];
   });
+  const tableRows: Record<string, unknown[]> = {};
+  for (const { key, table, columns = '*', where = 'account_id = ?' } of TABLE_EXPORTS) {
+    const sql = `SELECT ${columns} FROM ${table} WHERE ${where} LIMIT 500`;
+    tableRows[key] = await q<Record<string, unknown>>(sql, ...accountBinds(sql, accountId)).catch((err) => {
+      if (!/no such (?:table|column)/i.test(err instanceof Error ? err.message : String(err))) throw err;
+      return [] as Record<string, unknown>[];
+    });
+  }
   return {
     exportedAt: new Date().toISOString(),
     accountId,
@@ -377,6 +394,7 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
       'account_industries',
       'client_workspaces',
       'memory_vault_snapshots',
+      ...EXPORTED_TABLES,
     ],
     users,
     workspace: workspace.map((w) => ({
@@ -433,54 +451,33 @@ async function collectExportPayload(env: Env, accountId: string): Promise<Record
     projectOutcomeFollowUps,
     projectMonitors,
     projectMonitorAlerts,
+    ...tableRows,
     note: 'Financial ledger rows may be retained in minimized form for legal obligations.',
   };
 }
 
-export async function revokeAccountOAuthKvTokens(env: Env, accountId: string): Promise<number> {
-  if (!accountId) return 0;
-  let revoked = 0;
-  if (env.DB) {
-    try {
-      const rows = await env.DB.prepare(
-        `SELECT access_hash FROM mcp_oauth_refresh_access
-         WHERE family_id IN (SELECT family_id FROM mcp_oauth_refresh_family WHERE account_id = ?)`,
+/** Hands each organization to its next active member, and removes one with nobody left in it. */
+async function releaseOrganizations(db: NonNullable<Env['DB']>, accountId: string, counts: Record<string, number>): Promise<void> {
+  const left = await db.prepare(`SELECT DISTINCT org_id FROM organization_memberships WHERE ${OWN_USER_IDS}`).bind(...accountBinds(OWN_USER_IDS, accountId)).all<{ org_id: string }>();
+  const removed = await db.prepare(`DELETE FROM organization_memberships WHERE ${OWN_USER_IDS}`).bind(...accountBinds(OWN_USER_IDS, accountId)).run();
+  counts.organization_memberships = Number(removed.meta?.changes ?? 0);
+  for (const { org_id: orgId } of left.results ?? []) {
+    const heir = await db
+      .prepare(
+        `SELECT user_id, role FROM organization_memberships WHERE org_id = ? AND status = 'active'
+          ORDER BY role = 'owner' DESC, joined_at ASC LIMIT 1`,
       )
-        .bind(accountId)
-        .all<{ access_hash: string }>();
-      for (const row of rows.results ?? []) {
-        if (row.access_hash && env.LUMINARA_KV) {
-          await env.LUMINARA_KV.delete(`mcp_oauth_token:${row.access_hash}`).catch(() => undefined);
-          revoked += 1;
-        }
-      }
-      await env.DB.prepare(`UPDATE mcp_oauth_refresh_family SET revoked = 1 WHERE account_id = ?`)
-        .bind(accountId)
-        .run()
-        .catch(() => undefined);
-    } catch {
-      /* table may not exist in older fixtures */
+      .bind(orgId)
+      .first<{ user_id: string; role: string }>();
+    if (!heir) {
+      await db.batch([
+        db.prepare(`DELETE FROM org_audit_logs WHERE org_id = ?`).bind(orgId),
+        db.prepare(`DELETE FROM organizations WHERE id = ?`).bind(orgId),
+      ]);
+    } else if (heir.role !== 'owner') {
+      await db.prepare(`UPDATE organization_memberships SET role = 'owner' WHERE org_id = ? AND user_id = ?`).bind(orgId, heir.user_id).run();
     }
   }
-  if (env.LUMINARA_KV && typeof env.LUMINARA_KV.list === 'function') {
-    const { sha256Hex } = await import('./workerUtils');
-    const prefix = `mcp_oauth_connection:${await sha256Hex(accountId)}:`;
-    let cursor: string | undefined;
-    for (let page = 0; page < 20; page += 1) {
-      const listed = await env.LUMINARA_KV.list({ prefix, cursor });
-      for (const item of listed.keys) {
-        const suffix = item.name.slice(prefix.length);
-        if (/^[a-f0-9]{64}$/.test(suffix)) {
-          await env.LUMINARA_KV.delete(`mcp_oauth_token:${suffix}`).catch(() => undefined);
-        }
-        await env.LUMINARA_KV.delete(item.name).catch(() => undefined);
-        revoked += 1;
-      }
-      if (listed.list_complete || !listed.cursor || listed.cursor === cursor) break;
-      cursor = listed.cursor;
-    }
-  }
-  return revoked;
 }
 
 async function softDeleteAccount(env: Env, accountId: string, deps?: DataPlaneDeps): Promise<Record<string, number>> {
@@ -566,7 +563,7 @@ async function softDeleteAccount(env: Env, accountId: string, deps?: DataPlaneDe
     if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
   });
   const drop = async (label: string, sql: string) => {
-    await run(label, sql, accountId).catch((err) => {
+    await run(label, sql, ...accountBinds(sql, accountId)).catch((err) => {
       if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
     });
   };
@@ -614,9 +611,9 @@ async function softDeleteAccount(env: Env, accountId: string, deps?: DataPlaneDe
   await drop('project_monitors', `DELETE FROM project_monitors WHERE account_id = ?`);
   await drop('agent_reports', `DELETE FROM agent_reports WHERE account_id = ?`);
   // Revoke MCP OAuth KV access tokens and connection indexes before dropping refresh-family D1 rows.
+  const { revokeAccountOAuthKvTokens, revokeSessionsForDeletedUser } = await import('./opaqueSession');
   counts.oauth_tokens_revoked = await revokeAccountOAuthKvTokens(env, accountId);
   // Connected assistants: approval requests hold tool inputs, and refresh families keep a connection alive.
-  await drop('mcp_action_requests', `DELETE FROM mcp_action_requests WHERE user_id = ?`);
   await drop(
     'mcp_oauth_refresh_access',
     `DELETE FROM mcp_oauth_refresh_access WHERE family_id IN (SELECT family_id FROM mcp_oauth_refresh_family WHERE account_id = ?)`,
@@ -634,19 +631,57 @@ async function softDeleteAccount(env: Env, accountId: string, deps?: DataPlaneDe
     `DELETE FROM client_workspace_members WHERE workspace_id IN (SELECT id FROM client_workspaces WHERE account_id = ?)`,
   );
   await drop('client_workspaces', `DELETE FROM client_workspaces WHERE account_id = ?`);
+  // Seats this person holds in other agencies' workspaces, matched by login id or by invited email.
+  await drop(
+    'client_workspace_seats',
+    `DELETE FROM client_workspace_members WHERE ${OWN_USER_IDS}
+       OR email IN (SELECT lower(email) FROM users WHERE account_id = ? AND email IS NOT NULL)`,
+  );
   await drop('win_shares', `DELETE FROM win_shares WHERE owner_id = ?`);
   await drop('shared_reports', `DELETE FROM shared_reports WHERE owner_account_id = ?`);
+  await drop('mcp_action_requests', `DELETE FROM mcp_action_requests WHERE ${OWN_USER_IDS}`);
+  await drop('sentinel_target_slots', `DELETE FROM sentinel_target_slots WHERE owner_id = ? OR owner_id IN (SELECT id FROM users WHERE account_id = ?)`);
+  await releaseOrganizations(db, accountId, counts).catch((err) => {
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+  });
+  // Vouchers need a registered contract, so an off-chain campaign has none and goes whole.
+  await drop('launchpad_campaigns', `DELETE FROM launchpad_campaigns WHERE account_id = ? AND contract_address IS NULL`);
+  // A campaign on a public chain stays as a record. Only its merchant can redeem, so open vouchers are cancelled.
+  await drop(
+    'launchpad_vouchers_closed',
+    `UPDATE launchpad_vouchers SET customer_ref = NULL, status = CASE status WHEN 'issued' THEN 'cancelled' ELSE status END
+      WHERE campaign_id IN (SELECT id FROM launchpad_campaigns WHERE account_id = ?)`,
+  );
+  await drop('launchpad_subscriptions', `DELETE FROM launchpad_subscriptions WHERE campaign_id IN (SELECT id FROM launchpad_campaigns WHERE account_id = ?) OR account_id = ?`).catch(async (err) => {
+    if (!/no such column/i.test(err instanceof Error ? err.message : String(err))) throw err;
+    await drop('launchpad_subscriptions', `DELETE FROM launchpad_subscriptions WHERE campaign_id IN (SELECT id FROM launchpad_campaigns WHERE account_id = ?)`);
+  });
+  await drop(
+    'launchpad_campaigns_minimized',
+    `UPDATE launchpad_campaigns SET abn_nzbn = NULL, compliance_details = NULL, listed_at = NULL WHERE account_id = ?`,
+  );
+  // A child run in another account must not block this delete through its parent key.
+  await drop(
+    'run_provenance_unlinked',
+    `UPDATE run_provenance SET parent_run_id = NULL WHERE parent_run_id IN (SELECT run_id FROM run_provenance WHERE account_id = ?)`,
+  );
   const { revokeAllApiKeys } = await import('./apiKeyService');
   counts.api_keys_revoked = await revokeAllApiKeys(env, accountId);
-  const { revokeSessionsForDeletedUser } = await import('./opaqueSession');
+  for (const table of ERASED_TABLES) await drop(table, `DELETE FROM ${table} WHERE account_id = ?`);
+  for (const [table, sql] of Object.entries(ERASE_PSEUDONYMIZED)) {
+    await run(`${table}_pseudonymized`, sql, ERASED_ACCOUNT_PLACEHOLDER, accountId).catch((err) => {
+      if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) throw err;
+    });
+  }
   const sessionIds = new Set<string>([accountId, ...userIds]);
   for (const rawId of sessionIds) {
     const cleaned = rawId.startsWith('fb:') ? rawId.slice(3) : rawId;
     if (cleaned) await revokeSessionsForDeletedUser(env, cleaned).catch(() => undefined);
     if (/^\d+$/.test(rawId)) await revokeSessionsForDeletedUser(env, `tg:${rawId}`).catch(() => undefined);
   }
+  // Workspaces and entitlement caches saved to KV.
   if (env.LUMINARA_KV) {
-    for (const k of [`sub:${accountId}`, `user:${accountId}`]) {
+    for (const k of [`workspace:${accountId}`, `sub:${accountId}`, `user:${accountId}`]) {
       await env.LUMINARA_KV.delete(k).catch(() => undefined);
     }
   }
@@ -878,6 +913,35 @@ export async function cancelPrivacyDelete(
 }
 
 /** Cron helper: mark expired soft deletes as purged (financial rows intentionally retained). */
+/**
+ * Export files are kept only until their download link expires (EXPORT_TTL_MS). The KV copy expires on its
+ * own TTL; the R2 copy has no lifecycle rule, so the daily privacy job deletes it here and marks the job purged.
+ */
+export async function purgeExpiredPrivacyExports(env: Env, now: number = Date.now()): Promise<number> {
+  if (!env.DB) return 0;
+  const rows = await env.DB.prepare(
+    `SELECT id, r2_object_key FROM privacy_jobs
+      WHERE kind = 'export' AND status = 'ready' AND expires_at IS NOT NULL AND expires_at < ?
+      LIMIT 500`,
+  )
+    .bind(now)
+    .all<{ id: string; r2_object_key: string | null }>();
+  let n = 0;
+  for (const row of rows.results ?? []) {
+    if (row.r2_object_key && env.DESKTOP_RELEASES) {
+      // A failed delete leaves the job ready, so the next run tries again.
+      const gone = await env.DESKTOP_RELEASES.delete(row.r2_object_key).then(() => true, () => false);
+      if (!gone) continue;
+    }
+    if (env.LUMINARA_KV) await env.LUMINARA_KV.delete(`privacy:export:${row.id}`).catch(() => undefined);
+    await env.DB.prepare(`UPDATE privacy_jobs SET status = 'purged', r2_object_key = NULL, updated_at = ? WHERE id = ?`)
+      .bind(now, row.id)
+      .run();
+    n += 1;
+  }
+  return n;
+}
+
 export async function purgeExpiredPrivacyDeletes(env: Env): Promise<number> {
   if (!env.DB) return 0;
   const now = Date.now();

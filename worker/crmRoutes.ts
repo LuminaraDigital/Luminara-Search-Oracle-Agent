@@ -17,6 +17,7 @@ import {
   activateCrmWorkspace,
   callCrmAction,
   decideCrmApproval,
+  extractCrmErrorMessage,
   getCrmLink,
   isCrmBridgeEnabled,
   mintLaunchAssertion,
@@ -242,7 +243,16 @@ export async function handleCrmBridgeRoute(
 
   if (path === '/crm/briefing' && request.method === 'GET') {
     const res = await callCrmAction(env, accountId, 'briefing_today', {}, {}, fetchFn);
-    return json({ ok: res.ok, ...res.body }, res.status);
+    if (!res.ok) {
+      return json(
+        {
+          ok: false,
+          error: extractCrmErrorMessage(res.body, `Failed to fetch CRM briefing (HTTP ${res.status}).`),
+        },
+        res.status,
+      );
+    }
+    return json({ ok: true, ...res.body }, res.status);
   }
 
   const promoteMatch = path.match(/^\/crm\/enquiries\/([^/]+)\/promote$/);
@@ -289,7 +299,16 @@ export async function handleCrmBridgeRoute(
       target_id: callId,
       details: { ok: res.ok, status: res.status },
     });
-    return json({ ok: res.ok, ...res.body }, res.status);
+    if (!res.ok) {
+      return json(
+        {
+          ok: false,
+          error: extractCrmErrorMessage(res.body, `CRM approval decision failed (HTTP ${res.status}).`),
+        },
+        res.status,
+      );
+    }
+    return json({ ok: true, ...res.body }, res.status);
   }
 
   return json({ ok: false, error: 'Not found' }, 404);

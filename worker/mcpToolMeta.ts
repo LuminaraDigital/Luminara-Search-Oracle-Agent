@@ -63,6 +63,8 @@ const MCP_TOOL_TITLES: Record<string, string> = {
   crm_briefing_today: 'Luminara Operator briefing',
   crm_intake_capture: 'Capture CRM lead from text',
   crm_leads_search: 'Search CRM leads',
+  crm_contacts_search: 'Search CRM contacts',
+  crm_products_search: 'Search CRM products',
   crm_quotes_draft: 'Draft a CRM quote',
   crm_bridge_connections_list: 'List connected external CRMs',
   crm_bridge_pull_context: 'Read external CRM context',

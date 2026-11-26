@@ -7,7 +7,6 @@ import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
 import { billingId, identify, json, secretEquals, sha256Hex } from './workerUtils';
 import { MAX_SMALL_BODY_BYTES, readBody } from './security';
-import { isErasedSubject } from './accountMirror';
 import { escapeHtml } from './marketingShell';
 import { randomId } from '../services/projects/projectUtils';
 import { getActiveSubscription } from './quotaMiddleware';
@@ -21,7 +20,7 @@ import {
   parseRegisteredGrantTypes,
   REFRESH_ACCESS_TTL_SECONDS,
   REFRESH_TTL_SECONDS,
-  refreshFamilyAllowsAccess,
+  accessRecordAllowed,
   refreshGrantResponse,
   revokeRefreshByToken,
   revokeRefreshFamily,
@@ -939,11 +938,7 @@ export async function identifyMcpOAuthToken(
 async function acceptAccessToken(env: Env, token: string, raw: string): Promise<McpOAuthIdentity | null> {
   const parsed = parseTokenRecord(raw);
   if (!parsed) return null;
-  if (env.DB && (await isErasedSubject(env.DB, parsed.user.accountId || '', parsed.user.id))) return null;
-  const familyId = familyIdFromAccessRecord(raw);
-  if (!familyId) return parsed;
-  const allowed = await refreshFamilyAllowsAccess(env, familyId, await sha256Hex(token));
-  return allowed ? parsed : null;
+  return (await accessRecordAllowed(env, raw, await sha256Hex(token))) ? parsed : null;
 }
 
 function parseTokenRecord(raw: string): McpOAuthIdentity | null {

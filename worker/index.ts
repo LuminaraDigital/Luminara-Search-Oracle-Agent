@@ -153,7 +153,7 @@ import { createMemoryFact, listMemoryFacts } from './memoryService';
 import { handleUnifiedMemoryRoute } from './unifiedMemoryRouter';
 import { handleMemoryVaultRoute } from './memoryVaultService';
 import { compileFeedbackIntoSkillRule, handleAgentHabitatRoute } from './selfDrivingHabitat';
-import { handlePrivacyRoute, purgeExpiredPrivacyDeletes } from './privacyService';
+import { handlePrivacyRoute, purgeExpiredPrivacyDeletes, purgeExpiredPrivacyExports } from './privacyService';
 import { isCronMapped, jobsForCron, shouldRunScheduledJob } from './scheduledJobs';
 import { ingestProductAnalytics } from './productAnalytics';
 import { handleWeeklyDecisionsRoute, sendWeeklyDecisionDigest } from './weeklyDecisionService';
@@ -758,7 +758,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
         await env.DB.prepare(`DELETE FROM users WHERE id = ? OR firebase_uid = ?`).bind(targetId, rawUid).run();
       }
       const { revokeAllApiKeys } = await import('./apiKeyService');
-      const { revokeAccountOAuthKvTokens } = await import('./privacyService');
+      const { revokeAccountOAuthKvTokens } = await import('./opaqueSession');
       for (const acctId of accountIds) {
         await revokeAllApiKeys(env, acctId).catch(() => undefined);
         await revokeAccountOAuthKvTokens(env, acctId).catch(() => undefined);
@@ -2818,7 +2818,15 @@ const handler = {
       return;
     }
     if (jobs.includes('sentinel')) ctx.waitUntil(runSentinelScan(env));
-    if (jobs.includes('privacy_purge')) ctx.waitUntil(purgeExpiredPrivacyDeletes(env).then(() => undefined));
+    if (jobs.includes('privacy_purge')) {
+      // Expired export files go in the same job; a failed delete pass must not skip them.
+      ctx.waitUntil(
+        purgeExpiredPrivacyDeletes(env)
+          .catch((err) => console.error(`[privacy] delete purge failed: ${err instanceof Error ? err.message : err}`))
+          .then(() => purgeExpiredPrivacyExports(env))
+          .then(() => undefined),
+      );
+    }
     if (jobs.includes('domain_recheck')) ctx.waitUntil(recheckVerifiedDomains(env).then(() => undefined));
     if (jobs.includes('stars_charge_sweep')) ctx.waitUntil(runStarsChargeSweep(env).then(() => undefined));
     if (jobs.includes('payment_support_sweep')) ctx.waitUntil(runPaymentSupportSweep(env).then(() => undefined));
