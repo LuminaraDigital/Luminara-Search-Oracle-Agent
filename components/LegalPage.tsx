@@ -28,6 +28,28 @@ function SectionList({ sections }: { sections: PrivacySection[] }) {
               ))}
             </ul>
           )}
+          {section.table && (
+            <div className="mt-3 overflow-x-auto">
+              <table className="w-full border-collapse text-left text-[14px]">
+                <caption className="sr-only">{section.table.caption}</caption>
+                <thead>
+                  <tr>
+                    {section.table.head.map((cell) => (
+                      <th key={cell} scope="col" className="border-b py-2 pr-4 font-semibold text-[var(--color-ink)] lx-hairline">{cell}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {section.table.rows.map(([label, value]) => (
+                    <tr key={label}>
+                      <th scope="row" className="border-b py-2 pr-4 align-top font-medium text-[var(--color-ink)] lx-hairline">{label}</th>
+                      <td className="border-b py-2 align-top lx-hairline">{value}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </section>
       ))}
     </div>
@@ -60,7 +82,7 @@ function TermsBody({ playSafe = false }: { playSafe?: boolean }) {
     {
       title: 'Your keys and accounts',
       paragraphs: [
-        'You may use your own provider API keys. You are responsible for those accounts, their costs and their terms. Hosted keys on luminarasuite.com are provided to signed-in users within the free daily allowance or an active plan, and may be rate-limited or withdrawn to prevent abuse. If you enable workspace sync while signed in, workspace content and optional key bags may be stored on our Cloudflare backend for that account.',
+        'You may use your own provider API keys. You are responsible for those accounts, their costs and their terms. Hosted keys on luminarasuite.com are provided to signed-in users within the free daily allowance or an active plan, and may be rate-limited or withdrawn to prevent abuse. When you are signed in on the website or in the Telegram Mini App, workspace content is synced to our Cloudflare backend for that account automatically. API keys are synced only as an encrypted key bag.',
       ],
     },
     {

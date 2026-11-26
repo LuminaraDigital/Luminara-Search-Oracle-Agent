@@ -41,7 +41,7 @@ export const PRIVACY_HTML = `<!DOCTYPE html>
     <p class="meta">Luminara Suite · Operated by ${OPERATOR_LINE} · Last updated ${PRIVACY_UPDATED}</p>
     <p>${escapePolicyText(PRIVACY_INTRO)}</p>
     ${privacySectionsHtml()}
-    <p class="meta"><a href="/terms">Terms of Service</a> · <a href="/">Home</a></p>
+    <p class="meta"><a href="/terms">Terms of Service</a> · <a href="/legal/subprocessors">Subprocessors</a> · <a href="/security">Security</a> · <a href="/">Home</a></p>
   </main>
 </body>
 </html>

@@ -30,7 +30,7 @@
   <main class="static-main">
     <p class="eyebrow">Privacy</p>
     <h1>Privacy policy</h1>
-    <p class="meta">Luminara Suite · Operated by LUMINARA DIGITAL PTY LTD (ABN 90 693 125 281), trading as Luminara Digital, Victoria 3128, Australia · Last updated 21 November 2026</p>
+    <p class="meta">Luminara Suite · Operated by LUMINARA DIGITAL PTY LTD (ABN 90 693 125 281), trading as Luminara Digital, Victoria 3128, Australia · Last updated 26 November 2026</p>
     <p>This policy says what personal information Luminara Suite handles on the website, the Android app, the Telegram Mini App, the Telegram bot, AI assistants you connect, and the related Cloudflare APIs. It matches the product as shipped. It is not legal advice. For a counsel-approved data processing agreement, email privacy@luminarasuite.com.</p>
     <section>
 <h2>Who we are</h2>
@@ -43,7 +43,7 @@
 <p>Collection notice. We collect the account, usage, and billing details listed under &quot;Information we handle&quot; when you create an account, run a check, pay, or email us. If you do not give an email address or a Telegram id, we cannot sign you in or deliver a paid plan. The live crawl check on the website does not need an account.</p>
 <p>Use and disclosure. We use personal information to run audits, chat, and saved work, to sign you in, to deliver the plan you buy, to limit abuse, and to answer support. We disclose it to the providers named in this section when that step needs them. We do not sell personal information. We do not use it for cross-context behavioural advertising.</p>
 <p>Access and correction. Email info@luminara.digital from the address on the account, or include your Telegram id. Ask us to correct information that is wrong, incomplete, or out of date. We will correct it, or tell you why we will not. If you are signed in, open Settings, then Account. Download your data as JSON first. To delete the account, type DELETE and sign in again. That removes the live rows for the account, including workspaces, audits, public win pages, and saved fix state, and it deletes a Firebase sign-in when there is one. Cloudflare D1 Time Travel can restore a database backup for 30 days. We do not restore a deleted account from that backup unless the law requires it. Records a payment partner must keep, and a public blockchain payment, stay. Spend totals with no content stay so provider invoices still add up, but the account id, project and run links are removed from them. One-time licence and trial claims for the account are deleted. A Launchpad campaign recorded on a public chain stays as a record: we stop listing it, remove its business number, compliance notes, subscribers and voucher customer references, and cancel its unredeemed vouchers. If you belong to an organization with other members, your membership is removed and the earliest remaining member becomes owner. An organization with no other members is deleted with its security log.</p>
-<p>Overseas disclosure (APP 8). Some of these providers are outside Australia. We disclose personal information to them only so they can do the step we asked for, and we take reasonable steps so they handle it consistently with the APPs. We use Cloudflare for hosting, D1, KV, and request logs. We use Google Firebase for sign-in. We use Telegram for Mini App identity, Stars payments, and the bot. We use Stripe to process card payments. When a check or a chat runs, the prompt and page text go to the providers that check uses: Groq, NVIDIA, Google Gemini, OpenRouter, Ollama, Tavily, Exa, and Firecrawl. Keyword, search result, domain, and backlink research sends the keywords and domains you ask about to DataForSEO. The Open Network and Toncenter receive a payment check only when you pay on that network.</p>
+<p>Overseas disclosure (APP 8). Some of these providers are outside Australia. We disclose personal information to them only so they can do the step we asked for, and we take reasonable steps so they handle it consistently with the APPs. We use Cloudflare for hosting, D1, KV, and request logs. We use Google Firebase for sign-in. We use Telegram for Mini App identity, Stars payments, and the bot. We use Stripe to process card payments. We use Resend to send account email. When error reporting is switched on, we use Sentry to receive error reports. When a check or a chat runs, the prompt and page text go to the providers that check uses: Groq, NVIDIA, Google Gemini, OpenRouter, Ollama, Cloudflare Workers AI, Tavily, Exa, and Firecrawl. Typesafe receives search result snippets and business names, not your prompt, to check some answers. Keyword, search result, domain, and backlink research sends the keywords and domains you ask about to DataForSEO. The Open Network and Toncenter receive a payment check only when you pay on that network.</p>
 <p>Security. The site uses HTTPS. Sign-in checks protect hosted keys. Synced API keys are handled as described under &quot;Information we handle&quot;. No method of sending or storing data is perfectly secure. Report a vulnerability to security@luminarasuite.com.</p>
 <p>Complaints. Email info@luminara.digital and describe what happened. We will respond. If you are not satisfied, you can complain to the Office of the Australian Information Commissioner (OAIC) at https://www.oaic.gov.au/.</p>
 
@@ -60,17 +60,20 @@
 <li>Account: a Firebase user id, email, and display name, or a Telegram user id, name, username, language, and an optional photo URL from Telegram's signed launch data (initData). We may link a Telegram login and a Firebase login to one account.</li>
 <li>What you type: business profile, domains, competitor names, chat messages, audit reports, brand memory, client workspaces, watchlists, and CMS settings you save.</li>
 <li>Account memory: when it is on, short facts taken from what you type in chat with the Oracle and the Telegram bot (for example what your business sells, where it serves, or how you like answers) are stored with your account so later chats can use them. A privacy export includes the stored facts, and a privacy delete removes them.</li>
-<li>API keys you paste (Groq, NVIDIA, Gemini, Tavily, Firecrawl, Exa, OpenRouter, Ollama, and similar) stay on the device where you entered them. In a browser they stay in that browser. On the Android app, keys you save are stored encrypted on the device with Android Keystore AES-256-GCM. When a provider call needs your own key, the browser or the Android app may send it to our Worker in the x-provider-key header. The Worker forwards that key to the provider for the call and does not save it as an account key. If you are signed in on the website and turn on workspace sync, those keys are encrypted in that browser with AES-256-GCM before upload. The key is derived with PBKDF2-SHA-256 (100,000 iterations) from a secret stored in that browser. Another browser does not have that secret, so it cannot decrypt those keys. If encryption fails, the keys are uploaded without that encryption. Audits, chat, and other workspace content are stored as you saved them, without that encryption.</li>
+<li>API keys you paste (Groq, NVIDIA, Gemini, Tavily, Firecrawl, Exa, OpenRouter, Ollama, and similar) stay on the device where you entered them, except for the encrypted copy described below. On the Android app, keys you save are stored encrypted on the device with Android Keystore AES-256-GCM. When a provider call needs your own key, the browser or the Android app may send it to our Worker in the x-provider-key header. The Worker forwards that key to the provider for the call and does not save it as an account key. When you are signed in on the website or in the Telegram Mini App, workspace sync runs automatically (see &quot;Where it is stored&quot;). Those keys are encrypted in that browser with AES-256-GCM before upload. The key is derived with PBKDF2-SHA-256 (100,000 iterations) from a secret stored in that browser. Another browser does not have that secret, so it cannot decrypt those keys. If encryption fails, the keys stay on that device and are not uploaded. Audits, chat, and other workspace content are uploaded as you saved them, without that encryption.</li>
 <li>Plan and billing: plan id, expiry, a Stripe checkout session id when you pay by card, Telegram Stars charge ids, TON order amount, memo, status, and transaction hash, daily free-quota counters, and Sentinel watch targets (owner id, domain, brand, Telegram chat id, keywords, and scores). Stripe is the card payment processor. We do not store card numbers.</li>
 <li>Logs: Cloudflare request logs, and the IP address used in memory for abuse limits. We do not set first-party marketing cookies.</li>
+<li>Email: if your account has an email address, we send one welcome email, and a weekly visibility report only if you turn it on. Resend sends these emails for us. Resend receives your email address, the name used in the greeting, and the email content. Every email has an unsubscribe link.</li>
+<li>Error reports: when error reporting is switched on, details of errors on the website and in the Worker go to Sentry. Before a report leaves, sign-in headers and cookies are removed, and email, username, and IP address are replaced with [redacted]. About 5% of requests also send a performance trace.</li>
 </ul>
 </section>
 <section>
 <h2>Where it is stored</h2>
 
 <ul>
-<li>On your device: in a browser, localStorage and sessionStorage hold the business profile, chat, audits, memory, themes, and keys when you are not relying on sync. On the Android app, saved API keys are encrypted with Android Keystore AES-256-GCM.</li>
-<li>On Cloudflare: a D1 database (users, workspace JSON, and account memory facts) and KV (subscriptions, quota, workspace fallback, Sentinel targets, short-lived TON orders, and an enrichment cache). Hosting and logs are on Cloudflare.</li>
+<li>On your device: in a browser, localStorage and sessionStorage hold the business profile, chat, audits, memory, themes, and keys. On the Android app, saved API keys are encrypted with Android Keystore AES-256-GCM.</li>
+<li>Workspace sync: when you are signed in on the website or in the Telegram Mini App, a copy of your workspace is saved to our D1 database automatically. There is no switch to turn this off. The copy includes the business profile, the current chat, audits and audit history, saved files, brand memory and memory facts, findings, watchlists and alerts, visibility history, client workspaces, and settings. It is stored as you saved it, without encryption. API keys are the exception: they are uploaded only in the encrypted form described above. The Android app saves only the business profile to the same workspace.</li>
+<li>On Cloudflare: a D1 database (users, the workspace copy, and account memory facts), KV (subscriptions, quota, workspace fallback, Sentinel targets, short-lived TON orders, bot chat context, and an enrichment cache), and Durable Object storage for hosted Oracle chat sessions. Hosting and logs are on Cloudflare.</li>
 <li>Firebase Authentication holds email, password, and Google sign-in credentials for the luminara-suite project.</li>
 <li>Stripe holds the card payment. We keep the plan id, expiry, and checkout session id.</li>
 </ul>
@@ -92,6 +95,8 @@
 <p>When you run an audit or a chat, prompts, URLs, scraped page text, and the linked business profile are sent to the model and search providers you use. Hosted keys on luminarasuite.com are used only for signed-in users within the free daily allowance or an active plan. If you bring your own key, the request goes to that vendor. Some NVIDIA and Gemini calls are relayed by our Worker, and the key is not stored on that relay. When account memory is on, the chat message you typed, with email addresses and phone numbers removed, is also sent to Groq to pick out those facts. Those vendors process data under their own policies. Providers can include:</p>
 <ul>
 <li>Groq, NVIDIA NIM, Ollama, Google Gemini, OpenRouter.</li>
+<li>Cloudflare Workers AI, as a backup model when another provider fails.</li>
+<li>Typesafe, which receives search result snippets and business names to check some answers. It does not receive your prompt.</li>
 <li>Tavily, Exa, and Firecrawl for search and crawl evidence.</li>
 <li>DataForSEO for keyword, search result, domain, and backlink research, and Google PageSpeed Insights for page speed.</li>
 <li>LanguageTool and Umami, only if you turn those features on.</li>
@@ -99,6 +104,8 @@
 <li>Firebase and Google for sign-in.</li>
 <li>Stripe for card payments. We do not store card numbers.</li>
 <li>Telegram for Mini App identity, Stars payments, and bot alerts.</li>
+<li>Resend for account email: the welcome email, and the weekly report if you turn it on.</li>
+<li>Sentry for error reports, when error reporting is switched on, with sign-in headers, cookies, email, username, and IP address removed first.</li>
 <li>The Open Network and Toncenter for checking an on-chain payment.</li>
 </ul>
 </section>
@@ -123,17 +130,25 @@
 <section>
 <h2>How long we keep it</h2>
 
-<ul>
-<li>Browser data: until you clear site storage.</li>
-<li>Daily quota counters: about 2 days (48 hours).</li>
-<li>Enrichment cache: about 7 days.</li>
-<li>Unfinished TON orders: about 2 hours.</li>
-<li>Bot chat context: kept in KV so the conversation can continue, and deleted when you send /reset.</li>
-<li>Connected assistants: until you disconnect them, or 90 days without use. Approval requests: while the account is active.</li>
-<li>Subscriptions, user rows, workspace data, and Sentinel targets: while the account is active, or until deletion finishes.</li>
-<li>Database backups: Cloudflare D1 Time Travel can restore the database for 30 days. A deleted account is removed from the live database. We do not restore it from that backup unless the law requires it.</li>
-<li>Payment identifiers we need for a dispute: as long as the payment partner requires. A public blockchain record cannot be erased.</li>
-</ul>
+
+<table class="policy-table">
+<caption>How long we keep each kind of data</caption>
+<thead><tr><th scope="col">Data</th><th scope="col">How long</th></tr></thead>
+<tbody>
+<tr><th scope="row">Browser data</th><td>Until you clear site storage.</td></tr>
+<tr><th scope="row">Daily quota counters</th><td>About 2 days (48 hours).</td></tr>
+<tr><th scope="row">Enrichment cache</th><td>About 7 days.</td></tr>
+<tr><th scope="row">Unfinished TON orders</th><td>About 2 hours.</td></tr>
+<tr><th scope="row">Bot chat context</th><td>The last six messages, kept in KV until 24 hours after your last message, or until you send /reset.</td></tr>
+<tr><th scope="row">Connected assistants</th><td>Until you disconnect them, or 90 days without use.</td></tr>
+<tr><th scope="row">Assistant approval requests</th><td>While the account is active.</td></tr>
+<tr><th scope="row">Hosted Oracle chat sessions</th><td>Up to 80 recent turns per session, in Cloudflare Durable Object storage, with no set expiry. Deleting the account does not currently clear this storage.</td></tr>
+<tr><th scope="row">Subscriptions, user rows, workspace data, and Sentinel targets</th><td>While the account is active, or until deletion finishes.</td></tr>
+<tr><th scope="row">Database backups</th><td>Cloudflare D1 Time Travel can restore the database for 30 days. A deleted account is removed from the live database. We do not restore it from that backup unless the law requires it.</td></tr>
+<tr><th scope="row">Payment identifiers we need for a dispute</th><td>As long as the payment partner requires.</td></tr>
+<tr><th scope="row">Public blockchain records</th><td>Cannot be erased.</td></tr>
+</tbody>
+</table>
 </section>
 <section>
 <h2>If you're outside Australia</h2>
@@ -166,7 +181,7 @@
 <p>Privacy: privacy@luminarasuite.com. Security: security@luminarasuite.com. Support: support@luminarasuite.com. Privacy complaints: info@luminara.digital, then the OAIC if we do not resolve them.</p>
 
 </section>
-    <p class="meta"><a href="/terms">Terms of Service</a> · <a href="/">Home</a></p>
+    <p class="meta"><a href="/terms">Terms of Service</a> · <a href="/legal/subprocessors">Subprocessors</a> · <a href="/security">Security</a> · <a href="/">Home</a></p>
   </main>
 </body>
 </html>

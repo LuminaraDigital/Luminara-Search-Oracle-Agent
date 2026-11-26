@@ -49,7 +49,7 @@ export function buildTermsHtml(options?: { android?: boolean }): string {
     .meta { font-size: 0.8rem; color: #94a3b8; margin-bottom: 1.5rem; }
     p { margin: 0 0 0.75rem; color: #cbd5e1; font-size: 0.95rem; }
     nav a { margin-right: 1rem; font-size: 0.8rem; text-decoration: none; }
-    footer { margin-top: 2.5rem; font-size: 0.75rem; color: #64748b; }
+    footer { margin-top: 2.5rem; font-size: 0.75rem; color: #94a3b8; }
   </style>
 </head>
 <body>
@@ -62,7 +62,7 @@ ${termsNav(android)}
     <h2>Labs features</h2>
     <p>Screens marked "Labs" (OracleMind, TimesFM, the Archy harness) are demonstrations. Their numbers are simulated for illustration and must not be relied on as measurements. Labs stay behind developer tools in the default product path.</p>
     <h2>Your keys and accounts</h2>
-    <p>You may use your own provider API keys. You are responsible for those accounts, their costs and their terms. Hosted keys on luminarasuite.com are provided to signed-in users within the free daily allowance or an active plan, and may be rate-limited or withdrawn to prevent abuse. If you enable workspace sync while signed in, workspace content and optional key bags may be stored on our Cloudflare backend for that account.</p>
+    <p>You may use your own provider API keys. You are responsible for those accounts, their costs and their terms. Hosted keys on luminarasuite.com are provided to signed-in users within the free daily allowance or an active plan, and may be rate-limited or withdrawn to prevent abuse. When you are signed in on the website or in the Telegram Mini App, workspace content is synced to our Cloudflare backend for that account automatically. API keys are synced only as an encrypted key bag.</p>
     <h2>Plans and payments</h2>
     <p>${plans}</p>
     <h2>Acceptable use</h2>

@@ -88,7 +88,7 @@ const aiAccessRows = [
   {
     capability: 'Bring Your Own Keys (Gemini, Groq, OpenRouter, NIM, Ollama)',
     guestByok: 'Supported in browser Settings',
-    freeAccount: 'Supported + encrypted workspace sync',
+    freeAccount: 'Supported + automatic workspace sync (keys encrypted)',
     starterGrowth: 'Supported + hosted fallback chain',
     agencyPass: 'Supported + hosted fallback chain',
   },
