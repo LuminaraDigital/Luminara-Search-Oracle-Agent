@@ -58,6 +58,7 @@ import { resolveChainNetwork } from './chainNetwork';
 import { probeXdcRpcCached } from './chain/xdcRpc';
 import { activateLicenseKey, generateLicenseKeys, importLicenseKeys } from './licenseService';
 import { TERMS_HTML, buildTermsHtml } from './termsPolicy';
+import { trustPageResponse } from './trustPages';
 import { DELETE_ACCOUNT_HTML, maybeServeAndroidLegalHtml } from './androidLegalHtml';
 import { isAndroidPlayClientSearch } from '../services/legal/playClient';
 import { markdownForPath } from '../services/marketing/agentMarkdown';
@@ -2604,6 +2605,9 @@ const handler = {
         return guard(json({ error: 'Internal error' }, 500));
       }
     }
+
+    const trustPage = trustPageResponse(url.pathname);
+    if (trustPage) return guard(trustPage);
 
     if (
       url.pathname === '/terms' ||

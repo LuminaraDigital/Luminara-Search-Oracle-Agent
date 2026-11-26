@@ -116,3 +116,26 @@ body {
   border-top: 1px solid rgb(255 255 255 / 0.08);
   margin-top: 1.5rem;
 }
+.static-main table.policy-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.75rem 0 1rem;
+  font-size: 0.92rem;
+}
+.static-main table.policy-table caption {
+  text-align: left;
+  color: var(--muted);
+  padding-bottom: 0.4rem;
+}
+.static-main table.policy-table th,
+.static-main table.policy-table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 0.5rem 0.75rem 0.5rem 0;
+  border-bottom: 1px solid rgb(255 255 255 / 0.12);
+  color: var(--muted);
+}
+.static-main table.policy-table th {
+  color: var(--ink);
+  font-weight: 600;
+}
