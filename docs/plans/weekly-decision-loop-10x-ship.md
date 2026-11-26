@@ -84,11 +84,11 @@ Prefer **edit** over create. Reuse `audit_findings`, `visibility_snapshots`, `Sh
 |---|---|---|---|
 | **WDL0** | Spec lock: types for DecisionCard, PromptProbe, AccuracyIssue, Confidence; map ShipActionGate → Decision Card | Spec in this doc + types PR; zero em dash; no RQS numeral | FE anytime |
 | **WDL1** | Non-branded buyer prompt generator from Business DNA / industry / locale / services | Unit tests; guest Sample uses fixture prompts; Live uses DNA when linked | FE |
-| **WDL2** | Exact-answer capture + mention/recommend/cite parse in visibility hybrid (W4) | Per-engine cards; never invent; `not_measured` labeled | FE+Worker when Live |
+| **WDL2** | Exact-answer capture + mention/recommend/cite parse in visibility hybrid (W4). The measured path must be able to return not cited. No rate from domain-filtered rows. | Per-engine cards; never invent; `not_measured` labeled | FE+Worker when Live |
 | **WDL3** | Findings pipeline (e2e **W2**): persist crew findings to `audit_findings`; HTTP board; status/owner/due; evidence drawer | API + UI; Growth share can include finding ids | Worker+FE; schema in 0005 |
 | **WDL4** | **Weekly Decision Card UI** as post-audit home; promote one finding; executive / expert toggle; "fastest win" filter | Smoke: audit → card → commit. **Sample path:** session Card without D1 is a valid exit. Durable multi-device Card needs WDL3 | FE |
 | **WDL5** | Prepare assets generator (LLM) attached to finding; MCP tool `create_dev_ticket_from_finding` / Cursor snippet | Assets reviewable; no auto-publish | FE+MCP Growth+ |
-| **WDL6** | Correction absorption: snapshot → mark done → scheduled retest same prompt set → before/after | Confidence chips; Sentinel cadence optional | Worker cron + FE |
+| **WDL6** | Correction absorption: snapshot → mark done → scheduled retest same prompt set → before/after. WDL6a page-source retest (was the issue still there): Allora CL1-CL2. WDL6b same-prompt retest: open, depends on WDL2. | Confidence chips; Sentinel cadence optional | Worker cron + FE |
 | **WDL7** | Reputation Firewall + sales brief export; accuracy vs DNA | Alert list; shareable brief PDF/markdown | FE+Worker |
 | **WDL8** | Thin Stack Audit workspace + Boardroom monthly report (agency); optional economics calculator (user inputs, labeled scenario) | Packaging matches APS; Digital credit once | FE |
 
