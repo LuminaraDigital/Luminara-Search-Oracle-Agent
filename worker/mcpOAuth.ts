@@ -20,7 +20,7 @@ import {
   parseRegisteredGrantTypes,
   REFRESH_ACCESS_TTL_SECONDS,
   REFRESH_TTL_SECONDS,
-  refreshFamilyAllowsAccess,
+  accessRecordAllowed,
   refreshGrantResponse,
   revokeRefreshByToken,
   revokeRefreshFamily,
@@ -960,10 +960,7 @@ export async function identifyMcpOAuthToken(
 async function acceptAccessToken(env: Env, token: string, raw: string): Promise<McpOAuthIdentity | null> {
   const parsed = parseTokenRecord(raw);
   if (!parsed) return null;
-  const familyId = familyIdFromAccessRecord(raw);
-  if (!familyId) return parsed;
-  const allowed = await refreshFamilyAllowsAccess(env, familyId, await sha256Hex(token));
-  return allowed ? parsed : null;
+  return (await accessRecordAllowed(env, raw, await sha256Hex(token))) ? parsed : null;
 }
 
 function parseTokenRecord(raw: string): McpOAuthIdentity | null {
