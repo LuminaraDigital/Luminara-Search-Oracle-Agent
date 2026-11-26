@@ -1,6 +1,6 @@
 # Allora Concepts Implementation Plan (Fix Retest Loop)
 
-**Status:** v2.2 - three review rounds applied (section 13). Awaiting owner gate. Phase 0 is cleared to start; Phases 1-2 wait on CL0-0; Phase 3a waits on owner decision 1  
+**Status:** v2.3 - three review rounds applied (section 13). CL0-0 recorded on 2026-11-15 (section 1.3): paid limits apply today, but the Workers Paid subscription reads "Expired", so the owner checks billing before Phase 1. CL0-1 is draft PR #400. Awaiting owner gate. Phase 3a waits on owner decision 1  
 **Date:** 2026-10-03  
 **Owner:** Luminara Digital (owner gate before every production step)  
 **Source:** "Allora: a Self-Improving, Decentralized Machine Intelligence Network" (Kruijssen et al., 2024). Concepts only.  
@@ -71,7 +71,7 @@ This plan is smaller than its title suggests. Two phases of product work come ou
 | Decision storage | One row per `(account_id, domain, week_key)`. `domain` is trimmed and lower-cased only, so it can be a full URL or `unknown`. `verify_by` is client-controlled, defaults to 14 days out, moves on every re-post, and is never read | `worker/weeklyDecisionService.ts:49-129`, `components/audit/ReportDisplay.tsx:330`, `components/audit/InstantAuditView.tsx:909` |
 | Card durability | Findings and the commitment live in session storage. `GET /weekly-decisions` defaults to the current ISO week, and `fetchWeeklyDecision` has no caller. Two of three card mounts pass no commitment. A user returning 14 days later sees nothing | `worker/weeklyDecisionService.ts:40-46`, `services/privacy/privacyClient.ts:6`, `components/suite/DashboardView.tsx:216-221` |
 | Decision route | Authenticates inline; no per-route rate limit; reads the body with no size cap; the handler has no `ExecutionContext` or client IP | `worker/index.ts:1294-1307`, `worker/weeklyDecisionService.ts:24-29,50` |
-| Scheduled work | One cron, `0 8 * * *`, mapped to `sentinel` and `privacy_purge`. An unmapped cron runs every job. A test hard-codes the daily job list | `wrangler.jsonc:11-13`, `worker/scheduledJobs.ts:10-33`, `worker/index.ts:1877-1885`, `tests/scheduledJobs.test.ts:20,24,35,40` |
+| Scheduled work | **Superseded on 2026-11-15, see 1.3.** Was: one cron, `0 8 * * *`, mapped to `sentinel` and `privacy_purge`. An unmapped cron runs every job. A test hard-codes the daily job list | `wrangler.jsonc:11-13`, `worker/scheduledJobs.ts:10-33`, `worker/index.ts:1877-1885`, `tests/scheduledJobs.test.ts:20,24,35,40` |
 | Public fetch | `fetchPublicUrl` re-validates host and resolution on each redirect hop, for public-ness only. No timeout, size cap, content-type check or port rule, and the DNS lookups take no abort signal. `safePublicHostname` has no public-suffix knowledge | `worker/security.ts:279-374`, `services/security/publicHostname.ts:20-32` |
 | Plans | `domainLimit` is 1 on Free and the one-off SKUs, 2 on Starter, 10 on Growth, 25 on Agency. `scheduledReaudit` is `none` on Free. Plans last 30 days | `worker/telegramBot.ts:43-149` |
 | Account linking | Linking updates two `users` rows and moves no other table | `worker/userStore.ts:330-338` |
@@ -85,11 +85,37 @@ This plan is smaller than its title suggests. Two phases of product work come ou
 
 ### 1.2 Not verified (each is resolved by a named task)
 
-- The Workers plan, its CPU and subrequest limits, and whether scheduled work under `waitUntil` gets the same allowance (CL0-0). This blocks Phase 1, not only Phase 2.
-- Whether remote D1 accepts `UPDATE ... RETURNING` and window functions (CL0-0).
+- ~~The Workers plan, its CPU and subrequest limits, and whether scheduled work under `waitUntil` gets the same allowance (CL0-0).~~ Resolved in 1.3.
+- ~~Whether remote D1 accepts `UPDATE ... RETURNING` and window functions (CL0-0).~~ Resolved in 1.3.
 - Whether a Worker fetching its own hostname re-enters itself. The wrapper refuses own hosts regardless (CL0-3).
-- Which promotion path GitHub enforces for `main`: a pull request from `staging`, or the fast-forward push in Zoro 2.3 (CL0-0). `AGENTS.md` says main requires a pull request; recent history shows both.
+- ~~Which promotion path GitHub enforces for `main` (CL0-0).~~ Resolved in 1.3 and written into 2.2.
 - Whether the provider can return a trustworthy negative, which engines it covers, and whether its answers are fresh or from a stored corpus (CL3a-1).
+
+### 1.3 CL0-0 record (2026-11-15, read-only)
+
+Read with the operator's Cloudflare API token, `gh`, and read-only `wrangler d1 execute` statements (every statement reported `changed_db: false`). Code citations are `origin/staging` at `63b39069`.
+
+| Item | Finding | Evidence |
+|---|---|---|
+| Workers plan | The account lists a `workers_paid` subscription. **Its state reads "Expired"** for the period 2026-11-11 to 2026-12-11, as do the Pro plan on `luminarasuite.com` and R2 Paid, all on one Stripe subscription. The Workers still behave as Paid: 7 days of production traffic show CPU p99 of 43-57 ms per day with zero errors, above the Free plan's 10 ms cap. **Owner action: check billing in the Cloudflare dashboard.** If the account falls back to Free, Phases 1-2 cannot run (CL0-0 rule) and the live app breaks too | `GET /accounts/{id}/subscriptions`; `workersInvocationsAdaptive`, 2026-11-08 to 2026-11-15 |
+| CPU and usage model | Both Workers run `usage_model: standard` with `limits.cpu_ms: 120000`. Paid allows up to 300,000 | `GET .../workers/scripts/{name}/settings`; `wrangler.jsonc:20-21`; Cloudflare Workers limits page (updated 2026-11-13) |
+| Subrequests | Paid: 10,000 per invocation by default (configurable). D1: 1,000 queries per invocation on Paid; a `batch()` counts as one; 30 s per query or batch. **Simultaneous outgoing connections: 6 per invocation**, the seventh waits | Cloudflare Workers and D1 limits pages |
+| Cron allowance | Paid: 15 min CPU for a cron at an interval of 1 hour or more, 15 min wall clock per invocation. `waitUntil` may run up to 30 s after the response; a scheduled handler returns at once, so a job awaited inside `scheduled()` is the safe form | Cloudflare Workers limits page |
+| Daily cron, measured | `0 8 * * *` fired every day on both Workers, 2026-11-08 to 2026-11-14: status `success`, 1 subrequest, CPU p99 22-68 ms, wall p99 1.1-3.4 s | `workersInvocationsAdaptive` with `eventType: cron` |
+| Cron inheritance | The staging block has no `triggers`; it inherits the top-level cron. A real staging deploy logged `schedule: 0 8 * * *`, and the live schedule API lists that cron for both Workers | GitHub Actions run 43666538867 (staging, `63b39069`), 2026-11-15T02:13:58Z; `GET .../scripts/{name}/schedules` |
+| What shares the cron now | The daily cron owns 15 jobs, not 2: `sentinel`, `privacy_purge`, `domain_recheck`, `stars_charge_sweep`, `ton_pending_sweep`, `payment_support_sweep`, `weekly_decision_digest`, `weekly_visibility_email`, `rsi_skill_curator`, `rsi_posting_reflection` (Mondays), `citation_watch`, `recovery_campaign_sweep`, `project_monitor`, `mcp_oauth_refresh_prune`, `outcome_followup`. `scheduled()` starts every one with `ctx.waitUntil` at once; nothing is awaited | `worker/scheduledJobs.ts:11-25`, `:62-90`; `worker/index.ts:2717-2780` |
+| Sentinel load | `sentinel:targets` does not exist in the staging or production KV namespace (HTTP 404), so Sentinel watches 0 domains and makes no fetches today | KV `GET .../values/sentinel%3Atargets` on both namespaces |
+| D1 features | Remote staging D1 ran a window function (`ROW_NUMBER() OVER`, `SUM() OVER ()`), `UPDATE ... RETURNING`, and the claim's exact shape (window function in a subquery of `UPDATE ... RETURNING`, with `LIMIT`) as no-op statements: all succeeded, 0 rows written | `wrangler d1 execute luminara-users-staging --remote --env staging` |
+| GitHub enforcement | `main` and `staging` have the same classic protection: a pull request is required with 0 approvals; one required check, "Build, Test & Smoke Validation", strict (branch must be up to date); no force push, no deletion; **admins are not enforced**, so an admin can bypass. No rulesets. Releases since #357 are pull requests from `staging` merged with a merge commit, followed by a pull request from `main` back to `staging` | `gh api repos/.../branches/{main,staging}/protection`; `.../rulesets` is empty; `git log origin/main --first-parent`; PRs #363, #372, #378 |
+| Branches today | `origin/main` is not an ancestor of `origin/staging`: main holds 3 release merges (#379, #387, #391) not yet merged back | `git rev-list --count origin/staging..origin/main` = 3 |
+| Estimated-path upper bound (decision 1) | 0 accounts made a `get_visibility_snapshot` call in the last 30 days, in staging or production; 0 accounts have any `cost_events` row in that window | Aggregate `COUNT(DISTINCT account_id)` on `cost_events`, both databases |
+
+**What this changes.**
+- Phase 1's condition in section 13, "CL0-0 confirms a paid Workers plan", is met in behaviour but not in billing state. Phase 1 starts only after the owner confirms the subscription is active.
+- Batch size 5 and the 25 s budget stand (3.6). The binding limit is 6 outgoing connections, not subrequests.
+- CL2-1 must add the await-first order to a dispatcher that today starts everything at once (3.6).
+- Owner decision 1 gets its input: no account reached the estimated path in 30 days, so the study would measure a path nobody uses yet.
+- The promotion path is a fact (2.2). CL0-1 may reach production once the owner promotes.
 
 ---
 
@@ -114,9 +140,9 @@ String vars in all three `wrangler.jsonc` blocks, typed in `worker/env.ts`, docu
 
 ### 2.2 Release deltas
 
-- No production step, the CL0-1 hotfix included, happens before CL0-0 has recorded which promotion path GitHub enforces (the same open question as in the verifiable-flow plan).
-- Before the first PR and after every production promotion: `git fetch origin`; if `git merge-base --is-ancestor origin/main origin/staging` exits non-zero, the release operator runs `git push origin origin/main:staging` (fast-forward only; today the trees are equal, so it only redeploys staging).
-- Act on remote refs only. Local `main` and `staging` are stale; never check them out or push from them. Where Zoro 2.3 step 7 says `git push origin staging:main`, read `git push origin origin/staging:main`.
+- **The one promotion path (recorded by CL0-0, 1.3):** a pull request from `staging` to `main`, merged with "Create a merge commit" once "Build, Test & Smoke Validation" passes on the up-to-date branch. Then a pull request from `main` back to `staging`, also a merge commit. Both branches require a pull request, so the pushes in Zoro 2.3 step 7 and in the earlier wording here (`git push origin origin/main:staging`, `git push origin origin/staging:main`) are not used. An admin can bypass protection; nobody does so for this plan.
+- Before the first PR and after every production promotion: `git fetch origin`; if `git merge-base --is-ancestor origin/main origin/staging` exits non-zero, open the merge-back pull request from `main` to `staging` before merging anything else into `staging`.
+- Act on remote refs only. Local `main` and `staging` are stale; never check them out or push from them.
 - Production is never deployed by `workflow_dispatch` from a branch other than `main`. Backup dumps are deleted from the operator's machine once stored.
 - Promotion ships the whole staging tip. Nothing merges to staging unless it is dark in production (flag off in both blocks) or already approved for production.
 - Backup command in the operator's PowerShell: `$env:CONFIRM_PROD_BACKUP='1'; npm run db:backup:prod`. Staging had zero `users` rows on 2026-10-01, so the staging backup check is "the dump contains `CREATE TABLE users`", not "contains user rows".
@@ -305,9 +331,9 @@ While the retest flag is off an open row shows "Verify date: {date}" and no butt
 
 ### 3.6 The retest job
 
-- The job is a third entry on the existing daily cron: `0 8 * * *` maps to `sentinel`, `privacy_purge` and `decision_retest`. No new cron expression, so there is no rollback hazard and no extra invocations. With a 14-day verify window, daily is enough.
+- The job is one more entry on the existing daily cron `0 8 * * *`, which already owns 15 jobs (1.3). No new cron expression, so there is no rollback hazard and no extra invocations. With a 14-day verify window, daily is enough.
 - One run: read the off-switch; grade expired rows and rows that used up 3 attempts; claim a batch; run the checks concurrently, each under the wrapper's 5 s total deadline; write results; purge graded rows older than 180 days; stamp the run time in KV key `decision_checks:last_run` (a different key from the off-switch, so the job can never undo a pause).
-- The daily invocation is shared with Sentinel, which can make several fetches for each of up to 500 targets, and subrequests are counted per invocation. The dispatcher runs `decision_retest` first and awaits it, inside a try/catch, before starting Sentinel, so the retest always has its budget and a retest failure never stops Sentinel. CL0-0 records Sentinel's target count and subrequests per run.
+- The daily invocation is shared with Sentinel, which can make several fetches for each of up to 500 targets, and subrequests are counted per invocation. The dispatcher runs `decision_retest` first and awaits it, inside a try/catch, before starting Sentinel, so the retest always has its budget and a retest failure never stops Sentinel. CL0-0 found Sentinel at 0 targets and the whole daily run at 1 subrequest (1.3). Today `scheduled()` starts all 15 jobs with `waitUntil` at once, so CL2-1 changes only the order for `decision_retest` (awaited first, then the rest as today) and leaves the other jobs' behaviour alone.
 - Claim, one statement, at most one row per domain per run, tested on SQLite 3.51:
 
 ```sql
@@ -333,7 +359,7 @@ WHERE id IN (
 - The manual-only reminder (CL2-7) is a separate step of the run: a fenced update stamps `notified_at` on open rows with `auto_retest = 0`, `due_at <= now` and `notified_at IS NULL`, and a message is sent only for the rows that update returned.
 - The stale-run check lives in `scheduled()`, before the runners, so a runner that throws on entry still produces the alert.
 - One `now` per run feeds the due test, the lease, expiry and purge.
-- Batch size is a constant set from CL0-0. Until then it is 5, and a run must finish inside 25 s of wall clock. If the daily backlog exceeds one batch for 3 days running, a second cron is added by the two-step rule in 2.2.
+- Batch size is 5, confirmed by CL0-0, and a run must finish inside 25 s of wall clock. The limit that matters is not subrequests (10,000) or CPU but the 6 simultaneous outgoing connections per invocation: 5 concurrent checks leave one connection for the other daily jobs. 25 s stays under the 30 s `waitUntil` allowance and the 30 s D1 batch limit. If the daily backlog exceeds one batch for 3 days running, a second cron is added by the two-step rule in 2.2.
 - A decision with 3 rows on one domain grades over 3 daily runs. Manual retest covers a user who wants it sooner.
 
 ### 3.7 Data model
@@ -412,7 +438,7 @@ CREATE INDEX IF NOT EXISTS idx_decision_checks_lease ON decision_checks(lease_un
 | ID | Task | Files | Acceptance |
 |---|---|---|---|
 | CL0-1 | **Hotfix, ships alone and first.** The server always mints the row id. The client's rule id is kept as `evidence_json.provenance.ruleId`, restricted to `[a-z0-9-]` and 64 characters (which also excludes server and stable-key ids). Evidence is merged, never replaced, when the client sends none. The client patches by stable key while a row is unsynced, and local ingest keeps a synced server id. Legacy rows whose id is a rule id keep working. | `worker/findingsService.ts`, `services/audit/findingBoardService.ts`, `tests/findingsBoard.test.ts` | Through `worker.fetch` with the real client payload: two accounts, and one account on two domains, upsert the same rule id; all return 200 and each reads back only its own row. A re-audit updates in place and keeps the row id. A PATCH by stable key from an unsynced client succeeds. A bulk call with no evidence leaves stored evidence intact. |
-| CL0-0 | **Operator and agent, read-only. Blocks Phase 1.** Record the Workers plan with its CPU and subrequest limits (on the Workers Free plan Phases 1-2 cannot run: stop and report). Confirm `RETURNING` and window functions on staging D1. Confirm cron inheritance from a real staging deploy log line, not a dry run. Record what GitHub enforces for `main` (required checks, required pull request) and write the one promotion path into 2.2. Record Sentinel's target count and subrequests per run, since the retest job shares its invocation. Count accounts with a `get_visibility_snapshot` call in the last 30 days: an upper bound on who reaches the estimated path, since only measured runs are logged (input to owner decision 1). | this document | The 1.2 items it owns moved to 1.1 with evidence. Batch size and the 25 s run budget confirmed or changed. |
+| CL0-0 | **Done 2026-11-15 (1.3).** **Operator and agent, read-only. Blocks Phase 1.** Record the Workers plan with its CPU and subrequest limits (on the Workers Free plan Phases 1-2 cannot run: stop and report). Confirm `RETURNING` and window functions on staging D1. Confirm cron inheritance from a real staging deploy log line, not a dry run. Record what GitHub enforces for `main` (required checks, required pull request) and write the one promotion path into 2.2. Record Sentinel's target count and subrequests per run, since the retest job shares its invocation. Count accounts with a `get_visibility_snapshot` call in the last 30 days: an upper bound on who reaches the estimated path, since only measured runs are logged (input to owner decision 1). | this document | The 1.2 items it owns moved to 1.1 with evidence. Batch size and the 25 s run budget confirmed or changed. |
 | CL0-2 | Design record. A spec for the decision check loop (what, why, alternatives; no line numbers), numbered at PR time. `services/audit/README.md` or the nearest existing README gains the invariants from 2.4 and 3.3. One line under Related plans in `AGENTS.md`. The cross-plan edits in section 9, as their own docs PR. | `specs/`, README, `AGENTS.md`, the companion plans | `tokens:check` and `secrets:check` pass. Each companion plan carries its one-line edit. |
 | CL0-3 | Fetch wrapper per 3.8. `resolvesToPublicAddress` gains an optional signal. `isPrivateIp` treats `::/96`, `fec0::/10`, `2001::/32` and `100::/64` as private. | new `worker/publicFetch.ts`, `worker/security.ts`, `tests/publicFetch.test.ts` | A slow lookup hits the deadline. A body over the cap is cut and flagged. A PDF is refused. A non-default port is refused. An own host is refused. A redirect to another host is refused at the hop. The IPv6 forms `::127.0.0.1`, `::7f00:1`, `0:0:0:0:0:ffff:7f00:1` and `fec0::1` are refused. The new ranges are parsed prefixes, not text prefixes: `2001:4860:4860::8888` and `2606:4700:4700::1111` stay public. Existing callers of `fetchPublicUrl` behave as before. |
 | CL0-4 | Flag plumbing for the two vars and the KV off-switch per 2.1. `/api/health` adds `decisionChecks: { checksVar, retestVar, checksOn, retestOn, lastRunAt }` read from KV, with no database query and no counts. `validate-env` rejects a present but unknown value and stays silent when a var is absent. The runbook's pause section (the exact KV put and delete commands for both environments) ships here, not in Phase 2. | `wrangler.jsonc`, `worker/env.ts`, `worker/index.ts`, `scripts/validate-env.mjs`, example env files, new `tests/decisionCheckFlags.test.ts`, new `docs/runbooks/decision-checks.md` | A vitest reads the real `wrangler.jsonc` and asserts all three blocks declare each var as `"true"` or `"false"` (so the PR that turns a flag on for a staging soak still passes) and that top-level `vars` equal production `vars`. `tests/tonAddress.test.ts` still passes. With the switch set to `checks`, `retest` or `all`, the matching effective flag is off even when the var is `"true"`. An unknown value, a read that throws and an unbound KV each disable both. |
@@ -632,6 +658,12 @@ Section 8 (parked) waits on Phase 3a and its reopen conditions
 | 4 | Telegram notice policy: at most one message per decision to the account's own chat, the result for automatic retests or a reminder at the verify date for manual ones. Without it, only users who come back unprompted see a result. | CL2-7 | No messages |
 | 5 | Privacy page sentence and the 180-day retention. Draft: "When you commit a weekly action, Luminara stores the page addresses it checked and may fetch those pages again at or after your verify date. These records are deleted 180 days after the result." | CL1-1; turning the Phase 1 flag on in production | The flag stays off in production until the sentence is published |
 | 6 | Order of this plan against verifiable-flow and the open conversion-honesty items (section 9) | Scheduling | The order in section 9 |
+
+**Owner answers, 2026-11-21:**
+- Decision 2: approved as written (section 6 table).
+- Decision 3: approved as written: the strings in 3.5 and the CL2-7 messages, together with Zoro decision 8 ("Contradicted" as a fourth state, in the evidence drawer only).
+- Decision 5: the sentence and the 180-day retention approved as drafted. CL1-1 adds it to the privacy page; the Phase 1 flag may go on in production once that page is published.
+- Decisions 1, 4 and 6: not yet answered; their defaults stand.
 
 ---
 
