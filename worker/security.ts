@@ -33,11 +33,55 @@ export const HTML_CSP = [
   "frame-ancestors 'self' https://web.telegram.org https://*.telegram.org https://*.t.me",
 ].join('; ');
 
+/**
+ * Candidate replacement for HTML_CSP, sent as Content-Security-Policy-Report-Only so nothing breaks while
+ * real traffic shows what it would block. Differences from HTML_CSP: connect-src and frame-src name hosts
+ * instead of allowing any https: / wss: origin, and localhost / 127.0.0.1 are dropped (a local Ollama on the
+ * visitor's machine will show up in the reports; decide from them before enforcing). Reports go to
+ * /api/csp-report, which logs only the directive and the blocked origin.
+ */
+export const CSP_REPORT_URI = '/api/csp-report';
+export const HTML_CSP_REPORT_ONLY = [
+  "default-src 'self'",
+  "script-src 'self' 'wasm-unsafe-eval' https://telegram.org https://tganalytics.xyz https://www.gstatic.com https://www.google.com https://www.recaptcha.net https://recaptcha.google.com https://apis.google.com https://static.cloudflareinsights.com",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "font-src 'self' data: https://fonts.gstatic.com",
+  "img-src 'self' data: blob: https:",
+  [
+    "connect-src 'self' data: blob:",
+    // Firebase Auth, App Check, reCAPTCHA and Google APIs
+    'https://*.googleapis.com https://www.google.com https://www.recaptcha.net https://recaptcha.google.com https://*.firebaseapp.com',
+    // Error reporting
+    'https://*.ingest.us.sentry.io https://*.ingest.sentry.io',
+    // Bring-your-own-key AI and research providers called from the browser
+    'https://api.groq.com https://integrate.api.nvidia.com https://openrouter.ai https://api.tavily.com https://api.firecrawl.dev https://api.exa.ai https://api.dataforseo.com https://api.typesafe.ai',
+    // Public data lookups
+    'https://r.jina.ai https://api.microlink.io https://lite.duckduckgo.com https://api.github.com https://raw.githubusercontent.com',
+    // CMS connectors and the CRM bridge
+    'https://public-api.wordpress.com https://api.webflow.com https://mcp.wix.com https://crm.luminara.digital',
+    // Telegram, the TON Connect wallet list, and chain RPCs named in client code. Each wallet's own
+    // TON Connect bridge host is not listed; those will show in the reports.
+    'https://telegram.org https://tganalytics.xyz https://config.ton.org',
+    'https://rpc.xdcrpc.com https://rpc.apothem.network https://polygon-rpc.com https://rpc-amoy.polygon.technology',
+    'https://cloudflareinsights.com',
+  ].join(' '),
+  "worker-src 'self' blob:",
+  "frame-src 'self' https://*.firebaseapp.com https://accounts.google.com https://www.google.com https://www.gstatic.com https://www.recaptcha.net https://recaptcha.google.com",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "frame-ancestors 'self' https://web.telegram.org https://*.telegram.org https://*.t.me",
+  `report-uri ${CSP_REPORT_URI}`,
+].join('; ');
+
+/** HSTS for every host. preload is the opt-in token for the browser preload list; submitting is a separate owner step. */
+export const HSTS_VALUE = 'max-age=31536000; includeSubDomains; preload';
+
 const COMMON_HEADERS: Record<string, string> = {
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'strict-origin-when-cross-origin',
   'Permissions-Policy': 'camera=(), microphone=(self), geolocation=(), payment=(), usb=(), interest-cohort=()',
-  'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
+  'Strict-Transport-Security': HSTS_VALUE,
   'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
 };
 
@@ -80,6 +124,12 @@ export function withSecurityHeaders(res: Response, extraFormOrigin?: string | nu
         ? HTML_CSP.replace("form-action 'self'", `form-action 'self' ${extraFormOrigin}`)
         : HTML_CSP;
     out.headers.set('Content-Security-Policy', csp);
+    // Report-only candidate rides with the enforced policy and never replaces it.
+    const reportOnly =
+      extraFormOrigin && /^https:\/\/[a-z0-9.-]+(?::\d+)?$/i.test(extraFormOrigin)
+        ? HTML_CSP_REPORT_ONLY.replace("form-action 'self'", `form-action 'self' ${extraFormOrigin}`)
+        : HTML_CSP_REPORT_ONLY;
+    out.headers.set('Content-Security-Policy-Report-Only', reportOnly);
   }
   return out;
 }
