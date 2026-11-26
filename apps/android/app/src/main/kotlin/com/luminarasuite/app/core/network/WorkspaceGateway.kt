@@ -22,6 +22,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import retrofit2.HttpException
+import java.io.IOException
 
 class SharePasswordRequired : IllegalStateException("This report needs its password.")
 
@@ -227,6 +228,7 @@ class DefaultWorkspaceGateway(
             .recoverCatching { throw friendly(it) }
 
     private fun friendly(err: Throwable): Throwable {
+        if (err is IOException) return IllegalStateException(NO_CONNECTION_COPY)
         if (err !is HttpException) return err
         val raw = runCatching { err.response()?.errorBody()?.string() }.getOrNull().orEmpty()
         val parsed = runCatching { LuminaraWireJson.decodeFromString<WorkerErrorPayload>(raw) }.getOrNull()
