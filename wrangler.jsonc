@@ -166,7 +166,7 @@
     "ORACLE_SERVER_ENABLED": "true",
     // Paid Oracle tools require invokeTool+confirmTool unless explicitly enabled.
     "ORACLE_AUTO_TOOLS": "false",
-    "MEMORY_RECALL_V2": "false",
+    "MEMORY_RECALL_V2": "true",
     "MEMORY_LLM_EXTRACT": "false",
     "LAUNCHPAD_ENABLED": "false",
     "LAUNCHPAD_MAINNET_ENABLED": "false",
@@ -441,7 +441,7 @@
         "DESKTOP_GITHUB_REPO": "LuminaraDigital/Luminara-Search-Oracle-Agent",
         "ORACLE_SERVER_ENABLED": "true",
         "ORACLE_AUTO_TOOLS": "false",
-        "MEMORY_RECALL_V2": "false",
+        "MEMORY_RECALL_V2": "true",
         "MEMORY_LLM_EXTRACT": "false",
         "LAUNCHPAD_ENABLED": "false",
         "LAUNCHPAD_MAINNET_ENABLED": "false",
