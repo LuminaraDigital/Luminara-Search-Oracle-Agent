@@ -14,6 +14,15 @@
  * No em dashes in copy.
  */
 
+import {
+  claimGate,
+  finishGate,
+  listViews,
+  parkGate,
+  refreshActions,
+  type AgentActions,
+  type StoreResult,
+} from './oracleAgent/actionStore';
 import { applyOps, cloneJson, type JsonPatchOp, type JsonValue } from '../services/agentCore/jsonPatch';
 import {
   isControlPlaneToolName, type AgentEventEnvelope, type AgentStreamItem, type MessageDisposition, type MidTurnPolicy,
@@ -95,6 +104,8 @@ const MAX_TOOL_NAME_LEN = 64;
 const MAX_STATE_BUCKETS = 32;
 const MAX_STATE_DOC_CHARS = 64 * 1024;
 const MAX_EVENT_TEXT_CHARS = 2048;
+/** Cap for any tool_input stored in the event log, as JSON characters (keeps every storage put small). */
+const MAX_STORED_INPUT_CHARS = 2048;
 const STALE_TURN_MS = 10 * 60 * 1000;
 const FORBIDDEN_RECORD_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 const VALID_GRAPH_NODES = new Set<GraphNodeName>([
@@ -107,6 +118,22 @@ const VALID_GRAPH_NODES = new Set<GraphNodeName>([
   'consolidate_memory',
   'settled',
 ]);
+
+/**
+ * Keep stored tool input small so one oversized event can never make a storage put fail and lock
+ * the session. Applies to every caller: inputs over the cap are stored as a truncated preview.
+ */
+export function capStoredInput(input: unknown): Record<string, unknown> {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return {};
+  let json = '';
+  try {
+    json = JSON.stringify(input);
+  } catch {
+    return { truncated: true };
+  }
+  if (json.length <= MAX_STORED_INPUT_CHARS) return input as Record<string, unknown>;
+  return { truncated: true, preview: json.slice(0, MAX_STORED_INPUT_CHARS - 200) };
+}
 
 function isSafeRecordKey(key: string): boolean {
   return Boolean(key) && !FORBIDDEN_RECORD_KEYS.has(key);
@@ -130,6 +157,8 @@ export class OracleSession {
   private pendingApprovals: Record<string, PendingToolGate> = {};
   private pendingCallbacks: Record<string, PendingCallbackGate> = {};
   private stateBuckets: Record<string, ObservableStateBucket> = {};
+  /** Oracle tool-loop approval cards (worker/oracleAgent/actionStore.ts). */
+  private agentActions: AgentActions = {};
   private rollingSummary = '';
   private checkpoints: Record<string, GraphCheckpoint> = {};
 
@@ -147,6 +176,7 @@ export class OracleSession {
         storedApprovals,
         storedCallbacks,
         storedBuckets,
+        storedActions,
         storedSummary,
         storedCheckpoints,
       ] = await Promise.all([
@@ -160,6 +190,7 @@ export class OracleSession {
         this.state.storage.get<Record<string, PendingToolGate>>('pendingApprovals'),
         this.state.storage.get<Record<string, PendingCallbackGate>>('pendingCallbacks'),
         this.state.storage.get<Record<string, ObservableStateBucket>>('stateBuckets'),
+        this.state.storage.get<AgentActions>('agentActions'),
         this.state.storage.get<string>('rollingSummary'),
         this.state.storage.get<Record<string, GraphCheckpoint>>('checkpoints'),
       ]);
@@ -174,6 +205,7 @@ export class OracleSession {
       if (storedApprovals) this.pendingApprovals = storedApprovals;
       if (storedCallbacks) this.pendingCallbacks = storedCallbacks;
       if (storedBuckets) this.stateBuckets = storedBuckets;
+      if (storedActions) this.agentActions = storedActions;
       if (typeof storedSummary === 'string') this.rollingSummary = storedSummary;
       if (storedCheckpoints) this.checkpoints = storedCheckpoints;
     });
@@ -224,6 +256,16 @@ export class OracleSession {
     ]);
   }
 
+  /** Run one action-store step, write the record back when it changed, and answer. */
+  private async actionStep(step: (actions: AgentActions, now: number) => StoreResult): Promise<Response> {
+    const now = Date.now();
+    const refreshed = refreshActions(this.agentActions, now);
+    this.agentActions = refreshed.actions;
+    const result = step(this.agentActions, now);
+    if (refreshed.changed || result.changed) await this.state.storage.put('agentActions', this.agentActions);
+    return Response.json(result.body, { status: result.status });
+  }
+
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const pathname = url.pathname;
@@ -247,7 +289,21 @@ export class OracleSession {
         currentTurnNumber: this.currentTurnNumber,
         activeTurnId: this.activeTurnId,
         nextOffset: this.nextOffset,
+        actions: listViews(refreshActions(this.agentActions, Date.now()).actions),
       });
+    }
+
+    if (request.method === 'POST' && pathname.endsWith('/action/park')) {
+      const body = (await request.json().catch(() => ({}))) as Parameters<typeof parkGate>[1];
+      return this.actionStep((actions, now) => parkGate(actions, body, now, this.activeTurnId, isControlPlaneToolName));
+    }
+    if (request.method === 'POST' && pathname.endsWith('/action/claim')) {
+      const body = (await request.json().catch(() => ({}))) as Parameters<typeof claimGate>[1];
+      return this.actionStep((actions, now) => claimGate(actions, body, now));
+    }
+    if (request.method === 'POST' && pathname.endsWith('/action/finish')) {
+      const body = (await request.json().catch(() => ({}))) as Parameters<typeof finishGate>[1];
+      return this.actionStep((actions, now) => finishGate(actions, body, now));
     }
 
     if (request.method === 'POST' && pathname.endsWith('/append')) {
@@ -288,6 +344,7 @@ export class OracleSession {
       this.pendingApprovals = {};
       this.pendingCallbacks = {};
       this.stateBuckets = {};
+      this.agentActions = {};
       this.rollingSummary = '';
       this.checkpoints = {};
       await this.state.storage.deleteAll();
@@ -490,10 +547,13 @@ export class OracleSession {
 
       const published: AgentEventEnvelope[] = [];
       for (const rawItem of items) {
-        const item =
+        let item: AgentStreamItem =
           rawItem.type === 'tool_end' && typeof rawItem.tool_output === 'string'
             ? { ...rawItem, tool_output: rawItem.tool_output.slice(0, MAX_EVENT_TEXT_CHARS) }
             : rawItem;
+        if ('tool_input' in item && item.tool_input !== undefined) {
+          item = { ...item, tool_input: capStoredInput(item.tool_input) } as AgentStreamItem;
+        }
         if (item.type === 'tool_approval_requested' && isSafeRecordKey(item.tool_id)) {
           const requestedToolName = String(item.tool_name || '').trim();
           if (
