@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { classifyInvoiceDelta } from '../worker/invoiceReconcile';
+import { classifyInvoiceDelta, handleBudgetReconcileRoute } from '../worker/invoiceReconcile';
 import { assertHonestyLabel } from '../worker/weeklyDecisionService';
 import {
   canPulseAsScored,
@@ -25,11 +25,111 @@ function mockKv() {
   } as unknown as KVNamespace;
 }
 
-describe('invoice reconcile classifier', () => {
-  it('classifies ok / warn / reconciliation_required bands', () => {
+describe('invoice reconcile classifier and M-11 validation', () => {
+  it('classifies ok / warn / reconciliation_required bands and fails closed on NaN/Infinity/negative', () => {
     expect(classifyInvoiceDelta(1000, 1000).status).toBe('ok');
     expect(classifyInvoiceDelta(1000, 1015).status).toBe('warn');
     expect(classifyInvoiceDelta(1000, 1060).status).toBe('reconciliation_required');
+    expect(classifyInvoiceDelta(1000, Number.NaN).status).toBe('reconciliation_required');
+    expect(classifyInvoiceDelta(Number.POSITIVE_INFINITY, 1000).status).toBe('reconciliation_required');
+    expect(classifyInvoiceDelta(1000, -1).status).toBe('reconciliation_required');
+    expect(classifyInvoiceDelta(-5, 0).status).toBe('reconciliation_required');
+  });
+
+  it('validates body size, invoiceCents bounds, and period window on POST /budgets/self/reconcile', async () => {
+    const env = { DB: createSqliteD1() } as Env;
+    const now = Date.now();
+    const post = (body: string | Record<string, unknown>) =>
+      handleBudgetReconcileRoute(
+        new Request('https://luminarasuite.com/api/budgets/self/reconcile', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: typeof body === 'string' ? body : JSON.stringify(body),
+        }),
+        env,
+        'acct_rec',
+        'usr_rec',
+        '/budgets/self/reconcile',
+      );
+
+    expect((await post('x'.repeat(70_000)))?.status).toBe(413);
+    expect((await post('{not-json'))?.status).toBe(400);
+    expect((await post({ provider: 'dataforseo', invoiceCents: -10 }))?.status).toBe(400);
+    expect((await post({ provider: 'dataforseo', invoiceCents: 12.5 }))?.status).toBe(400);
+    expect((await post({ provider: 'dataforseo', invoiceCents: 100_000_001 }))?.status).toBe(400);
+    expect((await post({ provider: 'dataforseo', invoiceCents: 0, periodStart: now, periodEnd: now - 1000 }))?.status).toBe(400);
+    expect((await post({ provider: 'dataforseo', invoiceCents: 0, periodStart: 1000, periodEnd: now }))?.status).toBe(400);
+
+    const valid = await post({
+      provider: 'dataforseo',
+      invoiceCents: 0,
+      periodStart: now - 3600_000,
+      periodEnd: now,
+    });
+    expect(valid?.status).toBe(200);
+    expect(((await valid!.json()) as { status: string }).status).toBe('ok');
+  });
+});
+
+describe('M-13 migration 0061 SQLite validation triggers', () => {
+  it('enforces non-negative amounts, positive quantities, and bounded step indexes via BEFORE INSERT/UPDATE triggers', () => {
+    const db = createSqliteD1();
+    const exec = (sql: string) => () => db.sqlite.exec(sql);
+    const now = Date.now();
+
+    // referral_rewards: positive amount, 0 <= remaining <= amount
+    expect(exec(`INSERT INTO referral_rewards (id, account_id, kind, amount, remaining, reason, created_at) VALUES ('r1', 'a', 'k', 0, 0, 'bad', ${now})`)).toThrow();
+    expect(exec(`INSERT INTO referral_rewards (id, account_id, kind, amount, remaining, reason, created_at) VALUES ('r2', 'a', 'k', 5, -1, 'bad2', ${now})`)).toThrow();
+    expect(exec(`INSERT INTO referral_rewards (id, account_id, kind, amount, remaining, reason, created_at) VALUES ('r3', 'a', 'k', 5, 6, 'bad3', ${now})`)).toThrow();
+
+    // user_progression: non-negative counters
+    expect(exec(`INSERT INTO user_progression (account_id, streak_weeks, honest_scout_count, week_scout_count, updated_at) VALUES ('a', -1, 0, 0, ${now})`)).toThrow();
+
+    // cost_events: non-negative billed_cents
+    expect(exec(`INSERT INTO cost_events (id, account_id, tool_name, provider, billed_cents, credit_class, created_at) VALUES ('c1', 'a', 't', 'p', -1, 'paid', ${now})`)).toThrow();
+
+    // budget_incidents: positive threshold/limit, non-negative observed
+    db.sqlite.exec(`INSERT INTO budget_policies (id, account_id, amount_cents, created_at, updated_at) VALUES ('bp1', 'a', 1000, ${now}, ${now})`);
+    expect(exec(`INSERT INTO budget_incidents (id, policy_id, account_id, scope_type, window_start, threshold_percent, threshold_kind, amount_limit_cents, amount_observed_cents, created_at) VALUES ('bi1', 'bp1', 'a', 'account', ${now}, 50, 'soft', 1000, -5, ${now})`)).toThrow();
+
+    // idea_scout_daily: non-negative used
+    expect(exec(`INSERT INTO idea_scout_daily (account_id, utc_day, used) VALUES ('a', '2026-10-01', -1)`)).toThrow();
+
+    // invoice_reconcile_runs: non-negative cents and period_start < period_end
+    expect(exec(`INSERT INTO invoice_reconcile_runs (id, account_id, provider, period_start, period_end, internal_cents, invoice_cents, delta_cents, status, created_at) VALUES ('ir1', 'a', 'p', ${now}, ${now}, 0, 0, 0, 'ok', ${now})`)).toThrow();
+    expect(exec(`INSERT INTO invoice_reconcile_runs (id, account_id, provider, period_start, period_end, internal_cents, invoice_cents, delta_cents, status, created_at) VALUES ('ir2', 'a', 'p', ${now - 1000}, ${now}, 0, -1, 1, 'ok', ${now})`)).toThrow();
+
+    // stripe_credited_sessions: non-negative amount_total and granted_days
+    expect(exec(`INSERT INTO stripe_credited_sessions (session_id, plan_id, amount_total, currency, credited_at, granted_days) VALUES ('s1', 'starter', -100, 'aud', ${now}, 30)`)).toThrow();
+    expect(exec(`INSERT INTO stripe_credited_sessions (session_id, plan_id, amount_total, currency, credited_at, granted_days) VALUES ('s2', 'starter', 100, 'aud', ${now}, -1)`)).toThrow();
+
+    // stars_charges: positive stars and non-negative attempts
+    expect(exec(`INSERT INTO stars_charges (charge_id, payer_tg_id, purpose, ref_id, stars, attempts, created_at, updated_at) VALUES ('sc1', 123, 'plan', 'starter', 100, -1, ${now}, ${now})`)).toThrow();
+
+    // ton_pending_orders: positive integer amount_nano and expires_at > created_at
+    expect(exec(`INSERT INTO ton_pending_orders (order_id, memo, account_id, login_id, plan_id, amount_nano, recipient, network, created_at, expires_at) VALUES ('o1', 'm1', 'a', 'a', 'starter', '0', 'UQ', 'testnet', ${now}, ${now + 1000})`)).toThrow();
+    expect(exec(`INSERT INTO ton_pending_orders (order_id, memo, account_id, login_id, plan_id, amount_nano, recipient, network, created_at, expires_at) VALUES ('o2', 'm2', 'a', 'a', 'starter', '-5', 'UQ', 'testnet', ${now}, ${now + 1000})`)).toThrow();
+    expect(exec(`INSERT INTO ton_pending_orders (order_id, memo, account_id, login_id, plan_id, amount_nano, recipient, network, created_at, expires_at) VALUES ('o3', 'm3', 'a', 'a', 'starter', '1000', 'UQ', 'testnet', ${now}, ${now})`)).toThrow();
+
+    // recovery_runs: bounded step_index 0..2 on both INSERT and UPDATE
+    expect(exec(`INSERT INTO recovery_runs (id, account_id, project_id, enquiry_id, contact_id, playbook_id, step_index, created_at, updated_at) VALUES ('rr_bad', 'a', 'p', 'e', 'c', 'pb', 3, ${now}, ${now})`)).toThrow();
+    db.sqlite.exec(`INSERT INTO recovery_runs (id, account_id, project_id, enquiry_id, contact_id, playbook_id, step_index, created_at, updated_at) VALUES ('rr_ok', 'a', 'p', 'e', 'c', 'pb', 0, ${now}, ${now})`);
+    expect(exec(`UPDATE recovery_runs SET step_index = -1 WHERE id = 'rr_ok'`)).toThrow();
+    expect(exec(`UPDATE recovery_runs SET step_index = 3 WHERE id = 'rr_ok'`)).toThrow();
+
+    // memory_vault_snapshots: non-negative leaf_count
+    expect(exec(`INSERT INTO memory_vault_snapshots (id, account_id, merkle_root, leaf_count, cid, created_at) VALUES ('mv1', 'a', 'root', -1, 'cid', ${now})`)).toThrow();
+
+    // agent_trace_spans: non-negative token, cost, latency metrics
+    expect(exec(`INSERT INTO agent_trace_spans (span_id, run_id, account_id, node_name, kind, input_tokens, output_tokens, cost_cents, latency_ms, created_at) VALUES ('sp1', 'r1', 'a', 'n', 'llm', -1, 0, 0, 0, ${now})`)).toThrow();
+
+    // launchpad_* tables
+    expect(exec(`INSERT INTO launchpad_campaigns (id, account_id, business_name, campaign_type, title, description, compliance_status, target_fiat_cents, terms_accepted_at, created_at, updated_at) VALUES ('camp_bad', 'a', 'b', 'closed_loop_loyalty', 't', 'd', 'approved', -10, '2026-01-01', '2026-01-01', '2026-01-01')`)).toThrow();
+    db.sqlite.exec(`INSERT INTO launchpad_campaigns (id, account_id, business_name, campaign_type, title, description, compliance_status, target_fiat_cents, terms_accepted_at, created_at, updated_at) VALUES ('camp_ok', 'a', 'b', 'closed_loop_loyalty', 't', 'd', 'approved', 100, '2026-01-01', '2026-01-01', '2026-01-01')`);
+    expect(exec(`INSERT INTO launchpad_milestones (id, campaign_id, milestone_index, title, payout_percentage, created_at) VALUES ('ms1', 'camp_ok', 0, 'm', 0, '2026-01-01')`)).toThrow();
+    expect(exec(`INSERT INTO launchpad_vouchers (id, campaign_id, voucher_code, item_description, status, issued_by_account_id, issued_at) VALUES ('v1', 'camp_ok', 'VCH-1', 'item', 'hacked', 'a', '2026-01-01')`)).toThrow();
+    expect(exec(`INSERT INTO launchpad_subscriptions (id, campaign_id, subscriber_ref, channel, created_at) VALUES ('sub1', 'camp_ok', 'x', 'sms', '2026-01-01')`)).toThrow();
+    expect(exec(`INSERT INTO launchpad_snapshots (campaign_id, state, current_milestone, snapshot_json, last_notified_milestone, updated_at) VALUES ('camp_ok', 'Active', -1, '{}', -1, '2026-01-01')`)).toThrow();
   });
 });
 

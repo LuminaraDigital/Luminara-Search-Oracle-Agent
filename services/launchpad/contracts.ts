@@ -76,3 +76,22 @@ export function generateVoucherCode(): string {
   }
   return `VCH-${out.slice(0, 4).join('')}-${out.slice(4, 8).join('')}-${out.slice(8, 12).join('')}`;
 }
+
+/** Canonical EIP-191 registration challenge signed by the merchant wallet that deployed the contract. */
+export function buildContractRegistrationMessage(args: {
+  campaignId: string;
+  contractAddress: string;
+  accountId: string;
+  timestamp: number;
+  nonce?: string;
+}): string {
+  const lines = [
+    'Luminara Launchpad Contract Registration',
+    `campaignId: ${args.campaignId}`,
+    `contractAddress: ${args.contractAddress.toLowerCase()}`,
+    `accountId: ${args.accountId}`,
+    `timestamp: ${args.timestamp}`,
+  ];
+  if (args.nonce) lines.push(`nonce: ${args.nonce}`);
+  return lines.join('\n');
+}

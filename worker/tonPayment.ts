@@ -5,7 +5,7 @@
  */
 import type { Env } from './index';
 import { claimTonTransaction, isTonLedgerReady, releaseTonTransaction } from './paymentLedger';
-import { PlanDowngradeRefusedError, downgradeRefusalText, wouldDowngrade } from './planRank';
+import { PlanDowngradeRefusedError, computeSubscriptionExpiry, downgradeRefusalText, wouldDowngrade } from './planRank';
 import { PLANS, alertPaymentAdmins } from './telegramBot';
 import { appliedOrderExpiry, hasAppliedOrder, resolveAccountId, writeSubscriptionRecord } from './userStore';
 import { recordAuditLogBestEffort } from './auditLog';
@@ -333,7 +333,10 @@ export async function createTonInvoice(
     };
   }
 
-  const orderId = `ton_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const randBytes = new Uint8Array(6);
+  crypto.getRandomValues(randBytes);
+  const randHex = Array.from(randBytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  const orderId = `ton_${Date.now()}_${randHex}`;
   const memo = `LUM:${orderId}:${planId}`;
   const asset = requestedAsset;
 
@@ -1020,15 +1023,14 @@ export async function verifyTonPayment(
   const now = Date.now();
   let expiresAt: number;
   try {
-    const existingSub = (await kv.get(`sub:${accountId}`, 'json')) as { expiresAt?: number } | null;
-    const baseTime = existingSub?.expiresAt && existingSub.expiresAt > now ? existingSub.expiresAt : now;
+    const existingSub = (await kv.get(`sub:${accountId}`, 'json')) as { plan?: unknown; expiresAt?: unknown } | null;
 
     const written = await writeSubscriptionRecord(env, order.userId, {
       plan: order.planId,
       paymentMethod: 'ton',
       orderId,
       startedAt: now,
-      expiresAt: baseTime + plan.days * 86400_000,
+      expiresAt: computeSubscriptionExpiry(existingSub, order.planId, plan.days, now),
     }, { orderId });
     // An order the record already names keeps that record's expiry.
     expiresAt = Number(written.record.expiresAt);

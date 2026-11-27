@@ -12,6 +12,7 @@ import worker from '../worker/index';
 import { isApiAccessRoute } from '../worker/apiAccess';
 import type { Env } from '../worker/env';
 import { createSqliteD1, type SqliteD1 } from './helpers/sqliteD1';
+import { memoryDailyQuotaNamespace } from './helpers/memoryDailyQuota';
 import { CHAT_EXTRACTIONS_DAILY_CAP } from '../worker/memoryExtract';
 
 const botToken = '123456:ACCOUNT_MEMORY_TEST';
@@ -49,6 +50,7 @@ function makeEnv(flags: Partial<Env> = {}): Env & { DB: SqliteD1 } {
     ASSETS: { fetch: async () => new Response('ok') } as unknown as Fetcher,
     DB: createSqliteD1(),
     LUMINARA_KV: memoryKv() as unknown as KVNamespace,
+    DAILY_QUOTA: memoryDailyQuotaNamespace(),
     WEBAPP_URL: `${ORIGIN}/`,
     ALLOWED_ORIGINS: ORIGIN,
     BOT_TOKEN: botToken,

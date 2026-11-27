@@ -102,6 +102,7 @@ export async function createProject(
     industryId?: IndustryId;
     defaultLocationCode?: string;
     defaultLanguageCode?: string;
+    maxClients?: number;
   },
 ): Promise<{ ok: true; project: SeoProject } | { ok: false; error: string; status: number }> {
   if (!env.DB) return { ok: false, error: 'Database unavailable', status: 503 };
@@ -122,23 +123,57 @@ export async function createProject(
   }
 
   try {
-    await env.DB.prepare(
-      `INSERT INTO projects
-       (id, account_id, client_id, domain, name, default_location_code, default_language_code, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-      .bind(
-        id,
-        accountId,
-        clientId,
-        domain,
-        name,
-        input.defaultLocationCode || null,
-        input.defaultLanguageCode || null,
-        now,
-        now,
+    if (clientId && typeof input.maxClients === 'number' && Number.isFinite(input.maxClients)) {
+      const cap = Math.max(0, Math.floor(input.maxClients));
+      const inserted = await env.DB.prepare(
+        `INSERT INTO projects
+         (id, account_id, client_id, domain, name, default_location_code, default_language_code, created_at, updated_at)
+         SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+         WHERE EXISTS (SELECT 1 FROM projects WHERE account_id = ? AND client_id = ?)
+            OR (SELECT COUNT(DISTINCT client_id) FROM projects WHERE account_id = ? AND client_id != '') < ?`,
       )
-      .run();
+        .bind(
+          id,
+          accountId,
+          clientId,
+          domain,
+          name,
+          input.defaultLocationCode || null,
+          input.defaultLanguageCode || null,
+          now,
+          now,
+          accountId,
+          clientId,
+          accountId,
+          cap,
+        )
+        .run();
+      if (Number(inserted.meta?.changes ?? 0) !== 1) {
+        return {
+          ok: false,
+          error: `This plan includes ${cap} client${cap === 1 ? '' : 's'}. The client limit is a placeholder until a paid workspace price exists.`,
+          status: 403,
+        };
+      }
+    } else {
+      await env.DB.prepare(
+        `INSERT INTO projects
+         (id, account_id, client_id, domain, name, default_location_code, default_language_code, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+        .bind(
+          id,
+          accountId,
+          clientId,
+          domain,
+          name,
+          input.defaultLocationCode || null,
+          input.defaultLanguageCode || null,
+          now,
+          now,
+        )
+        .run();
+    }
     await setProjectIndustry(env, id, input.industryId || (await accountIndustryId(env, accountId)));
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'insert failed';

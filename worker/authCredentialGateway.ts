@@ -8,6 +8,7 @@
  */
 import type { Env } from './env';
 import { json, sha256Hex } from './workerUtils';
+import { MAX_SMALL_BODY_BYTES, clientIp, readBody } from './security';
 import {
   checkAccountLockout,
   clearFailedSignIn,
@@ -16,6 +17,7 @@ import {
   recordFailedSignIn,
   signInIpLimiter,
   signUpIpLimiter,
+  tokenRefreshIpLimiter,
   withRateLimitHeaders,
   type DualRateLimitResult,
 } from './securityHardening';
@@ -37,6 +39,7 @@ const MAX_REFRESH_TOKEN_CHARS = 2048;
 const DEAD_REFRESH_ERRORS = new Set(['INVALID_REFRESH_TOKEN', 'TOKEN_EXPIRED', 'USER_DISABLED', 'USER_NOT_FOUND']);
 
 const MIN_PASSWORD_LEN = 6;
+const MIN_SIGNUP_PASSWORD_LEN = 8;
 const MAX_PASSWORD_LEN = 128;
 
 /** Anti-enumeration copy for failed sign-in (missing user / wrong password). */
@@ -55,9 +58,9 @@ function mergeHeaders(...parts: Array<Record<string, string> | undefined>): Reco
   return out;
 }
 
-function normalizePassword(raw: unknown): string | null {
+function normalizePassword(raw: unknown, minLen: number): string | null {
   if (typeof raw !== 'string') return null;
-  if (raw.length < MIN_PASSWORD_LEN || raw.length > MAX_PASSWORD_LEN) return null;
+  if (raw.length < minLen || raw.length > MAX_PASSWORD_LEN) return null;
   return raw;
 }
 
@@ -190,7 +193,10 @@ async function callIdentityAuth(
   return { ok: false, kind: 'auth_failed', providerCode: code.slice(0, 80) };
 }
 
-function parseCredentialBody(raw: unknown): { email: string; password: string; appCheckToken?: string } | { error: Response } {
+function parseCredentialBody(
+  raw: unknown,
+  minPasswordLen = MIN_PASSWORD_LEN,
+): { email: string; password: string; appCheckToken?: string } | { error: Response } {
   if (!raw || typeof raw !== 'object') {
     return {
       error: json({ ok: false, error: 'Request body must be JSON with email and password.', code: 'INVALID_BODY' }, 400),
@@ -201,13 +207,13 @@ function parseCredentialBody(raw: unknown): { email: string; password: string; a
   if (!email) {
     return { error: json({ ok: false, error: 'Enter a valid email address.', code: 'INVALID_EMAIL' }, 400) };
   }
-  const password = normalizePassword(body.password);
+  const password = normalizePassword(body.password, minPasswordLen);
   if (!password) {
     return {
       error: json(
         {
           ok: false,
-          error: `Password must be ${MIN_PASSWORD_LEN}-${MAX_PASSWORD_LEN} characters.`,
+          error: `Password must be ${minPasswordLen}-${MAX_PASSWORD_LEN} characters.`,
           code: 'WEAK_PASSWORD',
         },
         400,
@@ -235,15 +241,12 @@ export async function handleSignUp(
   const gate = await gateCredential(env, ip, 'signup');
   if (!gate.ok) return gate.response;
 
-  let raw: unknown;
-  try {
-    raw = await request.json();
-  } catch {
+  const bodyRead = await readBody(request, MAX_SMALL_BODY_BYTES);
+  if (!bodyRead.ok) {
     await padMinLatency(started, minLatency);
-    return json({ ok: false, error: 'Request body must be JSON with email and password.', code: 'INVALID_BODY' }, 400);
+    return json({ ok: false, error: 'Request body must be JSON with email and password.', code: 'INVALID_BODY' }, bodyRead.status === 413 ? 413 : 400);
   }
-
-  const parsed = parseCredentialBody(raw);
+  const parsed = parseCredentialBody(bodyRead.value, MIN_SIGNUP_PASSWORD_LEN);
   if ('error' in parsed) {
     await padMinLatency(started, minLatency);
     return parsed.error;
@@ -305,7 +308,7 @@ export async function handleSignUp(
   }
   if (result.kind === 'weak_password') {
     return json(
-      { ok: false, error: `Use a password with at least ${MIN_PASSWORD_LEN} characters.`, code: 'WEAK_PASSWORD' },
+      { ok: false, error: `Use a password with at least ${MIN_SIGNUP_PASSWORD_LEN} characters.`, code: 'WEAK_PASSWORD' },
       400,
     );
   }
@@ -326,25 +329,43 @@ export async function handleSignUp(
 export async function handleTokenRefresh(
   request: Request,
   env: Env,
-  opts?: { fetchImpl?: typeof fetch },
+  opts?: { fetchImpl?: typeof fetch; ip?: string },
 ): Promise<Response> {
-  let refreshToken = '';
-  try {
-    const body = (await request.json()) as { refreshToken?: unknown };
-    refreshToken = typeof body?.refreshToken === 'string' ? body.refreshToken.trim() : '';
-  } catch {
-    refreshToken = '';
+  const ip = opts?.ip || clientIp(request);
+  const burst = enforceBurstLimit(ip, 10);
+  if (!burst.ok) return burst.response;
+  const edge = await enforceEdgeBindingLimit(env.HIGH_COST_RATE_LIMITER || env.AUTH_MESSAGING_LIMITER, `refresh:${ip || 'unknown'}`, {
+    action: 'refresh_edge',
+    limit: 20,
+    windowSec: 60,
+  });
+  if (!edge.ok) return edge.response;
+  const ipLimit = await tokenRefreshIpLimiter(env, `ip:${ip || 'unknown'}`);
+  if (!ipLimit.ok) return ipLimit.response;
+  const rlHeaders = mergeHeaders(burst.headers, edge.headers, ipLimit.headers);
+
+  const bodyRead = await readBody(request, MAX_SMALL_BODY_BYTES);
+  const body = bodyRead.ok && bodyRead.value && typeof bodyRead.value === 'object'
+    ? (bodyRead.value as { refreshToken?: unknown; appCheckToken?: unknown })
+    : {};
+  const refreshToken = typeof body.refreshToken === 'string' ? body.refreshToken.trim() : '';
+  const bodyAppCheck = typeof body.appCheckToken === 'string' && body.appCheckToken.trim() ? body.appCheckToken.trim() : undefined;
+  if (!bodyRead.ok && bodyRead.status === 413) {
+    return json({ ok: false, error: bodyRead.error, code: 'BODY_TOO_LARGE' }, 413);
   }
   if (!refreshToken || refreshToken.length > MAX_REFRESH_TOKEN_CHARS) {
     return json({ ok: false, error: 'Send the refreshToken from your last sign-in.', code: 'INVALID_BODY' }, 400);
   }
+  const appCheckGate = await enforceAppCheckIfRequired(request, env, bodyAppCheck);
+  if (!appCheckGate.ok) return appCheckGate.response;
+
   const apiKey = String(env.FIREBASE_WEB_API_KEY || '').trim();
   if (!apiKey) {
     return json({ ok: false, error: 'Sign-in is temporarily unavailable. Try again later.', code: 'AUTH_UNAVAILABLE' }, 503);
   }
 
   const fetchImpl = opts?.fetchImpl || fetch;
-  const appCheckToken = extractAppCheckToken(request);
+  const appCheckToken = extractAppCheckToken(request, bodyAppCheck);
   let res: Response;
   try {
     res = await fetchImpl(`${SECURE_TOKEN_URL}?key=${encodeURIComponent(apiKey)}`, {
@@ -363,7 +384,10 @@ export async function handleTokenRefresh(
     error?: { message?: string };
   };
   if (res.ok && parsed.id_token && parsed.refresh_token) {
-    return json({ ok: true, idToken: parsed.id_token, refreshToken: parsed.refresh_token, expiresIn: parsed.expires_in });
+    return withRateLimitHeaders(
+      json({ ok: true, idToken: parsed.id_token, refreshToken: parsed.refresh_token, expiresIn: parsed.expires_in }),
+      rlHeaders,
+    );
   }
   // A bad API key or blocked referrer must not sign every user out, so match the token errors only.
   if (DEAD_REFRESH_ERRORS.has(String(parsed.error?.message || '').split(' ')[0])) {
@@ -386,16 +410,22 @@ export async function handleGoogleSignIn(
   const gate = await gateCredential(env, ip, 'signin');
   if (!gate.ok) return gate.response;
 
-  let googleIdToken = '';
-  try {
-    const body = (await request.json()) as { googleIdToken?: unknown };
-    googleIdToken = typeof body?.googleIdToken === 'string' ? body.googleIdToken.trim() : '';
-  } catch {
-    googleIdToken = '';
+  const bodyRead = await readBody(request, MAX_SMALL_BODY_BYTES);
+  if (!bodyRead.ok && bodyRead.status === 413) {
+    return json({ ok: false, error: bodyRead.error, code: 'BODY_TOO_LARGE' }, 413);
   }
+  const body = bodyRead.ok && bodyRead.value && typeof bodyRead.value === 'object'
+    ? (bodyRead.value as { googleIdToken?: unknown; appCheckToken?: unknown })
+    : {};
+  const googleIdToken = typeof body.googleIdToken === 'string' ? body.googleIdToken.trim() : '';
+  const bodyAppCheck = typeof body.appCheckToken === 'string' && body.appCheckToken.trim() ? body.appCheckToken.trim() : undefined;
   if (!googleIdToken || googleIdToken.length > MAX_GOOGLE_ID_TOKEN_CHARS) {
     return json({ ok: false, error: 'Send the Google ID token from sign-in.', code: 'INVALID_BODY' }, 400);
   }
+  const appCheckGate = await enforceAppCheckIfRequired(request, env, bodyAppCheck);
+  if (!appCheckGate.ok) return appCheckGate.response;
+  const resolvedAppCheck = extractAppCheckToken(request, bodyAppCheck);
+
   const apiKey = String(env.FIREBASE_WEB_API_KEY || '').trim();
   if (!apiKey) {
     return json({ ok: false, error: 'Sign-in is temporarily unavailable. Try again later.', code: 'AUTH_UNAVAILABLE' }, 503);
@@ -406,7 +436,7 @@ export async function handleGoogleSignIn(
   try {
     res = await fetchImpl(`${IDENTITY_SIGN_IN_IDP}?key=${encodeURIComponent(apiKey)}`, {
       method: 'POST',
-      headers: identityToolkitHeaders(env),
+      headers: identityToolkitHeaders(env, resolvedAppCheck),
       body: JSON.stringify({
         postBody: new URLSearchParams({ id_token: googleIdToken, providerId: 'google.com' }).toString(),
         requestUri: String(env.WEBAPP_URL || 'https://www.luminarasuite.com/'),
@@ -459,15 +489,12 @@ export async function handleSignIn(
   const gate = await gateCredential(env, ip, 'signin');
   if (!gate.ok) return gate.response;
 
-  let raw: unknown;
-  try {
-    raw = await request.json();
-  } catch {
+  const bodyRead = await readBody(request, MAX_SMALL_BODY_BYTES);
+  if (!bodyRead.ok) {
     await padMinLatency(started, minLatency);
-    return json({ ok: false, error: 'Request body must be JSON with email and password.', code: 'INVALID_BODY' }, 400);
+    return json({ ok: false, error: 'Request body must be JSON with email and password.', code: 'INVALID_BODY' }, bodyRead.status === 413 ? 413 : 400);
   }
-
-  const parsed = parseCredentialBody(raw);
+  const parsed = parseCredentialBody(bodyRead.value, MIN_PASSWORD_LEN);
   if ('error' in parsed) {
     await padMinLatency(started, minLatency);
     return parsed.error;

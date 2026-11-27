@@ -42,10 +42,55 @@ export interface ProviderSpec {
   byok: (key: string, headers: Headers, body: unknown) => { body?: unknown };
 }
 
+const UNSAFE_SUBPATH_RE = /%2e|%2f|%5c|\.\.|\\/i;
+
+/**
+ * Single-endpoint allowlist entries that must match exactly (no nested sub-paths or
+ * trailing slashes) so hosted clamps (max_tokens, model allowlists, quota buckets) cannot
+ * be bypassed via e.g. /chat/completions/ or /chat/completions/extra.
+ */
+const SINGLE_ENDPOINT_PATHS = new Set([
+  '/chat/completions',
+  '/v1/chat/completions',
+  '/api/chat',
+  '/api/generate',
+  '/api/tags',
+  '/search',
+  '/scrape',
+  '/map',
+  '/contents',
+  '/findSimilar',
+  '/v1/systemone',
+]);
+
+/**
+ * Rejects path traversal and encoded separator sequences (%2e, %2f, %5c, .., \) both
+ * before and after URI decoding, plus malformed percent-encoding, empty segments (//),
+ * and trailing slashes.
+ */
+export function hasUnsafeSubPath(subPath: string): boolean {
+  if (!subPath || !subPath.startsWith('/')) return true;
+  if (subPath.endsWith('/') || subPath.includes('//')) return true;
+  if (UNSAFE_SUBPATH_RE.test(subPath)) return true;
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(subPath);
+  } catch {
+    return true;
+  }
+  if (decoded.endsWith('/') || decoded.includes('//')) return true;
+  if (UNSAFE_SUBPATH_RE.test(decoded)) return true;
+  return false;
+}
+
 /** Pure helper so the allowlist can be unit-tested. */
 export function isPathAllowed(spec: { allow: string[] } | undefined, subPath: string): boolean {
-  if (!spec) return false;
-  return spec.allow.some(p => subPath === p || subPath.startsWith(`${p}/`) || subPath.startsWith(`${p}:`));
+  if (!spec || hasUnsafeSubPath(subPath)) return false;
+  return spec.allow.some(p => {
+    if (subPath === p) return true;
+    if (SINGLE_ENDPOINT_PATHS.has(p)) return false;
+    return subPath.startsWith(`${p}/`) || subPath.startsWith(`${p}:`);
+  });
 }
 
 /** OpenAI-compatible chat completion paths that get hosted token caps. */
@@ -556,13 +601,11 @@ export async function proxyProvider(
 
   let body: unknown = undefined;
   if (request.method !== 'GET') {
-    const read = await readBody(request, MAX_BODY_BYTES, false);
+    const read = await readBody(request, MAX_BODY_BYTES, true);
     if (!read.ok) return releaseUnmeasured(json({ error: read.error }, read.status));
-    const text = read.text;
-    try {
-      body = text ? JSON.parse(text) : {};
-    } catch {
-      body = text;
+    body = read.value;
+    if (providerId === 'firecrawl' && (typeof body !== 'object' || body === null || Array.isArray(body))) {
+      return releaseUnmeasured(json({ error: 'Request body must be a JSON object' }, 400));
     }
     const targetHost = requestTargetHost(body);
     if (auditCoveredToken && targetHost && !sameSiteHost(targetHost, auditDomain)) {
@@ -609,7 +652,7 @@ export async function proxyProvider(
         const clamped = clampHostedGeminiBody(body);
         if (!clamped.ok) return releaseUnmeasured(json({ error: clamped.error }, 400));
         body = clamped.body;
-      } else if (providerId === 'firecrawl' && subPath === '/crawl') {
+      } else if (providerId === 'firecrawl' && (subPath === '/crawl' || subPath.startsWith('/crawl/'))) {
         const clamped = clampHostedFirecrawlCrawlBody(body);
         if (!clamped.ok) return releaseUnmeasured(json({ error: clamped.error }, 400));
         body = clamped.body;

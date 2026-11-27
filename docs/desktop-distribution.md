@@ -78,8 +78,14 @@ Do **not** commit the `.pfx`, password, or base64 blob. Rotate if exposed.
 
 ## Discoverability (download counts)
 
-GitHub release download counts rise only when people download. Prefer linking users to `https://luminarasuite.com/desktop` (and `/desktop/windows`) rather than raw GitHub asset URLs so traffic stays on the official domain and R2 mirror. Landing already links "Windows app" to `/desktop`.
+GitHub release download counts rise only when people download. Prefer linking users to `https://www.luminarasuite.com/desktop` (and `/desktop/windows`) rather than raw GitHub asset URLs so traffic stays on the official domain and R2 mirror. Landing already links "Windows app" to `/desktop`.
+
+## Releasing a new Windows shell (`desktop-v*`)
+
+1. Bump `"version"` in `package.json` and the top-level entries of `package-lock.json` to match the tag (e.g. `1.0.4` for `desktop-v1.0.4`), or `electron-updater` will not upgrade existing installs.
+2. Click-test a locally packaged build (`npm run desktop:pack` / `npm run desktop:dist:win`) against staging before tagging. `electron-updater` cannot downgrade a shipped tag.
+3. Push `desktop-v<version>` from the reviewed `main` commit (never a bare `v*.*.*` tag, which triggers Android release). `workflow_dispatch` builds and verifies the installer without publishing a GitHub Release or overwriting production R2.
 
 ## Domain, TON, multi-user
 
-Desktop still loads `https://luminarasuite.com`, so Firebase, hosted keys, and TON Connect stay on the suite domain. No extra CORS origin is required for the default shell mode.
+Desktop loads `https://www.luminarasuite.com`, so Firebase, hosted keys, local helper CORS, and TON Connect stay on the canonical suite origin. No extra CORS origin is required for the default shell mode.

@@ -1405,4 +1405,15 @@ export {
   prepareCmsMcpCallApi,
 } from './enquiries/enquiryApiClient';
 
+export {
+  unifiedMemoryClient,
+  type ClientMemoryFactKind,
+  type ClientScopedFact,
+  type ClientTemporalEdge,
+  type ClientVaultSnapshotRow,
+  type UnifiedRecallResponse,
+  type CreateVaultSnapshotResponse,
+} from './memory/unifiedMemoryClient';
+
+
 

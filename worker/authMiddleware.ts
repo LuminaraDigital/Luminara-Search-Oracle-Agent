@@ -142,7 +142,16 @@ export const PROTECTED_API_ROUTES: ProtectedRouteSpec[] = [
   { pattern: /^\/api-keys(\/|$)/ },
   { pattern: /^\/agent-connections(\/|$)/ },
   { pattern: /^\/memory\/facts$/, methods: ['GET', 'POST'] },
-  { pattern: /^\/budgets\/self(\/resume)?$/, methods: ['GET', 'PUT', 'POST'] },
+  { pattern: /^\/memory\/(search|extract|context)$/, methods: ['POST'] },
+  { pattern: /^\/memory\/(unified|vault)(\/|$)/ },
+  { pattern: /^\/privacy(\/|$)/ },
+  { pattern: /^\/(weekly-decisions|ai-answers|prepared-assets|reputation|thin-stack)(\/|$)/ },
+  { pattern: /^\/dreaming(\/|$)/ },
+  // /rsi/prompts/publish and /rsi/prompts/rollback require x-admin-secret (not user session); all other /rsi/* routes require session.
+  { pattern: /^\/rsi\/(?!prompts\/(?:publish|rollback)$)/ },
+  { pattern: /^\/audits\/history$/, methods: ['GET', 'PUT'] },
+  { pattern: /^\/deploy\/readback$/, methods: ['POST'] },
+  { pattern: /^\/budgets\/self(\/(resume|reconcile|hard-stop))?$/, methods: ['GET', 'PUT', 'POST'] },
   { pattern: /^\/mcp-action-requests(\/[^/]+)?$/, methods: ['GET'] },
   { pattern: /^\/mcp-action-requests\/[^/]+\/(approve|deny)$/, methods: ['POST'] },
   { pattern: /^\/agent-habitat(\/|$)/ },
@@ -150,6 +159,12 @@ export const PROTECTED_API_ROUTES: ProtectedRouteSpec[] = [
   { pattern: /^\/outcomes(\/|$)/ },
   { pattern: /^\/recovery(\/|$)/ },
   { pattern: /^\/cms-mcp(\/|$)/ },
+  // LanguageTool sidecar requires a verified user session.
+  // /sidecars/umami/* is intentionally omitted here because it uses shared server Umami credentials
+  // and enforces isAdminAuthorized (x-admin-secret without a user cookie) inside worker/sidecarRelay.ts.
+  { pattern: /^\/sidecars\/languagetool(\/|$)/ },
+  // Luminara CRM middle-layer bridge (0060); /crm/webhooks/outcome uses HMAC auth, not session.
+  { pattern: /^\/crm\/(status|activate|launch-token|briefing|enquiries\/[^/]+\/promote|approvals\/\d+\/decide)$/ },
   // /mcp auth is resolveMcpUser (session, lm_live_*, or mcp_* OAuth); not standard identify-only.
   // /oauth/mcp/authorize checks identity itself: a signed-out owner must reach sign-in, not a 401.
 ];

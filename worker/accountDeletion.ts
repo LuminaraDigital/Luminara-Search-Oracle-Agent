@@ -7,6 +7,7 @@ import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
 import { verifyFirebaseIdToken } from './firebaseAuth';
 import { validateInitData } from './telegramAuth';
+import { revokeSessionsForDeletedUser } from './opaqueSession';
 import { billingId, json } from './workerUtils';
 import { identityToolkitHeaders } from './identityToolkit';
 import { findErasedLogin, markFirebaseEraseDone, markFirebaseErasePending } from './accountMirror';
@@ -185,6 +186,8 @@ export async function deleteHostedAccount(request: Request, env: Env, user: Host
   const removed = await env.DB.prepare(`DELETE FROM users WHERE account_id = ? OR id = ?`).bind(accountId, user.id).run();
   counts.users = Number(removed.meta?.changes ?? 0);
   counts.objects = await deleteAccountObjects(env, accountId, user);
+  // Cookie sessions for this login outlive the rows above unless they are cut off here.
+  if (user.id.startsWith('fb:')) await revokeSessionsForDeletedUser(env, user.id.slice(3));
   const rows = Object.values(counts).reduce((sum, value) => sum + (Number(value) || 0), 0);
   if (!firebaseToken) {
     console.warn(JSON.stringify({ event: 'account_deleted', rows }));

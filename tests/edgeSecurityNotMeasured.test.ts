@@ -1,5 +1,7 @@
+import { createHmac } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { auditSecurityOnEdge } from '../worker/sentinel';
+import { auditSecurityOnEdge, handleSentinelRoute } from '../worker/sentinel';
+import { createSqliteD1 } from './helpers/sqliteD1';
 import { handleEntityEnrichment } from '../worker/enrichmentService';
 import type { Env } from '../worker/env';
 import { aeoTrustPackService } from '../services/audit/aeoTrustPackService';
@@ -202,5 +204,92 @@ describe('enterprise trust pack with no security data', () => {
     const eeat = pack.eeatSignals.find((s) => s.id === 'eeat-trust-https');
     expect(eeat?.status).toBe('unknown');
     expect(eeat?.veto).toBe(false);
+  });
+});
+
+describe('Sentinel M-08 cadence enforcement and M-17 atomic cap', () => {
+  const botToken = '123456:SENTINEL_TEST_TOKEN';
+
+  function signInitData(userId: number): string {
+    const fields: Record<string, string> = {
+      auth_date: String(Math.floor(Date.now() / 1000)),
+      user: JSON.stringify({ id: userId, first_name: 'SentinelTester' }),
+    };
+    const dcs = Object.keys(fields).sort().map((k) => `${k}=${fields[k]}`).join('\n');
+    const secret = createHmac('sha256', 'WebAppData').update(botToken).digest();
+    const hash = createHmac('sha256', secret).update(dcs).digest('hex');
+    const p = new URLSearchParams(fields);
+    p.set('hash', hash);
+    return p.toString();
+  }
+
+  it('rejects disallowed reauditCadence with 402 PLAN_LIMIT and enforces domain cap atomically', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('cloudflare-dns.com')) {
+        const answer = url.includes('type=AAAA') ? [] : [{ type: 1, data: '93.184.216.34' }];
+        return new Response(JSON.stringify({ Status: 0, Answer: answer }), { status: 200 });
+      }
+      return new Response('ok', { status: 200 });
+    }));
+
+    const store = new Map<string, string>([
+      ['sub:5150', JSON.stringify({ plan: 'starter', expiresAt: Date.now() + 86_400_000 })],
+    ]);
+    const db = createSqliteD1();
+    const env = {
+      DB: db,
+      BOT_TOKEN: botToken,
+      REQUIRE_TG_AUTH: 'true',
+      LUMINARA_KV: {
+        get: async (key: string, type?: string) => {
+          const v = store.get(key);
+          if (v === undefined) return null;
+          return type === 'json' ? JSON.parse(v) : v;
+        },
+        put: async (key: string, value: string) => {
+          store.set(key, value);
+        },
+        delete: async (key: string) => {
+          store.delete(key);
+        },
+      } as unknown as KVNamespace,
+    } as Env;
+
+    const initData = signInitData(5150);
+    const register = (body: Record<string, unknown>) =>
+      handleSentinelRoute(
+        new Request('https://luminarasuite.com/api/sentinel/register', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-telegram-init-data': initData },
+          body: JSON.stringify(body),
+        }),
+        env,
+        '/sentinel/register',
+      );
+
+    // Starter allows monthly (sentinelLimit = 2): daily and weekly must be rejected with 402 PLAN_LIMIT
+    const dailyRes = await register({ domain: 'alpha.com', reauditCadence: 'daily' });
+    expect(dailyRes.status).toBe(402);
+    expect(((await dailyRes.json()) as { code?: string }).code).toBe('PLAN_LIMIT');
+
+    const weeklyRes = await register({ domain: 'alpha.com', reauditCadence: 'weekly' });
+    expect(weeklyRes.status).toBe(402);
+
+    const badCadence = await register({ domain: 'alpha.com', reauditCadence: 'hourly' });
+    expect(badCadence.status).toBe(400);
+
+    // Concurrent registration race on Starter (limit 2): 4 concurrent domains -> exactly 2 succeed, 2 get 402
+    const raceResults = await Promise.all(
+      ['alpha.com', 'beta.com', 'gamma.com', 'delta.com'].map((domain) =>
+        register({ domain, reauditCadence: 'monthly' }),
+      ),
+    );
+    expect(raceResults.map((r) => r.status).sort()).toEqual([200, 200, 402, 402]);
+
+    const slots = await db
+      .prepare(`SELECT COUNT(*) AS n FROM sentinel_target_slots WHERE owner_id = '5150'`)
+      .first<{ n: number }>();
+    expect(slots?.n).toBe(2);
   });
 });

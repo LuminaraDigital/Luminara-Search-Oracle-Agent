@@ -7,7 +7,7 @@
  * runProvenance / auditLog. Audit details are the tool name and the outcome,
  * not the call inputs.
  */
-import type { UserStoreEnv } from './userStore';
+import { resolveAccountId, type UserStoreEnv } from './userStore';
 import { redactSensitive } from './logRedaction';
 import { sha256Hex } from './workerUtils';
 
@@ -50,14 +50,14 @@ export const TOOL_GOVERNANCE: Record<string, ToolGovernanceEntry> = {
   get_pagespeed_summary: { risk: 'read', status: 'active' },
   // Browser action catalogue
   browse_observe: { risk: 'read', status: 'active' },
-  browse_act: { risk: 'write', status: 'active' },
+  browse_act: { risk: 'destructive', status: 'active' },
   browse_goal: { risk: 'destructive', status: 'active' },
   browse_close: { risk: 'destructive', status: 'active' },
   // Dreaming memory catalogue
   dream_status: { risk: 'read', status: 'active' },
   get_business_memory: { risk: 'read', status: 'active' },
   dream_consolidate: { risk: 'write', status: 'active' },
-  review_dream_proposal: { risk: 'write', status: 'active' },
+  review_dream_proposal: { risk: 'destructive', status: 'active' },
   // Conversion spine & CMS MCP bridge catalogue (0042)
   list_enquiries: { risk: 'read', status: 'active' },
   ingest_enquiry: { risk: 'write', status: 'active' },
@@ -74,14 +74,46 @@ export const TOOL_GOVERNANCE: Record<string, ToolGovernanceEntry> = {
   ask_auditor: { risk: 'read', status: 'active' },
   ask_fixer: { risk: 'read', status: 'active' },
   ask_coach: { risk: 'read', status: 'active' },
+  // Unified Agentic Memory, Temporal Graph, and Anamnesis Vault catalogue (0059)
+  memory_remember: { risk: 'write', status: 'active' },
+  memory_recall: { risk: 'read', status: 'active' },
+  memory_forget: { risk: 'write', status: 'active' },
+  memory_timeline: { risk: 'read', status: 'active' },
+  memory_vault_snapshot: { risk: 'write', status: 'active' },
+  memory_vault_verify_leaf: { risk: 'read', status: 'active' },
+};
+
+/**
+ * Governance entries for dark-launched CRM middle-layer tools (0060).
+ * Kept separate from TOOL_GOVERNANCE while CRM_BRIDGE_ENABLED defaults off so the public
+ * 53-tool directory catalogue remains unchanged until launch.
+ */
+export const CRM_BRIDGE_TOOL_GOVERNANCE: Record<string, ToolGovernanceEntry> = {
+  crm_activate_workspace: { risk: 'write', status: 'active' },
+  crm_briefing_today: { risk: 'read', status: 'active' },
+  crm_intake_capture: { risk: 'write', status: 'active' },
+  crm_leads_search: { risk: 'read', status: 'active' },
+  crm_contacts_search: { risk: 'read', status: 'active' },
+  crm_products_search: { risk: 'read', status: 'active' },
+  crm_quotes_draft: { risk: 'write', status: 'active' },
+  crm_bridge_connections_list: { risk: 'read', status: 'active' },
+  crm_bridge_pull_context: { risk: 'read', status: 'active' },
+  crm_bridge_sync_preview: { risk: 'read', status: 'active' },
+  // CRM ActionExecutor enforces APPROVAL_ALWAYS + Ledger + Passkey as the single canonical gate
+  // (avoids a double-approval deadlock across Suite and CRM).
+  crm_bridge_push_record: { risk: 'write', status: 'active' },
+  crm_bridge_handoff_packet: { risk: 'read', status: 'active' },
 };
 
 /** What approving does, shown to the owner. Fixed text: never built from a caller's arguments. */
 const APPROVAL_CONSEQUENCES: Record<string, string> = {
+  browse_act: "Luminara's hosted browser will perform an interactive action on the active page.",
   browse_goal: "Luminara's hosted browser will carry out a multi-step goal on the site named below.",
   browse_close: 'The hosted browser session named below will be closed.',
+  review_dream_proposal: 'The pending Luminara Dreaming memory proposal named below will be approved or rejected.',
   decide_booking_signoff: 'The proposed appointment named below will be approved or declined.',
   prepare_cms_mcp_call: "A change to your website's CMS will be prepared from the details below.",
+  crm_bridge_push_record: 'An approved CRM record and verified receipt note will be pushed to your connected external CRM.',
 };
 
 export function approvalConsequence(toolName: string): string {
@@ -90,7 +122,7 @@ export function approvalConsequence(toolName: string): string {
 
 /** Unknown tools default to write/active and are still logged. */
 export function governanceFor(toolName: string): ToolGovernanceEntry {
-  return TOOL_GOVERNANCE[toolName] ?? { risk: 'write', status: 'active' };
+  return TOOL_GOVERNANCE[toolName] ?? CRM_BRIDGE_TOOL_GOVERNANCE[toolName] ?? { risk: 'write', status: 'active' };
 }
 
 export type PolicyDecision =
@@ -276,16 +308,18 @@ async function decide(
   id: string,
   adminId: string,
   status: 'approved' | 'denied',
+  ownerAccountId?: string,
 ): Promise<boolean> {
   if (!env.DB) return false;
+  const ownerId = ownerAccountId ?? (await resolveAccountId(env, adminId));
   const now = Date.now();
-  // An expired request can still be denied, never approved.
+  // An expired request can still be denied, never approved. Scoped to user_id so cross-account updates fail.
   const result = await env.DB.prepare(
     `UPDATE mcp_action_requests
      SET status = ?, decided_by = ?, decided_at = ?
-     WHERE id = ? AND status = 'pending' AND (? = 'denied' OR expires_at > ?)`,
+     WHERE id = ? AND user_id = ? AND status = 'pending' AND (? = 'denied' OR expires_at > ?)`,
   )
-    .bind(status, adminId, now, id, status, now)
+    .bind(status, adminId, now, id, ownerId, status, now)
     .run();
   return (result.meta?.changes ?? 0) > 0;
 }
@@ -294,16 +328,18 @@ export function approveActionRequest(
   env: UserStoreEnv,
   id: string,
   adminId: string,
+  ownerAccountId?: string,
 ): Promise<boolean> {
-  return decide(env, id, adminId, 'approved');
+  return decide(env, id, adminId, 'approved', ownerAccountId);
 }
 
 export function denyActionRequest(
   env: UserStoreEnv,
   id: string,
   adminId: string,
+  ownerAccountId?: string,
 ): Promise<boolean> {
-  return decide(env, id, adminId, 'denied');
+  return decide(env, id, adminId, 'denied', ownerAccountId);
 }
 
 /**

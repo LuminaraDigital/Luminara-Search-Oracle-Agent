@@ -39,6 +39,35 @@ describe('desktop downloads', () => {
     expect(await res.text()).toBe('MZ-fake-installer');
   });
 
+  it('sanitizes malicious or traversal fileName and version metadata before setting headers', async () => {
+    const bucket = r2(new Map([
+      ['windows/latest.exe', { body: 'MZ-fake-installer', type: 'application/octet-stream' }],
+      [
+        'windows/manifest.json',
+        {
+          body: JSON.stringify({
+            version: '1.0.0\r\nX-Injected: evil',
+            fileName: '../../evil.exe"\r\nX-Injected: 1',
+          }),
+          type: 'application/json',
+        },
+      ],
+    ]));
+    const latest = await desktopLatestJson({ DESKTOP_RELEASES: bucket });
+    const latestBody = (await latest.json()) as { fileName: string; version: string | null };
+    expect(latestBody.fileName).toBe('Luminara-Suite-Setup.exe');
+    expect(latestBody.version).toBeNull();
+
+    const download = await desktopWindowsDownload(
+      { DESKTOP_RELEASES: bucket },
+      new Request('https://luminarasuite.com/desktop/windows'),
+    );
+    expect(download.status).toBe(200);
+    expect(download.headers.get('Content-Disposition')).toBe('attachment; filename="Luminara-Suite-Setup.exe"');
+    expect(download.headers.get('X-Luminara-Desktop-Version')).toBeNull();
+    expect(download.headers.get('X-Injected')).toBeNull();
+  });
+
   it('redirects to GitHub when R2 has no object', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
       assets: [{ name: 'Luminara-Suite-Setup-1.0.0.exe', browser_download_url: 'https://github.com/example/releases/download/desktop-v1.0.0/Luminara-Suite-Setup-1.0.0.exe' }],

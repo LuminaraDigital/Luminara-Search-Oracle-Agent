@@ -171,3 +171,102 @@ export async function listRunsForAccount(
     return [];
   }
 }
+
+export type TraceSpanKind = 'llm' | 'tool' | 'memory' | 'gate' | 'verifier' | 'checkpoint';
+export type TraceSpanStatus = 'ok' | 'error' | 'waiting_approval';
+
+export interface RecordTraceSpanParams {
+  runId: string;
+  parentSpanId?: string | null;
+  accountId: string;
+  sessionId?: string | null;
+  nodeName: string;
+  kind: TraceSpanKind;
+  modelOrTool?: string | null;
+  inputTokens?: number;
+  outputTokens?: number;
+  costCents?: number;
+  latencyMs?: number;
+  status?: TraceSpanStatus;
+  metadata?: Record<string, unknown>;
+}
+
+export interface TraceSpanRow {
+  span_id: string;
+  run_id: string;
+  parent_span_id: string | null;
+  account_id: string;
+  session_id: string | null;
+  node_name: string;
+  kind: TraceSpanKind;
+  model_or_tool: string | null;
+  input_tokens: number;
+  output_tokens: number;
+  cost_cents: number;
+  latency_ms: number;
+  status: TraceSpanStatus;
+  metadata_json: string;
+  created_at: number;
+}
+
+/**
+ * Langfuse / Phoenix-lite child span telemetry. Best-effort so observability never breaks a request.
+ */
+export async function recordTraceSpan(
+  env: UserStoreEnv,
+  params: RecordTraceSpanParams,
+): Promise<string | null> {
+  if (!env.DB) return null;
+  const spanId = `span_${Date.now().toString(36)}_${crypto.randomUUID().slice(0, 8)}`;
+  try {
+    await env.DB.prepare(
+      `INSERT INTO agent_trace_spans (
+        span_id, run_id, parent_span_id, account_id, session_id,
+        node_name, kind, model_or_tool, input_tokens, output_tokens,
+        cost_cents, latency_ms, status, metadata_json, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(
+        spanId,
+        params.runId,
+        params.parentSpanId ?? null,
+        params.accountId,
+        params.sessionId ?? null,
+        params.nodeName.slice(0, 120),
+        params.kind,
+        params.modelOrTool ? params.modelOrTool.slice(0, 120) : null,
+        Math.max(0, Math.floor(params.inputTokens ?? 0)),
+        Math.max(0, Math.floor(params.outputTokens ?? 0)),
+        Math.max(0, Math.floor(params.costCents ?? 0)),
+        Math.max(0, Math.floor(params.latencyMs ?? 0)),
+        params.status ?? 'ok',
+        JSON.stringify(params.metadata || {}),
+        Date.now(),
+      )
+      .run();
+    return spanId;
+  } catch (err) {
+    if (!(err instanceof Error && /no such table/i.test(err.message))) {
+      console.error('[run-provenance] recordTraceSpan failed:', err);
+    }
+    return null;
+  }
+}
+
+export async function listRunTraceSpans(
+  env: UserStoreEnv,
+  accountId: string,
+  runId: string,
+): Promise<TraceSpanRow[]> {
+  if (!env.DB) return [];
+  try {
+    const res = await env.DB.prepare(
+      `SELECT * FROM agent_trace_spans WHERE account_id = ? AND run_id = ? ORDER BY created_at ASC, rowid ASC LIMIT 200`,
+    )
+      .bind(accountId, runId)
+      .all<TraceSpanRow>();
+    return res.results || [];
+  } catch {
+    return [];
+  }
+}

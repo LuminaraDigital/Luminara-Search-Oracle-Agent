@@ -66,7 +66,13 @@ const COPY_FILES = [
   'services/share/winShare.ts',
   'worker/winShare.ts',
   'components/suite/EnquiryDeskView.tsx',
+  'components/suite/CrmMiddleLayerBar.tsx',
   'components/audit/CmsMcpRemediationPanel.tsx',
+  'components/auth/AuthRequiredScreen.tsx',
+  'components/desktop/DesktopExternalLinks.tsx',
+  'components/desktop/DesktopUpdatesPanel.tsx',
+  'electron/main.cjs',
+  'electron/externalLinks.json',
   'services/enquiries/playbookQualificationService.ts',
   'services/deployment/remediationTierRouter.ts',
 ] as const;

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { BusinessDNA } from '../../types';
 import { notebookService } from '../../services/notebook/notebookService';
+import { validateClientUploadFile } from '../../utils/fileUploadGuard';
 import { AeoCorpusService } from '../../services/corpus/aeoCorpusService';
 import { ICONS } from '../../constants';
 
@@ -103,6 +104,14 @@ export const SourceModal: React.FC<SourceModalProps> = ({
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    setError(null);
+    const checked = validateClientUploadFile(file, {
+      allowedExtensions: ['.txt', '.md', '.markdown', '.csv', '.tsv', '.json', '.xml', '.yaml', '.yml', '.log'],
+    });
+    if (!checked.ok) {
+      setError(checked.error);
+      return;
+    }
     try {
       await notebookService.addFileSource(notebookId, file);
       onSourceAdded();

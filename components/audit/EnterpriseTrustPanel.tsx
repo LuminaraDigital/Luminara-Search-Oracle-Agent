@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ICONS } from '../../constants';
 import type { EnterpriseTrustPack, TrustStatus } from '../../services/trust/enterpriseTrustPackService';
+import { isWebUrl } from '../../utils/webUrl';
 
 interface EnterpriseTrustPanelProps {
   pack?: EnterpriseTrustPack | null;
@@ -85,9 +86,13 @@ export const EnterpriseTrustPanel: React.FC<EnterpriseTrustPanelProps> = ({ pack
           pack.datasetProvenance.map((d) => (
             <div key={d.id} className="glass-morphism rounded-lg border border-white/10 p-2.5 text-xs">
               <div className="flex items-center justify-between gap-2">
-                <a href={d.sourceUrl} target="_blank" rel="noopener noreferrer" className="font-bold text-gold-light hover:underline">
-                  {d.name}
-                </a>
+                {typeof d.sourceUrl === 'string' && isWebUrl(d.sourceUrl) ? (
+                  <a href={d.sourceUrl} target="_blank" rel="noopener noreferrer" className="font-bold text-gold-light hover:underline">
+                    {d.name}
+                  </a>
+                ) : (
+                  <span className="font-bold text-gold-light">{d.name}</span>
+                )}
                 <span className="font-mono text-[9px] text-gray-500 uppercase">{d.health}</span>
               </div>
               <p className="text-[11px] text-gray-400 mt-1">{d.usedIn}</p>

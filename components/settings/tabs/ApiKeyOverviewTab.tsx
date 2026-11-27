@@ -2,7 +2,6 @@ import React from 'react';
 import { ProviderStatus } from '../../../services/configService';
 import { AuthPanel } from '../../auth/AuthPanel';
 import { TelegramAccountPanel } from '../../telegram/TelegramAccountPanel';
-import { DesktopUpdatesPanel } from '../../desktop/DesktopUpdatesPanel';
 import { McpUsageStrip } from '../McpUsageStrip';
 import { RouterTelemetryBoard } from '../RouterTelemetryBoard';
 import { Button } from '../../ui/Button';
@@ -121,7 +120,6 @@ export const ApiKeyOverviewTab: React.FC<ApiKeyOverviewTabProps> = ({
         />
       </label>}
 
-      <DesktopUpdatesPanel />
       <McpUsageStrip />
       <RouterTelemetryBoard />
 

@@ -3,7 +3,7 @@
  * Prefers Cloudflare D1 when bound; falls back to KV so local tests still work.
  */
 import type { KVNamespace } from '@cloudflare/workers-types';
-import { PlanDowngradeRefusedError, wouldDowngrade } from './planRank';
+import { MAX_SUBSCRIPTION_MS, PlanDowngradeRefusedError, planRank, wouldDowngrade } from './planRank';
 import type { HostedIdentity, EncryptedKeyBag } from './userTypes';
 import { scheduleWelcomeEmail, type WelcomeEnv } from './welcomeEmail';
 import type { DataPlaneEnv } from './dataPlaneDocs';
@@ -361,14 +361,41 @@ export async function writeSubscriptionRecord(
   const replay = existing !== null && opts.orderId !== undefined && hasAppliedOrder(existing, opts.orderId);
   if (replay) console.warn(JSON.stringify({ event: 'order_already_applied' }));
   const incoming: Record<string, unknown> = replay ? existing : record;
+  const now = Date.now();
   // A purchase may never replace a plan that is still running with a lower one. The rule lives
   // here because every rail writes through here, so a rail added later inherits it.
-  if (!replay && !opts.allowLowerPlan && wouldDowngrade(existing, record.plan)) {
+  if (!replay && !opts.allowLowerPlan && wouldDowngrade(existing, record.plan, now)) {
     throw new PlanDowngradeRefusedError(String(existing?.plan), Number(existing?.expiresAt), String(record.plan));
   }
   // A purchase on another rail must not erase which Stars charges an active record was built
   // from: the charge sweep and refunds read that list to tell a granted charge from a lost one.
   let toWrite = incoming;
+  if (!replay) {
+    const rawExpires =
+      typeof toWrite.expiresAt === 'number'
+        ? toWrite.expiresAt
+        : typeof toWrite.expiresAt === 'string' && toWrite.expiresAt.trim() !== ''
+          ? Number(toWrite.expiresAt)
+          : Number.NaN;
+    if (!Number.isFinite(rawExpires) || rawExpires < 0) {
+      throw new RangeError('Subscription expiresAt must be a finite non-negative timestamp.');
+    }
+    const cap = now + MAX_SUBSCRIPTION_MS;
+    let bounded = Math.min(Math.floor(rawExpires), cap);
+    // Same-tier renewals cannot regress an active expiry (up to the 2-year cap).
+    // Cross-tier upgrades prorate remaining time; reversals pass allowLowerPlan.
+    if (!opts.allowLowerPlan && existing) {
+      const existingExpires = Number(existing.expiresAt);
+      const existingRank = planRank(existing.plan);
+      const newRank = planRank(toWrite.plan);
+      if (Number.isFinite(existingExpires) && existingExpires > now && existingRank > 0 && existingRank === newRank) {
+        bounded = Math.max(bounded, Math.min(Math.floor(existingExpires), cap));
+      }
+    }
+    if (bounded !== toWrite.expiresAt) {
+      toWrite = { ...toWrite, expiresAt: bounded };
+    }
+  }
   if (!Array.isArray(incoming.appliedCharges)) {
     // Records written before the list existed name one charge.
     const earlier = Array.isArray(existing?.appliedCharges)
@@ -376,8 +403,8 @@ export async function writeSubscriptionRecord(
       : typeof existing?.chargeId === 'string' && existing.chargeId
         ? [existing.chargeId]
         : [];
-    if (existing?.expiresAt && existing.expiresAt > Date.now() && earlier.length > 0) {
-      toWrite = { ...incoming, appliedCharges: earlier };
+    if (existing?.expiresAt && existing.expiresAt > now && earlier.length > 0) {
+      toWrite = { ...toWrite, appliedCharges: earlier };
     }
   }
   // The orders are carried from a record that has ended too, so a late retry still finds its own.

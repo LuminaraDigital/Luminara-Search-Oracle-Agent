@@ -53,6 +53,24 @@ const MCP_TOOL_TITLES: Record<string, string> = {
   compile_review_to_skill: 'Compile a review into a skill',
   mint_habitat_token: 'Mint a habitat token',
   draft_fix: 'Draft a fix',
+  memory_remember: 'Remember a scoped fact',
+  memory_recall: 'Recall unified memory',
+  memory_forget: 'Forget a memory fact',
+  memory_timeline: 'Query relationship timeline',
+  memory_vault_snapshot: 'Create a memory vault snapshot',
+  memory_vault_verify_leaf: 'Verify a memory vault leaf',
+  crm_activate_workspace: 'Activate free Luminara CRM workspace',
+  crm_briefing_today: 'Luminara Operator briefing',
+  crm_intake_capture: 'Capture CRM lead from text',
+  crm_leads_search: 'Search CRM leads',
+  crm_contacts_search: 'Search CRM contacts',
+  crm_products_search: 'Search CRM products',
+  crm_quotes_draft: 'Draft a CRM quote',
+  crm_bridge_connections_list: 'List connected external CRMs',
+  crm_bridge_pull_context: 'Read external CRM context',
+  crm_bridge_sync_preview: 'Preview external CRM sync diff',
+  crm_bridge_push_record: 'Push approved record to external CRM',
+  crm_bridge_handoff_packet: 'Build universal CRM handoff packet',
 };
 
 /** Reaches a live index, a public page, or an external CMS. Closed tools stay false. */
@@ -68,6 +86,12 @@ export const OPEN_WORLD_TOOLS: ReadonlySet<string> = new Set([
   'browse_goal',
   'browse_close',
   'prepare_cms_mcp_call',
+]);
+
+export const CRM_BRIDGE_OPEN_WORLD_TOOLS: ReadonlySet<string> = new Set([
+  'crm_bridge_pull_context',
+  'crm_bridge_sync_preview',
+  'crm_bridge_push_record',
 ]);
 
 export type McpToolAnnotations = {
@@ -86,7 +110,7 @@ export function mcpToolAnnotations(name: string): McpToolAnnotations {
   return {
     title: mcpToolTitle(name),
     readOnlyHint: risk === 'read',
-    openWorldHint: OPEN_WORLD_TOOLS.has(name),
+    openWorldHint: OPEN_WORLD_TOOLS.has(name) || CRM_BRIDGE_OPEN_WORLD_TOOLS.has(name),
     // Anthropic's directory review wants destructiveHint on any tool that modifies data, not only deletes.
     destructiveHint: risk !== 'read',
   };

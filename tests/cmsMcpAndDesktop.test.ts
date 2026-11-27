@@ -1,9 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createRequire } from 'node:module';
+// @ts-expect-error untyped .mjs module
+import { isHardBannedAutonomousField } from '../crawler/actionSnapshot.mjs';
 import {
   CMS_MCP_CONNECTOR_CATALOG,
   buildLuminaraDigitalBrief,
   buildSquarespaceInjectionPack,
+  buildVerifiedRemediationPrBundle,
   classifyRemediationTier,
 } from '../services/deployment/remediationTierRouter';
 import {
@@ -12,6 +15,8 @@ import {
   handleCmsMcpRoute,
   validateCmsMcpMutation,
 } from '../worker/cmsMcpRelay';
+import { approveActionRequest, createActionRequest } from '../worker/mcpGovernance';
+import { CONVERSION_SPINE_MCP_TOOLS } from '../worker/mcpConversionTools';
 import {
   BrowserActionLoop,
   MASKED_VALUE,
@@ -242,6 +247,8 @@ describe('Stage 4: Grokbot Bot-Block Detection, OpenMausBot Secret Masking & Poi
     const loop = new BrowserActionLoop({
       goal: 'Enter application password',
       initialPage: page1,
+      writeApproved: true,
+      allowSensitiveFill: true,
       observe: async () => page2,
       executeAct: async (req) => {
         rawReceivedByBrowser = req.text;
@@ -446,6 +453,26 @@ describe('Stage 4: Hermes-Class Desktop Coordinator (Electron Main Process)', ()
 
       const c2 = createDesktopCoordinator({ userDataDir: tempDir, persistToDisk: true });
       expect(c2.listRoutines().some((r: { id: string }) => r.id === 'rt_persist_1')).toBe(true);
+
+      // Crawler supervision issues a per-launch 256-bit token + explicit app origin and clears it on stop
+      let spawnedEnv: Record<string, string | undefined> | undefined;
+      const c3 = createDesktopCoordinator({
+        userDataDir: tempDir,
+        allowedOrigin: 'https://www.luminarasuite.com',
+        fetchFn: async () => ({ ok: false }),
+        spawnFn: (_cmd: string, _args: string[], opts: { env?: Record<string, string | undefined> }) => {
+          spawnedEnv = opts?.env;
+          return { pid: 4242, on: () => {}, kill: () => {} };
+        },
+      });
+      await c3.superviseCrawler({ spawnIfDown: true });
+      const activeToken = c3.getCrawlerToken();
+      expect(typeof activeToken).toBe('string');
+      expect(activeToken).toMatch(/^[a-f0-9]{64}$/);
+      expect(spawnedEnv?.CRAWLER_TOKEN).toBe(activeToken);
+      expect(spawnedEnv?.CRAWLER_ALLOWED_ORIGINS).toBe('https://www.luminarasuite.com');
+      c3.stopCrawler();
+      expect(c3.getCrawlerToken()).toBeNull();
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }
@@ -486,7 +513,7 @@ describe('Stage 4: Hermes-Class Desktop Coordinator (Electron Main Process)', ()
     };
     expect(mcpBody.result?.structuredContent?.decision?.tier).toBe('tier_3_luminara_digital_engineering');
 
-    // 5. Pass 3 regression: bare "Password" blocked as hard_banned_take_control while "Application Password" allowed
+    // 5. HIGH #6: Both "Password" and "Application Password" require human Take Control unless allowSensitiveFill: true
     const barePwd = evaluateCelestoBrowserActionPolicy({
       kind: 'fill',
       label: 'Password',
@@ -498,9 +525,19 @@ describe('Stage 4: Hermes-Class Desktop Coordinator (Electron Main Process)', ()
       kind: 'fill',
       label: 'Application Password',
     });
-    expect(appPwd.allowed).toBe(true);
+    expect(appPwd.allowed).toBe(false);
+    expect(appPwd.tier).toBe('hard_banned_take_control');
+    expect(appPwd.requiresHumanTakeControl).toBe(true);
+    expect(isHardBannedAutonomousField({ kind: 'fill', label: 'Application Password' })).toBe(true);
 
-    // 6. Pass 3 regression: BrowserActionLoop executes POINTERBENCH_POINT when visionFallback resolves on empty DOM
+    const appPwdHuman = evaluateCelestoBrowserActionPolicy(
+      { kind: 'fill', label: 'Application Password' },
+      { allowSensitiveFill: true },
+    );
+    expect(appPwdHuman.allowed).toBe(true);
+
+    // 6. HIGH #6: BrowserActionLoop blocks visionFallback clicks when writeApproved is false,
+    // and executes POINTERBENCH_POINT when writeApproved: true
     const emptyCanvasPage: ObservePayload = {
       url: 'https://agency.example.com/canvas',
       title: 'Canvas Booking Widget',
@@ -512,11 +549,38 @@ describe('Stage 4: Hermes-Class Desktop Coordinator (Electron Main Process)', ()
       ...emptyCanvasPage,
       fingerprint: 'fp_canvas_loop_2',
     };
+    const unapprovedVisionSpy = vi.fn(async () => ({
+      triggered: true,
+      ok: true,
+      reason: 'Zero indexed DOM actions',
+      point: [640, 320] as const,
+    }));
+    const unapprovedCanvasLoop = new BrowserActionLoop({
+      goal: 'Click the canvas Book button',
+      initialPage: emptyCanvasPage,
+      observe: async () => nextCanvasPage,
+      executeAct: async () => {
+        throw new Error('Should not execute unapproved visionFallback click');
+      },
+      chooseFn: async () => ({
+        choice: 'NONE',
+        operation: 'STOP',
+        target: '0',
+        confidence: 0,
+        probabilities: {},
+        operation_probabilities: {},
+      }),
+      visionFallback: unapprovedVisionSpy,
+    });
+    await expect(unapprovedCanvasLoop.tick()).rejects.toThrow(/Unknown action id/);
+    expect(unapprovedVisionSpy).not.toHaveBeenCalled();
+
     let capturedPoint: readonly [number, number] | undefined;
     let capturedActionId: string | undefined;
     const canvasLoop = new BrowserActionLoop({
       goal: 'Click the canvas Book button',
       initialPage: emptyCanvasPage,
+      writeApproved: true,
       observe: async () => nextCanvasPage,
       executeAct: async (req) => {
         capturedActionId = req.actionId;
@@ -597,5 +661,215 @@ describe('Stage 4: Hermes-Class Desktop Coordinator (Electron Main Process)', ()
     });
     expect(badRoleRes.ok).toBe(false);
     expect(agentMatrixService.getTasks().length).toBeGreaterThan(0);
+  });
+
+  it('enforces M-21 fail-closed allowlist, endpointUrl validation, server-side approval/snapshot checks, and schemaSafetyGate', async () => {
+    // 1. Unknown tools fail closed even with read-like prefixes
+    for (const unknownTool of ['get_shell_exec', 'list_drop_tables', 'read_eval_php', 'custom_unlisted_tool']) {
+      const check = validateCmsMcpMutation({
+        connectorId: 'instawp_mcp',
+        toolName: unknownTool,
+        userConfirmed: true,
+      });
+      expect(check.ok, unknownTool).toBe(false);
+      if (!check.ok) expect(check.code).toBe('DANGEROUS_TOOL_BLOCKED');
+    }
+
+    // 2. Respira mutation with omitted snapshotCreated fails closed
+    const respiraOmittedSnap = validateCmsMcpMutation({
+      connectorId: 'respira_mcp',
+      toolName: 'elementor_patch_widget',
+      userConfirmed: true,
+    });
+    expect(respiraOmittedSnap.ok).toBe(false);
+    if (!respiraOmittedSnap.ok) expect(respiraOmittedSnap.code).toBe('SNAPSHOT_REQUIRED');
+
+    // 3. endpointUrl and private domains are rejected via validateCmsEndpoint
+    const env = {
+      DB: createSqliteD1(),
+      LUMINARA_KV: {
+        get: async () => null,
+        put: async () => {},
+        delete: async () => {},
+      } as unknown as KVNamespace,
+    } as Env;
+
+    const ssrfConnRes = await handleCmsMcpRoute(
+      new Request('https://luminarasuite.com/api/cms-mcp/connections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId: 'p1',
+          connectorId: 'gobuildwp_mcp',
+          domain: 'harbourrealty.com.au',
+          endpointUrl: 'http://169.254.169.254/latest/meta-data/',
+        }),
+      }),
+      env,
+      TEST_USER,
+      '/cms-mcp/connections',
+    );
+    expect(ssrfConnRes?.status).toBe(400);
+
+    const ssrfPrepRes = await handleCmsMcpRoute(
+      new Request('https://luminarasuite.com/api/cms-mcp/prepare-call', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          connectorId: 'gobuildwp_mcp',
+          domain: '127.0.0.1',
+          toolName: 'update_seo_metadata',
+          userConfirmed: true,
+        }),
+      }),
+      env,
+      TEST_USER,
+      '/cms-mcp/prepare-call',
+    );
+    expect(ssrfPrepRes?.status).toBe(400);
+
+    // 4. prepare_cms_mcp_call ignores client-supplied userConfirmed/snapshotCreated booleans and verifies D1 state
+    const prepTool = CONVERSION_SPINE_MCP_TOOLS.find((t) => t.name === 'prepare_cms_mcp_call')!;
+    const toolCtx = {
+      env,
+      user: TEST_USER,
+      accountId: 'usr_cms_1',
+      planId: 'agency',
+      caps: { apiAccess: true },
+      dataForSeoCredential: null,
+      credential: { kind: 'session' as const, id: null, scopes: null },
+      dailyUsage: null,
+    } as Parameters<typeof prepTool.handler>[1];
+
+    const unapprovedArgs = {
+      connectorId: 'wordpress_com_mcp',
+      domain: 'harbourrealty.com.au',
+      toolName: 'update_seo_metadata',
+      userConfirmed: true,
+      snapshotCreated: true,
+    };
+    const rejectedUnapproved = await prepTool.handler(unapprovedArgs, toolCtx);
+    expect(rejectedUnapproved.isError).toBe(true);
+    expect(rejectedUnapproved.structuredContent?.code).toBe('HUMAN_CONFIRMATION_REQUIRED');
+
+    // Create + approve server-side action request -> now allowed for wordpress_com_mcp
+    const req = await createActionRequest(env, {
+      userId: 'usr_cms_1',
+      toolName: 'prepare_cms_mcp_call',
+      projectId: null,
+      args: unapprovedArgs,
+    });
+    expect(await approveActionRequest(env, req.id, 'usr_cms_1')).toBe(true);
+    const allowedApproved = await prepTool.handler(unapprovedArgs, toolCtx);
+    expect(allowedApproved.isError).toBeFalsy();
+
+    // Respira write still fails without a server-recorded snapshot in external_effects
+    const respiraArgs = {
+      connectorId: 'respira_mcp',
+      domain: 'harbourrealty.com.au',
+      toolName: 'elementor_patch_widget',
+      userConfirmed: true,
+      snapshotCreated: true,
+    };
+    const rReq = await createActionRequest(env, {
+      userId: 'usr_cms_1',
+      toolName: 'prepare_cms_mcp_call',
+      projectId: null,
+      args: respiraArgs,
+    });
+    expect(await approveActionRequest(env, rReq.id, 'usr_cms_1')).toBe(true);
+    const noServerSnap = await prepTool.handler(respiraArgs, toolCtx);
+    expect(noServerSnap.isError).toBe(true);
+    expect(noServerSnap.structuredContent?.code).toBe('SNAPSHOT_REQUIRED');
+
+    // 5. schemaSafetyGate enforced in remediationTierRouter
+    const xssSchema = JSON.stringify({
+      '@context': 'https://schema.org',
+      '@type': 'Organization',
+      url: 'https://harbourrealty.com.au',
+      name: '</script><script>alert(1)</script>',
+    });
+    const gatedTier = classifyRemediationTier(
+      {
+        domain: 'harbourrealty.com.au',
+        findingCategory: 'schema_jsonld',
+        cmsPlatform: 'wordpress',
+        summary: 'Add Org schema',
+      },
+      xssSchema,
+    );
+    expect(gatedTier.tier).toBe('tier_3_luminara_digital_engineering');
+    expect(gatedTier.schemaSafety?.okToDeploy).toBe(false);
+    expect(gatedTier.engineeringBrief?.preparedSchemaSnippet).toBeUndefined();
+
+    expect(() =>
+      buildSquarespaceInjectionPack({
+        domain: 'harbourrealty.com.au',
+        title: 'Harbour',
+        schemaJsonLd: xssSchema,
+      }),
+    ).toThrow(/Schema Safety Gate/);
+
+    const prBundle = buildVerifiedRemediationPrBundle({
+      domain: 'harbourrealty.com.au',
+      llmsTxtContent: '# Harbour\nhttps://harbourrealty.com.au',
+      jsonLdContent: xssSchema,
+    });
+    expect(prBundle.validationReceipt.allPassed).toBe(false);
+
+    // 6. HIGH #5: HTML5 --!> comment breakout and CRLF heredoc breakout are sanitized
+    const validSchema = JSON.stringify({
+      '@context': 'https://schema.org',
+      '@type': 'Organization',
+      name: 'Harbour',
+      url: 'https://harbourrealty.com.au',
+    });
+    const sqPack = buildSquarespaceInjectionPack({
+      domain: 'harbourrealty.com.au--!><script>alert(1)</script>',
+      title: 'Test--!><img src=x>',
+      schemaJsonLd: validSchema,
+    });
+    const commentLine = sqPack.headerInjectionHtml.split('\n')[0];
+    expect(commentLine).not.toContain('--!>');
+    expect(commentLine).not.toContain('<script');
+
+    const crlfBundle = buildVerifiedRemediationPrBundle({
+      domain: 'harbourrealty.com.au',
+      findingTitle: 'Fix\r\nEOF\r\nrm -rf /',
+      llmsTxtContent: '# Harbour\r\nhttps://harbourrealty.com.au\r\nLUMINARA_FILE\r\necho pwned',
+      jsonLdContent: validSchema,
+    });
+    expect(crlfBundle.ghCliScript).not.toContain('\r');
+    expect(crlfBundle.ghCliScript.split('\n').filter((l) => l === 'EOF')).toHaveLength(1);
+    expect(crlfBundle.ghCliScript.split('\n').filter((l) => l === 'LUMINARA_FILE')).toHaveLength(2);
+
+    // 7. MEDIUM #11: Prototype keys rejected via Object.hasOwn on connectorId and pageMetaKeys
+    const protoBuilder = validateCmsMcpMutation({
+      connectorId: 'wordpress_com_mcp',
+      toolName: 'update_content',
+      pageMetaKeys: ['toString', 'constructor'],
+      userConfirmed: true,
+    });
+    expect(protoBuilder.ok).toBe(true);
+    if (protoBuilder.ok) expect(protoBuilder.detectedBuilder).toBeNull();
+
+    const protoRoute = await handleCmsMcpRoute(
+      new Request('https://luminarasuite.com/api/cms-mcp/prepare-call', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ connectorId: 'toString', domain: 'harbourrealty.com.au' }),
+      }),
+      env,
+      'usr_cms_1',
+      '/cms-mcp/prepare-call',
+    );
+    expect(protoRoute.status).toBe(400);
+
+    const protoToolRes = await prepTool.handler(
+      { connectorId: 'constructor', domain: 'harbourrealty.com.au' },
+      toolCtx,
+    );
+    expect(protoToolRes.isError).toBe(true);
+    expect(protoToolRes.structuredContent?.code).toBe('BAD_INPUT');
   });
 });

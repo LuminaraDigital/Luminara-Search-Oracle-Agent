@@ -3,6 +3,7 @@
  */
 import type { FieldContext, HistoryEntry, LlmFn, ObservePayload, ObservedAction } from './types';
 import { ValueError } from './choose';
+import { UNTRUSTED_CONTENT_RULE, wrapUntrustedContent } from '../../utils/untrustedContent';
 
 const TEXT_SYSTEM =
   'Return exactly one JSON object: {"text":"<value to type>"}. No other keys. Non-empty string, max 2000 characters. Do not invent credentials or secrets.';
@@ -70,11 +71,22 @@ export async function fieldTextWithLlm(
   context: FieldContext,
   llmFn: LlmFn,
 ): Promise<{ text: string; raw: string }> {
+  const untrustedContext = wrapUntrustedContent(
+    'BROWSER_FIELD_CONTEXT',
+    JSON.stringify({
+      field: context.field,
+      page: context.page,
+      recent_actions: context.recent_actions,
+    }),
+    { nonce: true },
+  );
   const prompt = [
     TEXT_SYSTEM,
+    UNTRUSTED_CONTENT_RULE,
     '',
+    `Goal: ${JSON.stringify(context.goal)}`,
     'Context:',
-    JSON.stringify(context),
+    untrustedContext,
   ].join('\n');
   const raw = await llmFn(prompt);
   const text = parseFieldTextResponse(raw);

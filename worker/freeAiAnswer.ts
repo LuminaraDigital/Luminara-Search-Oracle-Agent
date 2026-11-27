@@ -11,6 +11,7 @@ import { getActiveSubscription } from './quotaMiddleware';
 import { WORKERS_AI_FALLBACK_MODEL } from './workersAiFallback';
 import { NVIDIA_FALLBACK_MODEL } from './nvidiaChatFallback';
 import { billingId, identify, json } from './workerUtils';
+import { UNTRUSTED_CONTENT_RULE, wrapUntrustedContent } from '../utils/untrustedContent';
 import {
   agenciesFromAnswer,
   cacheUrl,
@@ -82,7 +83,10 @@ async function chat(url: string, key: string, model: string, prompt: string): Pr
       headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model,
-        messages: [{ role: 'user', content: prompt }],
+        messages: [
+          { role: 'system', content: UNTRUSTED_CONTENT_RULE },
+          { role: 'user', content: prompt },
+        ],
         temperature: 0.2,
         max_tokens: 500,
       }),
@@ -100,12 +104,14 @@ function sourceLine(source: CitedSource, index: number): string {
 
 function promptFor(question: string, sources: readonly CitedSource[]): string {
   const results = sources.map(sourceLine).join('\n');
+  const fencedResults = wrapUntrustedContent('WEB_SEARCH_RESULTS', results, { nonce: true });
   return [
     'Answer using only the web results. Do not add an agency the results do not name.',
+    UNTRUSTED_CONTENT_RULE,
     `Question: ${question}`,
     '',
     'Web results:',
-    results,
+    fencedResults,
     '',
     'Write a short answer in plain sentences. End with one line:',
     'AGENCIES: Name; Name',
@@ -174,7 +180,10 @@ async function writeAnswer(env: Env, prompt: string): Promise<string> {
   if (!env.AI) return '';
   try {
     const raw = await env.AI.run(WORKERS_AI_FALLBACK_MODEL, {
-      messages: [{ role: 'user', content: prompt.slice(0, 8000) }],
+      messages: [
+        { role: 'system', content: UNTRUSTED_CONTENT_RULE },
+        { role: 'user', content: prompt.slice(0, 8000) },
+      ],
       temperature: 0.2,
       max_tokens: 500,
     });

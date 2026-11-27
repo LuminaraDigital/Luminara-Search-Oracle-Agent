@@ -12,6 +12,9 @@ import com.luminarasuite.app.core.model.AuthCredentialsRequest
 import com.luminarasuite.app.core.model.AuthTokenResponse
 import com.luminarasuite.app.core.model.BootResponse
 import com.luminarasuite.app.core.model.CrawlerFilesResponse
+import com.luminarasuite.app.core.model.CrmApprovalDecisionRequest
+import com.luminarasuite.app.core.model.CrmBridgeStatus
+import com.luminarasuite.app.core.model.CrmPromoteResponse
 import com.luminarasuite.app.core.model.EnquiryCreateRequest
 import com.luminarasuite.app.core.model.EnquiryDeskResponse
 import com.luminarasuite.app.core.model.EnquiryTakeoverRequest
@@ -211,6 +214,20 @@ interface LuminaraApi {
     suspend fun decideAppointment(
         @Path("id") id: String,
         @Body body: AppointmentDecisionRequest,
+    ): JsonObject
+
+    @GET("api/crm/status")
+    suspend fun getCrmBridgeStatus(): CrmBridgeStatus
+
+    @POST("api/crm/enquiries/{id}/promote")
+    suspend fun promoteEnquiryToCrm(
+        @Path("id") id: String,
+    ): CrmPromoteResponse
+
+    @POST("api/crm/approvals/{callId}/decide")
+    suspend fun decideCrmApproval(
+        @Path("callId") callId: Long,
+        @Body body: CrmApprovalDecisionRequest,
     ): JsonObject
 
     @GET("api/boot")

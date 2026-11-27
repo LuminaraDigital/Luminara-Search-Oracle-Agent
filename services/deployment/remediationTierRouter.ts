@@ -12,6 +12,8 @@
  *   for `luminara.digital` without pushy sales popups.
  */
 
+import { schemaSafetyGate, type SchemaSafetyResult } from './schemaSafetyGate';
+
 export type RemediationTier =
   | 'tier_1_instant_mcp'
   | 'tier_2_guided_builder'
@@ -62,6 +64,7 @@ export interface RemediationTierDecision {
   recommendedConnectors: CmsMcpConnectorId[];
   safetyRails: string[];
   engineeringBrief: LuminaraDigitalEngineeringBrief | null;
+  schemaSafety?: SchemaSafetyResult;
 }
 
 export const CMS_MCP_CONNECTOR_CATALOG: Record<
@@ -139,6 +142,27 @@ export function classifyRemediationTier(
   const cms = (input.cmsPlatform || '').toLowerCase();
   const cat = input.findingCategory;
 
+  let schemaSafety: SchemaSafetyResult | undefined;
+  let safeSnippet = preparedSchemaSnippet;
+  if (typeof preparedSchemaSnippet === 'string' && preparedSchemaSnippet.trim().length > 0) {
+    schemaSafety = schemaSafetyGate.validate(preparedSchemaSnippet);
+    if (!schemaSafety.okToDeploy) {
+      const issueSummary = schemaSafety.issues.map((i) => `${i.code}: ${i.message}`).join(' ');
+      return {
+        tier: 'tier_3_luminara_digital_engineering',
+        badgeLabel: 'Tier 3: Blocked by Schema Safety Gate',
+        recommendedConnectors: ['github_pr'],
+        safetyRails: [
+          `Schema Safety Gate blocked automated deployment (${issueSummary}).`,
+          'Fix critical JSON-LD syntax, @type, or script-breakout issues before deploying to any CMS.',
+        ],
+        engineeringBrief: buildLuminaraDigitalBrief(input, undefined),
+        schemaSafety,
+      };
+    }
+    safeSnippet = schemaSafety.canonicalJson;
+  }
+
   const isTier3Category =
     cat === 'cwv_performance' ||
     cat === 'ssr_hydration' ||
@@ -155,7 +179,8 @@ export function classifyRemediationTier(
         'Requires server/theme or pipeline changes beyond safe CMS plugin mutations.',
         'Packaged as an evidence-backed engineering brief for your dev team or Luminara Digital.',
       ],
-      engineeringBrief: buildLuminaraDigitalBrief(input, preparedSchemaSnippet),
+      engineeringBrief: buildLuminaraDigitalBrief(input, safeSnippet),
+      ...(schemaSafety ? { schemaSafety } : {}),
     };
   }
 
@@ -176,7 +201,8 @@ export function classifyRemediationTier(
         'Creates a before-image snapshot prior to applying element-level updates.',
         'Verifies live HTML presence via /api/deploy/readback.',
       ],
-      engineeringBrief: buildLuminaraDigitalBrief(input, preparedSchemaSnippet),
+      engineeringBrief: buildLuminaraDigitalBrief(input, safeSnippet),
+      ...(schemaSafety ? { schemaSafety } : {}),
     };
   }
 
@@ -198,7 +224,8 @@ export function classifyRemediationTier(
       'Requires human approval in Sign-off Desk before mutating production CMS state.',
       'Confirms live appearance in page source via /api/deploy/readback.',
     ],
-    engineeringBrief: buildLuminaraDigitalBrief(input, preparedSchemaSnippet),
+    engineeringBrief: buildLuminaraDigitalBrief(input, safeSnippet),
+    ...(schemaSafety ? { schemaSafety } : {}),
   };
 }
 
@@ -258,9 +285,14 @@ export function buildSquarespaceInjectionPack(args: {
   navigationSteps: string[];
   desktopAssistedGoalPrompt: string;
 } {
-  const safeDomain = (args.domain || '').replace(/-->/g, '-- >').trim();
-  const safeTitle = (args.title || '').replace(/-->/g, '-- >').trim();
-  const cleanSchema = (args.schemaJsonLd || '{}').trim().replace(/<\//g, '<\\/');
+  const schemaCheck = schemaSafetyGate.validate(args.schemaJsonLd || '');
+  if (!schemaCheck.okToDeploy || !schemaCheck.canonicalJson) {
+    const codes = schemaCheck.issues.map((i) => i.code).join(', ') || 'INVALID_SCHEMA';
+    throw new Error(`Schema Safety Gate blocked Squarespace injection (${codes}).`);
+  }
+  const safeDomain = (args.domain || '').replace(/[<>\r\n]/g, '').replace(/--+/g, '-').trim();
+  const safeTitle = (args.title || '').replace(/[<>\r\n]/g, '').replace(/--+/g, '-').trim();
+  const cleanSchema = schemaCheck.canonicalJson;
   const headerInjectionHtml = [
     `<!-- Luminara Suite AEO/GEO Remediation Pack for ${safeDomain} (${safeTitle}) -->`,
     `<script type="application/ld+json" id="luminara-aeo-schema">`,
@@ -339,18 +371,24 @@ export function buildVerifiedRemediationPrBundle(input: {
 
   let jsonLdPassed = false;
   let jsonLdDetail = 'Valid JSON-LD with @context https://schema.org, @type, and canonical url.';
-  try {
-    const parsed = JSON.parse(input.jsonLdContent || '{}') as Record<string, unknown>;
-    const ctx = typeof parsed['@context'] === 'string' ? parsed['@context'] : '';
-    const type = typeof parsed['@type'] === 'string' ? parsed['@type'] : '';
-    const url = typeof parsed.url === 'string' ? parsed.url : '';
-    jsonLdPassed = /^https?:\/\/schema\.org\/?$/i.test(ctx) && Boolean(type) && url.startsWith('https://');
-    if (!jsonLdPassed) {
-      jsonLdDetail = 'JSON-LD must include @context "https://schema.org", @type, and an https:// url.';
-    }
-  } catch {
+  const schemaCheck = schemaSafetyGate.validate(input.jsonLdContent || '');
+  if (!schemaCheck.okToDeploy) {
     jsonLdPassed = false;
-    jsonLdDetail = 'JSON-LD failed JSON.parse syntax validation.';
+    jsonLdDetail = schemaCheck.issues.map((i) => i.message).join(' ') || 'Schema Safety Gate rejected JSON-LD.';
+  } else {
+    try {
+      const parsed = JSON.parse(schemaCheck.canonicalJson || input.jsonLdContent || '{}') as Record<string, unknown>;
+      const ctx = typeof parsed['@context'] === 'string' ? parsed['@context'] : '';
+      const type = typeof parsed['@type'] === 'string' ? parsed['@type'] : '';
+      const url = typeof parsed.url === 'string' ? parsed.url : '';
+      jsonLdPassed = /^https?:\/\/schema\.org\/?$/i.test(ctx) && Boolean(type) && url.startsWith('https://');
+      if (!jsonLdPassed) {
+        jsonLdDetail = 'JSON-LD must include @context "https://schema.org", @type, and an https:// url.';
+      }
+    } catch {
+      jsonLdPassed = false;
+      jsonLdDetail = 'JSON-LD failed JSON.parse syntax validation.';
+    }
   }
 
   const combinedText = `${input.llmsTxtContent || ''}\n${input.jsonLdContent || ''}\n${input.comparisonMarkdown || ''}`;
@@ -394,7 +432,7 @@ export function buildVerifiedRemediationPrBundle(input: {
     },
     {
       path: 'public/schema-organization.jsonld',
-      content: input.jsonLdContent,
+      content: schemaCheck.okToDeploy && schemaCheck.canonicalJson ? schemaCheck.canonicalJson : input.jsonLdContent,
       mimeType: 'application/ld+json;charset=utf-8',
     },
   ];
@@ -426,11 +464,11 @@ export function buildVerifiedRemediationPrBundle(input: {
 
   const shSingleQuote = (val: string): string =>
     `'${val.replace(/[\r\n]+/g, ' ').replace(/'/g, "'\\''")}'`;
-  const safeHeredocBody = prBodyMarkdown.replace(/^EOF$/gm, 'EOF_');
+  const safeHeredocBody = prBodyMarkdown.replace(/\r\n?/g, '\n').replace(/^EOF$/gm, 'EOF_');
   const writeFileLines = files.flatMap((f) => [
     `mkdir -p "$(dirname ${f.path})"`,
     `cat > ${f.path} <<'LUMINARA_FILE'`,
-    f.content.replace(/^LUMINARA_FILE$/gm, 'LUMINARA_FILE_'),
+    f.content.replace(/\r\n?/g, '\n').replace(/^LUMINARA_FILE$/gm, 'LUMINARA_FILE_'),
     'LUMINARA_FILE',
   ]);
 

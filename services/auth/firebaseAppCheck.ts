@@ -54,9 +54,10 @@ export function ensureAppCheck(
   const siteKey = siteKeyFrom(source);
   if (!siteKey) return null;
 
-  const debug = parseAppCheckDebugToken(source.VITE_FIREBASE_APPCHECK_DEBUG_TOKEN);
+  const isDevBuild = Boolean((import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV);
+  const debug = isDevBuild ? parseAppCheckDebugToken(source.VITE_FIREBASE_APPCHECK_DEBUG_TOKEN) : undefined;
   if (debug != null && typeof globalThis !== 'undefined') {
-    // Required for local/dev when enforcement is on; register the token in Firebase console.
+    // Allowed strictly in local dev builds; never attach debug tokens in production bundles.
     (globalThis as unknown as { FIREBASE_APPCHECK_DEBUG_TOKEN?: string | boolean }).FIREBASE_APPCHECK_DEBUG_TOKEN =
       debug;
   }

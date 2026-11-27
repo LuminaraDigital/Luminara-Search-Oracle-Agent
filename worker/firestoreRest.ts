@@ -113,8 +113,28 @@ export function createFirestoreClient(input: {
     });
   }
 
+  function hasControlChar(value: string): boolean {
+    for (let i = 0; i < value.length; i += 1) {
+      const code = value.charCodeAt(i);
+      if (code <= 0x1f || code === 0x7f) return true;
+    }
+    return false;
+  }
+
   function resourceName(collection: string, id: string): string {
-    if (!COLLECTION.test(collection) || !id || id.includes('/')) throw new Error('invalid firestore path');
+    if (
+      !COLLECTION.test(collection) ||
+      !id ||
+      id.length > 512 ||
+      id === '.' ||
+      id === '..' ||
+      id.includes('/') ||
+      id.includes('\\') ||
+      id.includes('..') ||
+      hasControlChar(id)
+    ) {
+      throw new Error('invalid firestore path');
+    }
     return `projects/${input.project}/databases/(default)/documents/${collection}/${encodeURIComponent(id)}`;
   }
 
@@ -141,6 +161,7 @@ export function createFirestoreClient(input: {
       if (!response.ok) throw new Error(`firestore ${response.status}`);
     },
     async query(query, signal) {
+      if (!COLLECTION.test(query.collection)) throw new Error('invalid firestore path');
       const orderField = query.orderBy === 'accountId' ? 'accountId' : 'measuredAt';
       const response = await authed(`${base}:runQuery`, {
         method: 'POST',

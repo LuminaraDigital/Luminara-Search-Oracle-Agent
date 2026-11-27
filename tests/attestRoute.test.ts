@@ -110,15 +110,84 @@ describe('proof-of-audit attest route', () => {
     expect(await res.json()).toEqual({ error: 'Invalid digestHex' });
   });
 
-  it('keeps public badge verification (GET) reachable without sign-in', async () => {
+  it('keeps public badge verification (GET) reachable without sign-in and strips ownerId', async () => {
     const digest = 'c'.repeat(64);
-    const store = new Map<string, string>([[`poa:${digest}`, JSON.stringify({ digestHex: digest, domain: 'example.com' })]]);
+    const store = new Map<string, string>([
+      [`poa:${digest}`, JSON.stringify({ digestHex: digest, domain: 'example.com', ownerId: 'fb:secret-owner' })],
+    ]);
     const env = makeEnv({ LUMINARA_KV: kv(store) });
 
     expect((await worker.fetch(req('/api/agent/attest?digest=bad'), env, ctx)).status).toBe(400);
     expect((await worker.fetch(req(`/api/agent/attest?digest=${'d'.repeat(64)}`), env, ctx)).status).toBe(404);
     const found = await worker.fetch(req(`/api/agent/attest?digest=${digest}`), env, ctx);
     expect(found.status).toBe(200);
-    expect(((await found.json()) as { attestation?: { domain?: string } }).attestation?.domain).toBe('example.com');
+    const payload = (await found.json()) as { attestation?: Record<string, unknown> };
+    expect(payload.attestation?.domain).toBe('example.com');
+    expect(payload.attestation).not.toHaveProperty('ownerId');
+    expect(JSON.stringify(payload)).not.toContain('fb:secret-owner');
+  });
+
+  it('rejects POST with 409 Conflict when digest already belongs to a different ownerId', async () => {
+    const { sha256Hex } = await import('../worker/workerUtils');
+    const store = new Map<string, string>();
+    const env = makeEnv({ LUMINARA_KV: kv(store) });
+    const ownerASid = await mintOpaqueSession(env, { uid: 'attest-owner-a' });
+    const ownerBSid = await mintOpaqueSession(env, { uid: 'attest-owner-b' });
+    const timestamp = Date.now();
+    const canonicalPayload = JSON.stringify({
+      domain: 'example.com',
+      score: 91,
+      citationRate: 45,
+      findingsCount: 1,
+      timestamp,
+      findingsFingerprint: 'f1:low:Title',
+    });
+    const digestHex = await sha256Hex(canonicalPayload);
+    const body = JSON.stringify({
+      digestHex,
+      domain: 'example.com',
+      healthScore: 91,
+      citationRatePercent: 45,
+      timestamp,
+      findingsCount: 1,
+      findingsFingerprint: 'f1:low:Title',
+    });
+
+    const first = await worker.fetch(
+      req('/api/agent/attest', {
+        method: 'POST',
+        headers: { cookie: `__session=${ownerASid}`, origin: 'https://luminarasuite.com', 'content-type': 'application/json' },
+        body,
+      }),
+      env,
+      ctx,
+    );
+    expect(first.status).toBe(200);
+
+    // Different owner attempting to overwrite/claim the same digest gets 409
+    const conflict = await worker.fetch(
+      req('/api/agent/attest', {
+        method: 'POST',
+        headers: { cookie: `__session=${ownerBSid}`, origin: 'https://luminarasuite.com', 'content-type': 'application/json' },
+        body,
+      }),
+      env,
+      ctx,
+    );
+    expect(conflict.status).toBe(409);
+    const stored = JSON.parse(store.get(`poa:${digestHex}`) || '{}') as { ownerId?: string };
+    expect(stored.ownerId).toBe('fb:attest-owner-a');
+
+    // Original owner re-posting their own digest succeeds
+    const retryOwn = await worker.fetch(
+      req('/api/agent/attest', {
+        method: 'POST',
+        headers: { cookie: `__session=${ownerASid}`, origin: 'https://luminarasuite.com', 'content-type': 'application/json' },
+        body,
+      }),
+      env,
+      ctx,
+    );
+    expect(retryOwn.status).toBe(200);
   });
 });

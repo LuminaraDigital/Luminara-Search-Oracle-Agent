@@ -13,6 +13,210 @@ import { randomId } from '../services/projects/projectUtils';
 import { getProject } from './projectService';
 import { reportBrandForAccount } from './reportBrand';
 import { applyReportBrandHtml } from '../services/reports/reportBrand';
+import { isWebUrl } from '../utils/webUrl';
+
+const EMBEDDED_OBJECT_TAGS = new Set(['iframe', 'object', 'embed', 'applet']);
+const FORBIDDEN_ACTIVE_TAGS = new Set(['svg', 'math', 'base', 'form', 'link']);
+const SAFE_META_TAG_RE =
+  /^<meta +charset=(?:"utf-8"|'utf-8'|utf-8) *\/?>$|^<meta +name=(?:"viewport"|'viewport') +content=(?:"[a-z0-9=., -]{1,120}"|'[a-z0-9=., -]{1,120}') *\/?>$/i;
+const EVENT_HANDLER_NAME_RE = /^on[a-z0-9_-]+$/i;
+const UNQUOTED_SLASH_HANDLER_RE = /\/on[a-z0-9_-]+\s*=/i;
+const DANGEROUS_SCHEME_RE = /^(?:javascript|vbscript|data):/i;
+const DANGEROUS_CSS_RE = /url\s*\(\s*['"]?\s*(?:javascript|vbscript|data):|expression\s*\(|@import\b/i;
+
+const HTML_NAMED_ENTITIES: Record<string, string> = {
+  colon: ':',
+  tab: '\t',
+  newline: '\n',
+  amp: '&',
+  lt: '<',
+  gt: '>',
+  quot: '"',
+  apos: "'",
+  sol: '/',
+  bsol: '\\',
+  semi: ';',
+  nbsp: ' ',
+};
+
+function decodeHtmlEntities(input: string): string {
+  let out = input;
+  for (let pass = 0; pass < 2; pass++) {
+    const next = out.replace(
+      /&(?:#x([0-9a-f]+);?|#([0-9]+);?|([a-z]{2,12});?)/gi,
+      (match, hex?: string, dec?: string, named?: string) => {
+        if (hex) {
+          const trimmedHex = hex.replace(/^0+/, '') || '0';
+          if (trimmedHex.length <= 8) {
+            const cp = Number.parseInt(trimmedHex, 16);
+            if (Number.isFinite(cp) && cp >= 0 && cp <= 0x10ffff) return String.fromCodePoint(cp);
+          }
+          return match;
+        }
+        if (dec) {
+          const trimmedDec = dec.replace(/^0+/, '') || '0';
+          if (trimmedDec.length <= 8) {
+            const cp = Number.parseInt(trimmedDec, 10);
+            if (Number.isFinite(cp) && cp >= 0 && cp <= 0x10ffff) return String.fromCodePoint(cp);
+          }
+          return match;
+        }
+        if (named) {
+          const mapped = HTML_NAMED_ENTITIES[named.toLowerCase()];
+          if (mapped !== undefined) return mapped;
+        }
+        return match;
+      },
+    );
+    if (next === out) break;
+    out = next;
+  }
+  return out;
+}
+
+function stripControlChars(input: string, stripSpaces: boolean): string {
+  let out = '';
+  for (let i = 0; i < input.length; i++) {
+    const code = input.charCodeAt(i);
+    if (code <= 0x1f || code === 0x7f || (stripSpaces && code === 0x20)) continue;
+    out += input[i]!;
+  }
+  return out;
+}
+
+function hasDangerousScheme(rawValue: string): boolean {
+  const decoded = decodeHtmlEntities(rawValue);
+  return DANGEROUS_SCHEME_RE.test(stripControlChars(decoded, true));
+}
+
+function normalizeCss(css: string): string {
+  const unescaped = css
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\\(?:([0-9a-f]{1,6})[\t\n\f\r ]?|([^\n\r\f]))/gi, (_, hex?: string, literal?: string) => {
+      if (hex) {
+        const cp = Number.parseInt(hex, 16);
+        return Number.isFinite(cp) && cp > 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : '';
+      }
+      return literal ?? '';
+    });
+  return stripControlChars(unescaped, false);
+}
+
+function isSpaceOrControl(ch: string): boolean {
+  return ch.charCodeAt(0) <= 0x20;
+}
+
+function isTagSeparator(ch: string): boolean {
+  return isSpaceOrControl(ch) || ch === '/' || ch === '>';
+}
+
+function scanHtmlSecurity(html: string): string | null {
+  const len = html.length;
+  let i = 0;
+
+  while (i < len) {
+    const lt = html.indexOf('<', i);
+    if (lt === -1) break;
+    i = lt + 1;
+    if (i >= len) break;
+
+    if (!/[a-zA-Z]/.test(html[i]!)) continue;
+
+    const nameStart = i;
+    while (i < len && !isTagSeparator(html[i]!)) i++;
+    const tagName = html.slice(nameStart, i).toLowerCase();
+
+    if (tagName === 'script') {
+      return 'Scripts are not allowed in agent reports';
+    }
+    if (EMBEDDED_OBJECT_TAGS.has(tagName)) {
+      return 'Embedded frames and objects are not allowed in agent reports';
+    }
+    if (FORBIDDEN_ACTIVE_TAGS.has(tagName)) {
+      return 'Active or external document elements (svg, math, base, form, link) are not allowed in agent reports';
+    }
+
+    let tagEnd = i;
+    while (i < len) {
+      while (i < len && (isSpaceOrControl(html[i]!) || html[i] === '/')) i++;
+      if (i >= len) {
+        tagEnd = i;
+        break;
+      }
+      if (html[i] === '>') {
+        tagEnd = i + 1;
+        i++;
+        break;
+      }
+
+      const attrStart = i;
+      while (i < len && !isSpaceOrControl(html[i]!) && html[i] !== '=' && html[i] !== '/' && html[i] !== '>') {
+        i++;
+      }
+      const attrName = html.slice(attrStart, i).toLowerCase();
+      if (!attrName) {
+        i++;
+        continue;
+      }
+
+      if (EVENT_HANDLER_NAME_RE.test(attrName)) {
+        return 'Inline event handlers (e.g. onload, onerror) are not allowed in agent reports';
+      }
+      if (attrName === 'srcdoc') {
+        return 'Embedded frames and objects are not allowed in agent reports';
+      }
+
+      while (i < len && isSpaceOrControl(html[i]!)) i++;
+      let attrValue = '';
+      let quoted = false;
+      if (i < len && html[i] === '=') {
+        i++;
+        while (i < len && isSpaceOrControl(html[i]!)) i++;
+        if (i < len && (html[i] === '"' || html[i] === "'")) {
+          quoted = true;
+          const quote = html[i]!;
+          i++;
+          const valStart = i;
+          while (i < len && html[i] !== quote) i++;
+          attrValue = html.slice(valStart, i);
+          if (i < len && html[i] === quote) i++;
+        } else {
+          const valStart = i;
+          while (i < len && !isSpaceOrControl(html[i]!) && html[i] !== '>') i++;
+          attrValue = html.slice(valStart, i);
+        }
+      }
+
+      if (attrValue) {
+        if (!quoted && !isWebUrl(attrValue) && UNQUOTED_SLASH_HANDLER_RE.test(stripControlChars(attrValue, false))) {
+          return 'Inline event handlers (e.g. onload, onerror) are not allowed in agent reports';
+        }
+        if (hasDangerousScheme(attrValue)) {
+          return 'Javascript URIs (and vbscript or data URIs) are not allowed in agent reports';
+        }
+        if (attrName === 'style' && DANGEROUS_CSS_RE.test(normalizeCss(decodeHtmlEntities(attrValue)))) {
+          return 'Javascript URIs (and vbscript or data URIs) are not allowed in agent reports';
+        }
+      }
+    }
+
+    if (tagName === 'meta') {
+      const rawTag = html.slice(lt, tagEnd);
+      if (!SAFE_META_TAG_RE.test(rawTag)) {
+        return 'Unsafe <meta> tags are not allowed in agent reports';
+      }
+    }
+    if (tagName === 'style') {
+      const closeIdx = html.toLowerCase().indexOf('</style', tagEnd);
+      const cssBody = closeIdx === -1 ? html.slice(tagEnd) : html.slice(tagEnd, closeIdx);
+      if (DANGEROUS_CSS_RE.test(normalizeCss(cssBody))) {
+        return 'Javascript URIs (and vbscript or data URIs) are not allowed in agent reports';
+      }
+    }
+  }
+
+  return null;
+}
 
 export function webappOrigin(env: Pick<Env, 'WEBAPP_URL'>): string {
   return (env.WEBAPP_URL || 'https://luminarasuite.com').replace(/\/$/, '');
@@ -37,18 +241,8 @@ export function validateHtml(html: string): string | null {
   if (trimmed.includes('`') || trimmed.includes('${')) {
     return 'HTML must not contain backticks or ${ (some MCP clients break on them). Use <code> instead.';
   }
-  if (/<script[\s>]/i.test(trimmed)) {
-    return 'Scripts are not allowed in agent reports';
-  }
-  if (/<(iframe|object|embed|applet)[\s>]/i.test(trimmed)) {
-    return 'Embedded frames and objects are not allowed in agent reports';
-  }
-  if (/\son[a-z0-9_-]+\s*=/i.test(trimmed)) {
-    return 'Inline event handlers (e.g. onload, onerror) are not allowed in agent reports';
-  }
-  if (/href\s*=\s*['"]?\s*javascript:/i.test(trimmed) || /src\s*=\s*['"]?\s*javascript:/i.test(trimmed)) {
-    return 'Javascript URIs are not allowed in agent reports';
-  }
+  const securityErr = scanHtmlSecurity(trimmed);
+  if (securityErr) return securityErr;
   const size = utf8Bytes(trimmed);
   if (size > REPORT_HTML_BYTE_CAP) {
     return `HTML is ${size} bytes; the limit is ${REPORT_HTML_BYTE_CAP}`;

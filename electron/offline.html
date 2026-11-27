@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:;"
+      content="default-src 'none'; style-src 'unsafe-inline'; script-src 'self'; img-src data:;"
     />
     <title>Luminara Suite - Connection Offline</title>
     <style>
@@ -89,14 +89,6 @@
       </div>
       <button id="retry-btn" class="btn">Retry Connection</button>
     </div>
-    <script>
-      document.getElementById('retry-btn')?.addEventListener('click', () => {
-        if (window.luminaraDesktop?.retryConnection) {
-          window.luminaraDesktop.retryConnection();
-        } else {
-          window.location.reload();
-        }
-      });
-    </script>
+    <script src="./offline.js"></script>
   </body>
 </html>

@@ -3,6 +3,9 @@ import { resolve } from 'node:path';
 import { createRequire } from 'node:module';
 import { describe, expect, it, vi } from 'vitest';
 
+import { DESKTOP_EXTERNAL_LINKS } from '../services/marketing/platformSurfaces';
+import externalLinksJson from '../electron/externalLinks.json';
+
 type ShellPolicy = {
   isAllowedNavigation: (url: string) => boolean;
   windowOpenAction: (url: string) => 'child' | 'external' | 'deny';
@@ -11,9 +14,16 @@ type ShellPolicy = {
 };
 type IpcListener = (event: { senderFrame: { url: string } | null }, ...args: unknown[]) => unknown;
 type NavigationEvent = { url: string; isMainFrame: boolean; preventDefault: () => void };
+type MenuItemLike = { label?: string; type?: string; click?: () => void };
 
 const require = createRequire(import.meta.url);
-const { createShellPolicy, createTrustedIpc, createNavigationGuard } = require('../electron/security.cjs') as {
+const {
+  createShellPolicy,
+  createTrustedIpc,
+  createNavigationGuard,
+  stripDesktopClientParam,
+  buildExternalMenuItems,
+} = require('../electron/security.cjs') as {
   createNavigationGuard: (
     policy: ShellPolicy,
     mayStay: (url: string) => boolean,
@@ -29,6 +39,11 @@ const { createShellPolicy, createTrustedIpc, createNavigationGuard } = require('
     ipcMain: { handle: (channel: string, listener: IpcListener) => void },
     policy: ShellPolicy,
   ) => (channel: string, listener: IpcListener) => void;
+  stripDesktopClientParam: (rawUrl: string) => string;
+  buildExternalMenuItems: (
+    links: typeof externalLinksJson.desktopLinks,
+    openExternal: (url: string) => void,
+  ) => { help: MenuItemLike[]; tray: MenuItemLike[] };
 };
 
 const SPLASH = 'file:///C:/Program%20Files/Luminara/resources/app.asar/electron/splash.html';
@@ -94,8 +109,17 @@ describe('desktop main window leaving the app', () => {
     expect(packaged.windowOpenAction('https://app.tonkeeper.com/ton-connect?v=2&id=abc')).toBe('external');
   });
 
-  it('lets the app navigate, stops other apps, and leaves frames alone', () => {
-    expect(navigate('https://luminarasuite.com/app')).toEqual({ stopped: false, opened: [] });
+  it('lets the app navigate, opens same-origin document pages externally, stops other apps, and leaves frames alone', () => {
+    expect(navigate('https://www.luminarasuite.com/app')).toEqual({ stopped: false, opened: [] });
+    expect(navigate('https://www.luminarasuite.com/faq')).toEqual({ stopped: true, opened: ['https://www.luminarasuite.com/faq'] });
+    expect(navigate('https://www.luminarasuite.com/contact')).toEqual({ stopped: true, opened: ['https://www.luminarasuite.com/contact'] });
+    expect(navigate('https://www.luminarasuite.com/privacy')).toEqual({ stopped: true, opened: ['https://www.luminarasuite.com/privacy'] });
+    expect(navigate('https://www.luminarasuite.com/privacy.html')).toEqual({ stopped: true, opened: ['https://www.luminarasuite.com/privacy.html'] });
+    expect(navigate('https://www.luminarasuite.com/terms')).toEqual({ stopped: true, opened: ['https://www.luminarasuite.com/terms'] });
+    expect(navigate('https://www.luminarasuite.com/terms.html')).toEqual({ stopped: true, opened: ['https://www.luminarasuite.com/terms.html'] });
+    expect(navigate('https://www.luminarasuite.com/delete-account')).toEqual({ stopped: true, opened: ['https://www.luminarasuite.com/delete-account'] });
+    expect(navigate('https://www.luminarasuite.com/desktop')).toEqual({ stopped: true, opened: ['https://www.luminarasuite.com/desktop'] });
+    expect(navigate('https://www.luminarasuite.com/docs/mcp.html')).toEqual({ stopped: true, opened: ['https://www.luminarasuite.com/docs/mcp.html'] });
     expect(navigate('search-ms:query=x')).toEqual({ stopped: true, opened: [] });
     expect(navigate('https://www.youtube.com/embed/x', false)).toEqual({ stopped: false, opened: [] });
   });
@@ -106,6 +130,7 @@ describe('desktop window.open', () => {
     ['https://luminara-suite.firebaseapp.com/__/auth/handler?apiKey=x', 'child'],
     ['https://luminara-suite.web.app/__/auth/handler', 'child'],
     ['about:blank', 'child'],
+    ...DESKTOP_EXTERNAL_LINKS.map((link) => [link.href, 'external'] as const),
     ['https://accounts.google.com/o/oauth2/auth', 'external'],
     ['https://evil.web.app/phish', 'external'],
     ['http://example.com/', 'external'],
@@ -193,10 +218,39 @@ describe('desktop external app launches from frames and popups', () => {
   });
 });
 
-describe('main process URL filters', () => {
+describe('main process URL filters and external menus', () => {
   it('names a scheme on every filter with a port, or Electron throws and no window opens', () => {
     const main = readFileSync(resolve(__dirname, '..', 'electron/main.cjs'), 'utf8');
     expect(main).toContain("'http://127.0.0.1:11434/*'");
+    expect(main).toContain("const DEFAULT_WEBAPP_URL = 'https://www.luminarasuite.com/'");
     expect(main).not.toMatch(/'\*:\/\/[^']*:\d+\//);
+  });
+
+  it('strips desktop client query flags before opening the app in the system browser', () => {
+    expect(stripDesktopClientParam('https://www.luminarasuite.com/?client=desktop')).toBe('https://www.luminarasuite.com/');
+    expect(stripDesktopClientParam('https://staging.luminarasuite.com/app?client=desktop&desktop=1&tab=audit')).toBe(
+      'https://staging.luminarasuite.com/app?tab=audit',
+    );
+    expect(stripDesktopClientParam('https://www.luminarasuite.com/?client=android')).toBe(
+      'https://www.luminarasuite.com/?client=android',
+    );
+  });
+
+  it('builds Help and Tray menu items directly from electron/externalLinks.json', () => {
+    const opened: string[] = [];
+    const { help } = buildExternalMenuItems(externalLinksJson.desktopLinks, (url) => opened.push(url));
+    const helpClickable = help.filter((item) => typeof item.click === 'function');
+    expect(helpClickable.map((item) => item.label)).toEqual(DESKTOP_EXTERNAL_LINKS.map((link) => link.label));
+    helpClickable.forEach((item) => item.click?.());
+    expect(opened).toEqual(DESKTOP_EXTERNAL_LINKS.map((link) => link.href));
+
+    const trayOpened: string[] = [];
+    const { tray } = buildExternalMenuItems(externalLinksJson.desktopLinks, (url) => trayOpened.push(url));
+    tray.forEach((item) => item.click?.());
+    expect(trayOpened).toEqual([
+      'https://www.luminarasuite.com/',
+      'https://www.luminarasuite.com/faq',
+      'https://t.me/LuminaraSuiteBot/app',
+    ]);
   });
 });
