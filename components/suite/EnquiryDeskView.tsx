@@ -18,6 +18,7 @@ import {
   setEnquiryTakeoverApi,
   syncEnquiryToTwentyApi,
 } from '../../services/enquiries/enquiryApiClient';
+import { CrmMiddleLayerBar } from './CrmMiddleLayerBar';
 
 export interface LocalEnquiryItem {
   id: string;
@@ -530,6 +531,8 @@ export const EnquiryDeskView: React.FC = () => {
     }
   };
 
+  const [crmBridgeActive, setCrmBridgeActive] = useState(false);
+
   const activeBrief = activeEnquiry
     ? buildOpportunityBrief({
         intentType: activeEnquiry.intentType,
@@ -541,6 +544,10 @@ export const EnquiryDeskView: React.FC = () => {
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 space-y-6 text-white">
       {/* Spine Header */}
+      <CrmMiddleLayerBar
+        activeEnquiryId={activeEnquiry && !isSampleEnquiry(activeEnquiry.id) ? activeEnquiry.id : undefined}
+        onEnabledChange={setCrmBridgeActive}
+      />
       <div className="rounded-2xl border border-gold/30 bg-black/80 p-5 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
@@ -883,7 +890,7 @@ export const EnquiryDeskView: React.FC = () => {
               </div>
 
               {/* Follow-Up Turn & Optional Twenty CRM Sync */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              <div className={`grid grid-cols-1 ${crmBridgeActive ? '' : 'sm:grid-cols-2'} gap-3 pt-1`}>
                 <form
                   onSubmit={(e) => void handleAppendTurn(e)}
                   className="p-3 rounded-xl border border-white/10 bg-black/60 space-y-2"
@@ -912,36 +919,38 @@ export const EnquiryDeskView: React.FC = () => {
                   </div>
                 </form>
 
-                <div className="p-3 rounded-xl border border-white/10 bg-black/60 space-y-2">
-                  <span className="block text-[10px] font-bold uppercase text-gray-400">
-                    Optional Twenty CRM GraphQL Sync
-                  </span>
-                  <div className="flex flex-wrap gap-1.5">
-                    <input
-                      type="url"
-                      aria-label="Twenty CRM Base URL"
-                      value={twentyBaseUrl}
-                      onChange={(e) => setTwentyBaseUrl(e.target.value)}
-                      placeholder="https://crm.agency.com.au"
-                      className="flex-1 min-w-[120px] bg-black/80 border border-white/15 rounded-lg px-2 py-1 text-[11px] text-white"
-                    />
-                    <input
-                      type="password"
-                      aria-label="Twenty CRM API Key"
-                      value={twentyApiKey}
-                      onChange={(e) => setTwentyApiKey(e.target.value)}
-                      placeholder="API Token"
-                      className="w-24 bg-black/80 border border-white/15 rounded-lg px-2 py-1 text-[11px] text-white"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => void handleSyncTwenty(activeEnquiry.id)}
-                      className="px-2.5 py-1 rounded-lg bg-white/10 border border-white/20 text-white text-[11px] font-mono hover:bg-white/15"
-                    >
-                      Sync CRM
-                    </button>
+                {!crmBridgeActive && (
+                  <div className="p-3 rounded-xl border border-white/10 bg-black/60 space-y-2">
+                    <span className="block text-[10px] font-bold uppercase text-gray-400">
+                      Optional Twenty CRM GraphQL Sync
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      <input
+                        type="url"
+                        aria-label="Twenty CRM Base URL"
+                        value={twentyBaseUrl}
+                        onChange={(e) => setTwentyBaseUrl(e.target.value)}
+                        placeholder="https://crm.agency.com.au"
+                        className="flex-1 min-w-[120px] bg-black/80 border border-white/15 rounded-lg px-2 py-1 text-[11px] text-white"
+                      />
+                      <input
+                        type="password"
+                        aria-label="Twenty CRM API Key"
+                        value={twentyApiKey}
+                        onChange={(e) => setTwentyApiKey(e.target.value)}
+                        placeholder="API Token"
+                        className="w-24 bg-black/80 border border-white/15 rounded-lg px-2 py-1 text-[11px] text-white"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void handleSyncTwenty(activeEnquiry.id)}
+                        className="px-2.5 py-1 rounded-lg bg-white/10 border border-white/20 text-white text-[11px] font-mono hover:bg-white/15"
+                      >
+                        Sync CRM
+                      </button>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             </div>
           ) : (

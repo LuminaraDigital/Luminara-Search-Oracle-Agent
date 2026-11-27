@@ -99,6 +99,17 @@ class WorkspaceGatewayTest {
         }
 
     @Test
+    fun crmBridgeStatusAndEnquiryPromotionRoundTrip() =
+        runTest {
+            val gateway = DefaultWorkspaceGateway(FakeLuminaraApi())
+            val status = gateway.loadCrmBridgeStatus().getOrThrow()
+            assertFalse(status.enabled)
+            val promoted = gateway.promoteEnquiryToCrm("enq_42").getOrThrow()
+            assertTrue(promoted.ok)
+            assertEquals("lead_enq_42", promoted.crmLeadId)
+        }
+
+    @Test
     fun shareLinksParseOnlyHttpsSharePaths() {
         val token = "a".repeat(64)
         assertEquals(

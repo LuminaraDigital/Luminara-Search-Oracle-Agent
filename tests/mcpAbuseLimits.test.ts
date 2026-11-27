@@ -9,6 +9,7 @@ import { clipText, MCP_RESULT_TEXT_CAP, MCP_STRUCTURED_CHAR_CAP, OPEN_WORLD_TOOL
 import { MCP_PUBLIC_URL } from '../services/mcp/publicServer';
 import type { HostedIdentity, McpCredential } from '../worker/userTypes';
 import { createSqliteD1 } from './helpers/sqliteD1';
+import { memoryDailyQuotaNamespace } from './helpers/memoryDailyQuota';
 
 function mockKv(store = new Map<string, string>()): KVNamespace {
   return {
@@ -160,6 +161,29 @@ describe('MCP daily cap is per account', () => {
       expect(spent.reason).toBe('store');
       expect(spent.usage.used).toBe(0);
       expect(spent.error).toContain('quota store unavailable');
+    }
+  });
+
+  it('M-16: uses atomic DAILY_QUOTA DO when bound to prevent concurrent daily overspend and fails closed on DO error', async () => {
+    const env = makeEnv(new Map(), { DAILY_QUOTA: memoryDailyQuotaNamespace() });
+    const results = await Promise.all(
+      Array.from({ length: 10 }, () => spendMcpDailyCall(env, 'acct-do', 5)),
+    );
+    expect(results.filter((r) => r.ok)).toHaveLength(5);
+    expect(results.filter((r) => !r.ok && r.reason === 'limit')).toHaveLength(5);
+
+    const brokenDo = {
+      idFromName: () => ({} as DurableObjectId),
+      get: () => ({
+        fetch: async () => {
+          throw new Error('DO unavailable');
+        },
+      }),
+    } as unknown as DurableObjectNamespace;
+    const failed = await spendMcpDailyCall(makeEnv(new Map(), { DAILY_QUOTA: brokenDo }), 'acct-do-fail', 5);
+    expect(failed.ok).toBe(false);
+    if (!failed.ok) {
+      expect(failed.reason).toBe('store');
     }
   });
 });
@@ -438,7 +462,7 @@ describe('MCP tool catalogue', () => {
 
   it('annotations follow governance and every tool has a real title', () => {
     const tools = listMcpToolCatalogue();
-    expect(tools).toHaveLength(47);
+    expect(tools).toHaveLength(53);
     expect(Object.keys(TOOL_GOVERNANCE).sort()).toEqual(tools.map((tool) => tool.name).sort());
     for (const tool of tools) {
       const risk = TOOL_GOVERNANCE[tool.name].risk;

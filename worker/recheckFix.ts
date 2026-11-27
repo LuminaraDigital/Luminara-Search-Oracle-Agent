@@ -5,7 +5,7 @@ import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
 import { json } from './workerUtils';
 import { checkHostedQuota, QUOTA_CAPACITY_ERROR, refundMeteredQuota } from './quotaMiddleware';
-import { resolvesToPublicAddress, safePublicUrl, type DohFetch } from './security';
+import { defaultPortFetcher, resolvesToPublicAddress, safePublicUrl, type DohFetch } from './security';
 import { readCapped } from './domainVerification';
 import { readRecheck } from '../services/upgrade/recheckReading';
 import { auditHostname } from './auditScoutRun';
@@ -34,20 +34,23 @@ export async function recheckOneFix(
     );
   }
 
-  const pageUrl =
+  const rawPageUrl =
     checkId === 'brand_mention'
       ? rawTargetUrl
         ? safePublicUrl(rawTargetUrl)
         : null
       : safePublicUrl(`https://${domain}/`);
+  // Restrict outbound fetches to standard web ports (80 for http, 443 for https; URL.port is empty).
+  const pageUrl = rawPageUrl && !rawPageUrl.port ? rawPageUrl : null;
   const publicHost = pageUrl ? await resolvesToPublicAddress(pageUrl.hostname, fetcher as DohFetch) : false;
   let html = '';
   let status = 0;
   if (pageUrl && publicHost) {
+    const safeFetch = defaultPortFetcher(fetcher);
     const ac = new AbortController();
     const timer = setTimeout(() => ac.abort(), FETCH_MS);
     try {
-      const res = await fetcher(pageUrl.toString(), {
+      const res = await safeFetch(pageUrl.toString(), {
         method: 'GET',
         redirect: 'manual',
         signal: ac.signal,

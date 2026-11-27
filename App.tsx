@@ -32,7 +32,9 @@ import { pullWorkspaceOnLogin, noteWorkspaceDirty, clearLocalWorkspace, saveWork
 import { brandMemoryVaultService } from './services/memory/brandMemoryVaultService';
 import { PremiumAtmosphere } from './components/ui/PremiumAtmosphere';
 import { lazyWithReload } from './utils/lazyWithReload';
-import { isDesktopShell } from './services/desktop/desktopShell';
+import { isDesktopShell, isDesktopSurface } from './services/desktop/desktopShell';
+import { DesktopExternalLinks } from './components/desktop/DesktopExternalLinks';
+import { CONTACT_URL, FAQ_URL } from './services/marketing/platformSurfaces';
 import { productTelemetry } from './services/analytics/productTelemetry';
 import { draftPersistenceService, DRAFT_KEYS } from './services/state/draftPersistenceService';
 import { apiBase, getCurrentQuotaSync, setAccountSignedIn, streamOracleChat } from './services/apiClient';
@@ -174,7 +176,7 @@ function readTelegramAuditUrl(): string | undefined {
 
 const App: React.FC = () => {
   const [inTelegram, setInTelegram] = useState(() => isInTelegram());
-  const [inDesktop] = useState(() => isDesktopShell());
+  const inDesktop = isDesktopSurface(inTelegram);
   const skipMarketing = inTelegram || inDesktop;
   const [view, setViewState] = useState<AppView>(() => {
     const fromLocation = viewFromLocation();
@@ -1022,7 +1024,10 @@ const App: React.FC = () => {
     return (
       <Suspense fallback={<ViewLoader label="Loading document" />}>
         {introOverlay}
-        <LegalPage kind={view === AppView.PRIVACY ? 'privacy' : 'terms'} onBack={() => setView(skipMarketing ? AppView.DASHBOARD : AppView.LANDING)} />
+        <LegalPage
+          kind={view === AppView.PRIVACY ? 'privacy' : 'terms'}
+          onBack={() => setView(skipMarketing ? (appAuth.authenticated ? AppView.DASHBOARD : AppView.INSTANT_AUDIT) : AppView.LANDING)}
+        />
       </Suspense>
     );
   }
@@ -1039,7 +1044,10 @@ const App: React.FC = () => {
     return (
       <Suspense fallback={<ViewLoader label="Loading help" />}>
         {introOverlay}
-        <HelpPage kind={view === AppView.FAQ ? 'faq' : 'contact'} onBack={() => setView(skipMarketing ? AppView.DASHBOARD : AppView.LANDING)} />
+        <HelpPage
+          kind={view === AppView.FAQ ? 'faq' : 'contact'}
+          onBack={() => setView(skipMarketing ? (appAuth.authenticated ? AppView.DASHBOARD : AppView.INSTANT_AUDIT) : AppView.LANDING)}
+        />
       </Suspense>
     );
   }
@@ -1074,7 +1082,7 @@ const App: React.FC = () => {
           <AuthRequiredScreen
             auth={appAuth}
             featureView={view}
-            onBackToMarketing={skipMarketing ? undefined : () => setView(AppView.LANDING)}
+            onBackToMarketing={inTelegram ? undefined : () => setView(inDesktop ? AppView.INSTANT_AUDIT : AppView.LANDING)}
           />
         </>
       );
@@ -1119,7 +1127,7 @@ const App: React.FC = () => {
           <AuthRequiredScreen
             auth={appAuth}
             featureView={view}
-            onBackToMarketing={skipMarketing ? undefined : () => setView(AppView.LANDING)}
+            onBackToMarketing={inTelegram ? undefined : () => setView(inDesktop ? AppView.INSTANT_AUDIT : AppView.LANDING)}
           />
         </>
       );
@@ -1463,7 +1471,7 @@ const App: React.FC = () => {
                   className={`z-50 overflow-y-auto border border-[var(--color-rule)] rounded-lg p-2.5 shadow-2xl bg-[var(--color-paper-2)] animate-in fade-in zoom-in-95 duration-200 fixed ${
                     inTelegram
                       ? 'bottom-[calc(env(safe-area-inset-bottom,0px)+68px)] left-3 right-3 max-h-[72dvh] mx-auto max-w-sm'
-                      : 'max-sm:bottom-4 max-sm:left-3 max-sm:right-3 max-sm:max-h-[72dvh] max-sm:mx-auto max-sm:max-w-sm sm:w-[min(19rem,calc(100vw-1.5rem))] sm:max-h-[min(70dvh,28rem)]'
+                      : `max-sm:bottom-4 max-sm:left-3 max-sm:right-3 max-sm:max-h-[72dvh] max-sm:mx-auto max-sm:max-w-sm sm:w-[min(19rem,calc(100vw-1.5rem))] ${inDesktop ? 'sm:max-h-[min(78dvh,36rem)]' : 'sm:max-h-[min(70dvh,28rem)]'}`
                   }`}
                 >
                   <div className="sm:hidden flex items-center justify-between px-3 py-1.5 border-b border-white/10 mb-1.5">
@@ -1477,8 +1485,26 @@ const App: React.FC = () => {
                       ✕
                     </button>
                   </div>
-                  <a href="/faq" className="w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold">Help: FAQ</a>
-                  <a href="/contact" className="w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold">Help: Contact</a>
+                  <a
+                    href={inDesktop ? FAQ_URL : '/faq'}
+                    target={inDesktop ? '_blank' : undefined}
+                    rel={inDesktop ? 'noopener noreferrer' : undefined}
+                    onClick={() => setShowSuiteMenu(false)}
+                    className="w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                  >
+                    Help: FAQ
+                    {inDesktop && <span className="sr-only"> (opens in browser)</span>}
+                  </a>
+                  <a
+                    href={inDesktop ? CONTACT_URL : '/contact'}
+                    target={inDesktop ? '_blank' : undefined}
+                    rel={inDesktop ? 'noopener noreferrer' : undefined}
+                    onClick={() => setShowSuiteMenu(false)}
+                    className="w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                  >
+                    Help: Contact
+                    {inDesktop && <span className="sr-only"> (opens in browser)</span>}
+                  </a>
                   {!skipMarketing && <a href="/how-it-works" className="w-full text-left px-3 py-2.5 min-h-11 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-gold/10 transition-colors flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-gold">How Luminara works</a>}
                   <button
                     type="button"
@@ -1632,6 +1658,16 @@ const App: React.FC = () => {
                   >
                     Thorough answers
                   </button>
+                  {inDesktop && (
+                    <div className="border-t border-white/5 mt-1 pt-2 space-y-1">
+                      <p className="px-2.5 text-[10px] font-mono uppercase tracking-wider text-gray-500">Links</p>
+                      <DesktopExternalLinks
+                        variant="menu"
+                        excludeIds={['faq']}
+                        onSelect={() => setShowSuiteMenu(false)}
+                      />
+                    </div>
+                  )}
                   {!inTelegram && appAuth.authenticated && (
                     <button
                       type="button"

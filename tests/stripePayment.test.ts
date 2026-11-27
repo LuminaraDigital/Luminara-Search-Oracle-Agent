@@ -16,6 +16,7 @@ import {
   checkoutPresentation,
 } from '../worker/stripePayment';
 import { mintOpaqueSession } from '../worker/opaqueSession';
+import { computeSubscriptionExpiry, proratedRefundDurationMs } from '../worker/planRank';
 import { createSqliteD1 } from './helpers/sqliteD1';
 import type { Env } from '../worker/env';
 
@@ -492,8 +493,8 @@ describe('F2: the Stripe mode must match the environment', () => {
 
 describe('F3: nobody pays while the payment could not be credited', () => {
   it.each([
-    ['migration 0024 is missing', { DB: createSqliteD1({ skipMigrations: ['0024_stripe_payment_intent'] }) }],
-    ['the Stripe ledger table is missing', { DB: createSqliteD1({ skipMigrations: ['0021_stripe_payments', '0024_stripe_payment_intent'] }) }],
+    ['migration 0024 is missing', { DB: createSqliteD1({ skipMigrations: ['0024_stripe_payment_intent', '0061'] }) }],
+    ['the Stripe ledger table is missing', { DB: createSqliteD1({ skipMigrations: ['0021_stripe_payments', '0024_stripe_payment_intent', '0061'] }) }],
   ])('no session is created when %s', async (_name, overrides) => {
     const { env } = makeEnv(overrides);
     const { cookie } = await signIn(env);
@@ -637,7 +638,8 @@ describe('F4: a plan is granted only for a paid checkout session of the right am
     // Before Stripe redelivers, the buyer upgrades by card.
     await deliver(env, paidSession({ sessionId: 'cs_up', userId: 'fb:buyer1', planId: 'agency', paymentIntent: 'pi_up' }));
     const upgraded = sub('acct_shared')!;
-    expect(upgraded).toMatchObject({ plan: 'agency', expiresAt: starterUntil + 30 * DAY_MS });
+    const expectedUpgraded = computeSubscriptionExpiry({ plan: 'starter', expiresAt: starterUntil }, 'agency', 30, upgraded.startedAt);
+    expect(upgraded).toMatchObject({ plan: 'agency', expiresAt: expectedUpgraded });
 
     // The Starter days are already in that expiry: the retry must not send the money back, and must not add them again.
     const stripe = stripeApi({ id: 're_never' });
@@ -855,36 +857,47 @@ describe('F5: a refund or a dispute takes back the days that charge granted', ()
 describe('F5: a reversed upgrade does not leave the higher plan behind', () => {
   const dispute = (pi: string) => stripeEvent('charge.dispute.created', { id: `dp_${pi}`, payment_intent: pi, status: 'needs_response' });
 
-  it('a disputed upgrade gives back the plan it replaced, with the days that were paid for', async () => {
+  it('a disputed upgrade gives back the plan it replaced, with prorated remaining days', async () => {
     const { env, kv, sub, ledger } = makeEnv();
     const starterUntil = Date.now() + 20 * DAY_MS;
     kv.store.set('sub:fb:buyer1', otherRailRecord('starter', starterUntil));
 
     await deliver(env, paidSession({ sessionId: 'cs_up', userId: 'fb:buyer1', planId: 'agency', paymentIntent: 'pi_up' }));
-    expect(sub('fb:buyer1')).toMatchObject({ plan: 'agency', expiresAt: starterUntil + 30 * DAY_MS });
+    const afterUp = sub('fb:buyer1')!;
+    const expectedAgencyUntil = computeSubscriptionExpiry({ plan: 'starter', expiresAt: starterUntil }, 'agency', 30, afterUp.startedAt);
+    expect(afterUp).toMatchObject({ plan: 'agency', expiresAt: expectedAgencyUntil });
     expect((await ledger('cs_up'))!.prev_plan).toBe('starter');
 
     await deliver(env, dispute('pi_up'));
-    expect(sub('fb:buyer1')).toMatchObject({ plan: 'starter', expiresAt: starterUntil });
+    expect(sub('fb:buyer1')).toMatchObject({ plan: 'starter', expiresAt: expectedAgencyUntil - 30 * DAY_MS });
+    expect(sub('fb:buyer1')!.expiresAt).toBeLessThan(starterUntil);
   });
 
   it.each([
     ['the second upgrade first', ['pi_2', 'pi_1']],
     ['the first upgrade first', ['pi_1', 'pi_2']],
-  ])('two card upgrades, both disputed (%s): the cheap days do not stay Agency days', async (_name, order) => {
+  ])('two card upgrades, both disputed (%s): 300 Starter days prorate and never stay Agency days', async (_name, order) => {
     const { env, kv, sub } = makeEnv();
     const starterUntil = Date.now() + 300 * DAY_MS;
     kv.store.set('sub:fb:buyer1', otherRailRecord('starter', starterUntil));
     await deliver(env, paidSession({ sessionId: 'cs_1', userId: 'fb:buyer1', planId: 'agency', paymentIntent: 'pi_1' }));
+    const afterFirst = sub('fb:buyer1')!;
+    const expectedFirst = computeSubscriptionExpiry({ plan: 'starter', expiresAt: starterUntil }, 'agency', 30, afterFirst.startedAt);
+    expect(afterFirst).toMatchObject({ plan: 'agency', expiresAt: expectedFirst });
+    expect(afterFirst.expiresAt).toBeLessThan(Date.now() + 80 * DAY_MS);
+
     await deliver(env, paidSession({ sessionId: 'cs_2', userId: 'fb:buyer1', planId: 'agency', paymentIntent: 'pi_2' }));
-    expect(sub('fb:buyer1')).toMatchObject({ plan: 'agency', expiresAt: starterUntil + 60 * DAY_MS });
+    expect(sub('fb:buyer1')).toMatchObject({ plan: 'agency', expiresAt: expectedFirst + 30 * DAY_MS });
 
     await deliver(env, dispute(order[0]));
     // One Agency charge still stands, so the plan is still Agency.
-    expect(sub('fb:buyer1')).toMatchObject({ plan: 'agency', expiresAt: starterUntil + 30 * DAY_MS });
+    expect(sub('fb:buyer1')).toMatchObject({ plan: 'agency' });
+    expectAbout(sub('fb:buyer1')!.expiresAt, expectedFirst);
 
     await deliver(env, dispute(order[1]));
-    expect(sub('fb:buyer1')).toMatchObject({ plan: 'starter', expiresAt: starterUntil });
+    expect(sub('fb:buyer1')).toMatchObject({ plan: 'starter' });
+    expectAbout(sub('fb:buyer1')!.expiresAt, expectedFirst - 30 * DAY_MS);
+    expect(sub('fb:buyer1')!.expiresAt).toBeLessThan(starterUntil);
   });
 
   it.each([
@@ -896,11 +909,17 @@ describe('F5: a reversed upgrade does not leave the higher plan behind', () => {
     kv.store.set('sub:fb:buyer1', otherRailRecord('starter', starterUntil));
     await deliver(env, paidSession({ sessionId: 'cs_g', userId: 'fb:buyer1', planId: 'growth', paymentIntent: 'pi_g' }));
     await deliver(env, paidSession({ sessionId: 'cs_a', userId: 'fb:buyer1', planId: 'agency', paymentIntent: 'pi_a' }));
+    const afterBoth = sub('fb:buyer1')!;
 
     await deliver(env, dispute(order[0]));
     expect(sub('fb:buyer1')!.plan).toBe(afterFirst);
     await deliver(env, dispute(order[1]));
-    expect(sub('fb:buyer1')).toMatchObject({ plan: 'starter', expiresAt: starterUntil });
+    expect(sub('fb:buyer1')!.plan).toBe('starter');
+    const expectedFloor = order[0] === 'pi_g'
+      ? Math.max(Date.now(), afterBoth.expiresAt - proratedRefundDurationMs(30 * DAY_MS, 'growth', 'agency') - 30 * DAY_MS)
+      : Math.max(Date.now(), afterBoth.expiresAt - 60 * DAY_MS);
+    expectAbout(sub('fb:buyer1')!.expiresAt, expectedFloor);
+    expect(sub('fb:buyer1')!.expiresAt).toBeLessThanOrEqual(starterUntil);
   });
 
   it('a renewal that still stands keeps the plan it pays for', async () => {
@@ -1140,12 +1159,15 @@ describe('Plan rank (Track SW, SW0a-4): a lower plan never replaces a higher act
     expect(sub('fb:buyer1')).toMatchObject({ plan: 'growth', expiresAt: growthUntil + 30 * DAY_MS });
   });
 
-  it('a higher plan adds its days to the current expiry and replaces the plan name', async () => {
+  it('a higher plan prorates remaining lower-tier days and replaces the plan name', async () => {
     const { env, kv, sub, ledger } = makeEnv();
     const starterUntil = Date.now() + 10 * DAY_MS;
     kv.store.set('sub:fb:buyer1', JSON.stringify({ plan: 'starter', expiresAt: starterUntil }));
     await deliver(env, paidSession({ sessionId: 'cs_up', userId: 'fb:buyer1', planId: 'agency' }));
-    expect(sub('fb:buyer1')).toMatchObject({ plan: 'agency', expiresAt: starterUntil + 30 * DAY_MS });
+    const upgraded = sub('fb:buyer1')!;
+    const expected = computeSubscriptionExpiry({ plan: 'starter', expiresAt: starterUntil }, 'agency', 30, upgraded.startedAt);
+    expect(upgraded).toMatchObject({ plan: 'agency', expiresAt: expected });
+    expect(upgraded.expiresAt).toBeLessThan(starterUntil + 30 * DAY_MS);
     expect((await ledger('cs_up'))!.prev_plan).toBe('starter');
   });
 });

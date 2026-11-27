@@ -5,12 +5,15 @@
  * returns 501 without calling any provider (toll-fraud safe stub).
  */
 import type { Env } from './env';
-import { json } from './workerUtils';
+import { json, secretEquals, sha256Hex } from './workerUtils';
+import { MAX_SMALL_BODY_BYTES, readBody } from './security';
 import { enforceAppCheckIfRequired } from './appCheck';
+import { invokeSlidingWindow } from './dailyQuota';
 import {
   checkOutboundDailyBudget,
   enforceBurstLimit,
   enforceEdgeBindingLimit,
+  enforceKvSlidingWindow,
   incrementOutboundDaily,
   otpIpLimiter,
   withRateLimitHeaders,
@@ -21,6 +24,9 @@ import { padMinLatency, PASSWORD_RESET_MIN_LATENCY_MS } from './authTollFraud';
 const E164_RE = /^\+[1-9]\d{6,14}$/;
 const OTP_TTL_SEC = 10 * 60;
 const OTP_CODE_LEN = 6;
+const OTP_MAX_ATTEMPTS = 5;
+const OTP_MODULUS = 10 ** OTP_CODE_LEN;
+const OTP_REJECTION_LIMIT = Math.floor(0x1_0000_0000 / OTP_MODULUS) * OTP_MODULUS;
 
 function mergeHeaders(...parts: Array<Record<string, string> | undefined>): Record<string, string> {
   const out: Record<string, string> = {};
@@ -64,22 +70,34 @@ async function gateOtpMessaging(env: Env, ip: string): Promise<DualRateLimitResu
   return { ok: true, headers: mergeHeaders(burst.headers, edge.headers, ipLimit.headers) };
 }
 
-function otpKvKey(phone: string): string {
-  return `otp:sms:${phone}`;
+function otpKvKey(phoneHash: string): string {
+  return `otp:sms:${phoneHash}`;
 }
 
-async function sha256Hex(value: string): Promise<string> {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
-  return Array.from(new Uint8Array(buf))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
+function randomHex(byteLen: number): string {
+  const bytes = new Uint8Array(byteLen);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+async function otpHmacHex(env: Env, salt: string, phone: string, code: string): Promise<string> {
+  const secret = `${String(env.TWILIO_AUTH_TOKEN || '').trim()}:${String(env.TWILIO_ACCOUNT_SID || '').trim()}:${String(env.MCP_OAUTH_SECRET || '').trim()}`;
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const sig = await crypto.subtle.sign('HMAC', key, enc.encode(`${salt}:${phone}:${code}`));
+  return Array.from(new Uint8Array(sig), (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/** Unbiased 6-digit OTP via rejection sampling on uint32. */
 function randomOtpCode(): string {
   const arr = new Uint32Array(1);
-  crypto.getRandomValues(arr);
-  const n = arr[0]! % 10 ** OTP_CODE_LEN;
-  return String(n).padStart(OTP_CODE_LEN, '0');
+  while (true) {
+    crypto.getRandomValues(arr);
+    const v = arr[0]!;
+    if (v < OTP_REJECTION_LIMIT) {
+      return String(v % OTP_MODULUS).padStart(OTP_CODE_LEN, '0');
+    }
+  }
 }
 
 async function sendTwilioSms(
@@ -144,18 +162,21 @@ export async function handleRequestOtp(
     );
   }
 
-  let phoneRaw: unknown;
-  let appCheckToken: string | undefined;
-  try {
-    const body = (await request.json()) as { phone?: unknown; appCheckToken?: unknown };
-    phoneRaw = body?.phone;
-    if (typeof body?.appCheckToken === 'string' && body.appCheckToken.trim()) {
-      appCheckToken = body.appCheckToken.trim();
-    }
-  } catch {
+  const bodyRead = await readBody(request, MAX_SMALL_BODY_BYTES);
+  if (!bodyRead.ok) {
     await padMinLatency(started, minLatency);
-    return json({ ok: false, error: 'Request body must be JSON with a phone field.', code: 'INVALID_BODY' }, 400);
+    return json(
+      { ok: false, error: 'Request body must be JSON with a phone field.', code: 'INVALID_BODY' },
+      bodyRead.status === 413 ? 413 : 400,
+    );
   }
+  const body = (bodyRead.value && typeof bodyRead.value === 'object' ? bodyRead.value : {}) as {
+    phone?: unknown;
+    appCheckToken?: unknown;
+  };
+  const phoneRaw = body.phone;
+  const appCheckToken =
+    typeof body.appCheckToken === 'string' && body.appCheckToken.trim() ? body.appCheckToken.trim() : undefined;
 
   const appCheckGate = await enforceAppCheckIfRequired(request, env, appCheckToken);
   if (!appCheckGate.ok) {
@@ -170,6 +191,19 @@ export async function handleRequestOtp(
       { ok: false, error: 'Enter a valid phone number in E.164 format (e.g. +15551234567).', code: 'INVALID_PHONE' },
       400,
     );
+  }
+
+  const phoneHash = await sha256Hex(`otp_phone:${phone}`);
+  const phoneCooldown = await enforceKvSlidingWindow(env, {
+    key: `rl:otp_phone_cooldown:${phoneHash}`,
+    maxRequests: 1,
+    windowSeconds: 60,
+    failClosedWithoutKv: true,
+    failClosedOnWriteError: true,
+  });
+  if (!phoneCooldown.ok) {
+    await padMinLatency(started, minLatency);
+    return phoneCooldown.response;
   }
 
   const budget = await checkOutboundDailyBudget(env);
@@ -187,10 +221,12 @@ export async function handleRequestOtp(
   }
 
   const code = randomOtpCode();
-  const codeHash = await sha256Hex(`${phone}:${code}`);
+  const salt = randomHex(16);
+  const codeHash = await otpHmacHex(env, salt, phone, code);
+  const createdAt = Date.now();
   await env.LUMINARA_KV.put(
-    otpKvKey(phone),
-    JSON.stringify({ hash: codeHash, attempts: 0, createdAt: Date.now() }),
+    otpKvKey(phoneHash),
+    JSON.stringify({ hash: codeHash, salt, attempts: 0, createdAt }),
     { expirationTtl: OTP_TTL_SEC },
   );
 
@@ -199,7 +235,7 @@ export async function handleRequestOtp(
   });
 
   if (!sms.ok) {
-    await env.LUMINARA_KV.delete(otpKvKey(phone));
+    await env.LUMINARA_KV.delete(otpKvKey(phoneHash));
     await padMinLatency(started, minLatency);
     return json(
       { ok: false, error: 'Could not send verification code. Try again later.', code: 'OTP_SEND_FAILED' },
@@ -244,13 +280,19 @@ export async function handleVerifyOtp(
     );
   }
 
-  let body: { phone?: unknown; code?: unknown; appCheckToken?: unknown };
-  try {
-    body = (await request.json()) as typeof body;
-  } catch {
+  const bodyRead = await readBody(request, MAX_SMALL_BODY_BYTES);
+  if (!bodyRead.ok) {
     await padMinLatency(started, minLatency);
-    return json({ ok: false, error: 'Request body must be JSON with phone and code.', code: 'INVALID_BODY' }, 400);
+    return json(
+      { ok: false, error: 'Request body must be JSON with phone and code.', code: 'INVALID_BODY' },
+      bodyRead.status === 413 ? 413 : 400,
+    );
   }
+  const body = (bodyRead.value && typeof bodyRead.value === 'object' ? bodyRead.value : {}) as {
+    phone?: unknown;
+    code?: unknown;
+    appCheckToken?: unknown;
+  };
 
   const appCheckToken =
     typeof body.appCheckToken === 'string' && body.appCheckToken.trim()
@@ -269,12 +311,25 @@ export async function handleVerifyOtp(
     return json({ ok: false, error: 'Invalid verification attempt.', code: 'OTP_INVALID' }, 400);
   }
 
+  const phoneHash = await sha256Hex(`otp_phone:${phone}`);
+  const verifyPhoneLimit = await enforceKvSlidingWindow(env, {
+    key: `rl:otp_verify:${phoneHash}`,
+    maxRequests: OTP_MAX_ATTEMPTS,
+    windowSeconds: OTP_TTL_SEC,
+    failClosedWithoutKv: true,
+    failClosedOnWriteError: true,
+  });
+  if (!verifyPhoneLimit.ok) {
+    await padMinLatency(started, minLatency);
+    return verifyPhoneLimit.response;
+  }
+
   if (!env.LUMINARA_KV) {
     await padMinLatency(started, minLatency);
     return json({ ok: false, error: 'OTP store unavailable. Try again later.', code: 'OTP_STORE_UNAVAILABLE' }, 503);
   }
 
-  const key = otpKvKey(phone);
+  const key = otpKvKey(phoneHash);
   const raw = await env.LUMINARA_KV.get(key);
   const fail = async () => {
     await padMinLatency(started, minLatency);
@@ -286,25 +341,51 @@ export async function handleVerifyOtp(
 
   if (!raw) return fail();
 
-  let stored: { hash: string; attempts: number };
+  let stored: { hash: string; salt?: string; attempts: number; createdAt: number };
   try {
     stored = JSON.parse(raw) as typeof stored;
   } catch {
     return fail();
   }
 
-  if (stored.attempts >= 5) {
+  const now = Date.now();
+  const expiresAt = Number(stored.createdAt) + OTP_TTL_SEC * 1000;
+  if (!Number.isFinite(stored.createdAt) || !stored.salt || now > expiresAt) {
     await env.LUMINARA_KV.delete(key);
     return fail();
   }
 
-  const codeHash = await sha256Hex(`${phone}:${code}`);
-  if (codeHash !== stored.hash) {
-    await env.LUMINARA_KV.put(
-      key,
-      JSON.stringify({ hash: stored.hash, attempts: stored.attempts + 1, createdAt: Date.now() }),
-      { expirationTtl: OTP_TTL_SEC },
-    );
+  if (env.DAILY_QUOTA) {
+    const attemptGate = await invokeSlidingWindow(env, `otp_try:${phoneHash}:${stored.salt}`, {
+      limit: OTP_MAX_ATTEMPTS,
+      windowMs: OTP_TTL_SEC * 1000,
+      record: true,
+    });
+    if (attemptGate && !attemptGate.ok) {
+      await env.LUMINARA_KV.delete(key);
+      return fail();
+    }
+  }
+
+  if (stored.attempts >= OTP_MAX_ATTEMPTS) {
+    await env.LUMINARA_KV.delete(key);
+    return fail();
+  }
+
+  const codeHash = await otpHmacHex(env, stored.salt, phone, code);
+  if (!secretEquals(codeHash, stored.hash)) {
+    const nextAttempts = stored.attempts + 1;
+    const remainingSec = Math.ceil((expiresAt - now) / 1000);
+    if (nextAttempts >= OTP_MAX_ATTEMPTS || remainingSec <= 0) {
+      await env.LUMINARA_KV.delete(key);
+    } else {
+      // Preserve original createdAt so failed attempts never extend OTP expiry.
+      await env.LUMINARA_KV.put(
+        key,
+        JSON.stringify({ hash: stored.hash, salt: stored.salt, attempts: nextAttempts, createdAt: stored.createdAt }),
+        { expirationTtl: Math.max(60, remainingSec) },
+      );
+    }
     return fail();
   }
 

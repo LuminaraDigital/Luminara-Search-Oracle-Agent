@@ -24,6 +24,7 @@ import {
   recordStarsCharge,
 } from '../worker/starsCharges';
 import { linkTelegramAndFirebase, writeSubscriptionRecord } from '../worker/userStore';
+import { computeSubscriptionExpiry, proratedRefundDurationMs } from '../worker/planRank';
 import { claimStarsCharge } from '../worker/paymentLedger';
 import { activateLicenseKey, generateLicenseKeys } from '../worker/licenseService';
 import { createPrivacyJob } from '../worker/privacyService';
@@ -128,12 +129,12 @@ function makeEnv() {
   return { env, kv, db };
 }
 
-const paid = (chargeId: string, o: { payload?: string; from?: number; amount?: number } = {}) => ({
+const paid = (chargeId: string, o: { payload?: string; from?: number; amount?: number; currency?: string } = {}) => ({
   message: {
     chat: { id: o.from ?? PAYER },
     from: { id: o.from ?? PAYER },
     successful_payment: {
-      currency: 'XTR',
+      currency: o.currency ?? 'XTR',
       total_amount: o.amount ?? PLANS.starter.stars,
       invoice_payload: o.payload ?? `starter:${PAYER}`,
       telegram_payment_charge_id: chargeId,
@@ -298,8 +299,7 @@ describe('a grant that fails', () => {
   it('produces one refund to the payer, one message to the payer and no subscription', async () => {
     const { env, kv, db } = makeEnv();
     kv.failPut = (key) => key.startsWith('sub:');
-    // The invoice names user 777; user 555 paid it. The refund must go to 555.
-    const outcome = await handleTelegramPaymentUpdate(paid('ch_grant_fails', { from: 555 }), env);
+    const outcome = await handleTelegramPaymentUpdate(paid('ch_grant_fails', { from: 555, payload: 'starter:555' }), env);
 
     expect(outcome.status).toBe(200);
     const refunds = telegram.of('refundStarPayment');
@@ -313,6 +313,30 @@ describe('a grant that fails', () => {
     expect(rowOf(db, 'ch_grant_fails')).toMatchObject({ status: 'refunded', payer_tg_id: 555, lease_until: null, refund_reason: 'grant_failed' });
     // The claim is gone, so the older claim table does not go on saying this charge was credited.
     expect(claimed(db, 'ch_grant_fails')).toBe(false);
+  });
+
+  it('M-09: refuses and refunds when grantee mismatches payer, currency is not XTR, or amount mismatches plan', async () => {
+    const cases = [
+      { id: 'ch_bad_grantee', opts: { from: 555, payload: `starter:${PAYER}` }, reason: 'grantee_mismatch', payer: 555 },
+      { id: 'ch_bad_currency', opts: { currency: 'USD' }, reason: 'currency_mismatch', payer: PAYER },
+      { id: 'ch_bad_amount', opts: { amount: 100 }, reason: 'amount_mismatch', payer: PAYER },
+    ];
+    for (const c of cases) {
+      const { env, kv, db } = makeEnv();
+      telegram.calls.length = 0;
+      const outcome = await handleTelegramPaymentUpdate(paid(c.id, c.opts), env);
+      expect(outcome).toEqual({ status: 200, note: c.reason });
+      expect(kv.json(`sub:${PAYER}`)).toBeNull();
+      expect(kv.json(`sub:${c.payer}`)).toBeNull();
+      expect(telegram.of('refundStarPayment')).toHaveLength(1);
+      expect(telegram.of('refundStarPayment')[0].body).toEqual({ user_id: c.payer, telegram_payment_charge_id: c.id });
+      expect(rowOf(db, c.id)).toMatchObject({ status: 'refunded', payer_tg_id: c.payer, refund_reason: c.reason });
+      const audit = db.sqlite
+        .prepare("SELECT action, details FROM org_audit_logs WHERE action = 'stars.payment_mismatch' ORDER BY created_at DESC LIMIT 1")
+        .get() as { action: string; details: string } | undefined;
+      expect(audit?.action).toBe('stars.payment_mismatch');
+      expect(JSON.parse(audit!.details)).toMatchObject({ reason: c.reason, chargeId: c.id });
+    }
   });
 
   it('with the first subscription write landing and the second throwing, the charge ends credited and is not refunded', async () => {
@@ -815,15 +839,18 @@ describe('cases the payments review asked for', () => {
     await handleTelegramPaymentUpdate(paid('ch_starter'), env);
     const starterExpiry = kv.json(`sub:${PAYER}`).expiresAt;
     await handleTelegramPaymentUpdate(paid('ch_agency', { payload: `agency:${PAYER}`, amount: PLANS.agency.stars }), env);
-    expect(kv.json(`sub:${PAYER}`)).toMatchObject({
+    const afterAgency = kv.json(`sub:${PAYER}`);
+    const expectedAgencyExpiry = computeSubscriptionExpiry({ plan: 'starter', expiresAt: starterExpiry }, 'agency', 30, afterAgency.startedAt);
+    expect(afterAgency).toMatchObject({
       plan: 'agency',
-      expiresAt: starterExpiry + 30 * DAY,
+      expiresAt: expectedAgencyExpiry,
       chargeLinks: { ch_starter: {}, ch_agency: { before: 'starter', prev: 'ch_starter' } },
     });
 
     expect((await refundStarsCharge(env, PAYER, 'ch_agency')).ok).toBe(true);
     const sub = kv.json(`sub:${PAYER}`);
-    expect(sub).toMatchObject({ plan: 'starter', expiresAt: starterExpiry, chargeId: 'ch_starter', appliedCharges: ['ch_starter'] });
+    expect(sub).toMatchObject({ plan: 'starter', expiresAt: expectedAgencyExpiry - 30 * DAY, chargeId: 'ch_starter', appliedCharges: ['ch_starter'] });
+    expect(sub.expiresAt).toBeLessThan(starterExpiry);
     expect(sub.chargeLinks).toEqual({ ch_starter: {} });
   });
 
@@ -848,11 +875,14 @@ describe('cases the payments review asked for', () => {
     const tonExpiry = Date.now() + 10 * DAY;
     await kv.put(`sub:${PAYER}`, JSON.stringify({ plan: 'starter', paymentMethod: 'ton', txHash: 'abc', expiresAt: tonExpiry }));
     await handleTelegramPaymentUpdate(paid('ch_on_ton', { payload: `growth:${PAYER}`, amount: PLANS.growth.stars }), env);
-    expect(kv.json(`sub:${PAYER}`)).toMatchObject({ plan: 'growth', expiresAt: tonExpiry + 30 * DAY, chargeLinks: { ch_on_ton: { before: 'starter' } } });
+    const afterGrowth = kv.json(`sub:${PAYER}`);
+    const expectedGrowthExpiry = computeSubscriptionExpiry({ plan: 'starter', expiresAt: tonExpiry }, 'growth', 30, afterGrowth.startedAt);
+    expect(afterGrowth).toMatchObject({ plan: 'growth', expiresAt: expectedGrowthExpiry, chargeLinks: { ch_on_ton: { before: 'starter' } } });
 
     expect((await refundStarsCharge(env, PAYER, 'ch_on_ton')).ok).toBe(true);
     const sub = kv.json(`sub:${PAYER}`);
-    expect(sub).toMatchObject({ plan: 'starter', expiresAt: tonExpiry, appliedCharges: [] });
+    expect(sub).toMatchObject({ plan: 'starter', expiresAt: expectedGrowthExpiry - 30 * DAY, appliedCharges: [] });
+    expect(sub.expiresAt).toBeLessThan(tonExpiry);
     expect(sub.chargeId).toBeUndefined();
   });
 
@@ -1002,32 +1032,37 @@ describe('cases the second review pass asked for', () => {
       await handleTelegramPaymentUpdate(paid('ch_a'), made.env);
       const afterA = made.kv.json(`sub:${PAYER}`).expiresAt as number;
       await handleTelegramPaymentUpdate(agency('ch_b'), made.env);
+      const afterB = made.kv.json(`sub:${PAYER}`).expiresAt as number;
       await handleTelegramPaymentUpdate(agency('ch_c'), made.env);
       expect(made.kv.json(`sub:${PAYER}`).chargeLinks).toEqual({
         ch_a: {},
         ch_b: { before: 'starter', prev: 'ch_a' },
         ch_c: { before: 'agency', prev: 'ch_b' },
       });
-      return { ...made, afterA };
+      return { ...made, afterA, afterB };
     };
 
     it('refund B, then C: the record ends Starter on A alone', async () => {
-      const { env, kv, afterA } = await setUp();
+      const { env, kv, afterA, afterB } = await setUp();
       expect((await refundStarsCharge(env, PAYER, 'ch_b')).ok).toBe(true);
       // C still stands, so the plan is still Agency; C now follows A.
-      expect(kv.json(`sub:${PAYER}`)).toMatchObject({ plan: 'agency', chargeId: 'ch_c', appliedCharges: ['ch_a', 'ch_c'], expiresAt: afterA + 30 * DAY });
+      expect(kv.json(`sub:${PAYER}`)).toMatchObject({ plan: 'agency', chargeId: 'ch_c', appliedCharges: ['ch_a', 'ch_c'], expiresAt: afterB });
       expect(kv.json(`sub:${PAYER}`).chargeLinks.ch_c).toEqual({ before: 'starter', prev: 'ch_a' });
 
       expect((await refundStarsCharge(env, PAYER, 'ch_c')).ok).toBe(true);
-      expect(kv.json(`sub:${PAYER}`)).toMatchObject({ plan: 'starter', chargeId: 'ch_a', appliedCharges: ['ch_a'], expiresAt: afterA });
+      const finalSub = kv.json(`sub:${PAYER}`);
+      expect(finalSub).toMatchObject({ plan: 'starter', chargeId: 'ch_a', appliedCharges: ['ch_a'], expiresAt: afterB - 30 * DAY });
+      expect(finalSub.expiresAt).toBeLessThan(afterA);
     });
 
     it('refund C, then B: the same end', async () => {
-      const { env, kv, afterA } = await setUp();
+      const { env, kv, afterA, afterB } = await setUp();
       expect((await refundStarsCharge(env, PAYER, 'ch_c')).ok).toBe(true);
       expect(kv.json(`sub:${PAYER}`)).toMatchObject({ plan: 'agency', chargeId: 'ch_b', appliedCharges: ['ch_a', 'ch_b'] });
       expect((await refundStarsCharge(env, PAYER, 'ch_b')).ok).toBe(true);
-      expect(kv.json(`sub:${PAYER}`)).toMatchObject({ plan: 'starter', chargeId: 'ch_a', appliedCharges: ['ch_a'], expiresAt: afterA });
+      const finalSub = kv.json(`sub:${PAYER}`);
+      expect(finalSub).toMatchObject({ plan: 'starter', chargeId: 'ch_a', appliedCharges: ['ch_a'], expiresAt: afterB - 30 * DAY });
+      expect(finalSub.expiresAt).toBeLessThan(afterA);
     });
 
     it('refund A first: Agency stays, and the later refunds end with no plan left', async () => {
@@ -1042,12 +1077,13 @@ describe('cases the second review pass asked for', () => {
     });
   });
 
-  it('a licence plan, then Growth (A), then Agency (B); refund A, then B: the licence plan is back with its own days', async () => {
+  it('a licence plan, then Growth (A), then Agency (B); refund A, then B: the licence plan is back with prorated days', async () => {
     const { env, kv } = makeEnv();
     expect((await activateLicenseKey(env, String(PAYER), 'LUM-PROMO-3DAY')).ok).toBe(true);
     const licenceExpiry = kv.json(`sub:${PAYER}`).expiresAt as number;
     await handleTelegramPaymentUpdate(paid('ch_a', { payload: `growth:${PAYER}`, amount: PLANS.growth.stars }), env);
     await handleTelegramPaymentUpdate(agency('ch_b'), env);
+    const afterB = kv.json(`sub:${PAYER}`).expiresAt as number;
     expect(kv.json(`sub:${PAYER}`).chargeLinks).toEqual({ ch_a: { before: 'starter' }, ch_b: { before: 'growth', prev: 'ch_a' } });
 
     expect((await refundStarsCharge(env, PAYER, 'ch_a')).ok).toBe(true);
@@ -1056,11 +1092,13 @@ describe('cases the second review pass asked for', () => {
 
     expect((await refundStarsCharge(env, PAYER, 'ch_b')).ok).toBe(true);
     const sub = kv.json(`sub:${PAYER}`);
-    expect(sub).toMatchObject({ plan: 'starter', expiresAt: licenceExpiry, appliedCharges: [] });
+    const expectedRemaining = afterB - proratedRefundDurationMs(30 * DAY, 'growth', 'agency') - 30 * DAY;
+    expect(sub).toMatchObject({ plan: 'starter', expiresAt: expectedRemaining, appliedCharges: [] });
+    expect(sub.expiresAt).toBeLessThan(licenceExpiry);
     expect(sub.chargeId).toBeUndefined();
   });
 
-  it('after another rail rewrote the record, refunding earlier Stars charges takes their days and leaves that rail its plan', async () => {
+  it('after another rail rewrote the record, refunding earlier Stars charges takes their prorated days and leaves that rail its plan', async () => {
     const { env, kv } = makeEnv();
     expect((await activateLicenseKey(env, String(PAYER), 'LUM-PROMO-3DAY')).ok).toBe(true);
     await handleTelegramPaymentUpdate(paid('ch_a', { payload: `growth:${PAYER}`, amount: PLANS.growth.stars }), env);
@@ -1079,7 +1117,8 @@ describe('cases the second review pass asked for', () => {
 
     expect((await refundStarsCharge(env, PAYER, 'ch_a')).ok).toBe(true);
     sub = kv.json(`sub:${PAYER}`);
-    expect(sub).toMatchObject({ plan: 'agency', appliedCharges: [], expiresAt: beforeTon });
+    const growthProratedOnAgency = proratedRefundDurationMs(30 * DAY, 'growth', 'agency');
+    expect(sub).toMatchObject({ plan: 'agency', appliedCharges: [], expiresAt: beforeTon + 30 * DAY - growthProratedOnAgency });
   });
 
   it('the sweep never credits a charge whose Stars have already gone back, even with the plan in place', async () => {
@@ -1254,7 +1293,7 @@ describe('cases the second review pass asked for', () => {
 describe('cases the third review pass asked for', () => {
   it('pre-checkout says no when the charge table is there in an older shape, so nobody pays into a ledger that cannot record it', async () => {
     const { env } = makeEnv();
-    const old = createSqliteD1({ skipMigrations: ['0023'] });
+    const old = createSqliteD1({ skipMigrations: ['0023', '0061'] });
     // The table as first drafted, without the stars_returned column.
     old.sqlite.exec(`CREATE TABLE stars_charges (
       charge_id TEXT PRIMARY KEY, payer_tg_id INTEGER NOT NULL, account_id TEXT, purpose TEXT NOT NULL, ref_id TEXT NOT NULL,
@@ -1327,7 +1366,7 @@ describe('pre-checkout', () => {
 
   it('says no while the charge ledger is missing, so nobody is charged', async () => {
     const { env } = makeEnv();
-    env.DB = createSqliteD1({ skipMigrations: ['0023'] });
+    env.DB = createSqliteD1({ skipMigrations: ['0023', '0061'] });
     await handleTelegramPaymentUpdate({ pre_checkout_query: query }, env);
     expect(telegram.of('answerPreCheckoutQuery')[0].body.ok).toBe(false);
   });

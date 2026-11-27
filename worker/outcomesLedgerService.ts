@@ -108,6 +108,7 @@ export async function recordOutcomeStageEvent(
     stage: OutcomeStage;
     evidenceType: OutcomeEvidenceType;
     evidenceRef: string;
+    appointmentId?: string;
     notes?: string;
     recordedBy: string;
     now?: number;
@@ -138,6 +139,25 @@ export async function recordOutcomeStageEvent(
       error: 'Enquiry not found for this account and project.',
       status: 404,
     };
+  }
+
+  if (check.stage === 'agent_approved_booking') {
+    const candidateAppointmentId = args.appointmentId?.trim() || check.evidenceRef;
+    const approvedAppointment = await env.DB.prepare(
+      `SELECT id FROM appraisal_appointments
+       WHERE account_id = ? AND project_id = ? AND enquiry_id = ? AND approval_status = 'approved'
+         AND (id = ? OR ('signoff_' || id || '_' || approved_at) = ?)
+       LIMIT 1`,
+    )
+      .bind(args.accountId, args.projectId, args.enquiryId, candidateAppointmentId, check.evidenceRef)
+      .first<{ id: string }>();
+    if (!approvedAppointment) {
+      return {
+        ok: false,
+        error: 'Stage "agent_approved_booking" requires a server-verified approved appointment for this enquiry.',
+        status: 403,
+      };
+    }
   }
 
   const id = `out_${args.accountId}_${args.enquiryId}_${check.stage}`;

@@ -495,10 +495,22 @@ describe('hosted LLM cost caps', () => {
     expect(r.ok).toBe(false);
   });
 
-  it('clamps Gemini maxOutputTokens', () => {
-    const r = clampHostedGeminiBody({ generationConfig: { maxOutputTokens: 50000 } });
+  it('clamps Gemini maxOutputTokens and candidateCount (camelCase and snake_case) and rejects non-objects', () => {
+    const r = clampHostedGeminiBody({ generationConfig: { maxOutputTokens: 50000, candidateCount: 8 } });
     expect(r.ok).toBe(true);
-    if (r.ok) expect((r.body as any).generationConfig.maxOutputTokens).toBe(HOSTED_MAX_TOKENS);
+    if (r.ok) {
+      expect((r.body as any).generationConfig.maxOutputTokens).toBe(HOSTED_MAX_TOKENS);
+      expect((r.body as any).generationConfig.candidateCount).toBe(1);
+    }
+    const snake = clampHostedGeminiBody({ generation_config: { max_output_tokens: 99999, candidate_count: 5 } });
+    expect(snake.ok).toBe(true);
+    if (snake.ok) {
+      expect((snake.body as any).generation_config.max_output_tokens).toBe(HOSTED_MAX_TOKENS);
+      expect((snake.body as any).generation_config.candidate_count).toBe(1);
+    }
+    expect(clampHostedGeminiBody('raw string').ok).toBe(false);
+    expect(clampHostedGeminiBody(null).ok).toBe(false);
+    expect(clampHostedGeminiBody([]).ok).toBe(false);
   });
 
   it('clamps hosted Firecrawl crawl limit and depth', () => {
@@ -522,6 +534,8 @@ describe('hosted LLM cost caps', () => {
     expect(isGeminiModelActionAllowed('/v1beta/models/gemini-2.0-flash:countTokens')).toBe(true);
     expect(isGeminiModelActionAllowed('/v1beta/models/gemini-2.0-flash:embedContent')).toBe(false);
     expect(isGeminiModelActionAllowed('/v1beta/models')).toBe(false);
+    expect(isGeminiModelActionAllowed('/v1beta/models/gemini%2f..:generateContent')).toBe(false);
+    expect(isGeminiModelActionAllowed('/v1beta/models/gemini..bad:generateContent')).toBe(false);
   });
 });
 
@@ -933,6 +947,18 @@ describe('Server-side SSRF re-validation and auth rate limiting', () => {
     expect(res.status).toBe(400);
     const data = (await res.json()) as { code?: string };
     expect(data.code).toBe('SSRF_BLOCKED');
+
+    // BOM-prefixed or malformed JSON must be rejected with 400 before reaching upstream or skipping SSRF validation
+    const bomRes = await worker.fetch(
+      req('/api/providers/firecrawl/scrape', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-provider-key': 'fc-test-byok' },
+        body: '\uFEFF{"url":"http://169.254.169.254/latest/meta-data/"}',
+      }),
+      env,
+      ctx,
+    );
+    expect(bomRes.status).toBe(400);
   });
 
   it('rate-limits /api/auth/sign-in after 5 attempts', async () => {

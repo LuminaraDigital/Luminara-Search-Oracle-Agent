@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { gscAnalyticsService, type GscSummary } from '../../services/mcp/gscAnalyticsService';
 import { labsVisible } from '../../services/ui/labsAccess';
 import { GscEmptyState } from './psiGscEmptyStates';
+import { validateClientUploadFile } from '../../utils/fileUploadGuard';
 
 type Props = {
   domain: string;
@@ -23,6 +24,11 @@ export const GscPanel: React.FC<Props> = ({ domain }) => {
   const onFile = async (file: File | null) => {
     if (!file) return;
     setError(null);
+    const checked = validateClientUploadFile(file, { allowedExtensions: ['.csv', '.tsv'] });
+    if (!checked.ok) {
+      setError(checked.error);
+      return;
+    }
     const text = await file.text();
     try {
       const parsed = gscAnalyticsService.parseGscCsv(text, host, {

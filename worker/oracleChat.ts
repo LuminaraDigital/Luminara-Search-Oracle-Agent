@@ -139,10 +139,10 @@ export async function handleOracleSessionControlRoute(
     );
   }
 
-  // Clients may only read the log/state and resolve gates. Event publishing, turn admission,
-  // settle, and truncate stay server-internal so a caller cannot forge tool_end/approval events.
+  // Clients may only read the log/state/checkpoint and resolve gates. Event publishing, turn admission,
+  // checkpoint writes, settle, and truncate stay server-internal so a caller cannot forge tool_end/approval events.
   const allowed =
-    (request.method === 'GET' && ['events', 'state', 'history'].includes(actionPath)) ||
+    (request.method === 'GET' && ['events', 'state', 'history', 'checkpoint'].includes(actionPath)) ||
     (request.method === 'POST' && ['approval', 'callback', 'state/patch'].includes(actionPath));
   if (!allowed) {
     return new Response(JSON.stringify({ ok: false, error: 'Not found', code: 'NOT_FOUND' }), {

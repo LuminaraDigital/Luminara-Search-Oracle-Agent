@@ -24,6 +24,9 @@ import com.luminarasuite.app.core.model.BootResponse
 import com.luminarasuite.app.core.model.ByokKeyBag
 import com.luminarasuite.app.core.model.CrawlerFilesResponse
 import com.luminarasuite.app.core.model.CrawlerFilesSnapshot
+import com.luminarasuite.app.core.model.CrmApprovalDecisionRequest
+import com.luminarasuite.app.core.model.CrmBridgeStatus
+import com.luminarasuite.app.core.model.CrmPromoteResponse
 import com.luminarasuite.app.core.model.EnquiryCreateRequest
 import com.luminarasuite.app.core.model.EnquiryDeskResponse
 import com.luminarasuite.app.core.model.EnquiryRecord
@@ -436,6 +439,16 @@ class FakeLuminaraApi : LuminaraApi {
     ): IdeaCreateResponse = IdeaCreateResponse(ok = true, id = "is_1", card = IdeaCard(problem = body.idea))
 
     override suspend fun getIdea(id: String): IdeaDetailResponse = IdeaDetailResponse(ok = true, card = IdeaCard())
+
+    override suspend fun getCrmBridgeStatus(): CrmBridgeStatus = CrmBridgeStatus(ok = true, enabled = false)
+
+    override suspend fun promoteEnquiryToCrm(id: String): CrmPromoteResponse =
+        CrmPromoteResponse(ok = true, crmLeadId = "lead_$id", status = "completed")
+
+    override suspend fun decideCrmApproval(
+        callId: Long,
+        body: CrmApprovalDecisionRequest,
+    ): JsonObject = kotlinx.serialization.json.buildJsonObject {}
 
     override suspend fun chatGroq(
         providerKey: String?,

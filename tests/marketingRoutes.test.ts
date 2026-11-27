@@ -368,6 +368,114 @@ describe('maybeServeReceiptHtml', () => {
     expect(html).toContain('og:title');
     expect(html).toContain('noindex, nofollow');
   });
+
+  it('returns 404 without leaking receipt metadata for private receipts or when receipts are disabled', async () => {
+    const { maybeServeReceiptHtml } = await import('../worker/marketingShell');
+    const { createSqliteD1 } = await import('./helpers/sqliteD1');
+    const db = createSqliteD1();
+    const assets = {
+      fetch: async () =>
+        new Response(
+          '<!DOCTYPE html><html><head><title>Old</title><meta property="og:title" content="Old"></head><body></body></html>',
+          { headers: { 'content-type': 'text/html; charset=utf-8' } },
+        ),
+    } as unknown as Fetcher;
+
+    const nowIso = new Date().toISOString();
+    await db
+      .prepare(
+        `INSERT INTO trust_receipts (id, account_id, subject_kind, subject_id, claim, level, payload_json, signature, kid, visibility, created_at)
+         VALUES (?, ?, 'domain', ?, 'domain_control', 'worker_verified', ?, 'sig', 'kid_secret_priv', 'private', ?)`,
+      )
+      .bind('rcpt_priv_001', 'acct_1', 'secret-client.example', '{}', nowIso)
+      .run();
+
+    await db
+      .prepare(
+        `INSERT INTO trust_receipts (id, account_id, subject_kind, subject_id, claim, level, payload_json, signature, kid, visibility, revoked_at, created_at)
+         VALUES (?, ?, 'domain', ?, 'domain_control', 'worker_verified', ?, 'sig', 'kid_rev_priv', 'private', ?, ?)`,
+      )
+      .bind('rcpt_rev_never_pub', 'acct_1', 'never-public.example', '{}', nowIso, nowIso)
+      .run();
+
+    await db
+      .prepare(
+        `INSERT INTO trust_receipts (id, account_id, subject_kind, subject_id, claim, level, payload_json, signature, kid, visibility, revoked_at, created_at)
+         VALUES (?, ?, 'domain', ?, 'domain_control', 'worker_verified', ?, 'sig', 'kid_rev_was_pub', 'private', ?, ?)`,
+      )
+      .bind('rcpt_rev_was_pub', 'acct_1', 'was-public.example', '{}', nowIso, nowIso)
+      .run();
+
+    await db
+      .prepare(
+        `INSERT INTO trust_receipts (id, account_id, subject_kind, subject_id, claim, level, payload_json, signature, kid, visibility, created_at)
+         VALUES (?, ?, 'domain', ?, 'domain_control', 'worker_verified', ?, 'sig', 'kid_pub_disabled', 'public', ?)`,
+      )
+      .bind('rcpt_pub_disabled', 'acct_1', 'disabled-flag.example', '{}', nowIso)
+      .run();
+
+    const kvStore = new Map<string, string>([['trust:ever_public:rcpt_rev_was_pub', '1']]);
+    const kv = {
+      get: async (k: string) => kvStore.get(k) ?? null,
+      put: async (k: string, v: string) => { kvStore.set(k, v); },
+      delete: async (k: string) => { kvStore.delete(k); },
+    } as unknown as KVNamespace;
+
+    // 1. Private receipt -> 404 and zero metadata leak
+    const privRes = await maybeServeReceiptHtml(
+      new Request('https://www.luminarasuite.com/verify/r/rcpt_priv_001', { headers: { accept: 'text/html' } }),
+      { ASSETS: assets, DB: db, LUMINARA_KV: kv },
+    );
+    expect(privRes!.status).toBe(404);
+    const privHtml = await privRes!.text();
+    expect(privHtml).not.toContain('secret-client.example');
+    expect(privHtml).not.toContain('domain_control');
+    expect(privHtml).not.toContain('worker_verified');
+    expect(privHtml).not.toContain('kid_secret_priv');
+
+    // 2. Revoked receipt that was never public -> 404 and zero leak
+    const revPrivRes = await maybeServeReceiptHtml(
+      new Request('https://www.luminarasuite.com/verify/r/rcpt_rev_never_pub', { headers: { accept: 'text/html' } }),
+      { ASSETS: assets, DB: db, LUMINARA_KV: kv },
+    );
+    expect(revPrivRes!.status).toBe(404);
+    expect(await revPrivRes!.text()).not.toContain('never-public.example');
+
+    // 3. Revoked receipt that WAS once public -> 200 withdrawn card
+    const revPubRes = await maybeServeReceiptHtml(
+      new Request('https://www.luminarasuite.com/verify/r/rcpt_rev_was_pub', { headers: { accept: 'text/html' } }),
+      { ASSETS: assets, DB: db, LUMINARA_KV: kv },
+    );
+    expect(revPubRes!.status).toBe(200);
+    expect(await revPubRes!.text()).toContain('Withdrawn Receipt: was-public.example');
+
+    // 4. Feature flag disabled -> 404 even for a public receipt
+    const disabledRes = await maybeServeReceiptHtml(
+      new Request('https://www.luminarasuite.com/verify/r/rcpt_pub_disabled', { headers: { accept: 'text/html' } }),
+      { ASSETS: assets, DB: db, LUMINARA_KV: kv, ENVIRONMENT: 'production', TRUST_RECEIPTS_ENABLED: 'false' },
+    );
+    expect(disabledRes!.status).toBe(404);
+    const disabledHtml = await disabledRes!.text();
+    expect(disabledHtml).not.toContain('disabled-flag.example');
+    expect(disabledHtml).not.toContain('kid_pub_disabled');
+
+    // 5. Public receipt with ampersand is single-escaped in title and JSON-LD (no double escaping)
+    await db
+      .prepare(
+        `INSERT INTO trust_receipts (id, account_id, subject_kind, subject_id, claim, level, payload_json, signature, kid, visibility, created_at)
+         VALUES (?, ?, 'domain', ?, 'domain_control', 'worker_verified', ?, 'sig', 'kid_amp', 'public', ?)`,
+      )
+      .bind('rcpt_amp_001', 'acct_1', 'a&b.example', '{}', nowIso)
+      .run();
+    const ampRes = await maybeServeReceiptHtml(
+      new Request('https://www.luminarasuite.com/verify/r/rcpt_amp_001', { headers: { accept: 'text/html' } }),
+      { ASSETS: assets, DB: db, LUMINARA_KV: kv },
+    );
+    expect(ampRes!.status).toBe(200);
+    const ampHtml = await ampRes!.text();
+    expect(ampHtml).toContain('<title>Trust Receipt: a&amp;b.example | Luminara Suite</title>');
+    expect(ampHtml).not.toContain('&amp;amp;');
+  });
 });
 
 

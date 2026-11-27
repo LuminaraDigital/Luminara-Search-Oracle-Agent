@@ -9,8 +9,9 @@
  * KV `license:key:*` stays the record store and read cache.
  */
 import type { Env } from './index';
+import type { HostedIdentity } from './userTypes';
 import { claimLicenseRedemption, releaseLicenseRedemption } from './paymentLedger';
-import { PlanDowngradeRefusedError, downgradeRefusalText, planRank, wouldDowngrade, type SubscriptionLike } from './planRank';
+import { PlanDowngradeRefusedError, computeSubscriptionExpiry, downgradeRefusalText, planRank, wouldDowngrade, type SubscriptionLike } from './planRank';
 import { normalizePlanId } from './telegramBot';
 import { appliedOrderExpiry, hasAppliedOrder, resolveAccountId, writeSubscriptionRecord } from './userStore';
 import { licenseKeyFingerprint, recordAuditLogBestEffort } from './auditLog';
@@ -41,6 +42,8 @@ export interface LicenseActivationResult {
   expiresAt?: number;
   durationDays?: number;
   error?: string;
+  code?: string;
+  status?: number;
 }
 
 const LICENSE_UNAVAILABLE_ERROR = 'License activation is temporarily unavailable. Please try again in a few minutes.';
@@ -63,7 +66,6 @@ export const BUILTIN_CAMPAIGN_KEYS: Record<string, { plan: string; durationDays:
   'LUM-LAUNCH-3D': { plan: 'growth', durationDays: 3, isTrial: true, campaign: 'product_launch' },
   'LUM-PROMO-3DAY': { plan: 'starter', durationDays: 3, isTrial: true, campaign: 'starter_promo' },
   'LUM-VIP-7DAY': { plan: 'growth', durationDays: 7, isTrial: true, campaign: 'vip_partner' },
-  'LUM-AGENCY-7DAY': { plan: 'agency', durationDays: 7, isTrial: true, campaign: 'agency_evaluation' },
 };
 
 /**
@@ -76,29 +78,16 @@ export function normalizeLicenseKey(rawKey: string): string {
     .replace(/[^A-Z0-9-]/g, '');
 }
 
-const KEY_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-
-function randomKeyChars(length: number): string {
-  let out = '';
-  while (out.length < length) {
-    const bytes = new Uint8Array(length * 2);
-    crypto.getRandomValues(bytes);
-    for (const byte of bytes) {
-      // 252 is the largest multiple of 36 below 256; skipping higher bytes keeps characters uniform.
-      if (byte < 252 && out.length < length) out += KEY_ALPHABET[byte % KEY_ALPHABET.length];
-    }
-  }
-  return out;
-}
-
 /**
- * Generates a clean, memorable license key formatted as LUM-TIER-XXD-XXXX-XXXX.
+ * Generates a high-entropy (128-bit) license key formatted as LUM-TIER-XXD-XXXXXXXX-XXXXXXXX-XXXXXXXX-XXXXXXXX.
  */
 export function formatGeneratedLicenseKey(plan: string, durationDays: number): string {
   const normPlan = normalizePlanId(plan);
   const tag = normPlan === 'agency' ? 'PRO' : normPlan.toUpperCase().slice(0, 6);
-  const rand = randomKeyChars(8);
-  return `LUM-${tag}-${durationDays}D-${rand.slice(0, 4)}-${rand.slice(4)}`;
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+  return `LUM-${tag}-${durationDays}D-${hex.slice(0, 8)}-${hex.slice(8, 16)}-${hex.slice(16, 24)}-${hex.slice(24, 32)}`;
 }
 
 /**
@@ -125,10 +114,33 @@ function refuseTrialOnPaidPlan(keyRecord: LicenseKeyRecord, sub: SubscriptionLik
   return { ok: false, error: TRIAL_PAID_PLAN_ERROR };
 }
 
+const EMAIL_VERIFY_TRIAL_ERROR =
+  'Please verify your email address before redeeming a promotional trial key.';
+
+async function isIdentityVerifiedForTrial(
+  env: Env,
+  userId: string,
+  identity: Pick<HostedIdentity, 'source' | 'emailVerified'>,
+): Promise<boolean> {
+  if (identity.source === 'telegram') return true;
+  if (identity.emailVerified === true) return true;
+  if (identity.emailVerified === false) return false;
+  if (!env.DB) return false;
+  try {
+    const row = await env.DB.prepare('SELECT email_verified FROM users WHERE id = ?')
+      .bind(userId)
+      .first<{ email_verified: number | null }>();
+    return row?.email_verified === 1;
+  } catch {
+    return false;
+  }
+}
+
 export async function activateLicenseKey(
   env: Env,
   userId: string,
   rawKey: string,
+  opts?: { identity?: Pick<HostedIdentity, 'source' | 'emailVerified'> },
 ): Promise<LicenseActivationResult> {
   if (!env.LUMINARA_KV) {
     return { ok: false, error: 'Database storage is currently unavailable. Please try again in a moment.' };
@@ -143,13 +155,15 @@ export async function activateLicenseKey(
 
   // 1. Check if key is a built-in campaign key or in KV
   let keyRecord: LicenseKeyRecord | null = null;
+  let isBuiltinCampaign = false;
   const kvKey = `license:key:${key}`;
   const stored = await env.LUMINARA_KV.get(kvKey, 'json') as LicenseKeyRecord | null;
 
   if (stored) {
     keyRecord = stored;
-  } else if (BUILTIN_CAMPAIGN_KEYS[key]) {
+  } else if (Object.hasOwn(BUILTIN_CAMPAIGN_KEYS, key)) {
     const builtin = BUILTIN_CAMPAIGN_KEYS[key];
+    isBuiltinCampaign = true;
     keyRecord = {
       key,
       plan: builtin.plan,
@@ -171,6 +185,17 @@ export async function activateLicenseKey(
 
   if (keyRecord.revoked === true) {
     return { ok: false, error: LICENSE_REVOKED_ERROR };
+  }
+
+  if (opts?.identity && (isBuiltinCampaign || keyRecord.isTrial)) {
+    if (!(await isIdentityVerifiedForTrial(env, userId, opts.identity))) {
+      return {
+        ok: false,
+        status: 403,
+        code: 'EMAIL_VERIFICATION_REQUIRED',
+        error: EMAIL_VERIFY_TRIAL_ERROR,
+      };
+    }
   }
 
   // 2. Fast rejects from KV (also covers trials and redemptions recorded before the D1 ledger existed)
@@ -224,7 +249,6 @@ export async function activateLicenseKey(
   }
 
   const now = Date.now();
-  const durationMs = keyRecord.durationDays * 86400_000;
   let expiresAt: number;
 
   // 4. Extend subscription
@@ -236,14 +260,13 @@ export async function activateLicenseKey(
       await releaseLicenseRedemption(env, { key, accountId, isTrial: keyRecord.isTrial });
       return lateTrialRefusal;
     }
-    const baseTime = existingSub?.expiresAt && existingSub.expiresAt > now ? existingSub.expiresAt : now;
 
     const written = await writeSubscriptionRecord(env, userId, {
       plan: keyRecord.plan,
       paymentMethod: 'license_key',
       orderId,
       startedAt: now,
-      expiresAt: baseTime + durationMs,
+      expiresAt: computeSubscriptionExpiry(existingSub, keyRecord.plan, keyRecord.durationDays, now),
     }, { orderId });
     // A key the record already names keeps that record's expiry.
     expiresAt = Number(written.record.expiresAt);

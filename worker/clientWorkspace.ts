@@ -7,8 +7,8 @@
 import type { Env } from './env';
 import type { HostedIdentity } from './userTypes';
 import { billingId } from './workerUtils';
-import { randomId } from '../services/projects/projectUtils';
-import { createProject, deleteProject, listProjects } from './projectService';
+import { normalizeProjectDomain, randomId } from '../services/projects/projectUtils';
+import { accountIndustryId, deleteProject, listProjects, setProjectIndustry } from './projectService';
 import { auditOrgIdFor, recordAuditLogBestEffort } from './auditLog';
 import { entitlementsFor } from '../services/plans/planEntitlements';
 import { parseLogoUrl } from '../services/reports/reportBrand';
@@ -519,7 +519,7 @@ export async function assertNewClientAllowed(
   env: Env,
   accountId: string,
   clientId: string | undefined,
-): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+): Promise<{ ok: true; limit?: number } | { ok: false; status: number; error: string }> {
   const id = (clientId || '').trim();
   if (!id || !env.DB) return { ok: true };
   const existing = await listProjects(env, accountId, id);
@@ -539,7 +539,7 @@ export async function assertNewClientAllowed(
       error: `This plan includes ${limit} client${limit === 1 ? '' : 's'}. The client limit is a placeholder until a paid workspace price exists.`,
     };
   }
-  return { ok: true };
+  return { ok: true, limit };
 }
 
 export async function countClients(env: Env, accountId: string): Promise<number> {
@@ -779,15 +779,33 @@ export async function addWorkspaceClient(
   accountId: string,
   input: { name: string; domain: string; industryId?: IndustryId },
 ): Promise<{ ok: true; projectId: string; clientId: string } | { ok: false; error: string; status: number }> {
+  if (!env.DB) return { ok: false, error: 'Database unavailable', status: 503 };
+  const domain = normalizeProjectDomain(input.domain);
+  if (!domain) return { ok: false, error: 'domain required', status: 400 };
+  const sub = await getActiveSubscription(env, { id: accountId, source: 'firebase', accountId });
+  const limit = entitlementsFor(sub?.plan).workspaceClientLimit;
   const clientId = randomId('client');
-  const slot = await assertNewClientAllowed(env, accountId, clientId);
-  if (!slot.ok) return slot;
-  const created = await createProject(env, accountId, {
-    domain: input.domain,
-    name: input.name,
-    clientId,
-    industryId: input.industryId,
-  });
-  if (!created.ok) return created;
-  return { ok: true, projectId: created.project.id, clientId };
+  const projectId = randomId('proj');
+  const name = (input.name || domain).trim().slice(0, 120) || domain;
+  const now = Date.now();
+  const inserted = await env.DB.prepare(
+    `INSERT INTO projects
+      (id, account_id, client_id, domain, name, default_location_code, default_language_code, created_at, updated_at)
+     SELECT ?, ?, ?, ?, ?, NULL, NULL, ?, ?
+     WHERE (
+       SELECT COUNT(DISTINCT client_id) FROM projects
+       WHERE account_id = ? AND client_id != ''
+     ) < ?`,
+  )
+    .bind(projectId, accountId, clientId, domain, name, now, now, accountId, limit)
+    .run();
+  if (Number(inserted.meta?.changes ?? 0) !== 1) {
+    return {
+      ok: false,
+      status: 403,
+      error: `This plan includes ${limit} client${limit === 1 ? '' : 's'}. The client limit is a placeholder until a paid workspace price exists.`,
+    };
+  }
+  await setProjectIndustry(env, projectId, input.industryId || (await accountIndustryId(env, accountId)));
+  return { ok: true, projectId, clientId };
 }

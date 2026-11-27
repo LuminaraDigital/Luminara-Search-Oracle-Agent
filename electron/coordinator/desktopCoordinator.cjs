@@ -178,6 +178,7 @@ function evaluateNoAgentRoutineProbe(routine, probeObservation) {
 function createDesktopCoordinator(options = {}) {
   const userDataDir = options.userDataDir || path.join(process.cwd(), '.luminara-desktop-data');
   const crawlerPort = options.crawlerPort || 3001;
+  const allowedOrigin = typeof options.allowedOrigin === 'string' ? options.allowedOrigin.trim() : '';
   const safeStorage = options.safeStorage || null;
   const fetchFn = options.fetchFn || (typeof fetch === 'function' ? fetch : null);
   const persistToDisk = options.persistToDisk === true;
@@ -193,6 +194,7 @@ function createDesktopCoordinator(options = {}) {
   /** @type {Map<string, string>} */
   const encryptedSecrets = new Map();
   let crawlerChild = null;
+  let crawlerToken = null;
 
   if (persistToDisk) {
     try {
@@ -270,16 +272,25 @@ function createDesktopCoordinator(options = {}) {
     }
     if (!crawlerChild && typeof spawnFn === 'function') {
       try {
+        const launchToken =
+          (typeof process.env.CRAWLER_TOKEN === 'string' && process.env.CRAWLER_TOKEN.trim()) ||
+          crypto.randomBytes(32).toString('hex');
+        const childEnv = {
+          ...process.env,
+          ELECTRON_RUN_AS_NODE: '1',
+          HOST: '127.0.0.1',
+          PORT: String(crawlerPort),
+          CRAWLER_TOKEN: launchToken,
+        };
+        if (allowedOrigin) {
+          childEnv.CRAWLER_ALLOWED_ORIGINS = allowedOrigin;
+        }
         crawlerChild = spawnFn(process.execPath, [crawlerScriptPath], {
-          env: {
-            ...process.env,
-            ELECTRON_RUN_AS_NODE: '1',
-            HOST: '127.0.0.1',
-            PORT: String(crawlerPort),
-          },
+          env: childEnv,
           stdio: 'ignore',
           windowsHide: true,
         });
+        crawlerToken = launchToken;
         crawlerStatus = {
           ...crawlerStatus,
           pid: crawlerChild && crawlerChild.pid ? crawlerChild.pid : null,
@@ -287,11 +298,13 @@ function createDesktopCoordinator(options = {}) {
         if (crawlerChild && typeof crawlerChild.on === 'function') {
           crawlerChild.on('exit', () => {
             crawlerChild = null;
+            crawlerToken = null;
             crawlerStatus = { ...crawlerStatus, pid: null, healthy: false };
           });
         }
       } catch {
         crawlerChild = null;
+        crawlerToken = null;
       }
     }
     return crawlerStatus;
@@ -305,6 +318,7 @@ function createDesktopCoordinator(options = {}) {
         // ignore
       }
       crawlerChild = null;
+      crawlerToken = null;
       crawlerStatus = { ...crawlerStatus, pid: null, healthy: false };
     }
     return { stopped: true };
@@ -407,6 +421,7 @@ function createDesktopCoordinator(options = {}) {
 
   return {
     getStatus,
+    getCrawlerToken: () => crawlerToken,
     checkCrawlerHealth,
     superviseCrawler,
     stopCrawler,

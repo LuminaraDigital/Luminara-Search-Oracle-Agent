@@ -75,4 +75,38 @@ describe('PermissionBroker', () => {
     const item = broker.getPending(res.requestId!);
     expect(item?.outcome).toBe('rejected');
   });
+
+  it('fails closed for unknown tools as high_risk requiring human approval (M-23)', () => {
+    const broker = new PermissionBroker();
+    expect(broker.classifyAction('unregistered_custom_tool')).toBe('high_risk');
+    const res = broker.requestPermission(
+      'thread-unknown',
+      'agent-1',
+      'unregistered_custom_tool',
+      'arg: test',
+    );
+    expect(res.granted).toBe(false);
+    expect(res.requestId).toBeDefined();
+    expect(broker.getPending(res.requestId!)?.riskTier).toBe('high_risk');
+  });
+
+  it('classifies decide_booking_signoff and prepare_cms_mcp_call as destructive and never auto-approves or cascades destructive tools (MEDIUM #13)', () => {
+    const broker = new PermissionBroker();
+    expect(broker.classifyAction('decide_booking_signoff')).toBe('destructive');
+    expect(broker.classifyAction('prepare_cms_mcp_call')).toBe('destructive');
+
+    const req1 = broker.requestPermission('t-dest', 'agent-1', 'prepare_cms_mcp_call', 'patch #1');
+    const req2 = broker.requestPermission('t-dest', 'agent-1', 'prepare_cms_mcp_call', 'patch #2');
+    expect(req1.granted).toBe(false);
+    expect(req2.granted).toBe(false);
+
+    // Resolving with remember: true must NOT remember or cascade sibling pending destructive requests.
+    expect(broker.resolveRequest(req1.requestId!, 'allowed-once', { remember: true })).toBe(true);
+    expect(broker.isToolRemembered('prepare_cms_mcp_call')).toBe(false);
+    expect(broker.getPending(req2.requestId!)?.status).toBe('pending');
+
+    // Subsequent call to the same destructive tool must still require approval.
+    const req3 = broker.requestPermission('t-dest', 'agent-1', 'prepare_cms_mcp_call', 'patch #3');
+    expect(req3.granted).toBe(false);
+  });
 });

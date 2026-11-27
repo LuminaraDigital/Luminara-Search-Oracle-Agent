@@ -212,8 +212,8 @@ describe('one Instant Audit run', () => {
     expect(booking.status).toBe(200);
   });
 
-  it('refunds an unmeasured run after a homepage 200, and the daily cap still holds', async () => {
-    const { env, kv } = envFor('1');
+  it('never lets client-supplied null scores override server sawSuccess, and blocks double-refund or post-refund reuse', async () => {
+    const { env } = envFor('2');
     globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({ success: true }), {
       status: 200,
       headers: { 'content-type': 'application/json' },
@@ -224,6 +224,7 @@ describe('one Instant Audit run', () => {
       body: JSON.stringify({ refund: true, token, healthScore: null, citationRate: null }),
     }), env);
 
+    // A run with a successful 200 provider response MUST NOT be refunded even if client claims null scores.
     const opened = await mint(env);
     const page = await proxyProvider(
       providerCall(opened.body.token!, 'movida.com.au', 11, 'https://movida.com.au'),
@@ -233,19 +234,39 @@ describe('one Instant Audit run', () => {
     );
     expect(page.status).toBe(200);
     expect(await quotaUsed(env)).toBe(1);
-    expect(await (await refundUnmeasured(opened.body.token!)).json()).toEqual({ ok: true, refunded: true });
-    expect(await quotaUsed(env)).toBe(0);
+    expect(await (await refundUnmeasured(opened.body.token!)).json()).toEqual({ ok: true, refunded: false });
+    expect(await quotaUsed(env)).toBe(1);
 
-    const again = await mint(env);
-    const secondPage = await proxyProvider(
-      providerCall(again.body.token!, 'movida.com.au', 11, 'https://movida.com.au'),
+    // A genuinely failed run (no sawSuccess) refunds once, cannot refund twice, and cannot be reused after refund.
+    globalThis.fetch = vi.fn(async () => new Response('upstream failed', { status: 500 }));
+    const failedRun = await mint(env);
+    expect(await quotaUsed(env)).toBe(2);
+    const failedCall = await proxyProvider(
+      providerCall(failedRun.body.token!, 'movida.com.au', 11, 'https://movida.com.au'),
       env,
       'groq',
       '/chat/completions',
     );
-    expect(secondPage.status).toBe(200);
-    expect(await (await refundUnmeasured(again.body.token!)).json()).toEqual({ ok: true, refunded: false });
+    expect(failedCall.status).toBeGreaterThanOrEqual(500);
+
+    expect(await (await refundUnmeasured(failedRun.body.token!)).json()).toEqual({ ok: true, refunded: true });
     expect(await quotaUsed(env)).toBe(1);
+    // Second refund attempt on same token is a no-op.
+    expect(await (await refundUnmeasured(failedRun.body.token!)).json()).toEqual({ ok: true, refunded: false });
+    expect(await quotaUsed(env)).toBe(1);
+
+    // Reusing the refunded token for a new provider call is rejected (401) and never hits upstream.
+    const spyFetch = vi.fn(async () => new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }), { status: 200 }));
+    globalThis.fetch = spyFetch;
+    const reuse = await proxyProvider(
+      providerCall(failedRun.body.token!, 'movida.com.au', 11, 'https://movida.com.au'),
+      env,
+      'groq',
+      '/chat/completions',
+    );
+    expect(reuse.status).toBe(401);
+    expect(await reuse.json()).toMatchObject({ code: 'AUDIT_RUN_REJECTED' });
+    expect(spyFetch).not.toHaveBeenCalled();
   });
 
   it('meters a hosted chat that is not part of a run on the ask meter', async () => {

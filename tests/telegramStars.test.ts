@@ -234,6 +234,24 @@ describe('Telegram Stars Bot Payments (core.telegram.org/bots/payments-stars)', 
       expect(body.ok).toBe(false);
       expect(body.error_message).toContain('Unknown plan');
     });
+
+    it('M-09: fails closed when currency or integer total_amount is missing or grantee payload is malformed', async () => {
+      env.DB = createSqliteD1();
+      const malformedQueries = [
+        { id: 'q_no_curr', total_amount: 2500, invoice_payload: 'starter:12345' },
+        { id: 'q_no_amt', currency: 'XTR', invoice_payload: 'starter:12345' },
+        { id: 'q_float_amt', currency: 'XTR', total_amount: 2500.5, invoice_payload: 'starter:12345' },
+        { id: 'q_bad_grantee', currency: 'XTR', total_amount: 2500, invoice_payload: 'starter:notanumber', from: { id: 12345 } },
+      ];
+      for (const q of malformedQueries) {
+        mockFetch.mockClear();
+        mockFetch.mockResolvedValueOnce({ json: async () => ({ ok: true }) });
+        await handleTelegramUpdate({ pre_checkout_query: q }, env);
+        expect(mockFetch).toHaveBeenCalledTimes(1);
+        const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+        expect(body.ok).toBe(false);
+      }
+    });
   });
 
   describe('handleTelegramUpdate: successful_payment', () => {
@@ -839,6 +857,40 @@ describe('Telegram Stars Bot Payments (core.telegram.org/bots/payments-stars)', 
       expect(systemPromptSent).toContain('Acme SaaS');
       expect(systemPromptSent).toContain('Fastest B2B invoice reconciliation');
       expect(systemPromptSent).toContain('Rival Corp');
+    });
+
+    it('M-10: rate-limits Telegram /license attempts to 5 per 15 min per user and fails closed on KV write error', async () => {
+      env.DB = createSqliteD1();
+      mockFetch.mockResolvedValue({ ok: true, json: async () => ({ ok: true, result: {} }) });
+
+      for (let i = 0; i < 5; i++) {
+        await handleTelegramUpdate(
+          { message: { chat: { id: 4444 }, from: { id: 4444 }, text: `/license LUM-FAKE-GUESS-${i}` } },
+          env,
+        );
+      }
+      // 6th attempt must be rate-limited even with a valid campaign code.
+      mockFetch.mockClear();
+      await handleTelegramUpdate(
+        { message: { chat: { id: 4444 }, from: { id: 4444 }, text: '/license LUM-PROMO-3DAY' } },
+        env,
+      );
+      const blockedMsg = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(blockedMsg.text).toContain('Too many license activation attempts');
+      expect(await mockKv.get('sub:4444', 'json')).toBeNull();
+
+      // Another user whose rate-limit stores fail (no DO + failing KV write) must fail closed (no activation).
+      mockKv.put = async () => {
+        throw new Error('KV put failed');
+      };
+      mockFetch.mockClear();
+      await handleTelegramUpdate(
+        { message: { chat: { id: 5555 }, from: { id: 5555 }, text: '/license LUM-PROMO-3DAY' } },
+        { ...env, DAILY_QUOTA: undefined },
+      );
+      const storeFailMsg = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(storeFailMsg.text).toContain('Too many license activation attempts');
+      expect(await mockKv.get('sub:5555', 'json')).toBeNull();
     });
   });
 });

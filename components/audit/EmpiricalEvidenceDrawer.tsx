@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ICONS } from '../../constants';
 import { EmpiricalCitationSummary, QueryIntent } from '../../services/audit/empiricalCitationService';
 import type { CitationIntegrityResult } from '../../services/audit/citationIntegrityService';
+import { isWebUrl } from '../../utils/webUrl';
 
 interface EmpiricalEvidenceDrawerProps {
   isOpen: boolean;
@@ -203,7 +204,7 @@ export const EmpiricalEvidenceDrawer: React.FC<EmpiricalEvidenceDrawerProps> = (
                     <span className="text-[10px] text-gray-500 font-mono">
                       Conf: {ev.citationConfidence}%
                     </span>
-                    {ev.citedUrl && (
+                    {ev.citedUrl && isWebUrl(ev.citedUrl) && (
                       <a
                         href={ev.citedUrl}
                         target="_blank"

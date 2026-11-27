@@ -261,7 +261,7 @@ describe('an order is remembered for 48 hours', () => {
 
   it('no invoice is issued when the order could not be remembered', async () => {
     const { env, kv } = makeEnv();
-    env.DB = createSqliteD1({ skipMigrations: ['0025'] });
+    env.DB = createSqliteD1({ skipMigrations: ['0025', '0061'] });
     const inv = await createTonInvoice(env, 'user_a', 'starter');
     expect(inv).toEqual({ ok: false, error: TON_UNAVAILABLE_ERROR });
     expect([...kv.store.keys()].filter((k) => k.startsWith('ton:order:'))).toEqual([]);

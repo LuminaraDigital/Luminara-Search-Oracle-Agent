@@ -6,7 +6,7 @@ import type { ChainNetwork } from './chainNetwork';
 
 export type ProofAnchorInput = {
   id?: string;
-  kind: 'ton_payment' | 'audit_citation' | 'xdc_recheck';
+  kind: 'ton_payment' | 'audit_citation' | 'xdc_recheck' | 'memory_snapshot';
   auditRunId?: string | null;
   orderId?: string | null;
   domain?: string | null;
@@ -23,7 +23,10 @@ export type ProofAnchorInput = {
 };
 
 function newId(prefix: string): string {
-  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+  const bytes = new Uint8Array(8);
+  crypto.getRandomValues(bytes);
+  const rand = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  return `${prefix}_${Date.now().toString(36)}_${rand}`;
 }
 
 function stablePaymentAnchorId(txHash: string): string {
@@ -65,6 +68,7 @@ export async function recordProofAnchorBestEffort(env: Pick<Env, 'DB'>, input: P
            status, error, created_at, anchored_at
          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
+           tx_hash = COALESCE(excluded.tx_hash, proof_anchors.tx_hash),
            seqno = COALESCE(excluded.seqno, proof_anchors.seqno),
            explorer_url = COALESCE(excluded.explorer_url, proof_anchors.explorer_url),
            network = excluded.network,

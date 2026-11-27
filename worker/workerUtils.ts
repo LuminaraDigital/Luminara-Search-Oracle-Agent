@@ -107,11 +107,13 @@ export function getSessionCookieToken(request: Request): string | null {
   }
 }
 
-/** Constant-time string comparison for shared secrets (webhook token). */
+/** Constant-time string comparison for shared secrets without length-leak short-circuiting. */
 export function secretEquals(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  const len = Math.max(a.length, b.length);
+  let diff = a.length ^ b.length;
+  for (let i = 0; i < len; i++) {
+    diff |= (i < a.length ? a.charCodeAt(i) : 0) ^ (i < b.length ? b.charCodeAt(i) : 0);
+  }
   return diff === 0;
 }
 
@@ -254,6 +256,15 @@ export async function identify(request: Request, env: Env): Promise<{
           name: result.user.name,
           emailVerified: result.user.emailVerified === true,
         };
+    }
+  }
+
+  if (telegramUser && env.DB) {
+    const { isErasedSubject } = await import('./accountMirror');
+    if (await isErasedSubject(env.DB, telegramUser.id, telegramUser.id)) {
+      const { ACCOUNT_ERASED_ERROR } = await import('./accountDeletion');
+      if (!firebaseUser) return pack({ user: null, error: ACCOUNT_ERASED_ERROR });
+      telegramUser = null;
     }
   }
 

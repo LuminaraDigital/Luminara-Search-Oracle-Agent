@@ -28,6 +28,13 @@ import { checkHostedQuota, QUOTA_CAPACITY_ERROR, refundMeteredQuota } from './qu
 const DREAM_RUN_LIMIT_ERROR =
   "Run now uses one of your free daily requests on free plans, and today's are used up. A paid plan lifts that daily cap, or try again after 00:00 UTC.";
 
+/** Behavioral and steering memory mutations must always be reviewed by a human operator. */
+const APPROVAL_REQUIRED_MEMORY_TYPES = new Set<string>([
+  'preference_memory',
+  'action_memory',
+  'business_dna',
+]);
+
 export async function getActiveBusinessMemories(
   env: Env,
   accountId: string,
@@ -154,7 +161,10 @@ export async function executeDreamRun(
       }
     }
 
-    const requiresApproval = Boolean(p.requiresApproval);
+    const requiresApproval =
+      Boolean(p.requiresApproval) ||
+      p.action === 'deprecate' ||
+      APPROVAL_REQUIRED_MEMORY_TYPES.has(p.memoryType);
     const initialStatus = requiresApproval ? 'pending' : 'auto_applied';
 
     if (requiresApproval) {
@@ -304,6 +314,28 @@ export async function executeDreamRun(
   if (consolidated) writes.push(consolidated);
   await db.batch(writes);
 
+  const autoAppliedProposals = createdProposals.filter(
+    (p) => p.status === 'auto_applied' && (p.action === 'create' || p.action === 'update'),
+  );
+  if (autoAppliedProposals.length > 0) {
+    try {
+      const { ingestDreamProposalToGraph } = await import('./memoryAutoIngest');
+      for (const p of autoAppliedProposals) {
+        await ingestDreamProposalToGraph(env, {
+          accountId,
+          projectId: opts.projectId || null,
+          domain: cleanDomain,
+          memoryType: p.memoryType,
+          title: p.title,
+          content: p.proposedContent,
+          proposalId: p.id,
+        });
+      }
+    } catch {
+      /* optional unified graph sync */
+    }
+  }
+
   const run: DreamRun = {
     id: runId,
     accountId,
@@ -411,6 +443,22 @@ export async function reviewDreamProposal(
     )
       .bind(finalContent, reviewedBy, now, proposalId)
       .run();
+
+    if (row.action === 'create' || row.action === 'update') {
+      try {
+        const { ingestDreamProposalToGraph } = await import('./memoryAutoIngest');
+        await ingestDreamProposalToGraph(env, {
+          accountId,
+          domain: row.domain,
+          memoryType: row.memory_type,
+          title: row.title,
+          content: finalContent,
+          proposalId,
+        });
+      } catch {
+        /* optional unified graph sync */
+      }
+    }
   }
 
   const updatedRow = await env.DB.prepare(

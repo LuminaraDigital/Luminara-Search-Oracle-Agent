@@ -10,12 +10,27 @@ const { app, BrowserWindow, shell, Menu, Tray, nativeImage, ipcMain, dialog, ses
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { applyWindowsHardening } = require('./windowsHardening.cjs');
-const { createShellPolicy, createNavigationGuard, createTrustedIpc } = require('./security.cjs');
+const {
+  createShellPolicy,
+  createNavigationGuard,
+  createTrustedIpc,
+  stripDesktopClientParam,
+  buildExternalMenuItems,
+} = require('./security.cjs');
+const { desktopLinks: DESKTOP_EXTERNAL_LINKS } = require('./externalLinks.json');
 const { setupAutoUpdater } = require('./updater.cjs');
 const { setupCrashReporting, installProcessErrorHandlers } = require('./crashReporting.cjs');
 const { createDesktopCoordinator } = require('./coordinator/desktopCoordinator.cjs');
 
-function configureLlmSessionSecurity() {
+function resolveAppOrigin() {
+  try {
+    return new URL(resolveWebappUrl()).origin;
+  } catch {
+    return null;
+  }
+}
+
+function configureLlmSessionSecurity(getCrawlerToken) {
   if (!session?.defaultSession?.webRequest) return;
   const allowedLlmPatterns = [
     'http://127.0.0.1:11434/*',
@@ -32,6 +47,21 @@ function configureLlmSessionSecurity() {
     '*://generativelanguage.googleapis.com/*',
   ];
 
+  session.defaultSession.webRequest.onBeforeSendHeaders(
+    { urls: ['http://127.0.0.1:3001/*', 'http://localhost:3001/*'] },
+    (details, callback) => {
+      const requestHeaders = { ...details.requestHeaders };
+      const token = typeof getCrawlerToken === 'function' ? getCrawlerToken() : null;
+      const appOrigin = resolveAppOrigin();
+      const reqOrigin = requestHeaders.Origin || requestHeaders.origin || details.initiator || '';
+      const hasToken = Object.keys(requestHeaders).some((k) => k.toLowerCase() === 'x-crawler-token');
+      if (token && appOrigin && reqOrigin === appOrigin && !hasToken) {
+        requestHeaders['x-crawler-token'] = token;
+      }
+      callback({ requestHeaders });
+    },
+  );
+
   session.defaultSession.webRequest.onHeadersReceived(
     { urls: allowedLlmPatterns },
     (details, callback) => {
@@ -41,12 +71,7 @@ function configureLlmSessionSecurity() {
       }
       // Local helpers (crawler, Ollama) accept only the app's own origin; hosted vendors still need a key.
       if (/^https?:\/\/(127\.0\.0\.1|localhost):/i.test(details.url)) {
-        let appOrigin = null;
-        try {
-          appOrigin = new URL(resolveWebappUrl()).origin;
-        } catch {
-          appOrigin = null;
-        }
+        const appOrigin = resolveAppOrigin();
         if (!appOrigin) return callback({ responseHeaders });
         responseHeaders['access-control-allow-origin'] = [appOrigin];
         responseHeaders.vary = ['Origin'];
@@ -65,14 +90,17 @@ const APP_ID = 'digital.luminara.suite';
 const IS_WINDOWS = process.platform === 'win32';
 const IS_DEV = !app.isPackaged;
 
-const DEFAULT_WEBAPP_URL = 'https://luminarasuite.com/';
+const DEFAULT_WEBAPP_URL = 'https://www.luminarasuite.com/';
 const DEV_WEBAPP_URL = process.env.LUMINARA_DEV_URL || 'http://localhost:3000/';
 
+function resolveBaseWebappUrl() {
+  if (process.env.LUMINARA_WEBAPP_URL) return process.env.LUMINARA_WEBAPP_URL;
+  if (IS_DEV && process.env.LUMINARA_USE_LOCAL !== '0') return DEV_WEBAPP_URL;
+  return DEFAULT_WEBAPP_URL;
+}
+
 function resolveWebappUrl() {
-  let raw = DEFAULT_WEBAPP_URL;
-  if (process.env.LUMINARA_WEBAPP_URL) raw = process.env.LUMINARA_WEBAPP_URL;
-  else if (IS_DEV && process.env.LUMINARA_USE_LOCAL !== '0') raw = DEV_WEBAPP_URL;
-  return withDesktopClientParam(raw);
+  return withDesktopClientParam(resolveBaseWebappUrl());
 }
 
 /** Mark the session as the native shell so the web app skips marketing views. */
@@ -107,12 +135,26 @@ const shellPolicy = createShellPolicy({
 /** The Google sign-in popup and blank print windows: no preload, so no desktop bridge. */
 const POPUP_WINDOW_OPTIONS = { webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } };
 
-const openInSystem = (url) => shell.openExternal(url);
+function openInSystem(url) {
+  if (shellPolicy.windowOpenAction(url) !== 'external') return;
+  shell.openExternal(url).catch((err) => {
+    console.warn('[desktop] openExternal failed:', err?.message || err);
+  });
+}
+
+function showMainWindow() {
+  if (!mainWindow) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+const EXTERNAL_MENU_ITEMS = buildExternalMenuItems(DESKTOP_EXTERNAL_LINKS, openInSystem);
 
 function openWindow({ url }) {
   const action = shellPolicy.windowOpenAction(url);
   if (action === 'child') return { action: 'allow', overrideBrowserWindowOptions: POPUP_WINDOW_OPTIONS };
-  if (action === 'external') void openInSystem(url);
+  if (action === 'external') openInSystem(url);
   return { action: 'deny' };
 }
 
@@ -219,7 +261,7 @@ function buildMenu() {
         },
         {
           label: 'Open in browser',
-          click: () => void shell.openExternal(resolveWebappUrl()),
+          click: () => openInSystem(stripDesktopClientParam(resolveBaseWebappUrl())),
         },
         { type: 'separator' },
         { role: 'quit', label: 'Quit Luminara Suite' },
@@ -252,10 +294,8 @@ function buildMenu() {
     {
       label: 'Help',
       submenu: [
-        {
-          label: 'Website',
-          click: () => void shell.openExternal('https://luminarasuite.com/'),
-        },
+        ...EXTERNAL_MENU_ITEMS.help,
+        { type: 'separator' },
         {
           label: 'Check for shell updates',
           click: () => {
@@ -271,7 +311,7 @@ function buildMenu() {
               type: 'info',
               title: 'Luminara Suite',
               message: 'Luminara Suite Desktop',
-              detail: `Shell version ${app.getVersion()}\nLoads ${resolveWebappUrl()}\nSame product as the web and Telegram apps.`,
+              detail: `Shell version ${app.getVersion()}\nLoads ${resolveWebappUrl()}\nSame product as the web, Telegram, and Android apps.`,
             });
           },
         },
@@ -289,11 +329,11 @@ function createTray() {
     Menu.buildFromTemplate([
       {
         label: 'Show Luminara Suite',
-        click: () => {
-          mainWindow?.show();
-          mainWindow?.focus();
-        },
+        click: showMainWindow,
       },
+      { type: 'separator' },
+      ...EXTERNAL_MENU_ITEMS.tray,
+      { type: 'separator' },
       {
         label: 'Quit',
         click: () => {
@@ -303,10 +343,7 @@ function createTray() {
       },
     ]),
   );
-  tray.on('double-click', () => {
-    mainWindow?.show();
-    mainWindow?.focus();
-  });
+  tray.on('double-click', showMainWindow);
 }
 
 let mainUpdaterApi = null;
@@ -314,7 +351,7 @@ let mainUpdaterApi = null;
 /** Bridge calls answer only the app and the shell's own splash and offline pages. */
 const handleTrusted = createTrustedIpc(ipcMain, shellPolicy);
 
-function registerIpc() {
+function registerIpc(coordinator) {
   const updaterApi = setupAutoUpdater({
     mainWindow,
     getMainWindow: () => mainWindow,
@@ -352,12 +389,6 @@ function registerIpc() {
     }
   });
 
-  const coordinator = createDesktopCoordinator({
-    userDataDir: app.getPath('userData'),
-    safeStorage,
-    persistToDisk: true,
-  });
-
   handleTrusted('desktop:coordinator:status', () => coordinator.getStatus());
   handleTrusted('desktop:coordinator:check-crawler', () => coordinator.checkCrawlerHealth());
   handleTrusted('desktop:coordinator:supervise-crawler', (_event, opts) =>
@@ -387,22 +418,22 @@ const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
 } else {
-  app.on('second-instance', () => {
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.show();
-      mainWindow.focus();
-    }
-  });
+  app.on('second-instance', showMainWindow);
 
   app.whenReady().then(() => {
-    configureLlmSessionSecurity();
+    const coordinator = createDesktopCoordinator({
+      userDataDir: app.getPath('userData'),
+      allowedOrigin: resolveAppOrigin() || '',
+      safeStorage,
+      persistToDisk: true,
+    });
+    configureLlmSessionSecurity(() => coordinator.getCrawlerToken());
     // A link to another app from a frame or popup fires no navigation event in the main window;
     // Electron asks this permission before Windows opens it.
     session.defaultSession.setPermissionRequestHandler((_contents, permission, callback, details) => {
       callback(shellPolicy.isPermissionGranted(permission, details));
     });
-    registerIpc();
+    registerIpc(coordinator);
     buildMenu();
     createWindow();
     if (IS_WINDOWS) createTray();

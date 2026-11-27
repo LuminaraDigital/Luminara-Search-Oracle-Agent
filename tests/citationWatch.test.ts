@@ -367,4 +367,22 @@ describe('citation watch routes and cron', () => {
       globalThis.fetch = origFetch;
     }
   });
+
+  it('M-17: enforces citation watch cap atomically under concurrent creates', async () => {
+    const { env } = makeEnv('starter'); // sentinelLimit = 2, scheduledReaudit = monthly
+    const results = await Promise.all(
+      [0, 1, 2, 3].map((i) =>
+        handleCitationWatchRoute(
+          post({ domain: `site-${i}.com`, engine: 'chatgpt', prompts, cadence: 'monthly' }),
+          env,
+          user,
+          '/citation-watches',
+        ),
+      ),
+    );
+    const statuses = results.map((r) => r.status).sort();
+    expect(statuses).toEqual([201, 201, 402, 402]);
+    const count = await env.DB!.prepare(`SELECT COUNT(*) AS n FROM citation_watches WHERE account_id = 'acct_1' AND active = 1`).first<{ n: number }>();
+    expect(count?.n).toBe(2);
+  });
 });

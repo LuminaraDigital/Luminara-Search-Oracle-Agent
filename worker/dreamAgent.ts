@@ -9,6 +9,7 @@ import type {
   DreamEvent,
   DreamMemoryType,
 } from './dreamingTypes';
+import { UNTRUSTED_CONTENT_RULE, wrapUntrustedContent } from '../utils/untrustedContent';
 
 const GROQ_DREAM_MODEL = 'openai/gpt-oss-120b';
 const GEMINI_DREAM_MODEL = 'gemini-2.5-flash';
@@ -30,6 +31,8 @@ export function hasHostedDreamModel(env: Env): boolean {
 const DREAM_AGENT_SYSTEM = `You are Luminara Dreaming, the autonomous memory consolidation engine for Luminara Suite.
 Your mission is to consolidate verified business facts, search visibility insights, and recommendation outcomes into durable workspace memory.
 
+${UNTRUSTED_CONTENT_RULE}
+
 Rules:
 1. Strict Proposal Budget: Propose at most 5 memory changes per run.
 2. Grounding Invariant: Never invent facts. Every proposal MUST cite 1 or more exact source event IDs in "sourceRefs".
@@ -41,8 +44,8 @@ Rules:
    - "preference_memory": client workflow and reporting preferences.
    - "evidence_memory": high-confidence verified data anchors.
 5. Approval Protocol:
-   - Set requiresApproval: true for: competitor additions/removals, brand positioning changes, service area pivots, memory deprecation, or confidence < 0.85.
-   - Set requiresApproval: false for: routine visibility score refreshes, timestamp updates, action status syncs with confidence >= 0.85.
+   - Set requiresApproval: true for: business_dna, preference_memory, action_memory, memory deprecation, competitor additions/removals, brand positioning changes, service area pivots, or confidence < 0.85.
+   - Set requiresApproval: false only for routine visibility_profile or evidence_memory score refreshes with confidence >= 0.85.
    - Discard any proposal with confidence < 0.50.
 6. Output valid JSON only with structure:
 {
@@ -167,7 +170,7 @@ export function deterministicDreamConsolidator(input: ConsolidateInput): DreamAg
           content: `Recommendation status transitioned to "${p.status || 'updated'}". Title: ${p.title}.`,
           confidence: 0.92,
           sourceRefs: [evt.id],
-          requiresApproval: false,
+          requiresApproval: true,
           rationale: `User or system recorded outcome for action ${p.findingId || p.title}.`,
         });
       }
@@ -190,31 +193,45 @@ export async function runDreamAgent(
     return deterministicDreamConsolidator(input);
   }
 
+  const activeMemoriesBlock =
+    input.activeMemories.length === 0
+      ? '- None recorded yet.'
+      : wrapUntrustedContent(
+          'ACTIVE_BUSINESS_MEMORIES',
+          input.activeMemories
+            .map((m) => `[ID: ${m.id}] [${m.memoryType}] ${m.title}: ${m.content} (Confidence: ${m.confidence})`)
+            .join('\n'),
+          { nonce: true },
+        );
+
+  const pendingEventsBlock =
+    input.pendingEvents.length === 0
+      ? '- No pending events.'
+      : wrapUntrustedContent(
+          'PENDING_DREAM_EVENTS',
+          input.pendingEvents
+            .map(
+              (e) =>
+                `[Event ID: ${e.id}] [Type: ${e.eventType}] Payload: ${JSON.stringify(e.payload)} (Signal: ${e.signalWeight})`,
+            )
+            .join('\n'),
+          { nonce: true },
+        );
+
+  const conflictBlock = input.detectedConflictSummary
+    ? `Pre-check Warning:${wrapUntrustedContent('CONFLICT_SUMMARY', input.detectedConflictSummary, { nonce: true })}`
+    : '';
+
   const promptText = `
 Workspace Domain: ${input.domain}
 
 Active Business Memories:
-${
-  input.activeMemories.length === 0
-    ? '- None recorded yet.'
-    : input.activeMemories
-        .map((m) => `[ID: ${m.id}] [${m.memoryType}] ${m.title}: ${m.content} (Confidence: ${m.confidence})`)
-        .join('\n')
-}
+${activeMemoriesBlock}
 
 Pending Dream Events:
-${
-  input.pendingEvents.length === 0
-    ? '- No pending events.'
-    : input.pendingEvents
-        .map(
-          (e) =>
-            `[Event ID: ${e.id}] [Type: ${e.eventType}] Payload: ${JSON.stringify(e.payload)} (Signal: ${e.signalWeight})`,
-        )
-        .join('\n')
-}
+${pendingEventsBlock}
 
-${input.detectedConflictSummary ? `Pre-check Warning: ${input.detectedConflictSummary}` : ''}
+${conflictBlock}
 ${input.expiredMemoryIds?.length ? `Expired Memory IDs for Pruning: ${input.expiredMemoryIds.join(', ')}` : ''}
 
 Consolidate these into at most 5 verified memory mutation proposals. Output JSON only.
@@ -305,6 +322,8 @@ Consolidate these into at most 5 verified memory mutation proposals. Output JSON
           p.requiresApproval === true ||
           p.action === 'deprecate' ||
           p.memoryType === 'business_dna' ||
+          p.memoryType === 'preference_memory' ||
+          p.memoryType === 'action_memory' ||
           p.confidence < 0.85;
 
         return {

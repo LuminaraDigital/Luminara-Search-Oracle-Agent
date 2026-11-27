@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Env } from '../worker/index';
 import { PLANS, createInvoiceLink, handleTelegramPaymentUpdate, handleTelegramUpdate } from '../worker/telegramBot';
-import { PlanDowngradeRefusedError, planRank, wouldDowngrade } from '../worker/planRank';
+import { MAX_SUBSCRIPTION_MS, PlanDowngradeRefusedError, computeSubscriptionExpiry, planRank, wouldDowngrade } from '../worker/planRank';
 import { writeSubscriptionRecord } from '../worker/userStore';
 import { createTonInvoice, verifyTonPayment, TON_PRICING, crc16Xmodem } from '../worker/tonPayment';
 import { TON_CLAIM_SETTLED_MS, closeExpiredTonPendingOrders } from '../worker/tonPendingOrders';
@@ -324,19 +324,23 @@ describe('Telegram Stars', () => {
     expect(db.sqlite.prepare("SELECT status, refund_reason FROM stars_charges WHERE charge_id = 'ch_slipped'").get()).toEqual({ status: 'refunded', refund_reason: 'plan_downgrade_refused' });
   });
 
-  it('the same plan again extends it; a higher plan replaces it and keeps the days already there', async () => {
+  it('the same plan again extends it; a higher plan replaces it and prorates remaining lower-tier days', async () => {
     const { env, kv } = makeEnv();
     const before = await subscribe(kv, 'starter');
 
     await handleTelegramPaymentUpdate(preCheckout('starter'), env);
     expect(telegram.of('answerPreCheckoutQuery')[0].body.ok).toBe(true);
     await handleTelegramPaymentUpdate(paid('ch_again', 'starter'), env);
-    expect(kv.json(`sub:${USER}`)).toMatchObject({ plan: 'starter', expiresAt: before.expiresAt + 30 * DAY });
+    const afterStarter = kv.json(`sub:${USER}`);
+    expect(afterStarter).toMatchObject({ plan: 'starter', expiresAt: before.expiresAt + 30 * DAY });
 
     await handleTelegramPaymentUpdate(preCheckout('agency'), env);
     expect(telegram.of('answerPreCheckoutQuery')[1].body.ok).toBe(true);
     await handleTelegramPaymentUpdate(paid('ch_up', 'agency'), env);
-    expect(kv.json(`sub:${USER}`)).toMatchObject({ plan: 'agency', expiresAt: before.expiresAt + 60 * DAY });
+    const afterAgency = kv.json(`sub:${USER}`);
+    const expectedAgencyExpiry = computeSubscriptionExpiry(afterStarter, 'agency', 30, afterAgency.startedAt);
+    expect(afterAgency).toMatchObject({ plan: 'agency', expiresAt: expectedAgencyExpiry });
+    expect(afterAgency.expiresAt).toBeLessThan(before.expiresAt + 60 * DAY);
   });
 
   it('pre-checkout refuses a payer who is not the user the invoice was made for', async () => {
@@ -689,12 +693,15 @@ describe('licence keys', () => {
     expect(kv.json(`sub:${USER}`).plan).toBe('growth');
   });
 
-  it('a key for the same plan or a higher one is redeemed as before', async () => {
+  it('a key for the same plan or a higher one is redeemed with prorated upgrade expiry', async () => {
     const { env, kv } = makeEnv();
     const before = await subscribe(kv, 'starter', 10);
     const res = await activateLicenseKey(env, String(USER), await mint(env, 'agency', 7));
     expect(res.ok).toBe(true);
-    expect(kv.json(`sub:${USER}`)).toMatchObject({ plan: 'agency', expiresAt: before.expiresAt + 7 * DAY });
+    const upgraded = kv.json(`sub:${USER}`);
+    const expected = computeSubscriptionExpiry(before, 'agency', 7, upgraded.startedAt);
+    expect(upgraded).toMatchObject({ plan: 'agency', expiresAt: expected });
+    expect(upgraded.expiresAt).toBeLessThan(before.expiresAt + 7 * DAY);
   });
 
   it('a key redeemed by an account with no plan works as before', async () => {
@@ -711,7 +718,7 @@ describe('trial codes are for accounts without a paid plan', () => {
     const { env, kv, db } = makeEnv();
     const before = await subscribe(kv, 'starter', 2);
 
-    const refused = await activateLicenseKey(env, String(USER), 'LUM-AGENCY-7DAY');
+    const refused = await activateLicenseKey(env, String(USER), 'LUM-VIP-7DAY');
     expect(refused).toEqual({ ok: false, error: TRIAL_REFUSED });
     expect(kv.json(`sub:${USER}`)).toEqual(before);
     expect(console.warn).toHaveBeenCalledWith(JSON.stringify({ event: 'license_trial_refused' }));
@@ -722,15 +729,15 @@ describe('trial codes are for accounts without a paid plan', () => {
 
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(Date.now() + 3 * DAY);
-    expect(await activateLicenseKey(env, String(USER), 'LUM-AGENCY-7DAY')).toMatchObject({ ok: true, plan: 'agency', durationDays: 7 });
-    expect(kv.json(`sub:${USER}`).plan).toBe('agency');
+    expect(await activateLicenseKey(env, String(USER), 'LUM-VIP-7DAY')).toMatchObject({ ok: true, plan: 'growth', durationDays: 7 });
+    expect(kv.json(`sub:${USER}`).plan).toBe('growth');
   });
 
   it('a free-tier record that has not expired is not a paid plan, so the trial code works', async () => {
     const { env, kv } = makeEnv();
     await subscribe(kv, 'free', 20);
-    expect(await activateLicenseKey(env, String(USER), 'LUM-AGENCY-7DAY')).toMatchObject({ ok: true, plan: 'agency' });
-    expect(kv.json(`sub:${USER}`).plan).toBe('agency');
+    expect(await activateLicenseKey(env, String(USER), 'LUM-VIP-7DAY')).toMatchObject({ ok: true, plan: 'growth' });
+    expect(kv.json(`sub:${USER}`).plan).toBe('growth');
   });
 
   it('a paid plan that starts between the check and the write refuses the trial code too, and the claim is given back', async () => {
@@ -747,7 +754,7 @@ describe('trial codes are for accounts without a paid plan', () => {
       }
     };
 
-    const refused = await activateLicenseKey(env, String(USER), 'LUM-AGENCY-7DAY');
+    const refused = await activateLicenseKey(env, String(USER), 'LUM-VIP-7DAY');
     expect(looks).toBeGreaterThanOrEqual(2);
     expect(refused).toEqual({ ok: false, error: TRIAL_REFUSED });
     expect(kv.json(`sub:${USER}`)).toEqual(starter);
@@ -759,7 +766,46 @@ describe('trial codes are for accounts without a paid plan', () => {
     kv.beforeGet = () => {};
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(Date.now() + 3 * DAY);
-    expect((await activateLicenseKey(env, String(USER), 'LUM-AGENCY-7DAY')).ok).toBe(true);
-    expect(kv.json(`sub:${USER}`).plan).toBe('agency');
+    expect((await activateLicenseKey(env, String(USER), 'LUM-VIP-7DAY')).ok).toBe(true);
+    expect(kv.json(`sub:${USER}`).plan).toBe('growth');
+  });
+});
+
+describe('H-04: canonical subscription expiry proration and bounds', () => {
+  it('prorates cross-tier upgrades by canonical price ratio, extends same-tier 1:1, and caps at 730 days', () => {
+    const now = Date.UTC(2026, 6, 1);
+    const starter300 = { plan: 'starter', expiresAt: now + 300 * DAY };
+    const upgraded = computeSubscriptionExpiry(starter300, 'agency', 30, now);
+    expect(upgraded).toBe(now + Math.floor(300 * DAY * (7900 / 54900)) + 30 * DAY);
+    expect(upgraded).toBeLessThan(now + 75 * DAY);
+
+    const renewed = computeSubscriptionExpiry({ plan: 'starter', expiresAt: now + 20 * DAY }, 'starter', 30, now);
+    expect(renewed).toBe(now + 50 * DAY);
+
+    const expired = computeSubscriptionExpiry({ plan: 'starter', expiresAt: now - 5 * DAY }, 'agency', 30, now);
+    expect(expired).toBe(now + 30 * DAY);
+
+    const capped = computeSubscriptionExpiry({ plan: 'agency', expiresAt: now + 720 * DAY }, 'agency', 60, now);
+    expect(capped).toBe(now + MAX_SUBSCRIPTION_MS);
+  });
+
+  it('writeSubscriptionRecord rejects invalid expiresAt, enforces the 730-day cap, and preserves same-tier monotonicity', async () => {
+    const { env, kv } = makeEnv();
+    for (const bad of [Number.NaN, -1000, Number.POSITIVE_INFINITY]) {
+      await expect(
+        writeSubscriptionRecord(env, String(USER), { plan: 'starter', expiresAt: bad }),
+      ).rejects.toThrow(RangeError);
+    }
+
+    const beforeCap = Date.now();
+    await writeSubscriptionRecord(env, String(USER), { plan: 'agency', expiresAt: beforeCap + 2000 * DAY });
+    const capped = kv.json(`sub:${USER}`);
+    expect(capped.expiresAt).toBeLessThanOrEqual(Date.now() + MAX_SUBSCRIPTION_MS);
+    expect(capped.expiresAt).toBeGreaterThanOrEqual(beforeCap + MAX_SUBSCRIPTION_MS - 1000);
+
+    // Same-tier write with an earlier expiry must not shorten an active subscription without allowLowerPlan.
+    const existingExpiry = capped.expiresAt as number;
+    await writeSubscriptionRecord(env, String(USER), { plan: 'agency', expiresAt: Date.now() + 30 * DAY });
+    expect(kv.json(`sub:${USER}`).expiresAt).toBe(existingExpiry);
   });
 });

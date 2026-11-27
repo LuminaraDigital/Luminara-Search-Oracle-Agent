@@ -1,0 +1,47 @@
+{
+  "contact": "https://www.luminarasuite.com/contact",
+  "desktopLinks": [
+    {
+      "id": "website",
+      "label": "Website",
+      "href": "https://www.luminarasuite.com/",
+      "group": "site",
+      "tray": true
+    },
+    {
+      "id": "faq",
+      "label": "FAQ",
+      "href": "https://www.luminarasuite.com/faq",
+      "group": "site",
+      "tray": true
+    },
+    {
+      "id": "windows",
+      "label": "Windows app",
+      "href": "https://www.luminarasuite.com/desktop",
+      "group": "site",
+      "tray": false
+    },
+    {
+      "id": "telegram-mini-app",
+      "label": "Telegram Mini App",
+      "href": "https://t.me/LuminaraSuiteBot/app",
+      "group": "apps",
+      "tray": true
+    },
+    {
+      "id": "telegram-bot",
+      "label": "Telegram bot",
+      "href": "https://t.me/LuminaraSuiteBot",
+      "group": "apps",
+      "tray": false
+    },
+    {
+      "id": "google-play",
+      "label": "Google Play (Android)",
+      "href": "https://play.google.com/store/apps/details?id=com.luminarasuite.app",
+      "group": "apps",
+      "tray": false
+    }
+  ]
+}

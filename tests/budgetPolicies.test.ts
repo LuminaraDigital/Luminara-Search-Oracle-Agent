@@ -20,6 +20,8 @@ import {
   isBudgetHalted,
   recordBudgetIncident,
   recordCostEvent,
+  reserveBudgetForCall,
+  settleBudgetReservation,
   upsertBudgetPolicy,
 } from '../worker/budgets';
 import { handleMcpRequest } from '../worker/mcpServer';
@@ -307,7 +309,7 @@ describe('hard stop and approve-once resume', () => {
 
   it('enforcement fails open when the budget tables are missing (H1)', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
-    const env = makeEnv(new Map(), { DB: createSqliteD1({ skipMigrations: ['0012', '0013', '0019'] }) });
+    const env = makeEnv(new Map(), { DB: createSqliteD1({ skipMigrations: ['0012', '0013', '0019', '0061'] }) });
     expect(await isBudgetHalted(env, 'acct_x', MAY_15)).toBe(false);
   });
 
@@ -479,6 +481,81 @@ describe('MCP gate integration', () => {
       .bind('org_acct_gate')
       .first<{ n: number }>();
     expect(alertAudit?.n).toBe(1);
+  });
+
+  it('H-08: atomic reserveBudgetForCall prevents TOCTOU overspend under Promise.all and settles/releases cleanly', async () => {
+    const env = makeEnv();
+    await upsertBudgetPolicy(env, {
+      accountId: 'acct_race',
+      monthlyBudgetCents: 3,
+      hardStopEnabled: true,
+      now: MAY_15,
+    });
+
+    const attempts = await Promise.all(
+      Array.from({ length: 10 }, (_, i) =>
+        reserveBudgetForCall(env, {
+          accountId: 'acct_race',
+          estimatedCents: 1,
+          toolName: `paid_tool_${i}`,
+          now: MAY_15,
+        }),
+      ),
+    );
+    const allowed = attempts.filter((r) => r.ok);
+    const halted = attempts.filter((r) => !r.ok && r.halted);
+    expect(allowed).toHaveLength(3);
+    expect(halted).toHaveLength(7);
+    expect(await countWindowSpend(env, 'acct_race', budgetWindowFor(MAY_15))).toBe(3);
+
+    // Releasing one reservation (actualCents = 0) deletes the row and frees 1 cent.
+    const firstId = allowed[0].ok ? allowed[0].reservationId! : '';
+    expect(firstId).toBeTruthy();
+    await settleBudgetReservation(env, firstId, 0);
+    expect(await countWindowSpend(env, 'acct_race', budgetWindowFor(MAY_15))).toBe(2);
+
+    // Next reservation now succeeds, and settling to actualCents updates the row.
+    const next = await reserveBudgetForCall(env, {
+      accountId: 'acct_race',
+      estimatedCents: 1,
+      toolName: 'paid_tool_after_release',
+      now: MAY_15,
+    });
+    expect(next.ok).toBe(true);
+    if (next.ok && next.reservationId) {
+      await settleBudgetReservation(env, next.reservationId, 1);
+    }
+    expect(await countWindowSpend(env, 'acct_race', budgetWindowFor(MAY_15))).toBe(3);
+  });
+
+  it('H-08: concurrent MCP paid tool calls cannot exceed hard monthly budget cap', async () => {
+    const kv = new Map(agencyKv);
+    kv.set('mcp:context_loaded:acct_gate:p1', String(Date.now()));
+    const env = makeEnv(kv);
+    await upsertBudgetPolicy(env, {
+      accountId: 'acct_gate',
+      monthlyBudgetCents: 2,
+      hardStopEnabled: true,
+      now: Date.now(),
+    });
+
+    const responses = await Promise.all(
+      Array.from({ length: 6 }, (_, i) =>
+        handleMcpRequest(
+          mcpCall('get_pagespeed_summary', { projectId: 'p1', url: 'https://x.test' }, i + 1),
+          env,
+          user,
+        ),
+      ),
+    );
+    const bodies = await Promise.all(
+      responses.map((r) => r.json() as Promise<{ result?: { isError?: boolean; structuredContent?: { code?: string } } }>),
+    );
+    const okCount = bodies.filter((b) => !b.result?.isError).length;
+    const budgetBlockedCount = bodies.filter((b) => b.result?.structuredContent?.code === 'BUDGET_EXHAUSTED').length;
+    expect(okCount).toBe(2);
+    expect(budgetBlockedCount).toBe(4);
+    expect(await countWindowSpend(env, 'acct_gate', budgetWindowFor(Date.now()))).toBe(2);
   });
 });
 

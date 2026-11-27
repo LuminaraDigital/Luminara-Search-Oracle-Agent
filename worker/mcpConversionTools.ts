@@ -3,7 +3,9 @@
  * Extracted from `worker/mcpServer.ts` to keep `mcpServer.ts` well below the 1,000-line ceiling.
  */
 
+import type { Env } from './env';
 import type { McpToolDef, McpToolResult } from './mcpServer';
+import { hashToolArgs } from './mcpGovernance';
 import { MCP_PAGE_PROPERTIES, pageList } from './mcpToolMeta';
 import {
   ingestInboundEnquiry,
@@ -56,6 +58,51 @@ function toTextResult(
   if (structuredContent !== undefined) base.structuredContent = structuredContent;
   if (isError) base.isError = true;
   return base;
+}
+
+/** Verifies server-side Sign-off Desk approval for this exact prepare_cms_mcp_call invocation. */
+async function hasServerApprovedCmsCall(
+  env: Env,
+  accountId: string,
+  projectId: string | null,
+  args: Record<string, unknown>,
+): Promise<boolean> {
+  if (!env.DB) return false;
+  const argsHash = await hashToolArgs(args);
+  if (!argsHash) return false;
+  const now = Date.now();
+  const row = await env.DB.prepare(
+    `SELECT id FROM mcp_action_requests
+     WHERE user_id = ? AND tool_name = 'prepare_cms_mcp_call' AND kind = 'tool'
+       AND status IN ('approved', 'consumed') AND decided_by IS NOT NULL
+       AND expires_at > ?
+       AND (project_id IS ? OR project_id = ?)
+       AND args_hash = ?
+     ORDER BY decided_at DESC LIMIT 1`,
+  )
+    .bind(accountId, now, projectId, projectId, argsHash)
+    .first<{ id: string }>();
+  return Boolean(row?.id);
+}
+
+/** Verifies server-side before-image snapshot state in external_effects (never trusts client booleans). */
+async function hasServerCmsSnapshot(
+  env: Env,
+  accountId: string,
+  projectId: string,
+  connectorId: CmsMcpConnectorId,
+): Promise<boolean> {
+  if (!env.DB) return false;
+  const row = await env.DB.prepare(
+    `SELECT effect_key FROM external_effects
+     WHERE account_id = ? AND project_id = ? AND target_system = ?
+       AND action_kind IN ('respira_create_snapshot', 'cms_before_snapshot')
+       AND status = 'completed'
+     ORDER BY updated_at DESC LIMIT 1`,
+  )
+    .bind(accountId, projectId, connectorId)
+    .first<{ effect_key: string }>();
+  return Boolean(row?.effect_key);
 }
 
 export const CONVERSION_SPINE_MCP_TOOLS: McpToolDef[] = [
@@ -325,11 +372,12 @@ export const CONVERSION_SPINE_MCP_TOOLS: McpToolDef[] = [
     handler: async (args, ctx) => {
       const connectorId = requireStr(args, 'connectorId');
       const domain = requireStr(args, 'domain');
-      if (!connectorId || !(connectorId in CMS_MCP_CONNECTOR_CATALOG) || !domain) {
+      if (!connectorId || !Object.hasOwn(CMS_MCP_CONNECTOR_CATALOG, connectorId) || !domain) {
         return toTextResult('Valid connectorId and domain are required', { code: 'BAD_INPUT' }, true);
       }
       const typedConnector = connectorId as CmsMcpConnectorId;
-      const projectId = typeof args.projectId === 'string' && args.projectId.trim() ? args.projectId.trim() : 'default';
+      const rawProjectId = typeof args.projectId === 'string' && args.projectId.trim() ? args.projectId.trim() : null;
+      const projectId = rawProjectId || 'default';
       const rawParams =
         args.parameters && typeof args.parameters === 'object'
           ? (args.parameters as Record<string, unknown>)
@@ -337,6 +385,14 @@ export const CONVERSION_SPINE_MCP_TOOLS: McpToolDef[] = [
             ? (args.payload as Record<string, unknown>)
             : {};
       const toolName = requireStr(args, 'toolName') || 'update_seo_metadata';
+      const serverApproved =
+        args.userConfirmed === false
+          ? false
+          : await hasServerApprovedCmsCall(ctx.env, ctx.accountId, rawProjectId, args);
+      const serverSnapshot =
+        args.snapshotCreated === false
+          ? false
+          : await hasServerCmsSnapshot(ctx.env, ctx.accountId, projectId, typedConnector);
       const res = await prepareCmsMcpRemediationCall(ctx.env, {
         accountId: ctx.accountId,
         projectId,
@@ -344,8 +400,8 @@ export const CONVERSION_SPINE_MCP_TOOLS: McpToolDef[] = [
         domain,
         title: requireStr(args, 'title') || undefined,
         toolName,
-        userConfirmed: typeof args.userConfirmed === 'boolean' ? args.userConfirmed : true,
-        snapshotCreated: typeof args.snapshotCreated === 'boolean' ? args.snapshotCreated : true,
+        userConfirmed: serverApproved,
+        snapshotCreated: serverSnapshot,
         pageMetaKeys: Array.isArray(args.pageMetaKeys)
           ? args.pageMetaKeys.filter((k): k is string => typeof k === 'string')
           : undefined,

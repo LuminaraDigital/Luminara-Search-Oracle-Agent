@@ -72,6 +72,11 @@ describe('Centralized Edge Auth Middleware & Route Guarding', () => {
       { path: '/api/outcomes', method: 'GET' },
       { path: '/api/recovery/send-step', method: 'POST', body: '{}' },
       { path: '/api/cms-mcp/catalog', method: 'GET' },
+      { path: '/api/sidecars/languagetool/v2/check', method: 'POST', body: 'text=hi&language=en-US' },
+      { path: '/api/privacy/export', method: 'GET' },
+      { path: '/api/dreaming/status', method: 'GET' },
+      { path: '/api/memory/search', method: 'POST', body: '{}' },
+      { path: '/api/deploy/readback', method: 'POST', body: '{}' },
     ];
 
     for (const reqSpec of protectedRequests) {
@@ -239,9 +244,24 @@ describe('Login CSRF on session-setting routes', () => {
 });
 
 describe('Signed Webhook Verification (/api/webhooks/auth)', () => {
-  it('rejects webhooks with missing or invalid cryptographic signatures', async () => {
-    const env = makeEnv({ AUTH_WEBHOOK_SECRET: 'test-secret-123' });
+  async function signAuthHex(secret: string, timestamp: string, payload: string): Promise<string> {
+    const enc = new TextEncoder();
+    const key = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+    const buf = await crypto.subtle.sign('HMAC', key, enc.encode(`${timestamp}.${payload}`));
+    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  function signSvix(secret: string, svixId: string, svixTs: string, payload: string): string {
+    const keyBytes = secret.startsWith('whsec_') ? Buffer.from(secret.slice(6), 'base64') : Buffer.from(secret, 'utf8');
+    const b64 = createHmac('sha256', keyBytes).update(`${svixId}.${svixTs}.${payload}`).digest('base64');
+    return `v1,${b64}`;
+  }
+
+  it('rejects webhooks with missing, unsigned-timestamp, expired, or invalid cryptographic signatures', async () => {
+    const secret = 'test-secret-123';
+    const env = makeEnv({ AUTH_WEBHOOK_SECRET: secret });
     const payload = JSON.stringify({ type: 'user.created', data: { uid: 'user_99', email: 'test@example.com' } });
+    const nowTs = String(Math.floor(Date.now() / 1000));
 
     // Missing signature
     const resMissing = await worker.fetch(
@@ -251,12 +271,38 @@ describe('Signed Webhook Verification (/api/webhooks/auth)', () => {
     );
     expect(resMissing.status).toBe(401);
 
-    // Invalid signature
+    // Signature without timestamp (legacy replayable format rejected)
+    const legacySig = createHmac('sha256', secret).update(payload).digest('hex');
+    const resNoTs = await worker.fetch(
+      req('/api/webhooks/auth', { method: 'POST', body: payload, headers: { 'x-auth-signature': legacySig } }),
+      env,
+      ctx,
+    );
+    expect(resNoTs.status).toBe(401);
+
+    // Expired timestamp (> 300s old)
+    const oldTs = String(Math.floor(Date.now() / 1000) - 301);
+    const oldSig = await signAuthHex(secret, oldTs, payload);
+    const resExpired = await worker.fetch(
+      req('/api/webhooks/auth', {
+        method: 'POST',
+        body: payload,
+        headers: { 'x-auth-signature': oldSig, 'x-auth-timestamp': oldTs },
+      }),
+      env,
+      ctx,
+    );
+    expect(resExpired.status).toBe(401);
+
+    // Invalid signature with valid timestamp
     const resInvalid = await worker.fetch(
       req('/api/webhooks/auth', {
         method: 'POST',
         body: payload,
-        headers: { 'x-auth-signature': '0000000000000000000000000000000000000000000000000000000000000000' },
+        headers: {
+          'x-auth-timestamp': nowTs,
+          'x-auth-signature': '0000000000000000000000000000000000000000000000000000000000000000',
+        },
       }),
       env,
       ctx
@@ -264,22 +310,18 @@ describe('Signed Webhook Verification (/api/webhooks/auth)', () => {
     expect(resInvalid.status).toBe(401);
   });
 
-  it('accepts webhooks with valid HMAC-SHA256 signature and synchronizes user state', async () => {
+  it('accepts timestamped hex HMAC webhooks, deduplicates replays, and synchronizes user state', async () => {
     const secret = 'test-secret-123';
     const env = makeEnv({ AUTH_WEBHOOK_SECRET: secret });
     const payload = JSON.stringify({ type: 'user.created', data: { uid: 'sync_user_1', email: 'sync@example.com', displayName: 'Sync User' } });
-
-    // Compute expected HMAC-SHA256
-    const enc = new TextEncoder();
-    const key = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-    const signatureBuffer = await crypto.subtle.sign('HMAC', key, enc.encode(payload));
-    const validSignature = Array.from(new Uint8Array(signatureBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+    const ts = String(Math.floor(Date.now() / 1000));
+    const validSignature = await signAuthHex(secret, ts, payload);
 
     const res = await worker.fetch(
       req('/api/webhooks/auth', {
         method: 'POST',
         body: payload,
-        headers: { 'x-auth-signature': validSignature },
+        headers: { 'x-auth-timestamp': ts, 'x-auth-signature': validSignature },
       }),
       env,
       ctx
@@ -289,17 +331,105 @@ describe('Signed Webhook Verification (/api/webhooks/auth)', () => {
     const data = await res.json() as { ok: boolean; processed: string };
     expect(data.ok).toBe(true);
     expect(data.processed).toBe('user.created');
+
+    // Replaying the same request (even with uppercase hex or rotated unsigned x-auth-nonce) must fail closed with 401
+    const replay = await worker.fetch(
+      req('/api/webhooks/auth', {
+        method: 'POST',
+        body: payload,
+        headers: {
+          'x-auth-timestamp': ts,
+          'x-auth-signature': validSignature.toUpperCase(),
+          'x-auth-nonce': 'rotated-unsigned-nonce-1',
+        },
+      }),
+      env,
+      ctx,
+    );
+    expect(replay.status).toBe(401);
+    expect(((await replay.json()) as { code?: string }).code).toBe('replayed');
+
+    // Missing signed_request_nonces table must fail closed with 503
+    const dbMissingTable = createSqliteD1();
+    (dbMissingTable as unknown as { sqlite: { exec: (sql: string) => void } }).sqlite.exec(
+      'DROP TABLE signed_request_nonces',
+    );
+    const missingTableRes = await worker.fetch(
+      req('/api/webhooks/auth', {
+        method: 'POST',
+        body: payload,
+        headers: { 'x-auth-timestamp': ts, 'x-auth-signature': validSignature },
+      }),
+      makeEnv({ AUTH_WEBHOOK_SECRET: secret, DB: dbMissingTable }),
+      ctx,
+    );
+    expect(missingTableRes.status).toBe(503);
+    expect(((await missingTableRes.json()) as { code?: string }).code).toBe('REQUEST_SIGNING_TABLE_MISSING');
+  });
+
+  it('accepts Svix v1,<base64> webhooks (whsec_ and raw secrets) and blocks replays and expiry', async () => {
+    const whsec = `whsec_${Buffer.from('svix-signing-key-32-bytes-123456').toString('base64')}`;
+    const env = makeEnv({ AUTH_WEBHOOK_SECRET: whsec });
+    const payload = JSON.stringify({ type: 'user.updated', data: { uid: 'svix_user_1', email: 'svix@example.com' } });
+    const ts = String(Math.floor(Date.now() / 1000));
+    const svixId = 'msg_svix_test_001';
+    const sig = signSvix(whsec, svixId, ts, payload);
+
+    const ok = await worker.fetch(
+      req('/api/webhooks/auth', {
+        method: 'POST',
+        body: payload,
+        headers: {
+          'svix-id': svixId,
+          'svix-timestamp': ts,
+          'svix-signature': `v1,invalidBase64== ${sig}`,
+        },
+      }),
+      env,
+      ctx,
+    );
+    expect(ok.status).toBe(200);
+
+    // Same svix-id replayed -> 401
+    const replay = await worker.fetch(
+      req('/api/webhooks/auth', {
+        method: 'POST',
+        body: payload,
+        headers: { 'svix-id': svixId, 'svix-timestamp': ts, 'svix-signature': sig },
+      }),
+      env,
+      ctx,
+    );
+    expect(replay.status).toBe(401);
+    expect(((await replay.json()) as { code?: string }).code).toBe('replayed');
+
+    // Expired Svix timestamp -> 401
+    const staleTs = String(Math.floor(Date.now() / 1000) - 400);
+    const staleSig = signSvix(whsec, 'msg_svix_stale', staleTs, payload);
+    const expired = await worker.fetch(
+      req('/api/webhooks/auth', {
+        method: 'POST',
+        body: payload,
+        headers: { 'svix-id': 'msg_svix_stale', 'svix-timestamp': staleTs, 'svix-signature': staleSig },
+      }),
+      env,
+      ctx,
+    );
+    expect(expired.status).toBe(401);
   });
 
   it('answers a signed JSON null payload as an unknown event, not a crash', async () => {
     const secret = 'test-secret-123';
     const env = makeEnv({ AUTH_WEBHOOK_SECRET: secret });
-    const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-    const signed = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode('null'));
-    const signature = Array.from(new Uint8Array(signed)).map((b) => b.toString(16).padStart(2, '0')).join('');
+    const ts = String(Math.floor(Date.now() / 1000));
+    const signature = await signAuthHex(secret, ts, 'null');
 
     const res = await worker.fetch(
-      req('/api/webhooks/auth', { method: 'POST', body: 'null', headers: { 'x-auth-signature': signature } }),
+      req('/api/webhooks/auth', {
+        method: 'POST',
+        body: 'null',
+        headers: { 'x-auth-timestamp': ts, 'x-auth-signature': signature },
+      }),
       env,
       ctx,
     );
@@ -321,12 +451,14 @@ describe('Signed Webhook Verification (/api/webhooks/auth)', () => {
     expect(before.status).toBe(200);
 
     const payload = JSON.stringify({ type: 'user.deleted', data: { id: 'fb:gone_user_1' } });
-    const enc = new TextEncoder();
-    const key = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-    const sig = Array.from(new Uint8Array(await crypto.subtle.sign('HMAC', key, enc.encode(payload))))
-      .map(b => b.toString(16).padStart(2, '0')).join('');
+    const ts = String(Math.floor(Date.now() / 1000));
+    const sig = await signAuthHex(secret, ts, payload);
     const res = await worker.fetch(
-      req('/api/webhooks/auth', { method: 'POST', body: payload, headers: { 'x-auth-signature': sig } }),
+      req('/api/webhooks/auth', {
+        method: 'POST',
+        body: payload,
+        headers: { 'x-auth-timestamp': ts, 'x-auth-signature': sig },
+      }),
       env,
       ctx,
     );
@@ -343,5 +475,59 @@ describe('Signed Webhook Verification (/api/webhooks/auth)', () => {
       ctx,
     );
     expect(who.status).toBe(401);
+  });
+
+  it('appends form-action none and base-uri none to /api/reports/:id/html CSP (M-25)', async () => {
+    const env = makeEnv();
+    const sid = (await mintOpaqueSession(env, { uid: 'rpt_csp_user', email: 'u@example.com' })) as string;
+    const createProj = await worker.fetch(
+      req('/api/projects', {
+        method: 'POST',
+        headers: {
+          origin: 'https://luminarasuite.com',
+          cookie: `${SESSION_COOKIE_NAME}=${sid}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ name: 'CSP Site', domain: 'example.com' }),
+      }),
+      env,
+      ctx,
+    );
+    expect(createProj.status).toBe(200);
+    const projId = ((await createProj.json()) as { project: { id: string } }).project.id;
+
+    const saveRpt = await worker.fetch(
+      req('/api/reports', {
+        method: 'POST',
+        headers: {
+          origin: 'https://luminarasuite.com',
+          cookie: `${SESSION_COOKIE_NAME}=${sid}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          projectId: projId,
+          title: 'CSP Test',
+          summary: 'Summary',
+          html: '<!DOCTYPE html><html><head><title>R</title></head><body><h1>OK</h1></body></html>',
+        }),
+      }),
+      env,
+      ctx,
+    );
+    expect(saveRpt.status).toBe(200);
+    const rptId = ((await saveRpt.json()) as { report: { id: string } }).report.id;
+
+    const htmlRes = await worker.fetch(
+      req(`/api/reports/${encodeURIComponent(rptId)}/html`, {
+        headers: { cookie: `${SESSION_COOKIE_NAME}=${sid}` },
+      }),
+      env,
+      ctx,
+    );
+    expect(htmlRes.status).toBe(200);
+    expect(htmlRes.headers.get('cache-control')).toBe('private, no-store');
+    const csp = htmlRes.headers.get('content-security-policy') || '';
+    expect(csp).toContain("form-action 'none'");
+    expect(csp).toContain("base-uri 'none'");
   });
 });

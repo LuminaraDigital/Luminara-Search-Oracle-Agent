@@ -415,7 +415,7 @@ describe('MCP OAuth resource indicator', () => {
     expect(allowed.code).toBeTruthy();
   });
 
-  it('stores a resource on a localhost client that has no client_id', async () => {
+  it('requires explicit consent and stores a resource on a localhost client that has no client_id', async () => {
     const { env, store } = makeEnv();
     const redirectUri = 'http://127.0.0.1/callback';
     const q = new URLSearchParams({
@@ -424,9 +424,26 @@ describe('MCP OAuth resource indicator', () => {
       code_challenge_method: 'S256',
       resource: APEX,
     });
-    const authorized = await call(env, `/api/oauth/mcp/authorize?${q}`, {}, 77001);
-    expect(authorized.status).toBe(302);
-    const code = new URL(authorized.headers.get('location') ?? redirectUri).searchParams.get('code');
+    const page = await call(env, `/api/oauth/mcp/authorize?${q}`, {}, 77001);
+    expect(page.status).toBe(200);
+    expect(page.headers.get('location')).toBeNull();
+    const html = await page.text();
+    const consent = /name="consent" value="([^"]+)"/.exec(html)?.[1] ?? '';
+    const csrf = /name="csrf" value="([^"]+)"/.exec(html)?.[1] ?? '';
+    expect(consent).toBeTruthy();
+    expect(csrf).toBeTruthy();
+    const decided = await call(
+      env,
+      '/api/oauth/mcp/authorize',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ consent, csrf, decision: 'allow' }).toString(),
+      },
+      77001,
+    );
+    expect(decided.status).toBe(303);
+    const code = new URL(decided.headers.get('location') ?? redirectUri).searchParams.get('code');
     const tokenRes = await tokenRequest(env, {
       grant_type: 'authorization_code',
       code: code ?? '',

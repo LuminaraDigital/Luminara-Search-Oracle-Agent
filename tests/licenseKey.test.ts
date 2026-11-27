@@ -1,11 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  BUILTIN_CAMPAIGN_KEYS,
   activateLicenseKey,
   generateLicenseKeys,
   importLicenseKeys,
   normalizeLicenseKey,
   formatGeneratedLicenseKey,
 } from '../worker/licenseService';
+import worker from '../worker/index';
+import { mintOpaqueSession } from '../worker/opaqueSession';
 import { createSqliteD1 } from './helpers/sqliteD1';
 
 function createMockKv() {
@@ -68,11 +71,78 @@ describe('Temporary License Key & Growth Engine', () => {
     expect(normalizeLicenseKey('LUM-PRO-30D-ABCD-1234')).toBe('LUM-PRO-30D-ABCD-1234');
   });
 
-  it('formats generated keys with tier, duration, and random entropy', () => {
+  it('formats generated keys with tier, duration, and 128-bit random entropy', () => {
     for (let i = 0; i < 50; i++) {
-      expect(formatGeneratedLicenseKey('growth', 3)).toMatch(/^LUM-GROWTH-3D-[A-Z0-9]{4}-[A-Z0-9]{4}$/);
-      expect(formatGeneratedLicenseKey('agency', 30)).toMatch(/^LUM-PRO-30D-[A-Z0-9]{4}-[A-Z0-9]{4}$/);
+      expect(formatGeneratedLicenseKey('growth', 3)).toMatch(/^LUM-GROWTH-3D-[0-9A-F]{8}-[0-9A-F]{8}-[0-9A-F]{8}-[0-9A-F]{8}$/);
+      expect(formatGeneratedLicenseKey('agency', 30)).toMatch(/^LUM-PRO-30D-[0-9A-F]{8}-[0-9A-F]{8}-[0-9A-F]{8}-[0-9A-F]{8}$/);
     }
+  });
+
+  it('removes high-cost LUM-AGENCY-7DAY from builtin campaign keys (M-10)', async () => {
+    expect(Object.hasOwn(BUILTIN_CAMPAIGN_KEYS, 'LUM-AGENCY-7DAY')).toBe(false);
+    const { env } = makeEnv();
+    const res = await activateLicenseKey(env, 'user_agency_trial', 'LUM-AGENCY-7DAY');
+    expect(res.ok).toBe(false);
+    expect(res.error).toMatch(/invalid or unrecognized/i);
+  });
+
+  it('requires verified identity for builtin/trial campaign keys, while paid keys remain redeemable (M-10)', async () => {
+    const { env, kv, DB } = makeEnv();
+    const unverifiedRes = await activateLicenseKey(env, 'fb:unverified_1', 'LUM-GROWTH-3DAY', {
+      identity: { source: 'firebase', emailVerified: false },
+    });
+    expect(unverifiedRes.ok).toBe(false);
+    expect(unverifiedRes.status).toBe(403);
+    expect(unverifiedRes.code).toBe('EMAIL_VERIFICATION_REQUIRED');
+    expect(unverifiedRes.error).toMatch(/verify your email/i);
+    expect(kv.store.has('sub:fb:unverified_1')).toBe(false);
+
+    // Verified Firebase user can redeem the builtin campaign key.
+    const verifiedRes = await activateLicenseKey(env, 'fb:verified_1', 'LUM-GROWTH-3DAY', {
+      identity: { source: 'firebase', emailVerified: true },
+    });
+    expect(verifiedRes.ok).toBe(true);
+    expect(verifiedRes.plan).toBe('growth');
+
+    // Telegram user can redeem the builtin campaign key.
+    const tgRes = await activateLicenseKey(env, '777001', 'LUM-GROWTH-3DAY', {
+      identity: { source: 'telegram' },
+    });
+    expect(tgRes.ok).toBe(true);
+
+    // Unverified Firebase user can still redeem a paid/admin-generated non-trial license key.
+    const [paidKey] = await generateLicenseKeys(env, { plan: 'growth', durationDays: 30, isTrial: false, count: 1 });
+    const paidRes = await activateLicenseKey(env, 'fb:unverified_1', paidKey.key, {
+      identity: { source: 'firebase', emailVerified: false },
+    });
+    expect(paidRes.ok).toBe(true);
+
+    // HTTP POST /api/license/activate returns 403 for unverified Firebase session redeeming a builtin trial key.
+    const origin = 'https://luminarasuite.com';
+    const httpEnv = { ...env, WEBAPP_URL: origin, ALLOWED_ORIGINS: origin };
+    const sid = await mintOpaqueSession(httpEnv, { uid: 'unverified_http', email: 'unverified@example.com' });
+    DB!.sqlite
+      .prepare(`INSERT INTO users (id, source, email, email_verified, account_id, created_at, last_seen_at) VALUES ('fb:unverified_http', 'firebase', 'unverified@example.com', 0, 'fb:unverified_http', 1, 1)`)
+      .run();
+    const ctx = { waitUntil: () => {}, passThroughOnException: () => {} } as unknown as ExecutionContext;
+    const httpRes = await worker.fetch(
+      new Request(`${origin}/api/license/activate`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          origin,
+          cookie: `__session=${sid}`,
+          'cf-connecting-ip': '203.0.113.99',
+        },
+        body: JSON.stringify({ key: 'LUM-GROWTH-3DAY' }),
+      }),
+      httpEnv,
+      ctx,
+    );
+    expect(httpRes.status).toBe(403);
+    const body = (await httpRes.json()) as { ok: boolean; code?: string; error?: string };
+    expect(body.ok).toBe(false);
+    expect(body.code).toBe('EMAIL_VERIFICATION_REQUIRED');
   });
 
   it('activates built-in 72-hour (3-day) Growth Sprint pass', async () => {
@@ -258,7 +328,7 @@ describe('Existing KV keys on the ledger code path (no backfill)', () => {
 
   it('generateLicenseKeys never overwrites an existing key on a random collision', async () => {
     const { env, kv } = makeEnv();
-    const collidingKey = 'LUM-GROWTH-30D-AAAA-AAAA';
+    const collidingKey = 'LUM-GROWTH-30D-00000000-00000000-00000000-00000000';
     const existingRaw = seedRecord(collidingKey, { revoked: true, redeemed: true, redemptionCount: 1 });
     await kv.put(`license:key:${collidingKey}`, existingRaw);
 

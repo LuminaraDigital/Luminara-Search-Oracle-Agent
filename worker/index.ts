@@ -105,7 +105,6 @@ import {
   identifiedForRequest,
   buildSessionCookie,
   buildLogoutCookie,
-  verifyWebhookSignature,
   refuseCrossSiteSessionWrite,
   mintOpaqueSession,
   revokeOpaqueSession,
@@ -152,8 +151,10 @@ import { pruneMcpOAuthRefreshRows } from './mcpOAuthRefresh';
 import { enforceMcpOauthIpLimit, MCP_OAUTH_REGISTER_PER_MIN, MCP_OAUTH_TOKEN_PER_MIN } from './mcpLimits';
 import { executeOracleGatewayTask, type OracleGatewayRequest } from './oracleGateway';
 import { createMemoryFact, listMemoryFacts } from './memoryService';
+import { handleUnifiedMemoryRoute } from './unifiedMemoryRouter';
+import { handleMemoryVaultRoute } from './memoryVaultService';
 import { compileFeedbackIntoSkillRule, handleAgentHabitatRoute } from './selfDrivingHabitat';
-import { handlePrivacyRoute, purgeExpiredPrivacyDeletes } from './privacyService';
+import { handlePrivacyRoute, purgeExpiredPrivacyDeletes, purgeExpiredPrivacyExports } from './privacyService';
 import { isCronMapped, jobsForCron, shouldRunScheduledJob } from './scheduledJobs';
 import { ingestProductAnalytics } from './productAnalytics';
 import { handleWeeklyDecisionsRoute, sendWeeklyDecisionDigest } from './weeklyDecisionService';
@@ -165,6 +166,8 @@ import { handleRsiRoute } from './rsiRoutes';
 import { handleEnquiryDeskRoute } from './enquiryDeskService';
 import { handleRecoveryRoute, sweepDueRecoveryRuns } from './recoveryCampaignService';
 import { handleCmsMcpRoute } from './cmsMcpRelay';
+import { handleCrmBridgeRoute, handleCrmOutcomeWebhook } from './crmRoutes';
+import { crmBridgeOrigin, isCrmBridgeEnabled } from './crmBridgeClient';
 import { runRsiSkillCurator } from './rsiCurator';
 import { runPostingReflection } from './rsiPosting';
 import { handleLaunchpadRoute } from './launchpadService';
@@ -172,7 +175,7 @@ import { handleTrustReceiptsRoute, isTrustReceiptsEnabled, revokeGatewayIssuedRe
 import { handleCitationWatchRoute, runCitationWatchTick } from './citationWatch';
 import { handleAuditReceiptRoute, revokeSignedAuditReceipt } from './auditReceipts';
 import { own } from '../services/own';
-import { enforceRequestSigning, isRequestSigningRequired } from './requestSigning';
+import { enforceRequestSigning, isRequestSigningRequired, verifyAuthWebhookFallback } from './requestSigning';
 import { handleDomainVerificationRoute, isDomainVerifyEnabled, recheckVerifiedDomains } from './domainVerification';
 import { isReceiptSigningConfigured } from './receiptSigning';
 import { handleMemoryRagRoute } from './memoryRag';
@@ -730,14 +733,8 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       const refused = await enforceRequestSigning(env, request, path, read.text);
       if (refused) return withCors(refused);
     } else {
-      if (!env.AUTH_WEBHOOK_SECRET) {
-        return withCors(json({ ok: false, error: 'AUTH_WEBHOOK_SECRET is not configured on the server' }, 503));
-      }
-      const signature = request.headers.get('x-auth-signature') || request.headers.get('svix-signature') || '';
-      const isValid = await verifyWebhookSignature(read.text, signature, env.AUTH_WEBHOOK_SECRET);
-      if (!isValid) {
-        return withCors(json({ ok: false, error: 'Invalid webhook signature' }, 401));
-      }
+      const refused = await verifyAuthWebhookFallback(env, request, read.text);
+      if (refused) return withCors(refused);
     }
     let payload: any = {};
     try {
@@ -751,13 +748,28 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     const data = payload.data || payload.user || {};
     if (event === 'user.deleted' && data.id) {
       const targetId = String(data.id);
+      const rawUid = targetId.replace(/^fb:/, '');
+      const accountIds = new Set<string>([targetId, `fb:${rawUid}`]);
       if (env.DB) {
-        await env.DB.prepare(`DELETE FROM users WHERE id = ? OR firebase_uid = ?`).bind(targetId, targetId.replace(/^fb:/, '')).run();
+        const existing = await env.DB.prepare(`SELECT account_id FROM users WHERE id = ? OR firebase_uid = ?`)
+          .bind(targetId, rawUid)
+          .all<{ account_id: string | null }>()
+          .catch(() => ({ results: [] as Array<{ account_id: string | null }> }));
+        for (const row of existing.results ?? []) {
+          if (row.account_id) accountIds.add(row.account_id);
+        }
+        await env.DB.prepare(`DELETE FROM users WHERE id = ? OR firebase_uid = ?`).bind(targetId, rawUid).run();
+      }
+      const { revokeAllApiKeys } = await import('./apiKeyService');
+      const { revokeAccountOAuthKvTokens } = await import('./opaqueSession');
+      for (const acctId of accountIds) {
+        await revokeAllApiKeys(env, acctId).catch(() => undefined);
+        await revokeAccountOAuthKvTokens(env, acctId).catch(() => undefined);
       }
       if (env.LUMINARA_KV) {
         await env.LUMINARA_KV.delete(`user:${targetId}`);
         // Without this the user's sessions stay valid and the next request re-creates the users row.
-        await revokeSessionsForDeletedUser(env, targetId.replace(/^fb:/, ''));
+        await revokeSessionsForDeletedUser(env, rawUid);
       }
     } else if ((event === 'user.created' || event === 'user.updated') && (data.uid || data.id)) {
       const uid = String(data.uid || data.id).replace(/^fb:/, '');
@@ -1265,8 +1277,9 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
     if (!read.ok) return withCors(json({ error: read.error }, read.status));
     const { key } = (read.value || {}) as { key?: string };
     if (!key) return withCors(json({ error: 'License key is required' }, 400));
-    const result = await activateLicenseKey(env, who.user.id, key);
-    return withCors(json(result, result.ok ? 200 : 400));
+    const result = await activateLicenseKey(env, who.user.id, key, { identity: who.user });
+    const { status, ...payload } = result;
+    return withCors(json(payload, result.ok ? 200 : (status ?? 400)));
   }
 
   // Admin License Key Generation
@@ -1675,10 +1688,36 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
   }
 
   // Hosted memory facts (W8 incremental) + RAG / chat→facts
-  if (path === '/memory/facts' || path === '/memory/search' || path === '/memory/extract' || path === '/memory/context') {
-    const who = await identify(request, env);
+  // Hosted memory facts (W8 incremental) + RAG / chat->facts + Unified Agentic Memory + Anamnesis Vault
+  if (
+    path === '/memory/facts' ||
+    path === '/memory/search' ||
+    path === '/memory/extract' ||
+    path === '/memory/context' ||
+    path.startsWith('/memory/unified/') ||
+    path.startsWith('/memory/vault/')
+  ) {
+    const who = identifiedForRequest(request) ?? (await identify(request, env));
     if (who.error || !who.user) {
       return withCors(json({ ok: false, error: who.error || 'Unauthorized', code: 'AUTH_REQUIRED' }, 401));
+    }
+    if (request.method === 'POST' && (path.startsWith('/memory/unified/') || path.startsWith('/memory/vault/'))) {
+      const dual = await enforceDualRateLimit(env, {
+        action: 'memory_agentic',
+        accountId: billingId(who.user),
+        ip,
+        limitPerKey: 30,
+        windowSec: 60,
+      });
+      if (!dual.ok) return withCors(dual.response);
+    }
+    if (path.startsWith('/memory/unified/')) {
+      const unifiedRes = await handleUnifiedMemoryRoute(request, env, who.user, path);
+      if (unifiedRes) return withCors(unifiedRes);
+    }
+    if (path.startsWith('/memory/vault/')) {
+      const vaultRes = await handleMemoryVaultRoute(request, env, who.user, path);
+      if (vaultRes) return withCors(vaultRes);
     }
     // Account memory for every signed-in plan: the web app's chat reads context before a reply
     // and sends the user's message for extraction after it. Both are rate limited per account.
@@ -1826,6 +1865,38 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       (await handleRecoveryRoute(request, env, who.user, path)) ??
       (await handleCmsMcpRoute(request, env, who.user, path));
     if (res) return withCors(res);
+  }
+
+  // Luminara CRM Agentic Middle Layer bridge (0060). Dark-launched behind CRM_BRIDGE_ENABLED === 'true'.
+  if (path === '/crm/webhooks/outcome' && request.method === 'POST') {
+    if (!isCrmBridgeEnabled(env)) {
+      return withCors(json({ ok: false, code: 'CRM_BRIDGE_DISABLED', error: 'CRM bridge is disabled.' }, 503));
+    }
+    const hit = limited('crm_outcome_webhook', 120);
+    if (hit) return hit;
+    return withCors(await handleCrmOutcomeWebhook(request, env));
+  }
+  if (path === '/crm' || path.startsWith('/crm/')) {
+    if (!isCrmBridgeEnabled(env)) {
+      if (path === '/crm/status' && request.method === 'GET') {
+        return withCors(json({ ok: true, enabled: false, activated: false, link: null }, 200));
+      }
+      return withCors(json({ ok: false, code: 'CRM_BRIDGE_DISABLED', error: 'CRM bridge is not enabled on this deployment.' }, 503));
+    }
+    const who = identifiedForRequest(request) ?? (await identify(request, env));
+    if (who.error || !who.user) {
+      return withCors(json({ ok: false, error: who.error || 'Unauthorized', code: 'AUTH_REQUIRED' }, 401));
+    }
+    const dual = await enforceDualRateLimit(env, {
+      action: 'crm_bridge',
+      accountId: billingId(who.user),
+      ip: clientIp(request),
+      limitPerKey: 60,
+      windowSec: 60,
+    });
+    if (!dual.ok) return withCors(dual.response);
+    const crmRes = await handleCrmBridgeRoute(request, env, who.user, path);
+    if (crmRes) return withCors(crmRes);
   }
 
   // Trust Network TN1/TN2 (migration 0020). Flag-gated inside each handler.
@@ -2028,8 +2099,8 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
       }
       const ok =
         decision === 'approve'
-          ? await approveActionRequest(env, requestId, who.user.id)
-          : await denyActionRequest(env, requestId, who.user.id);
+          ? await approveActionRequest(env, requestId, who.user.id, accountId)
+          : await denyActionRequest(env, requestId, who.user.id, accountId);
       if (!ok) {
         return withCors(json({ ok: false, error: 'Could not update action request', code: 'UPDATE_FAILED' }, 409));
       }
@@ -2149,6 +2220,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
         name: typeof raw.name === 'string' ? raw.name : undefined,
         clientId,
         industryId,
+        maxClients: slot.limit,
       });
       if (!created.ok) return withCors(json({ ok: false, error: created.error }, created.status));
       if (raw.dna && typeof raw.dna === 'object') {
@@ -2260,8 +2332,9 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
             headers: {
               'content-type': 'text/html; charset=utf-8',
               'content-security-policy':
-                "default-src 'none'; style-src 'unsafe-inline'; img-src https: data:; sandbox allow-popups allow-popups-to-escape-sandbox",
+                "default-src 'none'; style-src 'unsafe-inline'; img-src https: data:; sandbox allow-popups; form-action 'none'; base-uri 'none'",
               'x-content-type-options': 'nosniff',
+              'cache-control': 'private, no-store',
             },
           }),
         );
@@ -2307,7 +2380,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
         ok: true,
         mcpAccess: caps.mcpAccess,
         keys: await listApiKeys(env, who.user),
-        tools: listMcpToolCatalogue(),
+        tools: listMcpToolCatalogue({ includeCrmBridge: isCrmBridgeEnabled(env) }),
       }));
     }
     if (path === '/api-keys' && request.method === 'POST') {
@@ -2381,7 +2454,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext): Pro
   }
 
   const oracleSessionMatch = path.match(
-    /^\/oracle\/session\/([^/]+)\/(events|approval|callback|state(?:\/patch)?|history)$/,
+    /^\/oracle\/session\/([^/]+)\/(events|approval|callback|state(?:\/patch)?|history|checkpoint)$/,
   );
   if (oracleSessionMatch) {
     if (!isOracleServerEnabled(env)) {
@@ -2500,8 +2573,9 @@ const SHORT_PATH_REDIRECTS: Record<string, { path: string; hash?: string }> = {
 const handler = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+    const crmOrigin = crmBridgeOrigin(env);
     const guard = async (res: Response) => {
-      const secured = withSecurityHeaders(res);
+      const secured = withSecurityHeaders(res, crmOrigin);
       const html = await decoratePublicHtml(secured, env.ASSETS);
       const flagged = await withHeroAbFlag(html, heroAbEnabled(env));
       return applyHostRobots(url, env.ENVIRONMENT, flagged);
@@ -2747,7 +2821,15 @@ const handler = {
       return;
     }
     if (jobs.includes('sentinel')) ctx.waitUntil(runSentinelScan(env));
-    if (jobs.includes('privacy_purge')) ctx.waitUntil(purgeExpiredPrivacyDeletes(env).then(() => undefined));
+    if (jobs.includes('privacy_purge')) {
+      // Expired export files go in the same job; a failed delete pass must not skip them.
+      ctx.waitUntil(
+        purgeExpiredPrivacyDeletes(env)
+          .catch((err) => console.error(`[privacy] delete purge failed: ${err instanceof Error ? err.message : err}`))
+          .then(() => purgeExpiredPrivacyExports(env))
+          .then(() => undefined),
+      );
+    }
     if (jobs.includes('domain_recheck')) ctx.waitUntil(recheckVerifiedDomains(env).then(() => undefined));
     if (jobs.includes('stars_charge_sweep')) ctx.waitUntil(runStarsChargeSweep(env).then(() => undefined));
     if (jobs.includes('payment_support_sweep')) ctx.waitUntil(runPaymentSupportSweep(env).then(() => undefined));

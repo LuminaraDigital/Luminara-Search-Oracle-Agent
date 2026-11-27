@@ -11,6 +11,7 @@ import type { Env } from './env';
 import type { EncryptedKeyBag } from './userTypes';
 import type { WorkspacePayload } from './userStore';
 import { json } from './workerUtils';
+import { clearSlidingWindow, invokeSlidingWindow } from './dailyQuota';
 
 const MAX_STORAGE_KEYS = 200;
 const MAX_STORAGE_VALUE_CHARS = 200_000;
@@ -274,6 +275,17 @@ export async function enforceDualRateLimit(
 
   let worstRemaining = limit;
   for (const key of keys) {
+    if (env.DAILY_QUOTA) {
+      const atomic = await invokeSlidingWindow(env, `dual:${key}`, { limit, windowMs: windowSec * 1000, record: true });
+      if (atomic) {
+        if (!atomic.ok) {
+          const retryAfterSec = Math.max(1, Math.ceil((atomic.oldest + windowSec * 1000 - Date.now()) / 1000));
+          return { ok: false, response: rateLimitedResponse({ limit, windowSec, remaining: 0, retryAfterSec }) };
+        }
+        worstRemaining = Math.min(worstRemaining, Math.max(0, limit - atomic.count));
+        continue;
+      }
+    }
     const now = Date.now();
     const slots = rlByStore.get(env.LUMINARA_KV);
     const cached = slots?.get(key);
@@ -499,20 +511,43 @@ export async function enforceKvSlidingWindow(
 ): Promise<DualRateLimitResult> {
   const windowSec = Math.max(1, opts.windowSeconds);
   const limit = Math.max(1, opts.maxRequests);
+  const failClosedOnWriteError = opts.failClosedOnWriteError ?? Boolean(opts.failClosedWithoutKv);
+
+  if (env.DAILY_QUOTA) {
+    const atomic = await invokeSlidingWindow(env, `sw:${opts.key}`, {
+      limit,
+      windowMs: windowSec * 1000,
+      record: opts.record !== false,
+    });
+    if (atomic) {
+      if (!atomic.ok) {
+        const retryAfterSec = Math.max(1, Math.ceil((atomic.oldest + windowSec * 1000 - Date.now()) / 1000));
+        return {
+          ok: false,
+          response: rateLimitedResponse({ limit, windowSec, remaining: 0, retryAfterSec, code: 'RATE_LIMITED' }),
+        };
+      }
+      return {
+        ok: true,
+        headers: rateLimitHeaders({ limit, remaining: Math.max(0, limit - atomic.count), windowSec }),
+      };
+    }
+    if (failClosedOnWriteError && !env.LUMINARA_KV) {
+      return {
+        ok: false,
+        response: rateLimitedResponse({ limit, windowSec, remaining: 0, retryAfterSec: 1, code: 'RATE_STORE_UNAVAILABLE', error: 'Rate limit store unavailable. Try again later.' }),
+      };
+    }
+  }
+
   if (!env.LUMINARA_KV) {
     if (opts.failClosedWithoutKv || String(env.REQUIRE_TG_AUTH || '').toLowerCase() === 'true') {
       return {
         ok: false,
-        response: json(
-          { ok: false, error: 'Rate limit store unavailable. Try again later.', code: 'RATE_STORE_UNAVAILABLE' },
-          503,
-        ),
+        response: json({ ok: false, error: 'Rate limit store unavailable. Try again later.', code: 'RATE_STORE_UNAVAILABLE' }, 503),
       };
     }
-    return {
-      ok: true,
-      headers: rateLimitHeaders({ limit, remaining: limit, windowSec }),
-    };
+    return { ok: true, headers: rateLimitHeaders({ limit, remaining: limit, windowSec }) };
   }
 
   const now = Date.now();
@@ -523,37 +558,12 @@ export async function enforceKvSlidingWindow(
     if (prior.length >= limit) {
       const oldest = Math.min(...prior);
       const retryAfterSec = Math.max(1, Math.ceil((oldest + windowMs - now) / 1000));
-      console.warn(
-        JSON.stringify({
-          event: 'rate_limit_exceeded',
-          kind: 'sliding_window',
-          key: opts.key,
-          count: prior.length,
-          limit,
-          windowSec,
-        }),
-      );
-      return {
-        ok: false,
-        response: rateLimitedResponse({
-          limit,
-          windowSec,
-          remaining: 0,
-          retryAfterSec,
-          code: 'RATE_LIMITED',
-        }),
-      };
+      console.warn(JSON.stringify({ event: 'rate_limit_exceeded', kind: 'sliding_window', key: opts.key, count: prior.length, limit, windowSec }));
+      return { ok: false, response: rateLimitedResponse({ limit, windowSec, remaining: 0, retryAfterSec, code: 'RATE_LIMITED' }) };
     }
 
     if (opts.record === false) {
-      return {
-        ok: true,
-        headers: rateLimitHeaders({
-          limit,
-          remaining: Math.max(0, limit - prior.length),
-          windowSec,
-        }),
-      };
+      return { ok: true, headers: rateLimitHeaders({ limit, remaining: Math.max(0, limit - prior.length), windowSec }) };
     }
 
     const next = [...prior, now];
@@ -561,33 +571,16 @@ export async function enforceKvSlidingWindow(
     await env.LUMINARA_KV.put(opts.key, JSON.stringify({ timestamps: next } satisfies SlidingBucket), {
       expirationTtl: Math.max(120, windowSec + 60),
     });
-    return {
-      ok: true,
-      headers: rateLimitHeaders({
-        limit,
-        remaining: Math.max(0, limit - next.length),
-        windowSec,
-      }),
-    };
+    return { ok: true, headers: rateLimitHeaders({ limit, remaining: Math.max(0, limit - next.length), windowSec }) };
   } catch {
     console.warn(JSON.stringify({ event: 'rate_limit_store_error' }));
-    if (opts.failClosedOnWriteError) {
+    if (failClosedOnWriteError) {
       return {
         ok: false,
-        response: rateLimitedResponse({
-          limit,
-          windowSec,
-          remaining: 0,
-          retryAfterSec: 1,
-          code: 'RATE_STORE_UNAVAILABLE',
-          error: 'Rate limit store unavailable. Try again later.',
-        }),
+        response: rateLimitedResponse({ limit, windowSec, remaining: 0, retryAfterSec: 1, code: 'RATE_STORE_UNAVAILABLE', error: 'Rate limit store unavailable. Try again later.' }),
       };
     }
-    return {
-      ok: true,
-      headers: rateLimitHeaders({ limit, remaining: limit, windowSec }),
-    };
+    return { ok: true, headers: rateLimitHeaders({ limit, remaining: limit, windowSec }) };
   }
 }
 
@@ -601,6 +594,7 @@ export function rateLimiter(opts: {
   windowSeconds: number;
   keyPrefix: string;
   failClosedWithoutKv?: boolean;
+  failClosedOnWriteError?: boolean;
 }): (env: Env, keySuffix: string) => Promise<DualRateLimitResult> {
   const prefix = opts.keyPrefix.replace(/:+$/, '');
   return (env, keySuffix) =>
@@ -609,6 +603,7 @@ export function rateLimiter(opts: {
       maxRequests: opts.maxRequests,
       windowSeconds: opts.windowSeconds,
       failClosedWithoutKv: opts.failClosedWithoutKv,
+      failClosedOnWriteError: opts.failClosedOnWriteError ?? Boolean(opts.failClosedWithoutKv),
     });
 }
 
@@ -618,6 +613,23 @@ export const passwordResetIpLimiter = rateLimiter({
   windowSeconds: 15 * 60,
   keyPrefix: 'rl:pwd_reset',
   failClosedWithoutKv: true,
+});
+
+/** Password reset per-email cooldown: max 3 / 15 minutes per email hash (anti-inbox-bombing). */
+export const passwordResetEmailLimiter = rateLimiter({
+  maxRequests: 3,
+  windowSeconds: 15 * 60,
+  keyPrefix: 'rl:pwd_reset_email',
+  failClosedWithoutKv: true,
+});
+
+/** Token refresh: max 30 / 15 minutes per IP (fails closed when KV absent only in auth-required envs). */
+export const tokenRefreshIpLimiter = rateLimiter({
+  maxRequests: 30,
+  windowSeconds: 15 * 60,
+  keyPrefix: 'rl:refresh',
+  failClosedWithoutKv: false,
+  failClosedOnWriteError: true,
 });
 
 /** OTP / verification triggers: max 5 / hour per IP (reserved for future SMS/email OTP). */
@@ -655,15 +667,8 @@ export async function checkAccountLockout(
   env: Env,
   emailHash: string,
 ): Promise<DualRateLimitResult> {
-  if (!env.LUMINARA_KV) return { ok: true, headers: {} };
-  const key = `rl:signin_fail:${emailHash}`;
-  const now = Date.now();
   const windowMs = SIGN_IN_LOCKOUT_WINDOW_SEC * 1000;
-  const cutoff = now - windowMs;
-  const prior = (await readSlidingBucket(env.LUMINARA_KV, key)).filter((t) => t > cutoff);
-
-  if (prior.length >= MAX_SIGN_IN_ACCOUNT_FAILURES) {
-    const oldest = Math.min(...prior);
+  const lockedResponse = (oldest: number, now: number): DualRateLimitResult => {
     const retryAfterSec = Math.max(1, Math.ceil((oldest + windowMs - now) / 1000));
     const retryMin = Math.ceil(retryAfterSec / 60);
     return {
@@ -683,8 +688,30 @@ export async function checkAccountLockout(
         },
       ),
     };
+  };
+  if (env.DAILY_QUOTA) {
+    const atomic = await invokeSlidingWindow(env, `lockout:${emailHash}`, {
+      limit: MAX_SIGN_IN_ACCOUNT_FAILURES,
+      windowMs,
+      record: false,
+    });
+    if (atomic) {
+      if (!atomic.ok) return lockedResponse(atomic.oldest, Date.now());
+      return {
+        ok: true,
+        headers: rateLimitHeaders({
+          limit: MAX_SIGN_IN_ACCOUNT_FAILURES,
+          remaining: Math.max(0, MAX_SIGN_IN_ACCOUNT_FAILURES - atomic.count),
+          windowSec: SIGN_IN_LOCKOUT_WINDOW_SEC,
+        }),
+      };
+    }
   }
-
+  if (!env.LUMINARA_KV) return { ok: true, headers: {} };
+  const key = `rl:signin_fail:${emailHash}`;
+  const now = Date.now();
+  const prior = (await readSlidingBucket(env.LUMINARA_KV, key)).filter((t) => t > now - windowMs);
+  if (prior.length >= MAX_SIGN_IN_ACCOUNT_FAILURES) return lockedResponse(Math.min(...prior), now);
   return {
     ok: true,
     headers: rateLimitHeaders({
@@ -696,20 +723,26 @@ export async function checkAccountLockout(
 }
 
 /**
- * Records a failed sign-in attempt for an account in KV sliding bucket.
+ * Records a failed sign-in attempt for an account (atomic DO when bound, KV fallback).
  */
 export async function recordFailedSignIn(env: Env, emailHash: string): Promise<void> {
+  if (env.DAILY_QUOTA) {
+    const recorded = await invokeSlidingWindow(env, `lockout:${emailHash}`, {
+      limit: 0,
+      windowMs: SIGN_IN_LOCKOUT_WINDOW_SEC * 1000,
+      record: true,
+    });
+    if (recorded) return;
+  }
   if (!env.LUMINARA_KV) return;
   const key = `rl:signin_fail:${emailHash}`;
   const now = Date.now();
-  const windowMs = SIGN_IN_LOCKOUT_WINDOW_SEC * 1000;
-  const cutoff = now - windowMs;
+  const cutoff = now - SIGN_IN_LOCKOUT_WINDOW_SEC * 1000;
   const prior = (await readSlidingBucket(env.LUMINARA_KV, key)).filter((t) => t > cutoff);
-  const next = [...prior, now];
   await putCounterBestEffort(
     env,
     key,
-    JSON.stringify({ timestamps: next } satisfies SlidingBucket),
+    JSON.stringify({ timestamps: [...prior, now] } satisfies SlidingBucket),
     SIGN_IN_LOCKOUT_WINDOW_SEC + 60,
   );
 }
@@ -718,9 +751,9 @@ export async function recordFailedSignIn(env: Env, emailHash: string): Promise<v
  * Clears failed sign-in attempts for an account upon successful authentication.
  */
 export async function clearFailedSignIn(env: Env, emailHash: string): Promise<void> {
+  if (env.DAILY_QUOTA) await clearSlidingWindow(env, `lockout:${emailHash}`);
   if (!env.LUMINARA_KV) return;
-  const key = `rl:signin_fail:${emailHash}`;
-  await env.LUMINARA_KV.delete(key);
+  await env.LUMINARA_KV.delete(`rl:signin_fail:${emailHash}`);
 }
 
 /**

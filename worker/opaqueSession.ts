@@ -53,6 +53,53 @@ export async function isSessionRevokedUser(env: Env, userId: string): Promise<bo
   return Boolean(await env.LUMINARA_KV.get(deletedUserKvKey(uid)));
 }
 
+/** Revoke all MCP OAuth KV access tokens and connection indexes for an erased account. */
+export async function revokeAccountOAuthKvTokens(env: Env, accountId: string): Promise<number> {
+  if (!accountId) return 0;
+  let revoked = 0;
+  if (env.DB) {
+    try {
+      const rows = await env.DB.prepare(
+        `SELECT access_hash FROM mcp_oauth_refresh_access
+         WHERE family_id IN (SELECT family_id FROM mcp_oauth_refresh_family WHERE account_id = ?)`,
+      )
+        .bind(accountId)
+        .all<{ access_hash: string }>();
+      for (const row of rows.results ?? []) {
+        if (row.access_hash && env.LUMINARA_KV) {
+          await env.LUMINARA_KV.delete(`mcp_oauth_token:${row.access_hash}`).catch(() => undefined);
+          revoked += 1;
+        }
+      }
+      await env.DB.prepare(`UPDATE mcp_oauth_refresh_family SET revoked = 1 WHERE account_id = ?`)
+        .bind(accountId)
+        .run()
+        .catch(() => undefined);
+    } catch {
+      /* table may not exist in older fixtures */
+    }
+  }
+  if (env.LUMINARA_KV && typeof env.LUMINARA_KV.list === 'function') {
+    const { sha256Hex } = await import('./workerUtils');
+    const prefix = `mcp_oauth_connection:${await sha256Hex(accountId)}:`;
+    let cursor: string | undefined;
+    for (let page = 0; page < 20; page += 1) {
+      const listed = await env.LUMINARA_KV.list({ prefix, cursor });
+      for (const item of listed.keys) {
+        const suffix = item.name.slice(prefix.length);
+        if (/^[a-f0-9]{64}$/.test(suffix)) {
+          await env.LUMINARA_KV.delete(`mcp_oauth_token:${suffix}`).catch(() => undefined);
+        }
+        await env.LUMINARA_KV.delete(item.name).catch(() => undefined);
+        revoked += 1;
+      }
+      if (listed.list_complete || !listed.cursor || listed.cursor === cursor) break;
+      cursor = listed.cursor;
+    }
+  }
+  return revoked;
+}
+
 export async function mintOpaqueSession(
   env: Env,
   user: { uid: string; email?: string; name?: string },

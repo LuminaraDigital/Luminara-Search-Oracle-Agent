@@ -23,6 +23,18 @@ export const MAX_SESSIONS = 32;
  */
 
 /**
+ * Verifies that callerAccountKey matches the session's tenant owner.
+ * Tenant-owned sessions require an exact matching caller key; unowned sessions require no caller key.
+ */
+export function isSessionOwner(session, callerAccountKey) {
+  if (!session) return false;
+  const owner = typeof session.accountKey === 'string' ? session.accountKey.trim() : '';
+  const caller = typeof callerAccountKey === 'string' ? callerAccountKey.trim() : '';
+  if (!owner) return !caller;
+  return Boolean(caller) && caller === owner;
+}
+
+/**
  * @param {{ ttlMs?: number, maxSessions?: number, now?: () => number }} [opts]
  */
 export function createSessionStore({
@@ -42,6 +54,10 @@ export function createSessionStore({
     if (sessions.has(id)) {
       return { ok: false, error: 'Session id already exists' };
     }
+    const accountKey =
+      typeof fields.accountKey === 'string' && fields.accountKey.trim()
+        ? fields.accountKey.trim().slice(0, 128)
+        : undefined;
     /** @type {BrowserSession} */
     const session = {
       id,
@@ -50,7 +66,7 @@ export function createSessionStore({
       page: fields.page,
       createdAt: at,
       lastUsed: at,
-      accountKey: fields.accountKey,
+      accountKey,
       releaseSlot: fields.releaseSlot,
       lastObserve: fields.lastObserve ?? null,
     };
@@ -61,6 +77,15 @@ export function createSessionStore({
   function get(id) {
     if (!id || typeof id !== 'string') return null;
     return sessions.get(id) || null;
+  }
+
+  function getOwned(id, callerAccountKey) {
+    const session = get(id);
+    if (!session) return { ok: false, status: 404, error: 'Unknown or expired session' };
+    if (!isSessionOwner(session, callerAccountKey)) {
+      return { ok: false, status: 403, error: 'Session belongs to another account' };
+    }
+    return { ok: true, session };
   }
 
   function touch(id) {
@@ -80,6 +105,13 @@ export function createSessionStore({
     if (!session) return null;
     sessions.delete(id);
     return session;
+  }
+
+  function destroyOwned(id, callerAccountKey) {
+    const owned = getOwned(id, callerAccountKey);
+    if (!owned.ok) return owned;
+    sessions.delete(owned.session.id);
+    return owned;
   }
 
   /**
@@ -102,8 +134,10 @@ export function createSessionStore({
   return {
     create,
     get,
+    getOwned,
     touch,
     destroy,
+    destroyOwned,
     destroyExpired,
     get size() {
       return sessions.size;

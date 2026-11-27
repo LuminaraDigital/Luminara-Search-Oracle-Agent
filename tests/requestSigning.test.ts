@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import worker from '../worker/index';
 import type { Env } from '../worker/env';
-import { signRequestMac, verifySignedRequest } from '../worker/requestSigning';
+import { consumeD1Nonce, REQUEST_SIGNING_WINDOW_SEC, signRequestMac, verifySignedRequest } from '../worker/requestSigning';
 import { createSqliteD1 } from './helpers/sqliteD1';
 
 const KEY_ID = 'k1';
@@ -190,5 +190,15 @@ describe('HMAC request signing', () => {
       ctx,
     );
     expect(legacy.status).toBe(401);
+  });
+
+  it('consumeD1Nonce retains nonces for 2x clock-skew window (600s) before purging', async () => {
+    const db = createSqliteD1();
+    const t0 = 1_700_000_000_000;
+    expect(await consumeD1Nonce(db, 'webhook:auth', 'nonce-skew-1', t0)).toBe(true);
+    // Still blocked at 301s (inside 2x window so future-stamped requests cannot replay).
+    expect(await consumeD1Nonce(db, 'webhook:auth', 'nonce-skew-1', t0 + (REQUEST_SIGNING_WINDOW_SEC + 1) * 1000)).toBe(false);
+    // Purged once past 2x window (601s).
+    expect(await consumeD1Nonce(db, 'webhook:auth', 'nonce-skew-1', t0 + (REQUEST_SIGNING_WINDOW_SEC * 2 + 1) * 1000)).toBe(true);
   });
 });

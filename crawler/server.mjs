@@ -11,7 +11,7 @@
 import express from 'express';
 import * as cheerio from 'cheerio';
 import { createHash, timingSafeEqual } from 'node:crypto';
-import { assertPublicTarget } from './ssrf.mjs';
+import { assertPublicTarget, installPublicRouteGuard } from './ssrf.mjs';
 import {
   createRateLimiter,
   createSemaphore,
@@ -41,9 +41,11 @@ const CRAWLER_TOKEN = (process.env.CRAWLER_TOKEN || '').trim();
 // Optional outbound proxy for the headless browser. Callers can no longer pick one per request:
 // an attacker with access to the API could otherwise route the browser through their own proxy.
 const CRAWLER_PROXY = (process.env.CRAWLER_PROXY || '').trim();
-// Browser origins allowed cross-origin (comma-separated, exact). Unset means the local Vite app; empty means none.
+// Browser origins allowed cross-origin (comma-separated, exact). When CRAWLER_TOKEN is set,
+// default to none unless explicitly configured; on loopback without a token, allow only local Vite.
+const LOOPBACK_ORIGIN_RE = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i;
 const CRAWLER_ALLOWED_ORIGINS = parseAllowedOrigins(
-  process.env.CRAWLER_ALLOWED_ORIGINS ?? 'http://localhost:3000,http://127.0.0.1:3000'
+  process.env.CRAWLER_ALLOWED_ORIGINS ?? (CRAWLER_TOKEN ? '' : 'http://localhost:3000,http://127.0.0.1:3000')
 );
 const CRAWLER_MAX_CONCURRENCY = parsePositiveInt(process.env.CRAWLER_MAX_CONCURRENCY, 2, 1, 32);
 const CRAWLER_RATE_LIMIT_PER_MIN = parsePositiveInt(process.env.CRAWLER_RATE_LIMIT_PER_MIN, 30, 1, 10_000);
@@ -81,11 +83,12 @@ if (IS_LOOPBACK_HOST && !CRAWLER_TOKEN) {
 
 app.disable('x-powered-by');
 
-// Preflights from origins outside the allowlist get 403; other requests proceed with no ACAO header.
+// Disallowed browser origins get 403 on every method; non-browser callers omit Origin.
 app.use((req, res, next) => {
   const origin = req.get('origin');
   const allowedOrigin = resolveCorsOrigin(origin, CRAWLER_ALLOWED_ORIGINS);
   if (origin) res.vary('Origin');
+  if (origin && !allowedOrigin) return res.status(403).end();
   if (allowedOrigin) {
     res.set('Access-Control-Allow-Origin', allowedOrigin);
     res.set('Access-Control-Expose-Headers', 'Retry-After');
@@ -93,10 +96,14 @@ app.use((req, res, next) => {
   if (req.method !== 'OPTIONS') return next();
   if (!allowedOrigin) return res.status(403).end();
   res.set('Access-Control-Allow-Methods', 'GET, POST, DELETE');
-  res.set('Access-Control-Allow-Headers', 'content-type, x-crawler-token, authorization');
+  res.set('Access-Control-Allow-Headers', 'content-type, x-crawler-token, authorization, x-luminara-account-id');
   res.set('Access-Control-Max-Age', '600');
-  // Chrome Private Network Access: an allowlisted https app calling this loopback port must opt in.
-  if (req.get('access-control-request-private-network') === 'true') {
+  // Never grant Chrome Private Network Access when a token is configured; otherwise loopback only.
+  if (
+    !CRAWLER_TOKEN &&
+    req.get('access-control-request-private-network') === 'true' &&
+    LOOPBACK_ORIGIN_RE.test(allowedOrigin)
+  ) {
     res.set('Access-Control-Allow-Private-Network', 'true');
   }
   return res.status(204).end();
@@ -227,27 +234,9 @@ async function sweepExpiredSessions() {
   return expired.length;
 }
 
-async function installPublicRouteGuard(context) {
-  const hostRoutableCache = new Map();
-  async function isRoutableTarget(reqUrl) {
-    if (/^(data|blob|about):/i.test(reqUrl)) return true;
-    let hostname;
-    try {
-      hostname = new URL(reqUrl).hostname.toLowerCase();
-    } catch {
-      return false;
-    }
-    const cached = hostRoutableCache.get(hostname);
-    if (cached && Date.now() - cached.time < 3000) return cached.verdict;
-    const verdict = (await assertPublicTarget(reqUrl)).ok;
-    hostRoutableCache.set(hostname, { verdict, time: Date.now() });
-    return verdict;
-  }
-  await context.route('**/*', async route => {
-    const reqUrl = route.request().url();
-    if (await isRoutableTarget(reqUrl)) return route.continue();
-    return route.abort('blockedbyclient');
-  });
+function extractAccountKey(req) {
+  const raw = req.get('x-luminara-account-id') || req.body?.accountKey;
+  return typeof raw === 'string' && raw.trim() ? raw.trim().slice(0, 128) : undefined;
 }
 
 /**
@@ -620,8 +609,9 @@ app.post('/scrape', heavyRoute(async (req, res, signal) => {
 
     context = await newStealthContext(browser);
 
-    await installPublicRouteGuard(context);
+    const guardPageWs = await installPublicRouteGuard(context);
     const page = await context.newPage();
+    await guardPageWs(page);
 
     // Navigate
     const response = await page.goto(url, {
@@ -748,7 +738,7 @@ app.post('/session', heavyRoute(async (req, res, signal, ctx) => {
 
   const body = req.body || {};
   const url = body.url;
-  const accountKey = typeof body.accountKey === 'string' ? body.accountKey.trim().slice(0, 128) : undefined;
+  const accountKey = extractAccountKey(req);
   const profileSlug = sanitizeProfileSlug(body.profileSlug);
   const timeout = clampNumber(body.timeout, 25_000, 1_000, MAX_TIMEOUT_MS);
   const proxy = CRAWLER_PROXY || undefined;
@@ -781,9 +771,10 @@ app.post('/session', heavyRoute(async (req, res, signal, ctx) => {
     if (signal.aborted) throw new Error('Client disconnected');
 
     context = await newStealthContext(browser);
-    await installPublicRouteGuard(context);
+    const guardPageWs = await installPublicRouteGuard(context);
 
     const page = await context.newPage();
+    await guardPageWs(page);
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout });
     await page.waitForTimeout(400);
 
@@ -833,10 +824,9 @@ app.post('/session', heavyRoute(async (req, res, signal, ctx) => {
 
 app.post('/session/:id/observe', heavyRoute(async (req, res) => {
   await sweepExpiredSessions();
-  const session = sessionStore.get(req.params.id);
-  if (!session) {
-    return res.status(404).json({ success: false, error: 'Unknown or expired session' });
-  }
+  const owned = sessionStore.getOwned(req.params.id, extractAccountKey(req));
+  if (!owned.ok) return res.status(owned.status).json({ success: false, error: owned.error });
+  const session = owned.session;
   sessionStore.touch(session.id);
 
   const wantScreenshot = req.body?.screenshot === true;
@@ -855,10 +845,9 @@ app.post('/session/:id/observe', heavyRoute(async (req, res) => {
 
 app.post('/session/:id/act', heavyRoute(async (req, res) => {
   await sweepExpiredSessions();
-  const session = sessionStore.get(req.params.id);
-  if (!session) {
-    return res.status(404).json({ success: false, error: 'Unknown or expired session' });
-  }
+  const owned = sessionStore.getOwned(req.params.id, extractAccountKey(req));
+  if (!owned.ok) return res.status(owned.status).json({ success: false, error: owned.error });
+  const session = owned.session;
   sessionStore.touch(session.id);
 
   const body = req.body || {};
@@ -979,12 +968,10 @@ app.post('/session/:id/act', heavyRoute(async (req, res) => {
 
 app.delete('/session/:id', heavyRoute(async (req, res) => {
   await sweepExpiredSessions();
-  const session = sessionStore.destroy(req.params.id);
-  if (!session) {
-    return res.status(404).json({ success: false, error: 'Unknown or expired session' });
-  }
-  await closeSessionResources(session);
-  return res.json({ success: true, sessionId: session.id, closed: true });
+  const owned = sessionStore.destroyOwned(req.params.id, extractAccountKey(req));
+  if (!owned.ok) return res.status(owned.status).json({ success: false, error: owned.error });
+  await closeSessionResources(owned.session);
+  return res.json({ success: true, sessionId: owned.session.id, closed: true });
 }, { skipSlot: true }));
 
 app.listen(PORT, HOST, () => {

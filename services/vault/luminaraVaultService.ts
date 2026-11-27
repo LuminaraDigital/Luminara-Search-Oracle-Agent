@@ -85,6 +85,11 @@ const KNOWN_API_KEY_NAMES = [
   'firecrawl_api_key',
 ];
 
+const KNOWN_API_KEY_SET: ReadonlySet<string> = new Set(KNOWN_API_KEY_NAMES);
+const MIN_VAULT_ITERATIONS = 100_000;
+const MAX_VAULT_ITERATIONS = 1_000_000;
+const MAX_API_KEY_VALUE_CHARS = 2048;
+
 function bufferToBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
   let binary = '';
@@ -292,6 +297,14 @@ export class LuminaraVaultService {
       throw new Error('Vault integrity violation: checksum mismatch. The file may be corrupt or tampered with.');
     }
 
+    if (
+      !Number.isInteger(manifest.iterations) ||
+      manifest.iterations < MIN_VAULT_ITERATIONS ||
+      manifest.iterations > MAX_VAULT_ITERATIONS
+    ) {
+      throw new Error(`Unsupported PBKDF2 iteration count: must be an integer between ${MIN_VAULT_ITERATIONS} and ${MAX_VAULT_ITERATIONS}.`);
+    }
+
     const salt = new Uint8Array(base64ToBuffer(manifest.salt));
     const iv = new Uint8Array(base64ToBuffer(manifest.iv));
 
@@ -366,8 +379,10 @@ export class LuminaraVaultService {
       localStorage.setItem('luminara_dna_profile', JSON.stringify(payload.businessDna));
     }
 
-    if (payload.apiKeys) {
+    if (payload.apiKeys && typeof payload.apiKeys === 'object' && !Array.isArray(payload.apiKeys)) {
       for (const [key, val] of Object.entries(payload.apiKeys)) {
+        if (!KNOWN_API_KEY_SET.has(key)) continue;
+        if (typeof val !== 'string' || val.length > MAX_API_KEY_VALUE_CHARS) continue;
         if (merge) {
           if (!localStorage.getItem(key)) {
             localStorage.setItem(key, val);

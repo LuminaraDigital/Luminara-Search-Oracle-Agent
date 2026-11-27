@@ -1,13 +1,34 @@
-import { PRODUCTION_MINI_APP_URL } from '../referrals/rules';
+import externalLinks from '../../electron/externalLinks.json' with { type: 'json' };
+
+export interface DesktopExternalLink {
+  readonly id: string;
+  readonly label: string;
+  readonly href: string;
+  readonly group: string;
+  readonly tray: boolean;
+}
+
+/** Single canonical list shared with electron/main.cjs (packaged in ASAR). */
+export const DESKTOP_EXTERNAL_LINKS: readonly DesktopExternalLink[] = externalLinks.desktopLinks;
+
+function requireDesktopLinkHref(id: string): string {
+  const match = DESKTOP_EXTERNAL_LINKS.find((link) => link.id === id);
+  if (!match) throw new Error(`Missing canonical desktop link: ${id}`);
+  return match.href;
+}
+
+/** Canonical public website, help, and store links shared across web and desktop shell. */
+export const WEBSITE_URL = requireDesktopLinkHref('website');
+export const FAQ_URL = requireDesktopLinkHref('faq');
+export const CONTACT_URL = externalLinks.contact;
+export const DESKTOP_DOWNLOAD_URL = requireDesktopLinkHref('windows');
 
 /** Production Play listing. Package com.luminarasuite.app. */
-export const PLAY_STORE_URL =
-  'https://play.google.com/store/apps/details?id=com.luminarasuite.app';
+export const PLAY_STORE_URL = requireDesktopLinkHref('google-play');
 
-/** Production bot. Mini App path is PRODUCTION_MINI_APP_URL. */
-export const TELEGRAM_BOT_URL = 'https://t.me/LuminaraSuiteBot';
-
-export const TELEGRAM_MINI_APP_PUBLIC_URL = PRODUCTION_MINI_APP_URL;
+/** Production bot and Mini App URLs. */
+export const TELEGRAM_BOT_URL = requireDesktopLinkHref('telegram-bot');
+export const TELEGRAM_MINI_APP_PUBLIC_URL = requireDesktopLinkHref('telegram-mini-app');
 
 type SurfaceCopy = {
   label: string;

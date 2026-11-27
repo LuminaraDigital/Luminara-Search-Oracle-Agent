@@ -2,6 +2,9 @@ package com.luminarasuite.app.core.network
 
 import com.luminarasuite.app.core.model.AppointmentDecisionRequest
 import com.luminarasuite.app.core.model.BusinessDna
+import com.luminarasuite.app.core.model.CrmApprovalDecisionRequest
+import com.luminarasuite.app.core.model.CrmBridgeStatus
+import com.luminarasuite.app.core.model.CrmPromoteResponse
 import com.luminarasuite.app.core.model.EnquiryCreateRequest
 import com.luminarasuite.app.core.model.EnquiryDeskResponse
 import com.luminarasuite.app.core.model.EnquiryTakeoverRequest
@@ -17,6 +20,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import retrofit2.HttpException
 
 class SharePasswordRequired : IllegalStateException("This report needs its password.")
@@ -56,6 +60,17 @@ interface WorkspaceGateway {
         approve: Boolean,
         slotId: String?,
     ): Result<Unit>
+
+    suspend fun loadCrmBridgeStatus(): Result<CrmBridgeStatus> = Result.success(CrmBridgeStatus(enabled = false))
+
+    suspend fun promoteEnquiryToCrm(enquiryId: String): Result<CrmPromoteResponse> =
+        Result.failure(IllegalStateException("CRM bridge is not enabled."))
+
+    suspend fun decideCrmApproval(
+        callId: Long,
+        approve: Boolean,
+        feedbackNote: String? = null,
+    ): Result<Unit> = Result.failure(IllegalStateException("CRM bridge is not enabled."))
 }
 
 class DefaultWorkspaceGateway(
@@ -175,6 +190,34 @@ class DefaultWorkspaceGateway(
                 id,
                 AppointmentDecisionRequest(decision = if (approve) "approve" else "decline", selectedSlotId = slotId),
             )
+            Unit
+        }
+
+    override suspend fun loadCrmBridgeStatus(): Result<CrmBridgeStatus> =
+        runCatching { api.getCrmBridgeStatus() }
+            .onFailure { if (it is CancellationException) throw it }
+            .recover { CrmBridgeStatus(enabled = false) }
+
+    override suspend fun promoteEnquiryToCrm(enquiryId: String): Result<CrmPromoteResponse> =
+        safely { api.promoteEnquiryToCrm(enquiryId) }
+
+    override suspend fun decideCrmApproval(
+        callId: Long,
+        approve: Boolean,
+        feedbackNote: String?,
+    ): Result<Unit> =
+        safely {
+            require(callId > 0L) { "Approval call ID must be positive." }
+            val res =
+                api.decideCrmApproval(
+                    callId,
+                    CrmApprovalDecisionRequest(
+                        decision = if (approve) "approve" else "reject",
+                        feedbackNote = feedbackNote,
+                    ),
+                )
+            val ok = res["ok"]?.jsonPrimitive?.content == "true"
+            check(ok) { "Could not submit CRM approval decision." }
             Unit
         }
 

@@ -76,3 +76,10 @@ export interface GenUIComponentDef {
 }
 
 export type ComponentRegistry = Record<string, GenUIComponentDef | React.ComponentType<any>>;
+
+const FORBIDDEN_PROPERTY_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
+/** Rejects prototype-pollution property keys on dynamic GenUI object reads and writes. */
+export function isForbiddenPropertyKey(key: string): boolean {
+  return FORBIDDEN_PROPERTY_KEYS.has(key);
+}
